@@ -36,3 +36,9 @@ One task at a time. On task completion:
 1. verify the acceptance criteria in the task file;
 2. move the file from `tasks/` to `tasks/done/`;
 3. update the status to `[x]` in `tasks/QUEUE.md` and in `PROJECT_PLAN.md`.
+
+## Approach
+- Read existing files before writing. Don't re-read unless changed.
+- Thorough in reasoning, concise in output.
+- Skip files over 100KB unless required.
+- No sycophantic openers or closing fluff.
