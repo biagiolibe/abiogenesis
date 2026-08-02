@@ -49,7 +49,7 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 **Milestone:** watch a photolithic species bloom and stabilize thanks to carrying capacity (GDD §13).
 
 - `[x]` 001 — Toolchain, Cargo scaffold, and plugin-based Bevy app → [001](tasks/done/001-scaffold-bevy.md)
-- `[ ]` 002 — `SimConfig`: centralized coefficients → [002](tasks/002-sim-config.md)
+- `[x]` 002 — `SimConfig`: centralized coefficients → [002](tasks/done/002-sim-config.md)
 - `[ ]` 003 — Domain types and `SimWorld` resource → [003](tasks/003-domain-simworld.md)
 - `[ ]` 004 — Environment: static gradients → [004](tasks/004-environment-gradients.md)
 - `[ ]` 005 — Tick algorithm (Phase 0), pure and headless → [005](tasks/005-tick-algorithm.md)
@@ -120,6 +120,7 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 - `[x]` Stack choice: Rust + Bevy (ECS), 2D window, egui UI — GDD v0.4
 - `[x]` Meridian bootstrap from the GDD: `TECH_DESIGN.md`, backlog, operational queue, Phase 0 task files
 - `[x]` Task 001 — Toolchain, Cargo scaffold, and plugin-based Bevy app
+- `[x]` Task 002 — `SimConfig`: centralized coefficients
 
 ---
 
