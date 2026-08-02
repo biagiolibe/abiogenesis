@@ -338,8 +338,7 @@ mod tests {
         }
         let sim_world = app.world().resource::<SimWorld>();
         assert_eq!(
-            sim_world.tick,
-            config.time.era_ticks as u64,
+            sim_world.tick, config.time.era_ticks as u64,
             "no extra ticks should run once the era has ended"
         );
     }

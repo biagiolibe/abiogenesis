@@ -32,7 +32,6 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 | Status | ID | Title | Priority | Depends on | Agent | Task File |
 |-------|----|--------|----------|------------|--------|-----------|
-| `[ ]` | 008 | `bevy_egui` HUD | 🟡 P2 | 007 | — | [008](008-hud-egui.md) |
 | `[ ]` | 009 | Determinism tests and carrying-capacity validation | 🟡 P2 | 005 | — | [009](009-determinism-balance-tests.md) |
 
 **Phase 0 exit gate:** do not move to Phase 1 while task 009's tests are red.
@@ -62,6 +61,7 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | `[x]` | 005 | Tick algorithm (Phase 0), pure and headless | Claude | [005](done/005-tick-algorithm.md) |
 | `[x]` | 006 | Grid rendering with sprites + 2D camera | Claude | [006](done/006-grid-rendering.md) |
 | `[x]` | 007 | `GameState`/`EraState`, input, animated era | Claude | [007](done/007-states-input-era.md) |
+| `[x]` | 008 | `bevy_egui` HUD | Claude | [008](done/008-hud-egui.md) |
 
 ---
 

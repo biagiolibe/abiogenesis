@@ -7,6 +7,7 @@ mod ui;
 mod world;
 
 use bevy::prelude::*;
+use bevy_egui::EguiPlugin;
 use config::ConfigPlugin;
 use input::InputPlugin;
 use render::GridRenderPlugin;
@@ -24,6 +25,7 @@ fn main() {
             }),
             ..default()
         }))
+        .add_plugins(EguiPlugin::default())
         .add_plugins((
             ConfigPlugin,
             WorldPlugin,
