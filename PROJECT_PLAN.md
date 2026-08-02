@@ -62,15 +62,14 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 
 **Milestone:** true emergence appears; multiple species interact via the matrix (GDD §13).
 
-- `[ ]` Biochemical tags: global pool of 10 glyphs, active subset per world (GDD §5.5)
-- `[ ]` Generation of the **hidden matrix** `tag × tag`, asymmetric, ~40% density (GDD §5.5)
-- `[ ]` **Cyclicity constraint**: guarantee ≥1 negative RPS cycle at generation (GDD §5.8) — the main anti-degeneration lever
-- `[ ]` Adjacency effect in the tick: additive and linear (GDD §5.6, step 3)
-- `[ ]` Multiple species and starting palette per world
-- `[ ]` **Predator** metabolism: draws energy from neighbors within `drain_cap` (GDD §5.4)
-- `[ ]` **Decomposer** metabolism and residue cycle (GDD §5.4)
-- `[ ]` Slow diffusion of environmental scalars (GDD §5.2, Phase 1+)
-- `[ ]` **Seed** action with mouse cell selection (GDD §6)
+- `[ ]` 010 — Tag pool and per-species tag assignment (GDD §5.5) → [010](tasks/010-tag-pool-species-tags.md)
+- `[ ]` 011 — Hidden matrix generation with cyclicity constraint (GDD §5.5, §5.8) → [011](tasks/011-hidden-matrix-generation.md)
+- `[ ]` 012 — Adjacency (matrix) effect in the tick (GDD §5.6, step 3) → [012](tasks/012-matrix-adjacency-tick-effect.md)
+- `[ ]` 013 — Starting species palette, multiple species per world → [013](tasks/013-starting-species-palette.md)
+- `[ ]` 014 — Predator metabolism (GDD §5.4) → [014](tasks/014-predator-metabolism.md)
+- `[ ]` 015 — Decomposer metabolism and residue cycle (GDD §5.4) → [015](tasks/015-decomposer-metabolism.md)
+- `[ ]` 016 — Environmental diffusion (GDD §5.2, Phase 1+) → [016](tasks/016-environmental-diffusion.md)
+- `[ ]` 017 — Seed action with mouse cell selection (GDD §6) → [017](tasks/017-seed-action-mouse-selection.md)
 
 ### 🎨 Phase 2 — Deduction
 
@@ -129,4 +128,4 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 
 ---
 
-*Last updated: 2026-08-02*
+*Last updated: 2026-08-03*

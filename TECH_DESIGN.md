@@ -169,6 +169,12 @@ Reason: it's the simplest path to determinism (invariant 1). No guard to maintai
 
 Note the **reproduction** edge case: two parents may want to occupy the same empty cell in the same tick. Resolution must happen in deterministic index order (first arrival in scan order), never left to iteration order.
 
+### Shared resource drain (predation, decomposition)
+
+Predator and decomposer metabolisms (Phase 1, tasks 014-015) both draw from a resource that lives in a *different* cell than the organism consuming it — occupied neighbours' energy for predation, residue in the cell and its neighbours for decomposition. Writing directly into another cell's `scratch` entry while iterating would make the outcome depend on scan order (invariant 1), the same hazard double buffering already solves for the organism's own energy.
+
+**Decided:** both mechanics compute a same-sized accumulator array (e.g. `predation_loss: Vec<f32>`) from the immutable snapshot (`world.cells`) in a **pre-pass**, before the main per-cell loop — the same shape as the existing residue-decay pre-pass. The main loop then applies the accumulated gain/loss as an extra term in the energy update, exactly like `interaction_delta`. No cell is ever written to from outside its own iteration; contention over a shared resource (two predators sharing a prey, two decomposers sharing a residue pool) is resolved by the pre-pass itself, deterministically, independent of the main loop's order.
+
 ---
 
-*Last revised: 2026-08-02*
+*Last revised: 2026-08-03*

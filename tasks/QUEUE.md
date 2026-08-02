@@ -28,13 +28,20 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 ## 🏃 Active Queue
 
-**Phase 0 — Walking skeleton.** Milestone: a photolithic species blooms and stabilizes thanks to carrying capacity (GDD §13).
+**Phase 1 — Emergence.** Milestone: true emergence appears; multiple species interact via the matrix (GDD §13).
 
 | Status | ID | Title | Priority | Depends on | Agent | Task File |
 |-------|----|--------|----------|------------|--------|-----------|
-| *(none)* | — | — | — | — | — | — |
+| `[ ]` | 010 | Tag pool and per-species tag assignment | 🔴 P1 | 005 | — | [010](010-tag-pool-species-tags.md) |
+| `[ ]` | 011 | Hidden matrix generation with cyclicity constraint | 🔴 P1 | 010 | — | [011](011-hidden-matrix-generation.md) |
+| `[ ]` | 012 | Adjacency (matrix) effect in the tick | 🔴 P1 | 011 | — | [012](012-matrix-adjacency-tick-effect.md) |
+| `[ ]` | 013 | Starting species palette, multiple species per world | 🟡 P2 | 010 | — | [013](013-starting-species-palette.md) |
+| `[ ]` | 014 | Predator metabolism | 🟡 P2 | 005 | — | [014](014-predator-metabolism.md) |
+| `[ ]` | 015 | Decomposer metabolism and residue cycle | 🟡 P2 | 014 | — | [015](015-decomposer-metabolism.md) |
+| `[ ]` | 016 | Environmental diffusion | 🟢 P3 | 004 | — | [016](016-environmental-diffusion.md) |
+| `[ ]` | 017 | Seed action with mouse cell selection | 🟡 P2 | 013, 008 | — | [017](017-seed-action-mouse-selection.md) |
 
-**Phase 0 exit gate: cleared.** Task 009's determinism and balance tests are green — Phase 0 is complete.
+Phase 0 is complete (tasks 001-009, archived below); its exit gate is cleared.
 
 Later phases live as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) and expand into task files when we get there.
 
@@ -66,4 +73,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-02*
+*Last updated: 2026-08-03*
