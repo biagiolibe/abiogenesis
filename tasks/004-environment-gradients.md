@@ -1,69 +1,69 @@
-# Task 004 — Ambiente: gradienti statici
+# Task 004 — Environment: static gradients
 
 > **ID**: `004`
-> **Categoria**: Feature
-> **Priorità**: 🔴 P1
-> **Stima**: ~1h
-> **Assegnato a**: non assegnato
-> **Sessione**: —
+> **Category**: Feature
+> **Priority**: 🔴 P1
+> **Estimate**: ~1h
+> **Assigned to**: unassigned
+> **Session**: —
 
 ---
 
-## 🎯 Obiettivo
+## 🎯 Objective
 
-Popolare le scalari ambientali di ogni cella con i **gradienti statici** della Fase 0, così da creare **eterogeneità spaziale → nicchie**.
+Populate each cell's environmental scalars with Phase 0's **static gradients**, creating **spatial heterogeneity → niches**.
 
-Non è decorazione: è una delle tre leve anti-degenerazione del GDD §5.8. Senza eterogeneità ambientale il sistema collassa nei due esiti noiosi ("muore tutto" / "una specie domina"), che il GDD indica come rischio numero uno del progetto.
+This isn't decoration: it's one of the GDD §5.8 anti-degeneration levers. Without environmental heterogeneity the system collapses into the two boring outcomes ("everything dies" / "one species dominates"), which the GDD flags as the project's number-one risk.
 
 ---
 
 ## 📋 Acceptance Criteria
 
-- [ ] Ogni cella ha `temperature`, `light`, `toxicity` in `[0,1]`.
-- [ ] **Luce**: `0.9` sulla riga più alta → `0.2` sulla più bassa, interpolata linearmente.
-- [ ] **Temperatura**: `0.2` sulla colonna più a sinistra → `0.8` sulla più a destra, interpolata linearmente.
-- [ ] **Tossicità**: `0.7` in una zona definita, `0.0` altrove.
-- [ ] I valori agli estremi della griglia corrispondono esattamente alla tabella di GDD §5.9 (coperto da test).
-- [ ] La generazione è deterministica: stesso seed ⇒ stesso ambiente.
-- [ ] Esiste il punto d'innesto per la diffusione (Fase 1+), non implementata.
-- [ ] `cargo clippy -- -D warnings` pulito.
+- [ ] Every cell has `temperature`, `light`, `toxicity` in `[0,1]`.
+- [ ] **Light**: `0.9` on the top row → `0.2` on the bottom row, linearly interpolated.
+- [ ] **Temperature**: `0.2` on the leftmost column → `0.8` on the rightmost, linearly interpolated.
+- [ ] **Toxicity**: `0.7` in a defined zone, `0.0` elsewhere.
+- [ ] Values at the grid extremes exactly match the GDD §5.9 table (covered by a test).
+- [ ] Generation is deterministic: same seed ⇒ same environment.
+- [ ] The integration point for diffusion (Phase 1+) exists, not implemented.
+- [ ] `cargo clippy -- -D warnings` clean.
 
 ---
 
-## 📁 File Rilevanti
+## 📁 Relevant Files
 
-| File | Ruolo |
-|------|-------|
-| `src/world.rs` | Generazione dell'ambiente, dentro o accanto a `SimWorld::new` |
-| `src/config.rs` | Valori dei gradienti (task 002) |
-
----
-
-## 🧩 Contesto Tecnico
-
-- **Comportamento attuale**: `SimWorld` alloca la griglia (task 003), ma le scalari ambientali sono tutte a zero.
-- **Comportamento desiderato**: griglia con gradienti che creano nicchie spaziali.
-
-### GDD §5.2 — Strato ambientale
-
-> **Fase 0:** gradienti statici (es. luce alta in alto, temperatura su un asse diverso) per creare eterogeneità spaziale → nicchie.
-> **Fase 1+:** diffusione lenta delle scalari (media coi vicini a rate basso), così gli interventi ambientali si propagano nel tempo.
-
-I due gradienti sono **su assi diversi di proposito**: luce verticale, temperatura orizzontale. È questo incrocio a generare nicchie bidimensionali distinte — una specie fotolitica amante del freddo prospera in alto a sinistra, una amante del caldo in alto a destra.
-
-### Perché la fascia buia conta
-
-Con `metabolism_gain = 2.0` e `upkeep = 0.5` (GDD §5.9), un fotolitico con `env_fit ≈ 1`:
-- a `light = 0.7` guadagna `1.4` → netto `+0.9`/tick, **cresce**;
-- a `light = 0.2` guadagna `0.4` < `0.5` di upkeep → **non sopravvive**.
-
-La soglia di sopravvivenza sta attorno a `light = 0.25`. Le righe basse devono quindi restare sotto quel valore: sono la **nicchia di luce**, verificata dal task 009.
+| File | Role |
+|------|------|
+| `src/world.rs` | Environment generation, inside or next to `SimWorld::new` |
+| `src/config.rs` | Gradient values (task 002) |
 
 ---
 
-## 🔨 Implementazione Suggerita
+## 🧩 Technical Context
 
-1. Interpolazione lineare sull'asse corrispondente. Attenzione al caso `height == 1` (divisione per zero) anche se non si presenta a `48×32`:
+- **Current behavior**: `SimWorld` allocates the grid (task 003), but environmental scalars are all zero.
+- **Desired behavior**: a grid with gradients that create spatial niches.
+
+### GDD §5.2 — Environmental layer
+
+> **Phase 0:** static gradients (e.g., high light at the top, temperature on a different axis) to create spatial heterogeneity → niches.
+> **Phase 1+:** slow diffusion of scalars (averaging with neighbors at a low rate), so environmental interventions propagate over time.
+
+The two gradients are **on different axes on purpose**: light vertical, temperature horizontal. This crossing is what generates distinct two-dimensional niches — a cold-loving photolithic species thrives at the top-left, a heat-loving one at the top-right.
+
+### Why the dark band matters
+
+With `metabolism_gain = 2.0` and `upkeep = 0.5` (GDD §5.9), a photolithic organism with `env_fit ≈ 1`:
+- at `light = 0.7` gains `1.4` → net `+0.9`/tick, **grows**;
+- at `light = 0.2` gains `0.4` < `0.5` upkeep → **doesn't survive**.
+
+The survival threshold sits around `light = 0.25`. The bottom rows must therefore stay below that value: they're the **light niche**, verified by task 009.
+
+---
+
+## 🔨 Suggested Implementation
+
+1. Linear interpolation along the relevant axis. Watch out for the `height == 1` case (division by zero) even though it doesn't occur at `48×32`:
 
    ```rust
    /// Static Phase 0 gradients: light falls top→bottom, temperature rises left→right.
@@ -83,9 +83,9 @@ La soglia di sopravvivenza sta attorno a `light = 0.25`. Le righe basse devono q
    }
    ```
 
-2. **Zona tossica.** In Fase 0 basta una zona fissa e leggibile — un rettangolo in un angolo, dimensione da `SimConfig`. La generazione procedurale delle zone estreme è Fase 3 (GDD §9). Metterla lontano dalla fascia luminosa più fertile, così da non falsare i test del task 009.
+2. **Toxic zone.** In Phase 0 a fixed, readable zone is enough — a rectangle in a corner, sized from `SimConfig`. Procedural generation of extreme zones is Phase 3 (GDD §9). Keep it far from the more fertile bright band, so it doesn't skew task 009's tests.
 
-3. **Punto d'innesto per la diffusione** — dichiararlo senza implementarlo, così la Fase 1 sa dove innestarsi:
+3. **Diffusion integration point** — declare it without implementing it, so Phase 1 knows where to hook in:
 
    ```rust
    /// Phase 1+: blend each scalar toward its neighbours' mean at `diffusion_rate`
@@ -95,28 +95,28 @@ La soglia di sopravvivenza sta attorno a `light = 0.25`. Le righe basse devono q
    }
    ```
 
-4. **Test**: `light` sulla riga 0 vale `0.9` e sull'ultima `0.2`; `temperature` sulla colonna 0 vale `0.2` e sull'ultima `0.8`; tutte le scalari restano in `[0,1]`; le celle della zona tossica valgono `0.7` e le altre `0.0`.
+4. **Tests**: `light` on row 0 is `0.9` and on the last row `0.2`; `temperature` on column 0 is `0.2` and on the last column `0.8`; all scalars stay in `[0,1]`; toxic-zone cells equal `0.7` and the rest `0.0`.
 
 ---
 
-## ⚠️ Vincoli e Attenzioni
+## ⚠️ Constraints and Caveats
 
-- **Tutte le scalari devono restare in `[0,1]`** (GDD §5.2): è l'assunzione su cui poggiano le formule del tick.
-- I valori vengono da `SimConfig`, **non scritti a mano qui** (invariante 3).
-- **Nessuna diffusione in Fase 0**: i gradienti sono statici. Implementarla ora renderebbe l'ambiente un bersaglio mobile proprio mentre si tara il tick.
-- La zona tossica non ha ancora alcun effetto sulla simulazione: nessun metabolismo la legge in Fase 0. È corretto — serve a rendere visibile la struttura dell'ambiente e sarà usata dalla Fase 1 in poi.
-
----
-
-## 🔗 Dipendenze
-
-- **Dipende da**: 003
-- **Blocca**: 005
+- **All scalars must stay in `[0,1]`** (GDD §5.2): it's the assumption the tick formulas rest on.
+- Values come from `SimConfig`, **not hand-written here** (invariant 3).
+- **No diffusion in Phase 0**: gradients are static. Implementing it now would make the environment a moving target right while the tick is being tuned.
+- The toxic zone has no effect on the simulation yet: no metabolism reads it in Phase 0. That's correct — it's there to make the environment's structure visible and will be used from Phase 1 onward.
 
 ---
 
-## 🤖 Come delegare questo task a Claude CLI
+## 🔗 Dependencies
+
+- **Depends on**: 003
+- **Blocks**: 005
+
+---
+
+## 🤖 How to delegate this task to Claude CLI
 
 ```bash
-claude "$(cat tasks/004-environment-gradients.md)"$'\n\nEsegui questo task nel progetto corrente.'
+claude "$(cat tasks/004-environment-gradients.md)"$'\n\nExecute this task in the current project.'
 ```

@@ -1,76 +1,76 @@
-# Task 003 — Tipi di dominio e resource `SimWorld`
+# Task 003 — Domain types and `SimWorld` resource
 
 > **ID**: `003`
-> **Categoria**: Architettura
-> **Priorità**: 🔴 P1
-> **Stima**: ~2h
-> **Assegnato a**: non assegnato
-> **Sessione**: —
+> **Category**: Architecture
+> **Priority**: 🔴 P1
+> **Estimate**: ~2h
+> **Assigned to**: unassigned
+> **Session**: —
 
 ---
 
-## 🎯 Obiettivo
+## 🎯 Objective
 
-Definire i tipi che descrivono il mondo simulato — griglia, celle, organismi, specie, metabolismi — e la resource **`SimWorld`** che li contiene, **incluso l'RNG seedato**.
+Define the types that describe the simulated world — grid, cells, organisms, species, metabolisms — and the **`SimWorld`** resource that holds them, **including the seeded RNG**.
 
-È il fondamento su cui poggiano tutti i task successivi. La decisione strutturale (`TECH_DESIGN.md` §3.1) è che **la griglia è una `Resource` con array densi, non entità ECS**: le entità Bevy serviranno solo alla resa (task 006).
+This is the foundation all subsequent tasks build on. The structural decision (`TECH_DESIGN.md` §3.1) is that **the grid is a `Resource` with dense arrays, not ECS entities**: Bevy entities will only serve rendering (task 006).
 
 ---
 
 ## 📋 Acceptance Criteria
 
-- [ ] `SimWorld::new(seed, &SimConfig)` costruisce un mondo `48×32`.
-- [ ] **Determinismo**: due `SimWorld::new(42, &cfg)` producono stato identico; seed diversi producono stato diverso. Coperto da test.
-- [ ] L'RNG è **conservato dentro `SimWorld`**, non creato al volo.
-- [ ] Esiste un helper riusabile per il **vicinato di Moore (8)** che gestisce correttamente i bordi; test unitario che verifica 3 vicini in un angolo, 5 su un lato, 8 al centro.
-- [ ] Doppio buffer predisposto: `SimWorld` può produrre uno snapshot e scrivere su un buffer successivo (task 005 lo userà).
-- [ ] **Nessun `use bevy::render` e nessun `bevy_egui`** in `src/world.rs`.
-- [ ] `SimWorld` è costruibile e usabile **senza `App` Bevy** (verificato dal fatto che i test non ne creano una).
-- [ ] `cargo clippy -- -D warnings` pulito.
+- [ ] `SimWorld::new(seed, &SimConfig)` builds a `48×32` world.
+- [ ] **Determinism**: two `SimWorld::new(42, &cfg)` produce identical state; different seeds produce different state. Covered by a test.
+- [ ] The RNG is **kept inside `SimWorld`**, not created on the fly.
+- [ ] A reusable **Moore neighborhood (8)** helper exists that handles borders correctly; unit test verifying 3 neighbors in a corner, 5 on an edge, 8 in the center.
+- [ ] Double buffering set up: `SimWorld` can produce a snapshot and write to a next buffer (task 005 will use it).
+- [ ] **No `use bevy::render` and no `bevy_egui`** in `src/world.rs`.
+- [ ] `SimWorld` is constructible and usable **without a Bevy `App`** (verified by the fact that the tests don't create one).
+- [ ] `cargo clippy -- -D warnings` clean.
 
 ---
 
-## 📁 File Rilevanti
+## 📁 Relevant Files
 
-| File | Ruolo |
-|------|-------|
-| `src/world.rs` | Tipi di dominio, `SimWorld`, `WorldPlugin` |
-| `src/config.rs` | `SimConfig`, già disponibile (task 002) |
-
----
-
-## 🧩 Contesto Tecnico
-
-- **Comportamento attuale**: `src/world.rs` è uno stub vuoto; `SimConfig` esiste.
-- **Comportamento desiderato**: `SimWorld` disponibile come resource, con griglia allocata e RNG seedato.
-
-### Il genoma di specie (GDD §5.3)
-
-Ogni specie è definita da:
-- **Metabolismo** — come ricava energia;
-- **Intervallo ambientale preferito** — `temp_optimum` + `temp_tolerance`, con fitness gaussiana attorno all'ottimo;
-- **Soglia di riproduzione**;
-- **Da 1 a 3 tag biochimici** — *l'unica cosa che conta per le interazioni tra specie* (GDD §5.5).
-
-Metabolismi e intervalli ambientali sono **leggibili** dal giocatore; i tag sono **opachi**.
-
-### I metabolismi (GDD §5.4)
-
-- `Photolithic` — ricava energia dalla `light` locale. Produttore primario.
-- `Predator` — ricava energia dagli organismi vicini.
-- `Decomposer` — ricava energia dai residui.
-
-Vanno definiti **tutti e tre come tipo** anche se in Fase 0 solo il fotolitico è attivo: evita un refactor in Fase 1.
-
-### Determinismo (GDD §5.7)
-
-> La simulazione è **deterministica** a parità di seed: RNG seedato conservato nello stato del mondo. Fondamentale per debug dell'emergenza, riproducibilità dei bug e condivisione di seed interessanti.
+| File | Role |
+|------|------|
+| `src/world.rs` | Domain types, `SimWorld`, `WorldPlugin` |
+| `src/config.rs` | `SimConfig`, already available (task 002) |
 
 ---
 
-## 🔨 Implementazione Suggerita
+## 🧩 Technical Context
 
-1. **Tipi base**
+- **Current behavior**: `src/world.rs` is an empty stub; `SimConfig` exists.
+- **Desired behavior**: `SimWorld` available as a resource, with an allocated grid and a seeded RNG.
+
+### The species genome (GDD §5.3)
+
+Each species is defined by:
+- **Metabolism** — how it derives energy;
+- **Preferred environmental range** — `temp_optimum` + `temp_tolerance`, with Gaussian fitness around the optimum;
+- **Reproduction threshold**;
+- **1 to 3 biochemical tags** — *the only thing that matters for interactions between species* (GDD §5.5).
+
+Metabolisms and environmental ranges are **readable** by the player; tags are **opaque**.
+
+### Metabolisms (GDD §5.4)
+
+- `Photolithic` — derives energy from local `light`. Primary producer.
+- `Predator` — derives energy from neighboring organisms.
+- `Decomposer` — derives energy from residue.
+
+All three must be defined **as a type** even though only the photolithic one is active in Phase 0: avoids a refactor in Phase 1.
+
+### Determinism (GDD §5.7)
+
+> The simulation is **deterministic** given the same seed: seeded RNG kept in the world state. Essential for debugging emergence, reproducing bugs, and sharing interesting seeds.
+
+---
+
+## 🔨 Suggested Implementation
+
+1. **Base types**
 
    ```rust
    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,7 +110,7 @@ Vanno definiti **tutti e tre come tipo** anche se in Fase 0 solo il fotolitico �
    }
    ```
 
-2. **`SimWorld`** — griglia densa indicizzata `y * width + x`:
+2. **`SimWorld`** — dense grid indexed by `y * width + x`:
 
    ```rust
    #[derive(Resource)]
@@ -127,47 +127,47 @@ Vanno definiti **tutti e tre come tipo** anche se in Fase 0 solo il fotolitico �
    }
    ```
 
-   Usare `StdRng::seed_from_u64` di `rand`: è riproducibile tra esecuzioni, a differenza di `SmallRng` su piattaforme diverse.
+   Use `rand`'s `StdRng::seed_from_u64`: it's reproducible across runs, unlike `SmallRng` on different platforms.
 
-3. **Accessori** — `get(x, y)`, `get_mut(x, y)`, `index(x, y)`, e l'RNG esposto solo tramite `&mut self` così che nessuno possa clonarlo.
+3. **Accessors** — `get(x, y)`, `get_mut(x, y)`, `index(x, y)`, and the RNG exposed only through `&mut self` so nobody can clone it.
 
-4. **Vicinato di Moore** — helper riusabile, il punto più facile da sbagliare ai bordi:
+4. **Moore neighborhood** — reusable helper, the easiest spot to get borders wrong:
 
    ```rust
    /// Moore neighbourhood (8 cells), clipped at the grid borders (GDD 5.1).
    pub fn moore_neighbours(&self, x: usize, y: usize) -> impl Iterator<Item = usize> + '_
    ```
 
-   Nessun wrap-around: la griglia ha bordi veri (una cella d'angolo ha 3 vicini). Il GDD non prevede topologia toroidale.
+   No wrap-around: the grid has real borders (a corner cell has 3 neighbors). The GDD doesn't call for toroidal topology.
 
-5. **`WorldPlugin`** inserisce `SimWorld` in `Startup`, leggendo `SimConfig`. Il seed di default può venire da un valore fisso in Fase 0 (il reseed interattivo è il task 007).
+5. **`WorldPlugin`** inserts `SimWorld` in `Startup`, reading `SimConfig`. The default seed can come from a fixed value in Phase 0 (interactive reseeding is task 007).
 
-6. **Test** in `src/world.rs`:
-   - due mondi con lo stesso seed sono identici; con seed diversi, no;
-   - conteggio dei vicini di Moore: `(0,0)` → 3, bordo → 5, centro → 8.
-
----
-
-## ⚠️ Vincoli e Attenzioni
-
-- **Invariante 1 (`TECH_DESIGN.md` §5)**: l'RNG vive in `SimWorld`. Niente `rand::rng()` / `thread_rng` da nessuna parte.
-- **Invariante 2**: `src/world.rs` non dipende dalla resa. L'unico import Bevy ammesso è quello per `derive(Resource)`.
-- **Niente `HashMap` per la griglia**: array densi. L'ordine di iterazione di una mappa è una delle vie più comuni alla perdita di determinismo.
-- Verificare l'API di `rand` risolta dal task 001: da `rand` 0.9 alcuni nomi sono cambiati (`thread_rng` → `rng`, `gen` → `random`).
-- **Una sola occupazione per cella** (GDD §5.1): `Option<Organism>`, mai una collezione.
-- In Fase 0 le specie disponibili si riducono a una sola, fotolitica. Il registro `species` è comunque un `Vec` fin da ora.
+6. **Tests** in `src/world.rs`:
+   - two worlds with the same seed are identical; with different seeds, they aren't;
+   - Moore neighbor count: `(0,0)` → 3, edge → 5, center → 8.
 
 ---
 
-## 🔗 Dipendenze
+## ⚠️ Constraints and Caveats
 
-- **Dipende da**: 002
-- **Blocca**: 004, 006
+- **Invariant 1 (`TECH_DESIGN.md` §5)**: the RNG lives in `SimWorld`. No `rand::rng()` / `thread_rng` anywhere.
+- **Invariant 2**: `src/world.rs` doesn't depend on rendering. The only Bevy import allowed is the one for `derive(Resource)`.
+- **No `HashMap` for the grid**: dense arrays. A map's iteration order is one of the most common ways to lose determinism.
+- Verify the `rand` API resolved by task 001: from `rand` 0.9 some names changed (`thread_rng` → `rng`, `gen` → `random`).
+- **Single occupancy per cell** (GDD §5.1): `Option<Organism>`, never a collection.
+- In Phase 0 available species reduce to just one, photolithic. The `species` registry is still a `Vec` from the start regardless.
 
 ---
 
-## 🤖 Come delegare questo task a Claude CLI
+## 🔗 Dependencies
+
+- **Depends on**: 002
+- **Blocks**: 004, 006
+
+---
+
+## 🤖 How to delegate this task to Claude CLI
 
 ```bash
-claude "$(cat tasks/003-domain-simworld.md)"$'\n\nEsegui questo task nel progetto corrente.'
+claude "$(cat tasks/003-domain-simworld.md)"$'\n\nExecute this task in the current project.'
 ```

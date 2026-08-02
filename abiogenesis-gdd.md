@@ -1,440 +1,440 @@
 # Abiogenesis — Game Design Document
 
-**Working title:** Abiogenesis *(provvisorio, da confermare)*
-**Genere:** Roguelike di simulazione emergente / laboratorio di xenobiologia
-**Piattaforma:** Desktop, finestra grafica 2D
+**Working title:** Abiogenesis *(provisional, to be confirmed)*
+**Genre:** Emergent-simulation roguelike / xenobiology lab
+**Platform:** Desktop, 2D graphical window
 **Tech:** Rust + Bevy (ECS)
-**Modalità:** Single-player, a ere, con obiettivi e meta-progressione leggera
-**Stato del documento:** v0.4 — design pre-implementazione (decisioni chiuse + baseline numerica + esempio di partita)
+**Mode:** Single-player, era-based, with objectives and light meta-progression
+**Document status:** v0.4 — pre-implementation design (closed decisions + numeric baseline + playthrough example)
 
-> Legenda dello stato di ogni scelta:
-> **[DECISO]** concordato e stabile · **[PROPOSTA]** baseline che propongo, da approvare/correggere · **[APERTO]** da decidere insieme
+> Legend for the status of each decision:
+> **[DECIDED]** agreed and stable · **[PROPOSED]** baseline I'm proposing, to be approved/corrected · **[OPEN]** to be decided together
 
 ### Changelog
 
-- **v0.4** — **Cambio di stack: da terminale (`ratatui`) a finestra grafica 2D con Bevy e modello ECS.** Ne conseguono revisioni a §5.1 (dimensione della griglia), §11 (presentazione) e §12 (stack e architettura), più la correzione di §13 sullo stato dello scaffold. **Il design non cambia:** §§1–10 e §§14–16 — pilastri, core loop, modello di simulazione, formule del tick, baseline numerica §5.9, taccuino, obiettivi, esempio di partita — restano validi parola per parola. Il pilastro 3 ("il divertimento sta nel sistema, non nella grafica") resta pienamente in vigore: quadrati colorati, zero asset artistici.
-- **v0.3** — Decisioni di design chiuse, baseline numerica (§5.9), esempio di partita (§16).
+- **v0.4** — **Stack change: from terminal (`ratatui`) to a 2D graphical window with Bevy and an ECS model.** This drives revisions to §5.1 (grid size), §11 (presentation), and §12 (stack and architecture), plus a correction to §13 on the scaffold's status. **The design itself does not change:** §§1–10 and §§14–16 — pillars, core loop, simulation model, tick formulas, numeric baseline §5.9, notebook, objectives, playthrough example — remain valid word for word. Pillar 3 ("the fun is in the system, not the graphics") remains fully in effect: colored squares, zero art assets.
+- **v0.3** — Closed design decisions, numeric baseline (§5.9), playthrough example (§16).
 
 ---
 
-## 1. Visione
+## 1. Vision
 
-Sei uno xenobiologo che semina la vita su mondi alieni e deve scoprire, per esperimenti, quale biochimica ne emerge. Ogni mondo ha **regole di interazione biochimica nascoste e diverse**: il gioco consiste nel fare reverse-engineering di quelle regole seminando organismi, osservando l'ecosistema che vive di vita propria, formulando ipotesi e verificandole con interventi mirati — il tutto per raggiungere gli obiettivi che ogni mondo pone.
+You are a xenobiologist seeding life on alien worlds, tasked with discovering, through experiments, what biochemistry emerges from it. Each world has **hidden, different biochemical interaction rules**: the game consists of reverse-engineering those rules by seeding organisms, watching an ecosystem live its own life, forming hypotheses, and testing them with targeted interventions — all in pursuit of the objectives each world sets.
 
-Il piacere centrale è il doppio mistero: il mistero di **cosa succederà** (l'emergenza dinamica di un ecosistema imprevedibile) sovrapposto al mistero delle **regole stesse** (la deduzione della matrice biochimica segreta). È Liu Cixin in forma di piastra di Petri.
+The central pleasure is the double mystery: the mystery of **what will happen** (the dynamic emergence of an unpredictable ecosystem) layered over the mystery of **the rules themselves** (deducing the secret biochemical matrix). It's Liu Cixin in the shape of a Petri dish.
 
-### Pilastri di design **[DECISO]**
+### Design pillars **[DECIDED]**
 
-1. **Imprevedibilità che nasce dalle mie scelte.** L'evoluzione non è scriptata: emerge dalle decisioni del giocatore incrociate con regole nascoste. Nessuna partita è uguale.
-2. **Scoperta come progressione.** Non si avanza accumulando numeri, ma *capendo*. Il taccuino che si riempie è la barra di avanzamento.
-3. **Il divertimento sta nel sistema, non nella grafica.** Presentazione minimale (quadrati colorati, zero asset artistici), profondità nella simulazione.
-4. **Rigiocabilità dalla generazione procedurale vincolata.** Le regole di ogni mondo sono generate, non scritte a mano: contenuto infinito senza mesi di authoring.
+1. **Unpredictability born from my choices.** Evolution isn't scripted: it emerges from the player's decisions crossed with hidden rules. No two playthroughs are alike.
+2. **Discovery as progression.** You don't advance by accumulating numbers, but by *understanding*. The notebook filling up is the progress bar.
+3. **The fun is in the system, not the graphics.** Minimal presentation (colored squares, zero art assets), depth in the simulation.
+4. **Replayability from constrained procedural generation.** Each world's rules are generated, not hand-written: infinite content without months of authoring.
 
-### Cosa NON è **[DECISO]**
+### What it is NOT **[DECIDED]**
 
-- Non è un clicker/idle a numeri crescenti.
-- Non è un sandbox puramente contemplativo: c'è pressione, obiettivi, vittoria e sconfitta. *(Abbiamo esplicitamente scelto la versione con obiettivi rispetto alla versione zen.)*
-- Non è un gioco a forte impatto grafico.
-
----
-
-## 2. Il giocatore e la fantasia
-
-**Fantasia:** "Sono uno scienziato di fronte a una biochimica aliena che non capisco, e la decifro coltivandola." Curiosità, metodo scientifico, quel momento in cui un'ipotesi si conferma e un pezzo di sistema si illumina.
-
-**Giocatore-tipo:** chi ama i puzzle di deduzione, la simulazione emergente (Dwarf Fortress in miniatura), la hard-SF, l'ottimizzazione di sistemi. Persone che trovano ipnotico osservare un sistema che si auto-organizza.
+- Not a clicker/idle game with ever-growing numbers.
+- Not a purely contemplative sandbox: there is pressure, objectives, victory and defeat. *(We explicitly chose the objectives-driven version over the zen version.)*
+- Not a graphically driven game.
 
 ---
 
-## 3. Core loop **[DECISO]**
+## 2. The player and the fantasy
 
-Il ciclo fondamentale, ripetuto dentro ogni mondo:
+**Fantasy:** "I'm a scientist facing an alien biochemistry I don't understand, and I decode it by cultivating it." Curiosity, the scientific method, that moment when a hypothesis is confirmed and a piece of the system lights up.
 
-1. **Semina** — collochi organismi sulla griglia (cosa, dove, quando).
-2. **Avanza un'era** — la simulazione procede di *N* tick; osservi l'ecosistema muoversi ed evolvere.
-3. **Registra** — annoti nel taccuino cosa hai osservato (chi è fiorito, chi è collassato, quali adiacenze sembrano avere effetto).
-4. **Ipotizza & interviene** — formuli un'ipotesi sulle regole nascoste e la metti alla prova con un intervento mirato (stress ambientale, rimozione, mutazione, nuova semina).
-5. **Obiettivo** — quando l'obiettivo del mondo è soddisfatto, passi al mondo successivo, più profondo e più ostile.
-
-Il fulcro esperienziale è il sottociclo **ipotesi → esperimento → *aha***, incastonato nell'imprevedibilità di un ecosistema che vive da solo.
+**Target player:** people who love deduction puzzles, emergent simulation (Dwarf Fortress in miniature), hard SF, systems optimization. People who find it hypnotic to watch a self-organizing system.
 
 ---
 
-## 4. Modello del tempo: le ere **[DECISO]**
+## 3. Core loop **[DECIDED]**
 
-Il tempo avanza a **ere**: il giocatore mette in coda una o più azioni, poi fa avanzare la simulazione di *N* tick in blocco e osserva il risultato. Questo fa **coincidere il modello del tempo col loop mentale**: pianifichi (ipotesi), esegui (era), osservi (risultato).
+The fundamental cycle, repeated within each world:
 
-- **Animazione durante l'era [DECISO]:** l'avanzamento dei tick viene mostrato tick-per-tick (rapido), così si conserva la sensazione di "sistema che respira", ma il *controllo* resta a scatti deliberati.
-- **Lunghezza dell'era [DECISO struttura / coefficiente da tarare]:** `ERA_TICKS = 25` come default, regolabile; esponibile al giocatore come scelta ("avanza di 1 / 10 / 25 tick"). Il valore preciso è un coefficiente da validare in playtest.
-- **Modalità real-time [APERTO / futuro]:** sopra questa architettura costa poco aggiungerla in seguito come opzione. Non è nell'MVP.
+1. **Seed** — place organisms on the grid (what, where, when).
+2. **Advance an era** — the simulation proceeds by *N* ticks; watch the ecosystem move and evolve.
+3. **Record** — note in the notebook what you observed (who bloomed, who collapsed, which adjacencies seem to have an effect).
+4. **Hypothesize & intervene** — form a hypothesis about the hidden rules and put it to the test with a targeted intervention (environmental stress, removal, mutation, new seeding).
+5. **Objective** — once the world's objective is met, move to the next world, deeper and more hostile.
+
+The experiential fulcrum is the sub-loop **hypothesis → experiment → *aha***, embedded in the unpredictability of an ecosystem that lives on its own.
 
 ---
 
-## 5. Modello di simulazione
+## 4. Time model: eras **[DECIDED]**
 
-### 5.1 Griglia e celle **[DECISO]**
+Time advances in **eras**: the player queues one or more actions, then advances the simulation by *N* ticks in a block and observes the result. This **makes the time model coincide with the mental loop**: plan (hypothesis), execute (era), observe (result).
 
-Griglia 2D di celle. Ogni cella contiene:
+- **Animation during the era [DECIDED]:** tick advancement is shown tick-by-tick (fast), preserving the feeling of a "breathing system," while *control* remains deliberately step-wise.
+- **Era length [structure DECIDED / coefficient to be tuned]:** `ERA_TICKS = 25` as default, adjustable; exposed to the player as a choice ("advance by 1 / 10 / 25 ticks"). The exact value is a coefficient to validate in playtesting.
+- **Real-time mode [OPEN / future]:** on top of this architecture it's cheap to add later as an option. Not in the MVP.
 
-- uno **strato ambientale** (poche scalari continue);
-- al più **un organismo** (occupazione singola per cella), con un livello di energia/popolazione.
+---
 
-**Dimensione [DECISO / dimensione finale empirica]:** **48×32** fin da subito, come costante di configurazione. *(Revisione v0.4: la vecchia scaletta "40×20 in Fase 0 → rendering half-block per arrivare a ~48×32" era interamente un vincolo di larghezza del terminale — 80 colonne a 2 caratteri per cella. Con una finestra grafica quel vincolo decade e si parte direttamente dal target.)* Più spazio serve all'emergenza: i pattern spaziali (tipo Lotka–Volterra) hanno bisogno di respiro e le griglie troppo piccole muoiono per rumore stocastico. La dimensione finale resta in parte empirica.
-**Vicinato [DECISO]:** Moore (8 vicini) per interazioni e riproduzione.
+## 5. Simulation model
 
-### 5.2 Strato ambientale **[DECISO struttura / parametri in §5.9]**
+### 5.1 Grid and cells **[DECIDED]**
 
-Poche scalari per cella, in `[0,1]`:
+2D grid of cells. Each cell contains:
+
+- an **environmental layer** (a few continuous scalars);
+- at most **one organism** (single occupancy per cell), with an energy/population level.
+
+**Size [DECIDED / final size empirical]:** **48×32** from the start, as a configuration constant. *(v0.4 revision: the old plan "40×20 in Phase 0 → half-block rendering to reach ~48×32" was entirely a terminal-width constraint — 80 columns at 2 characters per cell. With a graphical window that constraint disappears and we start directly at the target.)* Emergence needs more room: spatial patterns (Lotka–Volterra-like) need breathing space, and grids that are too small die from stochastic noise. The final size remains partly empirical.
+**Neighborhood [DECIDED]:** Moore (8 neighbors) for interactions and reproduction.
+
+### 5.2 Environmental layer **[structure DECIDED / parameters in §5.9]**
+
+A few scalars per cell, in `[0,1]`:
 
 - `temperature`
 - `light`
 - `toxicity`
 
-**Fase 0:** gradienti statici (es. luce alta in alto, temperatura su un asse diverso) per creare eterogeneità spaziale → nicchie.
-**Fase 1+:** diffusione lenta delle scalari (media coi vicini a rate basso), così gli interventi ambientali si propagano nel tempo.
+**Phase 0:** static gradients (e.g., high light at the top, temperature on a different axis) to create spatial heterogeneity → niches.
+**Phase 1+:** slow diffusion of scalars (averaging with neighbors at a low rate), so environmental interventions propagate over time.
 
-### 5.3 Genoma di specie **[DECISO]**
+### 5.3 Species genome **[DECIDED]**
 
-Ogni specie è definita da un piccolo genoma:
+Each species is defined by a small genome:
 
-- **Metabolismo** (uno tra i tipi sotto) — come ricava energia.
-- **Intervallo ambientale preferito** — es. `temp_optimum` + `temp_tolerance` (fitness gaussiana attorno all'ottimo).
-- **Soglia di riproduzione** — energia oltre la quale si riproduce.
-- **Da 1 a 3 tag biochimici** — *l'unica cosa che conta per le interazioni tra specie.*
+- **Metabolism** (one of the types below) — how it derives energy.
+- **Preferred environmental range** — e.g., `temp_optimum` + `temp_tolerance` (Gaussian fitness around the optimum).
+- **Reproduction threshold** — energy above which it reproduces.
+- **1 to 3 biochemical tags** — *the only thing that matters for interactions between species.*
 
-I metabolismi e gli intervalli ambientali sono **leggibili** (ancore per il giocatore). I tag sono **opachi** (vedi §5.5).
+Metabolisms and environmental ranges are **readable** (anchors for the player). Tags are **opaque** (see §5.5).
 
-### 5.4 Metabolismi **[DECISO]**
+### 5.4 Metabolisms **[DECIDED]**
 
-- **Fotolitico** (`Photolithic`) — ricava energia dalla `light` locale. È il produttore primario.
-- **Predatore** (`Predator`) — ricava energia dagli organismi vicini (ne consuma l'energia).
-- **Decompositore** (`Decomposer`) — ricava energia dalla materia morta / residui.
+- **Photolithic** (`Photolithic`) — derives energy from local `light`. The primary producer.
+- **Predator** (`Predator`) — derives energy from neighboring organisms (consumes their energy).
+- **Decomposer** (`Decomposer`) — derives energy from dead matter / residue.
 
-*(Set iniziale. Se ne possono aggiungere altri — es. chemiolitotrofo legato alla toxicity — come contenuto sbloccabile.)*
+*(Starting set. Others can be added — e.g., a chemolithotroph tied to toxicity — as unlockable content.)*
 
-### 5.5 Tag e matrice nascosta **[DECISO]** — *il cuore del gioco*
+### 5.5 Tags and the hidden matrix **[DECIDED]** — *the heart of the game*
 
-Si distinguono due livelli, per non confondere varietà e difficoltà:
+Two levels are distinguished, so as not to conflate variety and difficulty:
 
-- **Pool globale di tag [DECISO]:** ~**10 glifi** biochimici totali nel gioco, per dare varietà visiva tra i mondi.
-- **Tag attivi per mondo [DECISO]:** solo un sottoinsieme è effettivamente in gioco in un dato mondo. **La difficoltà cresce aumentando i tag attivi, non il pool.** Baseline: **5 tag attivi** nei primi mondi, fino a **~8** nei mondi tardi.
+- **Global tag pool [DECIDED]:** ~**10 glyphs** total biochemical tags in the game, to give visual variety between worlds.
+- **Active tags per world [DECIDED]:** only a subset is actually in play in a given world. **Difficulty grows by increasing active tags, not the pool.** Baseline: **5 active tags** in the first worlds, up to **~8** in late worlds.
 
-Ogni specie porta 1–3 tag (tra quelli attivi nel mondo).
+Each species carries 1–3 tags (from those active in the world).
 
-All'inizio di ogni mondo si sorteggia una **matrice segreta `tag × tag`**: per ogni coppia ordinata di tag, un effetto (positivo/negativo, con intensità) che si applica quando due organismi che portano quei tag sono **adiacenti**.
+At the start of each world, a **secret `tag × tag` matrix** is rolled: for each ordered pair of tags, an effect (positive/negative, with intensity) that applies when two organisms carrying those tags are **adjacent**.
 
-- **Effetti direzionali [DECISO]:** la matrice è **asimmetrica** — "A avvelena B" non implica "B avvelena A". Quindi le relazioni fuori diagonale sono ~**T²**: con 5 tag attivi ≈ **20 relazioni** (decifrabili in una run); con 8 ≈ **56** (troppe da decodificare *tutte*, ma non serve — al giocatore basta la parte rilevante per l'obiettivo e per le specie in campo). È una generalizzazione direzionale di sasso-carta-forbici: chi catalizza chi, chi avvelena chi.
-- I tag sono mostrati come **glifi/colori alieni senza nome**: il giocatore ne impara l'effetto solo empiricamente.
-- La matrice è **la cosa che il giocatore decodifica** per esperimenti. È il mistero delle regole.
-- **Grado di opacità [DECISO]:** la matrice parte nascosta, ma **si rivela progressivamente** man mano che il taccuino conferma le relazioni (vedi §7). Metabolismi e intervalli ambientali restano sempre leggibili come ancore. La rivelazione progressiva del taccuino *è* la soluzione all'opacità — non sono due meccaniche separate.
+- **Directional effects [DECIDED]:** the matrix is **asymmetric** — "A poisons B" doesn't imply "B poisons A." So off-diagonal relationships are ~**T²**: with 5 active tags ≈ **20 relationships** (decodable in one run); with 8 ≈ **56** (too many to decode *all* of them, but that's not needed — the player only needs the part relevant to the objective and the species in play). It's a directional generalization of rock-paper-scissors: who catalyzes whom, who poisons whom.
+- Tags are shown as **nameless alien glyphs/colors**: the player learns their effect only empirically.
+- The matrix is **the thing the player decodes** through experiments. It's the mystery of the rules.
+- **Degree of opacity [DECIDED]:** the matrix starts hidden, but **is progressively revealed** as the notebook confirms relationships (see §7). Metabolisms and environmental ranges always remain readable as anchors. The notebook's progressive revelation *is* the solution to the opacity — these aren't two separate mechanics.
 
-### 5.6 Algoritmo del tick **[DECISO struttura / coefficienti da tarare]**
+### 5.6 Tick algorithm **[structure DECIDED / coefficients to be tuned]**
 
-La **struttura** è decisa; i **coefficienti numerici** sono una baseline da validare in playtest (il tuning è il lavoro vero — vedi §13). Due decisioni di struttura, che sono scelte di *design* e non di tuning:
+The **structure** is decided; the **numeric coefficients** are a baseline to validate in playtesting (tuning is the real work — see §13). Two structural decisions, which are *design* choices, not tuning:
 
-- **Effetto matrice additivo e lineare [DECISO]:** l'effetto di adiacenza è **additivo e indipendente per ogni coppia adiacente** (ogni A-vicino-a-B = ±k fisso, lineare nel numero di vicini), **non moltiplicativo**. Il moltiplicativo sarebbe più "realistico" ma accoppia gli effetti e rende la deduzione quasi impossibile; l'additivo è *leggibile* — il giocatore può ragionare "ogni A accanto mi costa circa 2 di energia". Il design serve alla deduzione.
-- **Coefficienti centralizzati [DECISO]:** tutti i coefficienti sono costanti nominate in un unico punto (o file di config, idealmente ricaricabile a caldo), così il tuning finale è rapido.
+- **Additive and linear matrix effect [DECIDED]:** the adjacency effect is **additive and independent for each adjacent pair** (every A-next-to-B = a fixed ±k, linear in the number of neighbors), **not multiplicative**. Multiplicative would be more "realistic" but couples the effects and makes deduction nearly impossible; additive is *readable* — the player can reason "each A next to me costs about 2 energy." The design serves deduction.
+- **Centralized coefficients [DECIDED]:** all coefficients are named constants in a single place (or config file, ideally hot-reloadable), so final tuning is fast.
 
 
-Per ogni cella occupata:
+For each occupied cell:
 
-1. **Fitness ambientale:** `env_fit = gaussian(temperature, temp_optimum, temp_tolerance)` ∈ `[0,1]`.
-2. **Guadagno metabolico** (dipende dal metabolismo):
-   - *Fotolitico:* `gain = light * metabolism_gain * env_fit`.
-   - *Predatore:* preleva energia dai vicini occupati (entro un cap), pesata da `env_fit`.
-   - *Decompositore:* preleva dai residui/materia morta nella cella o nei vicini.
-3. **Effetto della matrice nascosta:** per ogni vicino occupato, per ogni coppia di tag (mio × suo), somma l'effetto dalla matrice segreta → `interaction_delta` (può essere + o −).
-4. **Costi:** `upkeep` (costo base per tick) + `crowding_penalty = crowd_factor * n_vicini_occupati` (carrying capacity).
-5. **Aggiornamento energia:** `energy += gain + interaction_delta − upkeep − crowding_penalty`.
-6. **Morte:** se `energy <= 0` → l'organismo muore (la cella si libera; opzionale: lascia residui per i decompositori).
-7. **Riproduzione:** se `energy >= repro_threshold` ed esiste un vicino vuoto → genera un figlio in un vicino vuoto (scelta casuale seedata) con `repro_cost` energia, sottratta al genitore. *(Fase futura: possibilità di mutazione del genoma del figlio.)*
+1. **Environmental fitness:** `env_fit = gaussian(temperature, temp_optimum, temp_tolerance)` ∈ `[0,1]`.
+2. **Metabolic gain** (depends on metabolism):
+   - *Photolithic:* `gain = light * metabolism_gain * env_fit`.
+   - *Predator:* draws energy from occupied neighbors (within a cap), weighted by `env_fit`.
+   - *Decomposer:* draws from residue/dead matter in the cell or its neighbors.
+3. **Hidden matrix effect:** for each occupied neighbor, for each tag pair (mine × theirs), sum the effect from the secret matrix → `interaction_delta` (can be + or −).
+4. **Costs:** `upkeep` (base cost per tick) + `crowding_penalty = crowd_factor * n_occupied_neighbors` (carrying capacity).
+5. **Energy update:** `energy += gain + interaction_delta − upkeep − crowding_penalty`.
+6. **Death:** if `energy <= 0` → the organism dies (the cell frees up; optional: leaves residue for decomposers).
+7. **Reproduction:** if `energy >= repro_threshold` and an empty neighbor exists → spawn a child in an empty neighbor (seeded random choice) with `repro_cost` energy, subtracted from the parent. *(Future phase: possible mutation of the child's genome.)*
 
-**Ordine di elaborazione [PROPOSTA]:** iterazione in ordine mescolato (seedato) con guardia "nato/agito in questo tick" perché i neonati non agiscano nello stesso tick; oppure doppio buffer (snapshot → next). Da scegliere in implementazione privilegiando correttezza e determinismo.
+**Processing order [PROPOSED]:** iteration in shuffled (seeded) order with a "born/acted this tick" guard so newborns don't act in the same tick; or double buffering (snapshot → next). To be chosen at implementation time, favoring correctness and determinism.
 
-### 5.7 Determinismo **[DECISO]**
+### 5.7 Determinism **[DECIDED]**
 
-La simulazione è **deterministica** a parità di seed: RNG seedato conservato nello stato del mondo. Fondamentale per debug dell'emergenza, riproducibilità dei bug e (in prospettiva) condivisione di seed interessanti.
+The simulation is **deterministic** given the same seed: seeded RNG kept in the world state. Essential for debugging emergence, reproducing bugs, and (down the line) sharing interesting seeds.
 
-### 5.8 Anti-degenerazione **[DECISO]** — *la difesa contro il rischio principale*
+### 5.8 Anti-degeneration **[DECIDED]** — *the defense against the main risk*
 
-Il rischio numero uno dell'emergenza è il collasso in due esiti noiosi: **"muore tutto"** oppure **"una specie domina"**. Leve sistemiche per evitarli:
+The number-one risk of emergence is collapsing into two boring outcomes: **"everything dies"** or **"one species dominates."** Systemic levers to avoid them:
 
-- **Vincolo di ciclicità sulla matrice:** la generazione garantisce almeno una relazione **ciclica non transitiva** (A batte B, B batte C, C batte A). Matematicamente è ciò che sostiene la coesistenza.
-- **Eterogeneità ambientale → nicchie:** gradienti/diffusione fanno sì che specie diverse prosperino in zone diverse.
-- **Carrying capacity:** la penalità da affollamento impedisce la crescita illimitata di una singola specie.
+- **Cyclicity constraint on the matrix:** generation guarantees at least one **non-transitive cyclic relationship** (A beats B, B beats C, C beats A). Mathematically, this is what sustains coexistence.
+- **Environmental heterogeneity → niches:** gradients/diffusion make different species thrive in different zones.
+- **Carrying capacity:** the crowding penalty prevents unbounded growth of a single species.
 
-Queste tre manopole sono il principale oggetto del tuning finale.
+These three levers are the main object of final tuning.
 
-### 5.9 Costanti di partenza (baseline) **[baseline plausibile / da validare in playtest]**
+### 5.9 Starting constants (baseline) **[plausible baseline / to be validated in playtesting]**
 
-Valori iniziali coerenti tra loro (verificati concettualmente perché una fioritura fotolitica cresca in spazio libero e si stabilizzi per affollamento, e perché un −2 di matrice sia visibile ma non insta-letale). In implementazione vivono tutti in un unico punto di config (§5.6), idealmente ricaricabile a caldo.
+Initial values that are mutually coherent (conceptually verified so that a photolithic bloom grows in open space and stabilizes from crowding, and so that a matrix −2 is visible but not insta-lethal). In implementation they all live in a single config location (§5.6), ideally hot-reloadable.
 
-**Ambiente**
+**Environment**
 
-| Costante | Valore | Note |
+| Constant | Value | Notes |
 |---|---|---|
-| Scala scalari | `[0,1]` | temperature, light, toxicity |
-| Diffusione ambientale (Fase 1+) | `0.05` / tick | blend lento con la media dei vicini |
-| Gradiente luce (Fase 0) | `0.9` (alto) → `0.2` (basso) | crea nicchia verticale |
-| Gradiente temperatura (Fase 0) | `0.2` (sx) → `0.8` (dx) | crea nicchia orizzontale |
-| Zona tossica | `toxicity = 0.7` | resto `0.0` |
+| Scalar range | `[0,1]` | temperature, light, toxicity |
+| Environmental diffusion (Phase 1+) | `0.05` / tick | slow blend with neighbor average |
+| Light gradient (Phase 0) | `0.9` (high) → `0.2` (low) | creates a vertical niche |
+| Temperature gradient (Phase 0) | `0.2` (left) → `0.8` (right) | creates a horizontal niche |
+| Toxic zone | `toxicity = 0.7` | elsewhere `0.0` |
 
-**Tempo e azioni**
+**Time and actions**
 
-| Costante | Valore | Note |
+| Constant | Value | Notes |
 |---|---|---|
-| `ERA_TICKS` | `25` | tick per era |
-| Budget ere / mondo | `40` (iniziali) → `25` (tardi) | finito: dà tensione roguelike |
-| Budget punti / era | `3` | |
-| Costo azioni | seed `1`, stress `1`, cull `1`, splice `2` | splice tarabile fino a `3` |
+| `ERA_TICKS` | `25` | ticks per era |
+| Era budget / world | `40` (early) → `25` (late) | finite: gives roguelike tension |
+| Point budget / era | `3` | |
+| Action costs | seed `1`, stress `1`, cull `1`, splice `2` | splice tunable up to `3` |
 
-**Energia e metabolismo** (per organismo)
+**Energy and metabolism** (per organism)
 
-| Costante | Valore | Note |
+| Constant | Value | Notes |
 |---|---|---|
-| Energia al seed | `5.0` | |
-| `upkeep` base | `0.5` / tick | costo di mantenimento |
-| `crowd_factor` | `0.15` / vicino occupato | carrying capacity |
-| `repro_threshold` | `10.0` | energia per riprodursi |
-| `repro_cost` (al figlio) | `5.0` | sottratta al genitore |
-| Fotolitico `metabolism_gain` | `2.0` | `gain = light · gain · env_fit` |
-| Predatore `drain_cap` | `2.0` / tick, `upkeep 0.7` | preleva dai vicini |
-| Decompositore `extract_rate` | `1.5` / tick, `upkeep 0.5` | dai residui |
-| Residuo alla morte | `3.0`, decade `0.2` / tick | nutre i decompositori |
+| Energy at seeding | `5.0` | |
+| Base `upkeep` | `0.5` / tick | maintenance cost |
+| `crowd_factor` | `0.15` / occupied neighbor | carrying capacity |
+| `repro_threshold` | `10.0` | energy needed to reproduce |
+| `repro_cost` (to the child) | `5.0` | subtracted from the parent |
+| Photolithic `metabolism_gain` | `2.0` | `gain = light · gain · env_fit` |
+| Predator `drain_cap` | `2.0` / tick, `upkeep 0.7` | draws from neighbors |
+| Decomposer `extract_rate` | `1.5` / tick, `upkeep 0.5` | from residue |
+| Residue on death | `3.0`, decays `0.2` / tick | feeds decomposers |
 | `env_fit` | `exp(−(temp−temp_opt)² / (2·temp_tol²))` | `temp_tol` (σ) default `0.15` |
 
-*Verifica rapida:* fotolitico isolato con `light≈0.7`, `env_fit≈1` → `gain≈1.4`, netto `≈+0.9`/tick (cresce); con 6–8 vicini → netto `≈−0.15`/tick (si ferma → carrying capacity). In zona buia (`light 0.2`) → `gain 0.4 < upkeep 0.5` → non sopravvive (nicchia di luce). Predatore senza prede: `gain 0 − upkeep 0.7` → collassa in ~7 tick (dinamica preda-predatore).
+*Quick check:* an isolated photolithic organism with `light≈0.7`, `env_fit≈1` → `gain≈1.4`, net `≈+0.9`/tick (grows); with 6–8 neighbors → net `≈−0.15`/tick (stalls → carrying capacity). In a dark zone (`light 0.2`) → `gain 0.4 < upkeep 0.5` → doesn't survive (light niche). A predator with no prey: `gain 0 − upkeep 0.7` → collapses in ~7 ticks (prey-predator dynamic).
 
-**Tag e matrice**
+**Tags and matrix**
 
-| Costante | Valore | Note |
+| Constant | Value | Notes |
 |---|---|---|
-| Pool globale tag | `10` glifi | varietà tra mondi |
-| Tag attivi / mondo | `5` (iniziali) → `8` (tardi) | leva di difficoltà |
-| Tag per specie | `1–3` | |
-| Intensità effetto / adiacenza | interi in `{−2,−1,0,+1,+2}` | additivo (§5.6) |
-| Densità matrice | ~`40%` coppie non nulle | resto `0` |
-| Vincolo di generazione | ≥1 ciclo RPS negativo garantito | coesistenza (§5.8) |
+| Global tag pool | `10` glyphs | variety across worlds |
+| Active tags / world | `5` (early) → `8` (late) | difficulty lever |
+| Tags per species | `1–3` | |
+| Effect intensity / adjacency | integers in `{−2,−1,0,+1,+2}` | additive (§5.6) |
+| Matrix density | ~`40%` non-zero pairs | rest `0` |
+| Generation constraint | ≥1 negative RPS cycle guaranteed | coexistence (§5.8) |
 
-**Taccuino**
+**Notebook**
 
-| Costante | Valore | Note |
+| Constant | Value | Notes |
 |---|---|---|
-| Soglia di conferma / cella | `3.0` di evidenza cumulata | |
-| Peso di un'osservazione | `1 / (1 + n_confonditori_adiacenti)` | premia gli esperimenti puliti |
-| Stati cella | `?` sconosciuto · `0` nessun effetto · `±?` ipotesi · `±!` confermato | |
+| Confirmation threshold / cell | `3.0` cumulative evidence | |
+| Weight of one observation | `1 / (1 + n_adjacent_confounders)` | rewards clean experiments |
+| Cell states | `?` unknown · `0` no effect · `±?` hypothesis · `±!` confirmed | |
 
-**Griglia**
+**Grid**
 
-| Costante | Valore | Note |
+| Constant | Value | Notes |
 |---|---|---|
-| Dimensione | `48×32` | dalla Fase 0 (v0.4) |
-| Vicinato | Moore (8) | |
+| Size | `48×32` | from Phase 0 (v0.4) |
+| Neighborhood | Moore (8) | |
 
 ---
 
-## 6. Azioni del giocatore (interventi) **[DECISO]**
+## 6. Player actions (interventions) **[DECIDED]**
 
-Le azioni sono ciò che il giocatore mette in coda prima di far avanzare un'era:
+Actions are what the player queues before advancing an era:
 
-- **Semina** (`Seed`) — colloca un organismo di una specie disponibile in una cella.
-- **Stress ambientale** (`Stress`) — altera una scalare ambientale in un'area (es. alza toxicity, abbassa temperature).
-- **Rimozione / cull** (`Cull`) — elimina un organismo o una specie in un'area.
-- **Mutazione / splice** (`Splice`) — modifica il genoma di una specie (es. cambia/aggiunge un tag, sposta l'ottimo termico). È lo strumento sperimentale più potente e più costoso.
+- **Seed** (`Seed`) — place an organism of an available species in a cell.
+- **Environmental stress** (`Stress`) — alter an environmental scalar in an area (e.g., raise toxicity, lower temperature).
+- **Removal / cull** (`Cull`) — eliminate an organism or a species in an area.
+- **Mutation / splice** (`Splice`) — modify a species' genome (e.g., change/add a tag, shift the thermal optimum). The most powerful and most expensive experimental tool.
 
-**Budget di azioni per era [DECISO struttura / baseline in §5.9]:** un budget stretto a punti per era rafforza il modello mentale "un'era = un esperimento deliberato" — non puoi tappezzare la griglia, devi scommettere sull'ipotesi migliore. Baseline: **3 punti per era**, costi **seed 1, stress 1, cull 1, splice 2** (la mutazione è lo strumento più potente, quindi il più caro; tarabile fino a 3). Col budget 3 e splice 2 puoi combinare uno splice + un'azione economica, oppure tre azioni economiche: la scelta è interessante. I numeri esatti si affinano in Fase 3.
-
----
-
-## 7. Lo strato di scoperta: il taccuino **[DECISO]**
-
-È il cuore della progressione (§ pilastro 2) e trasforma l'osservazione in *gioco di deduzione*.
-
-- **Log delle osservazioni:** eventi salienti registrati era per era (fioriture, collassi, estinzioni, adiacenze notevoli).
-- **Griglia di ipotesi:** una vista della matrice `tag × tag` dove il giocatore annota le proprie congetture sugli effetti; il gioco segna quali celle sono **confermate** dall'evidenza raccolta.
-- **Catalogo tag/specie:** glifi alieni incontrati e ciò che se ne sa finora.
-
-**Modello di conferma [DECISO] — "B con sfumatura di C":** il gioco **accumula evidenza** dalle osservazioni e **conferma una cella** della matrice quando l'evidenza supera una soglia. La cella confermata si "illumina": è l'*aha* esplicito e la barra di progresso del pilastro 2. La sfumatura di C premia il **buon metodo sperimentale**: un'osservazione *pulita* (adiacenza isolata, tipicamente prodotta da un esperimento deliberato) **pesa molto più** di una confusa. Concretamente il peso dell'evidenza è **inversamente proporzionale al numero di altri tag adiacenti** che potrebbero confondere il segnale — `peso = 1 / (1 + n_confonditori)` — e una cella si conferma a **evidenza cumulata ≥ 3.0** (baseline, §5.9). Così non serve costruire un fragile rilevatore di "esperimento pulito": si pesa semplicemente per quanti confonditori erano presenti (un'osservazione isolata vale 1.0, una con tre tag confondenti vale 0.25). Questa meccanica **è** la rivelazione progressiva della matrice (§5.5): non c'è una seconda meccanica di opacità separata.
+**Action budget per era [structure DECIDED / baseline in §5.9]:** a tight point budget per era reinforces the mental model "an era = one deliberate experiment" — you can't blanket the grid, you have to bet on your best hypothesis. Baseline: **3 points per era**, costs **seed 1, stress 1, cull 1, splice 2** (mutation is the most powerful tool, hence the most expensive; tunable up to 3). With a budget of 3 and splice at 2 you can combine one splice + one cheap action, or three cheap actions: the choice is interesting. Exact numbers get refined in Phase 3.
 
 ---
 
-## 8. Obiettivi, vittoria e sconfitta **[DECISO]**
+## 7. The discovery layer: the notebook **[DECIDED]**
 
-Ogni mondo pone una o più **richieste esplicite**. Esempi del tipo di obiettivo:
+This is the heart of progression (§ pillar 2) and turns observation into a *deduction game*.
 
-- "Ottieni una biosfera con **≥3 specie coesistenti** per **50 tick**."
-- "Coltiva una specie che **sopravvive nella zona tossica**."
-- "**Innesca una fioritura** di un tipo specifico."
+- **Observation log:** salient events recorded era by era (blooms, collapses, extinctions, notable adjacencies).
+- **Hypothesis grid:** a view of the `tag × tag` matrix where the player notes their own conjectures about effects; the game marks which cells are **confirmed** by the evidence gathered.
+- **Tag/species catalog:** alien glyphs encountered and what's known about them so far.
 
-- **Successo** → si passa al mondo successivo (più tag attivi, matrice più cattiva, ambiente più ostile).
-- **Fallimento** → la run termina; nuova run = nuova biochimica.
-
-**Condizioni di fallimento [DECISO]:**
-
-- **Estinzione totale** → fallimento immediato (il pavimento ovvio).
-- **Budget di ere per mondo** generoso ma **finito** (baseline: 40 ere nei mondi iniziali, che scende verso 25 nei mondi tardi): un giocatore bloccato alla fine fallisce invece di macinare all'infinito. È ciò che dà la tensione roguelike.
-
-**Obiettivi bonus [DECISO come direzione / bassa priorità]:** previsti in linea di principio (danno currency di meta-progressione), ma **dopo** il core pulito "obiettivo primario → avanzi". Non nell'MVP minimo.
+**Confirmation model [DECIDED] — "B with a hint of C":** the game **accumulates evidence** from observations and **confirms a cell** in the matrix when the evidence crosses a threshold. The confirmed cell "lights up": it's the explicit *aha* and the progress bar of pillar 2. The hint of C rewards **good experimental method**: a *clean* observation (isolated adjacency, typically produced by a deliberate experiment) **weighs much more** than a confused one. Concretely, the weight of the evidence is **inversely proportional to the number of other adjacent tags** that could confound the signal — `weight = 1 / (1 + n_confounders)` — and a cell confirms at **cumulative evidence ≥ 3.0** (baseline, §5.9). This way there's no need to build a fragile "clean experiment" detector: it's simply weighted by how many confounders were present (an isolated observation is worth 1.0, one with three confounding tags is worth 0.25). This mechanic **is** the progressive revelation of the matrix (§5.5): there isn't a second, separate opacity mechanic.
 
 ---
 
-## 9. Generazione dei mondi e curva di difficoltà **[DECISO]**
+## 8. Objectives, victory, and defeat **[DECIDED]**
 
-Ogni mondo è generato proceduralmente:
+Each world poses one or more **explicit requirements**. Examples of the kind of objective:
 
-- **Matrice biochimica** nuova (asimmetrica, con il vincolo di ciclicità di §5.8).
-- **Ambiente** (gradienti, zone estreme) con ostilità crescente.
-- **Tag attivi** (sottoinsieme del pool) e **specie di partenza** disponibili.
-- **Obiettivo/i** del mondo.
+- "Achieve a biosphere with **≥3 coexisting species** for **50 ticks**."
+- "Grow a species that **survives in the toxic zone**."
+- "**Trigger a bloom** of a specific type."
 
-**Curva [DECISO direzione]:** i primi mondi con **5 tag attivi** e ambiente mite; via via fino a **~8 tag attivi**, matrici con più relazioni "cattive", ambienti più estremi (zone tossiche ampie, gradienti termici severi), obiettivi più stringenti e budget di ere più corto.
+- **Success** → move to the next world (more active tags, meaner matrix, more hostile environment).
+- **Failure** → the run ends; a new run = new biochemistry.
 
-La **biochimica è fresca a ogni run**: la rigiocabilità nasce da qui, non da contenuto scritto a mano.
+**Failure conditions [DECIDED]:**
 
----
+- **Total extinction** → immediate failure (the obvious floor).
+- **Era budget per world** generous but **finite** (baseline: 40 eras in early worlds, dropping toward 25 in late worlds): a stuck player fails instead of grinding forever. This is what gives the roguelike tension.
 
-## 10. Meta-progressione **[DECISO leggera / persistenza rimandata post-MVP]**
-
-Progressione *tra* le run, deliberatamente **leggera**:
-
-- Sblocco di **più specie di partenza** o **strumenti** (es. un'azione in più, o un tag noto).
-- La **matrice resta sempre da decifrare** da capo: non si sbloccano "risposte", si sbloccano *capacità*.
-
-**Persistenza [DECISO: rimandata]:** l'MVP si costruisce **senza persistenza** (tutto dentro una run). Si decide se salvare gli sblocchi (profilo/save) **solo dopo** aver verificato che il loop è divertente. È banale da aggiungere in seguito e non vincola l'architettura.
+**Bonus objectives [DECIDED as direction / low priority]:** planned in principle (grant meta-progression currency), but **after** the clean "primary objective → advance" core. Not in the minimal MVP.
 
 ---
 
-## 11. Presentazione e UX **[DECISO direzione]**
+## 9. World generation and difficulty curve **[DECIDED]**
 
-*(Revisione v0.4: la resa passa dal terminale a una finestra grafica 2D. Il pilastro 3 non cambia — niente asset artistici, solo quadrati colorati: la finestra dà più spazio e una UI leggibile, non "grafica".)*
+Each world is generated procedurally:
 
-- **Resa:** finestra 2D. Griglia di celle come quadrati colorati.
-  - Celle occupate: colore = specie/tag; luminosità = energia.
-  - Celle vuote: sfondo tenue che riflette l'ambiente (es. luminosità = `light`).
-- **Tag alieni:** glifi/colori senza nome, imparati empiricamente.
-- **Pannelli UI:** tick corrente, numero d'era, popolazioni per specie, energia media, obiettivo corrente, budget azioni, hint dei comandi.
-- **Taccuino:** finestra dedicata (log + griglia ipotesi `tag × tag` + catalogo). La griglia di ipotesi è una tabella densa e interattiva: è il caso d'uso per cui la UI immediata (egui) è nettamente più adatta di una UI a widget persistenti.
+- New **biochemical matrix** (asymmetric, with the cyclicity constraint of §5.8).
+- **Environment** (gradients, extreme zones) with increasing hostility.
+- **Active tags** (subset of the pool) and available **starting species**.
+- World **objective(s)**.
 
-### Controlli **[PROPOSTA]**
+**Curve [DECIDED direction]:** the first worlds with **5 active tags** and a mild environment; gradually up to **~8 active tags**, matrices with more "nasty" relationships, more extreme environments (large toxic zones, harsh thermal gradients), stricter objectives, and shorter era budgets.
 
-- `space` — avanza di un'era (*N* tick).
-- `s` — avanza di un singolo tick (osservazione fine / debug).
-- (Fase 2+) tasti per entrare in modalità azione: semina, stress, cull, splice; **selezione della cella col mouse** (frecce come alternativa da tastiera).
-- `tab` — apri/chiudi taccuino.
-- `r` — reset / reseed del mondo.
-- `Esc` — esci.
+**Biochemistry is fresh every run**: replayability comes from here, not from hand-written content.
 
 ---
 
-## 12. Stack tecnico **[DECISO]**
+## 10. Meta-progression **[DECIDED light / persistence deferred post-MVP]**
 
-*(Revisione v0.4: da `ratatui`/TUI a Bevy con modello ECS.)*
+Progression *between* runs, deliberately **light**:
 
-- **Linguaggio:** Rust, edizione 2021 (codice e commenti in inglese). Toolchain pinnata a **1.97.1**.
-- **Engine:** **Bevy 0.19** — ECS, scheduling, stati, plugin, input, finestra, resa 2D.
-- **UI:** **`bevy_egui` 0.41** (egui 0.35) per HUD e taccuino.
-- **RNG:** `rand` con seed esplicito conservato nello stato del mondo.
-- **Architettura [DECISO]:** un modulo = un `Plugin` Bevy — `ConfigPlugin`, `WorldPlugin`, `SimPlugin`, `GridRenderPlugin`, `UiPlugin`, `InputPlugin`. La simulazione è separata dalla resa e dagli input.
-  - **La griglia è una `Resource`, non entità ECS.** Lo stato vive in `SimWorld` come array densi con doppio buffer; le entità Bevy esistono **solo per la resa** (uno sprite per cella, sincronizzato in sola lettura). Il motivo è il determinismo di §5.7: l'iterazione parallela delle query ECS è il modo più rapido per perderlo.
-  - **La logica del tick è Rust puro**, invocabile senza `App` Bevy: è ciò che rende testabili headless il determinismo e il bilanciamento (§5.8) e che rende praticabile il tuning finale.
+- Unlocking **more starting species** or **tools** (e.g., one extra action, or a known tag).
+- The **matrix always remains to be deciphered** from scratch: you don't unlock "answers," you unlock *capabilities*.
 
-Il dettaglio architetturale — stati, `SystemSets`, eventi, invarianti — vive in `TECH_DESIGN.md`, non qui.
+**Persistence [DECIDED: deferred]:** the MVP is built **without persistence** (everything within a single run). Whether to save unlocks (profile/save) is decided **only after** verifying the loop is fun. It's trivial to add later and doesn't constrain the architecture.
 
 ---
 
-## 13. Piano di sviluppo (~2 settimane, a fasi) **[DECISO]**
+## 11. Presentation and UX **[DECIDED direction]**
 
-L'implementazione vera avverrà in Claude Code, con questo GDD come riferimento.
+*(v0.4 revision: rendering moves from the terminal to a 2D graphical window. Pillar 3 doesn't change — no art assets, just colored squares: the window gives more room and a readable UI, not "graphics.")*
 
-### Fase 0 — Scheletro camminante *(~2–3 giorni)*
-Griglia + ambiente (gradienti statici) + **un** metabolismo (fotolitico) + riproduzione + morte + resa a sprite colorati in finestra 2D + HUD + avanzamento per era / singolo tick.
-**Traguardo:** guardi una specie fotolitica fiorire e stabilizzarsi grazie alla carrying capacity. *(Revisione v0.4: la v0.3 dava il progetto per già scaffoldato — non lo era. Lo scaffold Cargo + app Bevy è il primo task della fase, insieme all'aggiornamento della toolchain da 1.90 a 1.97.1, richiesto da Bevy 0.19.)*
+- **Rendering:** 2D window. Grid of cells as colored squares.
+  - Occupied cells: color = species/tag; brightness = energy.
+  - Empty cells: faint background reflecting the environment (e.g., brightness = `light`).
+- **Alien tags:** nameless glyphs/colors, learned empirically.
+- **UI panels:** current tick, era number, populations per species, average energy, current objective, action budget, command hints.
+- **Notebook:** dedicated window (log + `tag × tag` hypothesis grid + catalog). The hypothesis grid is a dense, interactive table: it's the use case where immediate-mode UI (egui) is clearly better suited than a persistent-widget UI.
 
-### Fase 1 — Emergenza *(~3–4 giorni)*
-Tag + **matrice nascosta** + specie multiple + predazione e decomposizione + azione **semina**.
-**Traguardo:** appare l'emergenza vera; più specie interagiscono via matrice.
+### Controls **[PROPOSED]**
 
-### Fase 2 — Deduzione *(~3–4 giorni)*
-Taccuino + log osservazioni + griglia di ipotesi + azioni **stress / cull / splice**.
-**Traguardo:** nasce il *gioco* di deduzione, non solo la simulazione.
-
-### Fase 3 — La run *(~2–3 giorni)*
-Sistema di **obiettivi** + generazione dei mondi + win/lose + flusso della run e meta-progressione minima.
-**Traguardo:** un ciclo di gioco completo, mondo dopo mondo.
-
-### Tuning finale *(tempo residuo)* — *l'arte vera*
-Bilanciamento dell'emergenza: le manopole di §5.8 (ciclicità, eterogeneità, carrying capacity) + le formule del tick (§5.6). Obiettivo: emergenza *interessante e leggibile*, evitando "muore tutto" e "uno domina".
+- `space` — advance one era (*N* ticks).
+- `s` — advance a single tick (fine observation / debug).
+- (Phase 2+) keys to enter action mode: seed, stress, cull, splice; **mouse cell selection** (arrow keys as a keyboard alternative).
+- `tab` — open/close notebook.
+- `r` — reset / reseed the world.
+- `Esc` — quit.
 
 ---
 
-## 14. Rischi e questioni aperte
+## 12. Tech stack **[DECIDED]**
 
-### Rischio principale **[DECISO come priorità]**
-**Rendere l'emergenza interessante invece che noiosa o illeggibile.** È tuning di *sistema*, non arte grafica. Mitigazioni in §5.8. Parte da dinamiche note (predazione/riproduzione su lattice, tipo Lotka–Volterra spaziale) con le regole nascoste come "spezie".
+*(v0.4 revision: from `ratatui`/TUI to Bevy with an ECS model.)*
 
-### Rischio di leggibilità
-Il massimo mistero (§5.5) può risultare troppo crudo. Mitigazione: rivelazione progressiva della matrice via taccuino; mantenere metabolismi e ambiente sempre leggibili.
+- **Language:** Rust, 2021 edition (code and comments in English). Toolchain pinned to **1.97.1**.
+- **Engine:** **Bevy 0.19** — ECS, scheduling, states, plugins, input, window, 2D rendering.
+- **UI:** **`bevy_egui` 0.41** (egui 0.35) for HUD and notebook.
+- **RNG:** `rand` with an explicit seed kept in the world state.
+- **Architecture [DECIDED]:** one module = one Bevy `Plugin` — `ConfigPlugin`, `WorldPlugin`, `SimPlugin`, `GridRenderPlugin`, `UiPlugin`, `InputPlugin`. The simulation is separate from rendering and input.
+  - **The grid is a `Resource`, not ECS entities.** State lives in `SimWorld` as dense double-buffered arrays; Bevy entities exist **only for rendering** (one sprite per cell, synced read-only). The reason is the determinism of §5.7: parallel ECS query iteration is the fastest way to lose it.
+  - **Tick logic is pure Rust**, callable without the Bevy `App`: this is what makes determinism and balance (§5.8) testable headlessly, and what makes final tuning practical.
 
-### Questioni chiuse
-- **Tag:** pool globale ~10, attivi 5→~8; matrice **asimmetrica/direzionale** (§5.5).
-- **Griglia:** 48×32 dalla Fase 0 (§5.1).
-- **Stack:** Rust + Bevy 0.19 (ECS), finestra 2D, UI `bevy_egui`; griglia come `Resource`, entità solo per la resa (§12).
-- **Budget azioni:** punti per era (baseline 3), costi differenziati (§6).
-- **Conferma ipotesi:** modello **B con sfumatura di C**, peso inverso ai confonditori (§7).
-- **Fallimento:** estinzione totale + budget di ere finito per mondo (§8).
-- **Struttura formule tick:** effetto matrice **additivo/lineare**, coefficienti centralizzati (§5.6).
-- **Persistenza meta-progressione:** rimandata post-MVP (§10).
-
-### Restano da validare in playtest (coefficienti, non struttura)
-- I valori numerici hanno ora una **baseline plausibile in §5.9** (`ERA_TICKS`, budget, soglie di conferma, `metabolism_gain`, `upkeep`, `crowd_factor`, `repro_*`, intensità matrice, ecc.): vanno confermati o ritoccati col playtest, non reinventati.
-- Dimensione griglia definitiva (parte empirica).
-- **Titolo definitivo** (non urgente; "Abiogenesis" è il segnaposto).
+Architectural detail — states, `SystemSets`, events, invariants — lives in `TECH_DESIGN.md`, not here.
 
 ---
 
-## 15. Glossario
+## 13. Development plan (~2 weeks, phased) **[DECIDED]**
 
-- **Tick:** unità atomica di simulazione.
-- **Era:** blocco di *N* tick fatto avanzare in un colpo; l'unità di interazione del giocatore.
-- **Tag:** marcatore biochimico astratto di una specie; unica cosa che conta per le interazioni tra specie.
-- **Matrice nascosta:** tabella segreta `tag × tag` degli effetti di adiacenza, diversa per ogni mondo.
-- **Metabolismo:** come una specie ricava energia (fotolitico / predatore / decompositore).
-- **Carrying capacity:** tetto di popolazione imposto dalla penalità da affollamento.
-- **env_fit:** idoneità ambientale di un organismo alla cella in cui si trova.
+Actual implementation happens in Claude Code, with this GDD as reference.
+
+### Phase 0 — Walking skeleton *(~2–3 days)*
+Grid + environment (static gradients) + **one** metabolism (photolithic) + reproduction + death + colored-sprite rendering in a 2D window + HUD + era / single-tick advancement.
+**Milestone:** watch a photolithic species bloom and stabilize thanks to carrying capacity. *(v0.4 revision: v0.3 assumed the project was already scaffolded — it wasn't. The Cargo scaffold + Bevy app is the phase's first task, along with the toolchain update from 1.90 to 1.97.1 required by Bevy 0.19.)*
+
+### Phase 1 — Emergence *(~3–4 days)*
+Tags + **hidden matrix** + multiple species + predation and decomposition + **seed** action.
+**Milestone:** true emergence appears; multiple species interact via the matrix.
+
+### Phase 2 — Deduction *(~3–4 days)*
+Notebook + observation log + hypothesis grid + **stress / cull / splice** actions.
+**Milestone:** the *deduction game* is born, not just the simulation.
+
+### Phase 3 — The run *(~2–3 days)*
+**Objectives** system + world generation + win/lose + run flow and minimal meta-progression.
+**Milestone:** a complete game cycle, world after world.
+
+### Final tuning *(remaining time)* — *the real art*
+Balancing emergence: the levers of §5.8 (cyclicity, heterogeneity, carrying capacity) + the tick formulas (§5.6). Goal: emergence that is *interesting and readable*, avoiding "everything dies" and "one dominates."
 
 ---
 
-## 16. Anatomia di una partita (esempio illustrato)
+## 14. Risks and open questions
 
-Un **Mondo 1** di esempio, per mostrare come i sistemi si intrecciano nel gioco reale. Le griglie qui sono ridotte a **10×6** per leggibilità (in gioco 48×32). I glifi dei tag sono `◆ ○ ▲ ✦ ✚`; in gioco sono simboli alieni senza nome — qui etichettati per il lettore. Legenda delle griglie: `.` cella vuota · lettera = organismo di quella specie · `+` = residuo di un organismo morto.
+### Main risk **[DECIDED as priority]**
+**Making emergence interesting rather than boring or unreadable.** This is *system* tuning, not art. Mitigations in §5.8. Starts from known dynamics (predation/reproduction on a lattice, spatial Lotka–Volterra-like) with the hidden rules as "spice."
 
-### 16.1 Setup del mondo
+### Readability risk
+Maximum mystery (§5.5) may end up too raw. Mitigation: progressive revelation of the matrix via the notebook; keep metabolisms and environment always readable.
 
-**Ambiente** (Fase 0, gradienti statici): la luce cala dall'alto verso il basso, la temperatura cresce da sinistra (freddo) a destra (caldo). Ne risultano nicchie spaziali.
+### Closed questions
+- **Tags:** global pool ~10, active 5→~8; **asymmetric/directional** matrix (§5.5).
+- **Grid:** 48×32 from Phase 0 (§5.1).
+- **Stack:** Rust + Bevy 0.19 (ECS), 2D window, `bevy_egui` UI; grid as a `Resource`, entities only for rendering (§12).
+- **Action budget:** points per era (baseline 3), differentiated costs (§6).
+- **Hypothesis confirmation:** **B with a hint of C** model, weight inverse to confounders (§7).
+- **Failure:** total extinction + finite era budget per world (§8).
+- **Tick formula structure:** **additive/linear** matrix effect, centralized coefficients (§5.6).
+- **Meta-progression persistence:** deferred post-MVP (§10).
+
+### Still to be validated in playtesting (coefficients, not structure)
+- Numeric values now have a **plausible baseline in §5.9** (`ERA_TICKS`, budgets, confirmation thresholds, `metabolism_gain`, `upkeep`, `crowd_factor`, `repro_*`, matrix intensities, etc.): they need to be confirmed or adjusted through playtesting, not reinvented.
+- Final grid size (partly empirical).
+- **Final title** (not urgent; "Abiogenesis" is the placeholder).
+
+---
+
+## 15. Glossary
+
+- **Tick:** the atomic unit of simulation.
+- **Era:** a block of *N* ticks advanced at once; the player's unit of interaction.
+- **Tag:** an abstract biochemical marker of a species; the only thing that matters for interactions between species.
+- **Hidden matrix:** the secret `tag × tag` table of adjacency effects, different for every world.
+- **Metabolism:** how a species derives energy (photolithic / predator / decomposer).
+- **Carrying capacity:** the population ceiling imposed by the crowding penalty.
+- **env_fit:** an organism's environmental fitness for the cell it occupies.
+
+---
+
+## 16. Anatomy of a playthrough (illustrated example)
+
+An example **World 1**, to show how the systems interweave in actual play. Grids here are reduced to **10×6** for readability (in-game 48×32). Tag glyphs are `◆ ○ ▲ ✦ ✚`; in-game they're nameless alien symbols — labeled here for the reader. Grid legend: `.` empty cell · letter = organism of that species · `+` = residue of a dead organism.
+
+### 16.1 World setup
+
+**Environment** (Phase 0, static gradients): light drops from top to bottom, temperature rises from left (cold) to right (hot). This produces spatial niches.
 
 ```
-        freddo ───────────────▶ caldo
+        cold ────────────────▶ hot
         col:  0  1  2  3  4  5  6  7  8  9
- luce▲  r0    ·  ·  ·  ·  ·  ·  ·  ·  ·  ·   luce alta (0.9)  ┐
- alta│  r1    ·  ·  ·  ·  ·  ·  ·  ·  ·  ·                    │ fascia
-     │  r2    ·  ·  ·  ·  ·  ·  ·  ·  ·  ·   luce media       │ vitale
-     │  r3    ·  ·  ·  ·  ·  ·  ·  ·  ·  ·                    ┘
- luce│  r4    ·  ·  ·  ·  ·  ·  ·  ·  ·  ·   luce bassa (0.2) → troppo buio
- bassa  r5    ·  ·  ·  ·  ·  ·  ·  ·  ·  ·      per i fotolitici
+ light▲ r0    ·  ·  ·  ·  ·  ·  ·  ·  ·  ·   high light (0.9)   ┐
+ high  │ r1    ·  ·  ·  ·  ·  ·  ·  ·  ·  ·                     │ vital
+       │ r2    ·  ·  ·  ·  ·  ·  ·  ·  ·  ·   mid light         │ band
+       │ r3    ·  ·  ·  ·  ·  ·  ·  ·  ·  ·                     ┘
+ light │ r4    ·  ·  ·  ·  ·  ·  ·  ·  ·  ·   low light (0.2) → too dark
+ low     r5    ·  ·  ·  ·  ·  ·  ·  ·  ·  ·      for photolithics
 ```
 
-**Palette di specie iniziali** (4 disponibili al giocatore):
+**Starting species palette** (4 available to the player):
 
-| Specie | Metabolismo | Tag | Nota |
+| Species | Metabolism | Tags | Note |
 |---|---|---|---|
-| **P** | Fotolitico | `◆ ○` | Produttore bilanciato, `temp_opt 0.5` |
-| **Q** | Fotolitico | `▲` | Amante del caldo, `temp_opt 0.7` |
-| **R** | Predatore | `✦` | Preda i vicini |
-| **D** | Decompositore | `✚` | Vive sui residui |
+| **P** | Photolithic | `◆ ○` | Balanced producer, `temp_opt 0.5` |
+| **Q** | Photolithic | `▲` | Heat-loving, `temp_opt 0.7` |
+| **R** | Predator | `✦` | Preys on neighbors |
+| **D** | Decomposer | `✚` | Lives off residue |
 
-**La matrice nascosta** — la "soluzione" del mondo, invisibile al giocatore (riga = tag che *esercita* l'effetto, colonna = tag che lo *subisce*; valore = delta di energia per adiacenza):
+**The hidden matrix** — the world's "solution," invisible to the player (row = tag that *exerts* the effect, column = tag that *receives* it; value = energy delta per adjacency):
 
-| esercita ↓ / subisce → | ◆ | ○ | ▲ | ✦ | ✚ |
+| exerts ↓ / receives → | ◆ | ○ | ▲ | ✦ | ✚ |
 |---|---|---|---|---|---|
 | **◆** | · | · | **−2** | · | · |
 | **○** | · | · | · | +1 | · |
@@ -442,16 +442,16 @@ Un **Mondo 1** di esempio, per mostrare come i sistemi si intrecciano nel gioco 
 | **✦** | **−2** | · | · | · | · |
 | **✚** | **+2** | · | · | · | · |
 
-Due strutture nascoste dentro questi numeri:
+Two hidden structures within these numbers:
 
-- **Un ciclo RPS** (i tre `−2` in grassetto): `◆` sopprime `▲`, `▲` sopprime `✦`, `✦` sopprime `◆`. Tradotto in specie: **P sopprime Q, Q sopprime R, R sopprime P**. È il vincolo di §5.8 che impedisce a chiunque di dominare → coesistenza.
-- **Un anello mutualistico** (`✚→◆ = +2`): il decompositore **D fertilizza** il produttore **P**. Più `○→✦ = +1`, un effetto minore che fa da "rumore" per rendere la deduzione non banale.
+- **An RPS cycle** (the three bolded `−2`s): `◆` suppresses `▲`, `▲` suppresses `✦`, `✦` suppresses `◆`. Translated into species: **P suppresses Q, Q suppresses R, R suppresses P**. This is the §5.8 constraint that keeps anyone from dominating → coexistence.
+- **A mutualistic ring** (`✚→◆ = +2`): the decomposer **D fertilizes** the producer **P**. Plus `○→✦ = +1`, a minor effect that acts as "noise" to keep deduction non-trivial.
 
-Nota la **direzionalità**: `◆→▲ = −2` ma `▲→◆ = ·` (0). **P danneggia Q, ma Q non danneggia P.** Questa asimmetria è ciò che il giocatore scoprirà per prima.
+Note the **directionality**: `◆→▲ = −2` but `▲→◆ = ·` (0). **P harms Q, but Q doesn't harm P.** This asymmetry is what the player will discover first.
 
-### 16.2 La partita, era per era
+### 16.2 The playthrough, era by era
 
-**Era 0 — semina iniziale.** Il giocatore semina P nella fascia mite-luminosa e Q nell'angolo caldo (2 azioni, budget 3).
+**Era 0 — initial seeding.** The player seeds P in the mild-bright band and Q in the hot corner (2 actions, budget 3).
 
 ```
  r0  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·
@@ -462,7 +462,7 @@ Nota la **direzionalità**: `◆→▲ = −2` ma `▲→◆ = ·` (0). **P dann
  r5  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·
 ```
 
-**Era 1 — fioritura nelle nicchie.** Entrambe crescono dove l'ambiente le favorisce; le righe buie (r4–r5) restano vuote (luce insufficiente). I due fronti si avvicinano attorno alla colonna 6–7.
+**Era 1 — bloom in the niches.** Both grow where the environment favors them; the dark rows (r4–r5) stay empty (insufficient light). The two fronts approach each other around column 6–7.
 
 ```
  r0  ·  ·  ·  P  P  P  ·  ·  Q  ·
@@ -473,20 +473,20 @@ Nota la **direzionalità**: `◆→▲ = −2` ma `▲→◆ = ·` (0). **P dann
  r5  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·
 ```
 
-Il giocatore vuole un **esperimento pulito** sull'interazione P–Q: spende 2 semine per mettere una coppia isolata P–Q in una tasca vuota e luminosa in alto a sinistra (r0, c0–c1), lontano da tutto il resto.
+The player wants a **clean experiment** on the P–Q interaction: spends 2 seedings to place an isolated P–Q pair in an empty, bright pocket in the top-left corner (r0, c0–c1), far from everything else.
 
-**Era 2 — la prima interazione si rivela.** Al confine principale (col 6–7) e nella coppia isolata, **Q appassisce dove tocca P** (`◆→▲ = −2`). Nella coppia isolata, Q muore (lascia `+`) mentre P resta illeso.
+**Era 2 — the first interaction reveals itself.** At the main front (col 6–7) and in the isolated pair, **Q withers wherever it touches P** (`◆→▲ = −2`). In the isolated pair, Q dies (leaves `+`) while P remains unharmed.
 
 ```
- r0  P  +  ·  P  P  P  P  Q  Q  ·     ← coppia isolata: P vivo, Q morto (+)
- r1  ·  ·  P  P  P  P  P  +  Q  Q     ← + a c7: Q morto al contatto col fronte P
+ r0  P  +  ·  P  P  P  P  Q  Q  ·     ← isolated pair: P alive, Q dead (+)
+ r1  ·  ·  P  P  P  P  P  +  Q  Q     ← + at c7: Q died on contact with the P front
  r2  ·  ·  ·  P  P  P  P  +  Q  Q
  r3  ·  ·  ·  ·  P  P  P  ·  Q  Q
  r4  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·
  r5  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·
 ```
 
-L'osservazione isolata è **pulita** (nessun confonditore): peso `1.0`. Il taccuino registra due fatti — `◆→▲` negativo, e `▲→◆ = 0` (P è rimasto intatto: Q non danneggia P). Ecco lo stato del taccuino:
+The isolated observation is **clean** (no confounders): weight `1.0`. The notebook records two facts — `◆→▲` is negative, and `▲→◆ = 0` (P remained intact: Q doesn't harm P). Here's the notebook's state:
 
 | ↓ / → | ◆ | ○ | ▲ | ✦ | ✚ |
 |---|---|---|---|---|---|
@@ -496,9 +496,9 @@ L'osservazione isolata è **pulita** (nessun confonditore): peso `1.0`. Il taccu
 | ✦ | ? | ? | ? | ? | ? |
 | ✚ | ? | ? | ? | ? | ? |
 
-*(`−!` = negativo confermato · `0` = nessun effetto confermato · `?` = ignoto)*
+*(`−!` = confirmed negative · `0` = confirmed no effect · `?` = unknown)*
 
-**Era 3 — introdurre un predatore.** P sta dilagando. Il giocatore semina **R** (predatore) nel territorio di P. R fa un doppio danno a P: lo **mangia** (metabolismo) e lo **sopprime chimicamente** (`✦→◆ = −2`). R esplode.
+**Era 3 — introducing a predator.** P is spreading unchecked. The player seeds **R** (predator) into P's territory. R deals double damage to P: it **eats** it (metabolism) and **chemically suppresses** it (`✦→◆ = −2`). R explodes in numbers.
 
 ```
  r0  P  ·  ·  P  R  R  P  Q  Q  ·
@@ -509,9 +509,9 @@ L'osservazione isolata è **pulita** (nessun confonditore): peso `1.0`. Il taccu
  r5  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·
 ```
 
-Intanto l'angolo caldo di Q resta **intoccato**: `▲→✦ = −2` significa che **Q sopprime R**, quindi il predatore non riesce a invadere la nicchia calda. (Il giocatore lo nota ma non capisce ancora perché — è un indizio.)
+Meanwhile Q's hot corner remains **untouched**: `▲→✦ = −2` means **Q suppresses R**, so the predator can't invade the hot niche. (The player notices but doesn't yet understand why — it's a clue.)
 
-**Era 4 — crollo del predatore e boom del decompositore.** R ha divorato quasi tutto P; senza prede **muore di fame** (`gain 0 − upkeep 0.7`) e lascia un campo di residui. Il giocatore semina **D**, che fiorisce sui resti.
+**Era 4 — predator collapse and decomposer boom.** R has devoured almost all of P; with no prey left it **starves** (`gain 0 − upkeep 0.7`) and leaves a field of residue. The player seeds **D**, which blooms on the remains.
 
 ```
  r0  P  ·  ·  +  +  +  +  Q  Q  ·
@@ -522,7 +522,7 @@ Intanto l'angolo caldo di Q resta **intoccato**: `▲→✦ = −2` significa ch
  r5  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·
 ```
 
-Ora l'anello si chiude: **D fertilizza P** (`✚→◆ = +2`), e P ricomincia a crescere dalle chiazze di D. Nel taccuino, `✦→◆` è **sospettato** ma *confuso* dalla predazione (R mangiava P *e* lo sopprimeva) → peso basso → resta ipotesi `−?`. `✚→◆` invece si vede pulito nelle chiazze D–P → sta per confermarsi.
+Now the ring closes: **D fertilizes P** (`✚→◆ = +2`), and P starts growing again from the patches of D. In the notebook, `✦→◆` is **suspected** but *confounded* by predation (R was eating P *and* suppressing it) → low weight → remains hypothesis `−?`. `✚→◆`, on the other hand, is seen cleanly in the D–P patches → about to be confirmed.
 
 | ↓ / → | ◆ | ○ | ▲ | ✦ | ✚ |
 |---|---|---|---|---|---|
@@ -532,7 +532,7 @@ Ora l'anello si chiude: **D fertilizza P** (`✚→◆ = +2`), e P ricomincia a 
 | ✦ | **−?** | ? | ? | ? | ? |
 | ✚ | **+?** | ? | ? | ? | ? |
 
-**Era 5–6 — equilibrio dinamico → obiettivo.** Il giocatore semina un po' di R per rimettere in moto la predazione e bilanciare. Il ciclo RPS (P⊣Q, Q⊣R, R⊣P) più il mutualismo D–P si assestano in **onde spaziali** che rotolano sulla griglia: nessuna specie domina, quattro coesistono.
+**Era 5–6 — dynamic equilibrium → objective.** The player seeds a bit more R to restart predation and balance things out. The RPS cycle (P⊣Q, Q⊣R, R⊣P) plus the D–P mutualism settle into **spatial waves** rolling across the grid: no species dominates, four coexist.
 
 ```
  r0  P  P  D  R  R  P  Q  Q  Q  ·
@@ -543,11 +543,11 @@ Ora l'anello si chiude: **D fertilizza P** (`✚→◆ = +2`), e P ricomincia a 
  r5  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·
 ```
 
-**Obiettivo del mondo: "≥3 specie coesistenti per 50 tick" → soddisfatto** (P, R, D in ciclo + Q nell'angolo). **Vittoria → Mondo 2**, che aggiunge un 6° tag attivo e una matrice più cattiva.
+**World objective: "≥3 coexisting species for 50 ticks" → met** (P, R, D in a cycle + Q in the corner). **Victory → World 2**, which adds a 6th active tag and a meaner matrix.
 
-### 16.3 Gli schemi che il giocatore ha decodificato
+### 16.3 The patterns the player decoded
 
-Il **ciclo RPS** che sostiene la coesistenza:
+The **RPS cycle** that sustains coexistence:
 
 ```
         P (◆○) ──(◆→▲ : −2)──▶ Q (▲)
@@ -557,46 +557,46 @@ Il **ciclo RPS** che sostiene la coesistenza:
           │                       ▼
           └─────────────────── R (✦)
 
-   P sopprime Q · Q sopprime R · R sopprime P → nessuno vince → coesistono.
+   P suppresses Q · Q suppresses R · R suppresses P → no one wins → they coexist.
 ```
 
-L'**anello del decompositore** che ricicla la morte in crescita:
+The **decomposer ring** that recycles death into growth:
 
 ```
-   morte di P/Q/R ──▶ residuo (+) ──▶ D (✚) fiorisce
+   death of P/Q/R ──▶ residue (+) ──▶ D (✚) blooms
                                           │
                                      (✚→◆ : +2)
                                           ▼
-                              P (◆) rinvigorito ──▶ nuova biomassa ──▶ (nuove morti) ⟳
+                              P (◆) reinvigorated ──▶ new biomass ──▶ (new deaths) ⟳
 ```
 
-### 16.4 Anatomia di una singola era
+### 16.4 Anatomy of a single era
 
 ```
- ┌─ PIANIFICA (budget: 3 punti) ─────────────────────────────┐
- │  es.  seed R (1)  +  stress: alza tossicità in un'area (1)  │
- │       +  cull P in una zona (1)      → budget esaurito       │
+ ┌─ PLAN (budget: 3 points) ─────────────────────────────────┐
+ │  e.g.  seed R (1)  +  stress: raise toxicity in an area (1) │
+ │       +  cull P in a zone (1)        → budget spent          │
  └─────────────────────────────────────────────────────────────┘
-                    │  premi  SPACE
+                    │  press  SPACE
                     ▼
- ┌─ AVANZA ERA (25 tick, animati) ───────────────────────────┐
- │  ogni tick, per ogni organismo:                             │
- │  env_fit → guadagno metabolico → effetto matrice →          │
- │  costi (upkeep + affollamento) → morte / riproduzione       │
- │  (deterministico a parità di seed)                          │
+ ┌─ ADVANCE ERA (25 ticks, animated) ────────────────────────┐
+ │  each tick, for every organism:                              │
+ │  env_fit → metabolic gain → matrix effect →                  │
+ │  costs (upkeep + crowding) → death / reproduction            │
+ │  (deterministic given the same seed)                         │
  └─────────────────────────────────────────────────────────────┘
                     │
                     ▼
- ┌─ OSSERVA & REGISTRA ──────────────────────────────────────┐
- │  il taccuino accumula evidenza; le celle si illuminano →    │
- │  formuli la prossima ipotesi e la prossima era              │
+ ┌─ OBSERVE & RECORD ────────────────────────────────────────┐
+ │  the notebook accumulates evidence; cells light up →         │
+ │  you form the next hypothesis and the next era               │
  └─────────────────────────────────────────────────────────────┘
 ```
 
-### 16.5 Cosa dimostra l'esempio
+### 16.5 What the example demonstrates
 
-In questa run il giocatore ha confermato solo **3–4 celle** delle ~20 della matrice — ed è bastato per vincere: non serve decodificare *tutto*, solo la parte rilevante per le specie in campo e per l'obiettivo. Ha esercitato ogni pilastro: **nicchie ambientali** (Era 1), **deduzione via esperimento pulito** (Era 2), **preda-predatore** (Era 3–4), **anello del decompositore** e **coesistenza RPS** (Era 5–6). E soprattutto: nel Mondo 2 la matrice è **rimescolata**, quindi i fatti imparati **non si trasferiscono** — si trasferisce solo il *metodo*. È qui che vive la rigiocabilità.
+In this run the player confirmed only **3–4 cells** out of the ~20 in the matrix — and that was enough to win: you don't need to decode *everything*, just the part relevant to the species in play and the objective. Every pillar was exercised: **environmental niches** (Era 1), **deduction via a clean experiment** (Era 2), **predator-prey** (Era 3–4), the **decomposer ring** and **RPS coexistence** (Era 5–6). And above all: in World 2 the matrix is **reshuffled**, so the facts learned **don't carry over** — only the *method* carries over. This is where replayability lives.
 
 ---
 
-*Fine documento — v0.4. Tutte le decisioni di design sono chiuse e corredate da una baseline numerica (§5.9) e da un esempio giocato (§16). Prossimo passo: implementare la Fase 0 seguendo la coda operativa in `tasks/QUEUE.md`, con questo GDD come riferimento di design e `TECH_DESIGN.md` come riferimento di architettura.*
+*End of document — v0.4. All design decisions are closed and backed by a numeric baseline (§5.9) and a played example (§16). Next step: implement Phase 0 following the operational queue in `tasks/QUEUE.md`, with this GDD as the design reference and `TECH_DESIGN.md` as the architecture reference.*

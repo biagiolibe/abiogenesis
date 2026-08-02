@@ -1,76 +1,76 @@
-# Task [ID] — [Titolo del Task]
+# Task [ID] — [Task Title]
 
 > **ID**: `[NNN]`
-> **Categoria**: [Architettura / Feature / Bugfix / Refactor / etc.]
-> **Priorità**: [🔴 P1 / 🟡 P2 / 🟢 P3]
-> **Stima**: [~1h / ~2h / etc.]
-> **Assegnato a**: [Claude CLI / non assegnato]
-> **Sessione**: [ID conversazione o riferimento temporale]
+> **Category**: [Architecture / Feature / Bugfix / Refactor / etc.]
+> **Priority**: [🔴 P1 / 🟡 P2 / 🟢 P3]
+> **Estimate**: [~1h / ~2h / etc.]
+> **Assigned to**: [Claude CLI / unassigned]
+> **Session**: [Conversation ID or time reference]
 
 ---
 
-## 🎯 Obiettivo
+## 🎯 Objective
 
-[Cosa deve essere fatto?]
-[Perché è necessario?]
+[What needs to be done?]
+[Why is it necessary?]
 
 ---
 
 ## 📋 Acceptance Criteria
 
-[Un task è considerato completato quando:]
-- [ ] Il codice compila senza errori.
-- [ ] La feature X funziona come descritto.
-- [ ] [Aggiungere criteri specifici...]
+[A task is considered complete when:]
+- [ ] The code compiles without errors.
+- [ ] Feature X works as described.
+- [ ] [Add specific criteria...]
 
 ---
 
-## 📁 File Rilevanti
+## 📁 Relevant Files
 
-| File | Ruolo |
-|------|-------|
-| `src/modulo/file.ts` | Descrizione del ruolo. |
-
----
-
-## 🧩 Contesto Tecnico
-
-[Incolla qui le definizioni di tipi, interfacce, o descrive lo stato attuale del codice.]
-
-- **Comportamento attuale**: [Cosa succede ora?]
-- **Comportamento desiderato**: [Cosa deve succedere dopo?]
+| File | Role |
+|------|------|
+| `src/module/file.ts` | Description of the role. |
 
 ---
 
-## 🔨 Implementazione Suggerita
+## 🧩 Technical Context
 
-[Passaggi consigliati per l'agente IA]
+[Paste type/interface definitions here, or describe the current state of the code.]
 
-1. [Passo 1]
-2. [Passo 2]
+- **Current behavior**: [What happens now?]
+- **Desired behavior**: [What should happen after?]
+
+---
+
+## 🔨 Suggested Implementation
+
+[Recommended steps for the AI agent]
+
+1. [Step 1]
+2. [Step 2]
 
 ```
-// Eventuale snippet di esempio
+// Optional example snippet
 ```
 
 ---
 
-## ⚠️ Vincoli e Attenzioni
+## ⚠️ Constraints and Caveats
 
-- **Stile**: Seguire le convenzioni definite nel `TECH_DESIGN.md`.
-- **Performance**: [Eventuali vincoli specifici]
-
----
-
-## 🔗 Dipendenze
-
-- **Dipende da**: [ID task precedente o nessuno]
-- **Blocca**: [ID task successivo o nessuno]
+- **Style**: Follow the conventions defined in `TECH_DESIGN.md`.
+- **Performance**: [Any specific constraints]
 
 ---
 
-## 🤖 Come delegare questo task a Claude CLI
+## 🔗 Dependencies
+
+- **Depends on**: [previous task ID or none]
+- **Blocks**: [next task ID or none]
+
+---
+
+## 🤖 How to delegate this task to Claude CLI
 
 ```bash
-claude "$(cat tasks/[NNN]-nome.md)"$'\n\nEsegui questo task nel progetto corrente.'
+claude "$(cat tasks/[NNN]-name.md)"$'\n\nExecute this task in the current project.'
 ```

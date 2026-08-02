@@ -1,66 +1,66 @@
-# Task 006 — Resa della griglia a sprite + camera 2D
+# Task 006 — Grid rendering with sprites + 2D camera
 
 > **ID**: `006`
-> **Categoria**: Feature
-> **Priorità**: 🟡 P2
-> **Stima**: ~2h
-> **Assegnato a**: non assegnato
-> **Sessione**: —
+> **Category**: Feature
+> **Priority**: 🟡 P2
+> **Estimate**: ~2h
+> **Assigned to**: unassigned
+> **Session**: —
 
 ---
 
-## 🎯 Obiettivo
+## 🎯 Objective
 
-Rendere **visibile** la griglia: uno sprite quadrato per cella, colorato in base allo stato della simulazione, con una camera 2D che inquadra il tutto.
+Make the grid **visible**: one square sprite per cell, colored according to simulation state, with a 2D camera framing it all.
 
-Senza questo task la simulazione gira alla cieca. Il traguardo della Fase 0 (GDD §13) è letteralmente *"guardi una specie fotolitica fiorire e stabilizzarsi"*: qui si costruisce il "guardi".
+Without this task the simulation runs blind. Phase 0's milestone (GDD §13) is literally *"watch a photolithic species bloom and stabilize"*: this task builds the "watch."
 
 ---
 
 ## 📋 Acceptance Criteria
 
-- [ ] `cargo run` mostra una griglia `48×32` di quadrati colorati.
-- [ ] Gli sprite sono spawnati **una volta sola** in `Startup`; i tick successivi aggiornano solo il colore.
-- [ ] **Celle occupate**: colore = specie, luminosità = energia.
-- [ ] **Celle vuote**: sfondo tenue proporzionale a `light`, così i gradienti ambientali sono visibili a occhio.
-- [ ] I **residui** sono visivamente distinguibili sia dalle celle vuote sia da quelle occupate.
-- [ ] La griglia resta centrata e interamente visibile ridimensionando la finestra.
-- [ ] **Nessun sistema di resa scrive su `SimWorld`** (solo `Res`, mai `ResMut`).
-- [ ] `cargo clippy -- -D warnings` pulito.
+- [ ] `cargo run` shows a `48×32` grid of colored squares.
+- [ ] Sprites are spawned **once**, in `Startup`; subsequent ticks only update color.
+- [ ] **Occupied cells**: color = species, brightness = energy.
+- [ ] **Empty cells**: faint background proportional to `light`, so environmental gradients are visible at a glance.
+- [ ] **Residue** is visually distinguishable from both empty and occupied cells.
+- [ ] The grid stays centered and fully visible when resizing the window.
+- [ ] **No rendering system writes to `SimWorld`** (only `Res`, never `ResMut`).
+- [ ] `cargo clippy -- -D warnings` clean.
 
 ---
 
-## 📁 File Rilevanti
+## 📁 Relevant Files
 
-| File | Ruolo |
-|------|-------|
-| `src/render.rs` | `GridRenderPlugin`, spawn degli sprite, camera, sincronizzazione |
-| `src/world.rs` | `SimWorld` in sola lettura (task 003) |
-
----
-
-## 🧩 Contesto Tecnico
-
-- **Comportamento attuale**: la finestra si apre vuota; il mondo esiste in memoria ma non si vede.
-- **Comportamento desiderato**: la griglia è visibile e riflette lo stato della simulazione.
-
-### GDD §11 — Presentazione
-
-> - **Resa:** finestra 2D. Griglia di celle come quadrati colorati.
->   - Celle occupate: colore = specie/tag; luminosità = energia.
->   - Celle vuote: sfondo tenue che riflette l'ambiente (es. luminosità = `light`).
-
-### Architettura: entità solo per la resa
-
-`TECH_DESIGN.md` §3.1 stabilisce che la griglia **non** è modellata in ECS: lo stato vive in `SimWorld`. Le entità sprite create qui sono una **vista**, non la fonte di verità. Portano un componente `GridCell { x, y }` che le lega alla cella corrispondente.
-
-1536 sprite (48×32) sono un carico banale per Bevy.
+| File | Role |
+|------|------|
+| `src/render.rs` | `GridRenderPlugin`, sprite spawning, camera, synchronization |
+| `src/world.rs` | `SimWorld` read-only (task 003) |
 
 ---
 
-## 🔨 Implementazione Suggerita
+## 🧩 Technical Context
 
-1. **Componente di legame**
+- **Current behavior**: the window opens empty; the world exists in memory but isn't visible.
+- **Desired behavior**: the grid is visible and reflects simulation state.
+
+### GDD §11 — Presentation
+
+> - **Rendering:** 2D window. Grid of cells as colored squares.
+>   - Occupied cells: color = species/tag; brightness = energy.
+>   - Empty cells: faint background reflecting the environment (e.g., brightness = `light`).
+
+### Architecture: entities only for rendering
+
+`TECH_DESIGN.md` §3.1 establishes that the grid is **not** modeled in ECS: state lives in `SimWorld`. The sprite entities created here are a **view**, not the source of truth. They carry a `GridCell { x, y }` component linking them to the corresponding cell.
+
+1536 sprites (48×32) is a trivial load for Bevy.
+
+---
+
+## 🔨 Suggested Implementation
+
+1. **Linking component**
 
    ```rust
    /// Links a rendered sprite back to its cell in SimWorld. The sprite is a view:
@@ -72,11 +72,11 @@ Senza questo task la simulazione gira alla cieca. Il traguardo della Fase 0 (GDD
    }
    ```
 
-2. **Spawn in `Startup`** — uno sprite per cella, `custom_size` pari al lato della cella, posizionati su una griglia centrata sull'origine. Ricordare che in Bevy la `y` cresce verso l'alto mentre l'indice di riga cresce verso il basso: la riga `0` (luce alta) deve apparire **in cima**, quindi la `y` del mondo va invertita.
+2. **Spawn in `Startup`** — one sprite per cell, `custom_size` matching the cell's side length, positioned on a grid centered at the origin. Remember that in Bevy `y` grows upward while the row index grows downward: row `0` (high light) must appear **at the top**, so the world's `y` needs to be inverted.
 
-3. **Camera** — `Camera2d`. Perché la griglia entri sempre nella finestra, usare una proiezione a dimensione fissa (`ScalingMode::AutoMin` o equivalente nella 0.19) dimensionata su `width * cell_size` × `height * cell_size`. Così il ridimensionamento non taglia la griglia.
+3. **Camera** — `Camera2d`. To make sure the grid always fits in the window, use a fixed-size projection (`ScalingMode::AutoMin` or the 0.19 equivalent) sized to `width * cell_size` × `height * cell_size`. This way resizing never clips the grid.
 
-4. **Sistema di sincronizzazione** — gira in `SimSet::Sync`, dopo `SimSet::Advance`:
+4. **Sync system** — runs in `SimSet::Sync`, after `SimSet::Advance`:
 
    ```rust
    fn sync_grid_colors(
@@ -89,41 +89,41 @@ Senza questo task la simulazione gira alla cieca. Il traguardo della Fase 0 (GDD
    }
    ```
 
-5. **Scelta dei colori** — regola unica in un solo posto:
+5. **Color scheme** — a single rule in a single place:
 
-   | Stato della cella | Colore |
+   | Cell state | Color |
    |---|---|
-   | Occupata | tinta della specie, luminosità scalata sull'energia |
-   | Con residuo, vuota | tinta neutra desaturata, intensità proporzionale al residuo |
-   | Vuota | grigio molto scuro, luminosità proporzionale a `light` |
+   | Occupied | species hue, brightness scaled by energy |
+   | Has residue, empty | desaturated neutral hue, intensity proportional to residue |
+   | Empty | very dark gray, brightness proportional to `light` |
 
-   Per l'energia, normalizzare su `repro_threshold` (`10.0`) e **clampare**: l'energia può superarla nel tick prima della riproduzione. Lavorare in HSL/HSV rende naturale "stessa tinta, luminosità variabile".
+   For energy, normalize against `repro_threshold` (`10.0`) and **clamp**: energy can exceed it in the tick right before reproduction. Working in HSL/HSV makes "same hue, variable brightness" natural.
 
-   Tenere basso il fondo delle celle vuote: deve suggerire il gradiente di luce senza competere con gli organismi.
+   Keep the empty-cell background low-key: it should suggest the light gradient without competing with organisms.
 
-6. **Test manuale**: avviare, seminare a mano un organismo in `SimWorld` (o attendere il task 007) e verificare che si veda. Il gradiente di luce deve essere percepibile come sfumatura verticale sulla griglia vuota.
-
----
-
-## ⚠️ Vincoli e Attenzioni
-
-- **Il rendering è in sola lettura.** Se un sistema di `render.rs` chiede `ResMut<SimWorld>`, l'architettura è stata violata.
-- **Non spawnare/despawnare sprite a ogni tick**: si crea una volta, si aggiorna il colore. Il despawn per cella vuota costerebbe più della resa stessa.
-- **Nessun asset artistico** (GDD, pilastro 3): sprite bianchi colorati via `Sprite::color`, nessuna texture da caricare.
-- La resa dei **tag come glifi** (GDD §11) è Fase 1+: qui il colore identifica la specie e basta.
-- Verificare l'API di Bevy 0.19 per `Sprite`/`Camera2d`: la 0.19 è recente e i nomi differiscono dalle 0.1x precedenti che compaiono nella maggior parte degli esempi online.
+6. **Manual test**: run the app, seed an organism into `SimWorld` by hand (or wait for task 007) and check it shows up. The light gradient should be perceptible as a vertical shading on the empty grid.
 
 ---
 
-## 🔗 Dipendenze
+## ⚠️ Constraints and Caveats
 
-- **Dipende da**: 003
-- **Blocca**: 007
+- **Rendering is read-only.** If a system in `render.rs` requests `ResMut<SimWorld>`, the architecture has been violated.
+- **Do not spawn/despawn sprites every tick**: create them once, update the color. Despawning for an empty cell would cost more than the rendering itself.
+- **No art assets** (GDD, pillar 3): white sprites colored via `Sprite::color`, no textures to load.
+- Rendering **tags as glyphs** (GDD §11) is Phase 1+: here color alone identifies the species.
+- Check the Bevy 0.19 API for `Sprite`/`Camera2d`: 0.19 is recent and names differ from the earlier 0.1x versions found in most online examples.
 
 ---
 
-## 🤖 Come delegare questo task a Claude CLI
+## 🔗 Dependencies
+
+- **Depends on**: 003
+- **Blocks**: 007
+
+---
+
+## 🤖 How to delegate this task to Claude CLI
 
 ```bash
-claude "$(cat tasks/006-grid-rendering.md)"$'\n\nEsegui questo task nel progetto corrente.'
+claude "$(cat tasks/006-grid-rendering.md)"$'\n\nExecute this task in the current project.'
 ```

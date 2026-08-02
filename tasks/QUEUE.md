@@ -1,68 +1,68 @@
 # Task Execution Queue
 
-Questa è la coda di esecuzione operativa. I task sono ordinati per priorità.
+This is the operational execution queue. Tasks are ordered by priority.
 
-## Come usare questa coda
+## How to use this queue
 
-- **Esecuzione**: Prendi il primo task `[ ]` disponibile.
-- **Aggiornamento**: Cambia `[ ]` in `[/]` quando inizi e in `[x]` quando finisci.
-- **Archiviazione**: A task completato, sposta il file in `tasks/done/`.
+- **Execution**: Take the first available `[ ]` task.
+- **Update**: Change `[ ]` to `[/]` when starting, and to `[x]` when finishing.
+- **Archiving**: Once completed, move the file to `tasks/done/`.
 
-## Priorità
+## Priority
 
-| Codice | Significato |
+| Code | Meaning |
 |--------|-------------|
-| 🔴 P1  | Bloccante / Critico |
-| 🟡 P2  | Feature importante |
-| 🟢 P3  | Ottimizzazione / Polish |
+| 🔴 P1  | Blocking / Critical |
+| 🟡 P2  | Important feature |
+| 🟢 P3  | Optimization / Polish |
 
 ---
 
-## 🤖 Come delegare un task a Claude CLI
+## 🤖 How to delegate a task to Claude CLI
 
 ```bash
-claude "$(cat tasks/NNN-nome.md)"$'\n\nEsegui questo task nel progetto corrente.'
+claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.'
 ```
 
 ---
 
-## 🏃 Coda Attiva
+## 🏃 Active Queue
 
-**Fase 0 — Scheletro camminante.** Traguardo: una specie fotolitica fiorisce e si stabilizza grazie alla carrying capacity (GDD §13).
+**Phase 0 — Walking skeleton.** Milestone: a photolithic species blooms and stabilizes thanks to carrying capacity (GDD §13).
 
-| Stato | ID | Titolo | Priorità | Dipende da | Agente | Task File |
+| Status | ID | Title | Priority | Depends on | Agent | Task File |
 |-------|----|--------|----------|------------|--------|-----------|
-| `[ ]` | 002 | `SimConfig`: coefficienti centralizzati | 🔴 P1 | 001 | — | [002](002-sim-config.md) |
-| `[ ]` | 003 | Tipi di dominio e resource `SimWorld` | 🔴 P1 | 002 | — | [003](003-domain-simworld.md) |
-| `[ ]` | 004 | Ambiente: gradienti statici | 🔴 P1 | 003 | — | [004](004-environment-gradients.md) |
-| `[ ]` | 005 | Algoritmo del tick (Fase 0), puro e headless | 🔴 P1 | 004 | — | [005](005-tick-algorithm.md) |
-| `[ ]` | 006 | Resa della griglia a sprite + camera 2D | 🟡 P2 | 003 | — | [006](006-grid-rendering.md) |
-| `[ ]` | 007 | `GameState`/`EraState`, input, era animata | 🟡 P2 | 005, 006 | — | [007](007-states-input-era.md) |
-| `[ ]` | 008 | HUD `bevy_egui` | 🟡 P2 | 007 | — | [008](008-hud-egui.md) |
-| `[ ]` | 009 | Test di determinismo e validazione carrying capacity | 🟡 P2 | 005 | — | [009](009-determinism-balance-tests.md) |
+| `[ ]` | 002 | `SimConfig`: centralized coefficients | 🔴 P1 | 001 | — | [002](002-sim-config.md) |
+| `[ ]` | 003 | Domain types and `SimWorld` resource | 🔴 P1 | 002 | — | [003](003-domain-simworld.md) |
+| `[ ]` | 004 | Environment: static gradients | 🔴 P1 | 003 | — | [004](004-environment-gradients.md) |
+| `[ ]` | 005 | Tick algorithm (Phase 0), pure and headless | 🔴 P1 | 004 | — | [005](005-tick-algorithm.md) |
+| `[ ]` | 006 | Grid rendering with sprites + 2D camera | 🟡 P2 | 003 | — | [006](006-grid-rendering.md) |
+| `[ ]` | 007 | `GameState`/`EraState`, input, animated era | 🟡 P2 | 005, 006 | — | [007](007-states-input-era.md) |
+| `[ ]` | 008 | `bevy_egui` HUD | 🟡 P2 | 007 | — | [008](008-hud-egui.md) |
+| `[ ]` | 009 | Determinism tests and carrying-capacity validation | 🟡 P2 | 005 | — | [009](009-determinism-balance-tests.md) |
 
-**Cancello di uscita della Fase 0:** non si passa alla Fase 1 con i test del 009 rossi.
+**Phase 0 exit gate:** do not move to Phase 1 while task 009's tests are red.
 
-Le fasi successive vivono come backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) e si espandono in task file quando ci si arriva.
+Later phases live as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) and expand into task files when we get there.
 
 ---
 
-## 🧪 Task Rapidi (Senza File)
+## 🧪 Quick Tasks (No File)
 
-Task che richiedono < 15 min e non necessitano di briefing dettagliato.
+Tasks that take < 15 min and don't need a detailed briefing.
 
-| Stato | Descrizione | Priorità |
+| Status | Description | Priority |
 |-------|-------------|----------|
-| `[ ]` | *(nessuno)* | — |
+| `[ ]` | *(none)* | — |
 
 ---
 
-## ✅ Archiviati (Completati)
+## ✅ Archived (Completed)
 
-| Stato | ID | Titolo | Agente | File |
+| Status | ID | Title | Agent | File |
 |-------|----|--------|--------|------|
-| `[x]` | 001 | Toolchain, scaffold Cargo e app Bevy a plugin | Claude | [001](done/001-scaffold-bevy.md) |
+| `[x]` | 001 | Toolchain, Cargo scaffold, and plugin-based Bevy app | Claude | [001](done/001-scaffold-bevy.md) |
 
 ---
 
-*Ultimo aggiornamento: 2026-08-01*
+*Last updated: 2026-08-02*

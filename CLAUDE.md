@@ -1,38 +1,38 @@
 # Abiogenesis
 
-Roguelike di simulazione emergente in Rust + Bevy: si semina vita su mondi alieni e si fa reverse-engineering di una matrice biochimica nascosta.
+Emergent-simulation roguelike in Rust + Bevy: seed life on alien worlds and reverse-engineer a hidden biochemical matrix.
 
-## Comandi
+## Commands
 
 ```bash
-cargo run                      # avvia il gioco
-cargo test                     # test unitari + determinismo/bilanciamento
-cargo clippy -- -D warnings    # deve essere pulito prima di chiudere un task
+cargo run                      # runs the game
+cargo test                     # unit tests + determinism/balance tests
+cargo clippy -- -D warnings    # must be clean before closing a task
 cargo fmt
 ```
 
-## Documenti
+## Documents
 
-| File | Cosa contiene |
+| File | Contents |
 |---|---|
-| [`abiogenesis-gdd.md`](abiogenesis-gdd.md) | **Design — fonte di verità.** Meccaniche, formule del tick (§5.6), baseline numerica (§5.9). |
-| [`TECH_DESIGN.md`](TECH_DESIGN.md) | Architettura: plugin, stati, `SystemSets`, invarianti. |
-| [`tasks/QUEUE.md`](tasks/QUEUE.md) | **Cosa fare adesso.** |
+| [`abiogenesis-gdd.md`](abiogenesis-gdd.md) | **Design — source of truth.** Mechanics, tick formulas (§5.6), numeric baseline (§5.9). |
+| [`TECH_DESIGN.md`](TECH_DESIGN.md) | Architecture: plugins, states, `SystemSets`, invariants. |
+| [`tasks/QUEUE.md`](tasks/QUEUE.md) | **What to do now.** |
 
-## Convenzioni
+## Conventions
 
-- **Codice e commenti in inglese**; documenti in italiano.
-- **Un modulo = un `Plugin` Bevy.**
-- **La griglia è una `Resource`, non entità ECS.** Le entità Bevy esistono solo per la resa.
-- **La simulazione è deterministica ed eseguibile headless**: RNG nello stato del mondo, niente `rand::rng()`, niente iterazione su `HashMap`, niente query parallele nella logica del tick. `sim`/`world`/`config` non dipendono da `bevy::render` né da `bevy_egui`.
-- **Nessun numero magico**: tutti i coefficienti stanno in `SimConfig` (`src/config.rs`).
+- **Code, comments, and documents in English.**
+- **One module = one Bevy `Plugin`.**
+- **The grid is a `Resource`, not ECS entities.** Bevy entities exist only for rendering.
+- **The simulation is deterministic and runs headless**: RNG in world state, no `rand::rng()`, no iteration over `HashMap`, no parallel queries in tick logic. `sim`/`world`/`config` don't depend on `bevy::render` or `bevy_egui`.
+- **No magic numbers**: all coefficients live in `SimConfig` (`src/config.rs`).
 
-Il razionale di queste regole è in `TECH_DESIGN.md` §5. Non aggirarle: se un task sembra richiederlo, il task è sbagliato.
+The rationale for these rules is in `TECH_DESIGN.md` §5. Do not work around them: if a task seems to require it, the task is wrong.
 
 ## Workflow (Meridian)
 
-Un task alla volta. A task completato:
+One task at a time. On task completion:
 
-1. verifica gli acceptance criteria nel task file;
-2. sposta il file da `tasks/` a `tasks/done/`;
-3. aggiorna lo stato a `[x]` in `tasks/QUEUE.md` e in `PROJECT_PLAN.md`.
+1. verify the acceptance criteria in the task file;
+2. move the file from `tasks/` to `tasks/done/`;
+3. update the status to `[x]` in `tasks/QUEUE.md` and in `PROJECT_PLAN.md`.

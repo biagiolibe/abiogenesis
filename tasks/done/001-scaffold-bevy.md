@@ -1,74 +1,74 @@
-# Task 001 — Toolchain, scaffold Cargo e app Bevy a plugin
+# Task 001 — Toolchain, Cargo scaffold, and plugin-based Bevy app
 
 > **ID**: `001`
-> **Categoria**: Architettura
-> **Priorità**: 🔴 P1
-> **Stima**: ~1.5h
-> **Assegnato a**: non assegnato
-> **Sessione**: —
+> **Category**: Architecture
+> **Priority**: 🔴 P1
+> **Estimate**: ~1.5h
+> **Assigned to**: unassigned
+> **Session**: —
 
 ---
 
-## 🎯 Obiettivo
+## 🎯 Objective
 
-Portare il progetto da "cartella con soli documenti" a **applicazione Bevy che si avvia e apre una finestra**, con la struttura a plugin già in piedi (stub vuoti) su cui tutti i task successivi andranno a innestarsi.
+Take the project from "folder with only documents" to a **Bevy application that starts and opens a window**, with the plugin structure already in place (empty stubs) for all subsequent tasks to build on.
 
-È necessario perché il progetto **non è scaffoldato**: in root non esistono né `Cargo.toml` né `src/`. Ogni altro task ne dipende.
+Necessary because the project **isn't scaffolded**: neither `Cargo.toml` nor `src/` exist at the root. Every other task depends on it.
 
 ---
 
 ## 📋 Acceptance Criteria
 
-- [x] `rustc --version` riporta **1.97.1** e `rust-toolchain.toml` pinna quella versione.
-- [x] `cargo build` compila senza errori.
-- [x] `cargo run` apre una finestra con titolo `Abiogenesis` e sfondo uniforme (nessun contenuto: è corretto).
-- [x] `cargo clippy -- -D warnings` è pulito.
-- [x] I sei plugin esistono come stub e sono registrati in `main.rs`.
-- [x] Le versioni esatte risolte da `cargo add` sono riportate in `TECH_DESIGN.md` §1, sostituendo la nota "Da completare nel task 001".
-- [x] `.gitignore` copre `/target` (già presente: verificare).
+- [x] `rustc --version` reports **1.97.1** and `rust-toolchain.toml` pins that version.
+- [x] `cargo build` compiles without errors.
+- [x] `cargo run` opens a window titled `Abiogenesis` with a uniform background (no content: that's correct).
+- [x] `cargo clippy -- -D warnings` is clean.
+- [x] The six plugins exist as stubs and are registered in `main.rs`.
+- [x] The exact versions resolved by `cargo add` are recorded in `TECH_DESIGN.md` §1, replacing the "To be completed in task 001" note.
+- [x] `.gitignore` covers `/target` (already present: verify).
 
 ---
 
-## 📁 File Rilevanti
+## 📁 Relevant Files
 
-| File | Ruolo |
-|------|-------|
-| `rust-toolchain.toml` | Pinna la toolchain (nuovo) |
-| `Cargo.toml` | Dipendenze e profili di build (nuovo) |
-| `src/main.rs` | Entry point, registrazione dei plugin (nuovo) |
-| `src/config.rs`, `src/world.rs`, `src/sim.rs`, `src/render.rs`, `src/ui.rs`, `src/input.rs` | Stub dei plugin (nuovi) |
-| `TECH_DESIGN.md` | §1 da aggiornare con le versioni risolte |
+| File | Role |
+|------|------|
+| `rust-toolchain.toml` | Pins the toolchain (new) |
+| `Cargo.toml` | Dependencies and build profiles (new) |
+| `src/main.rs` | Entry point, plugin registration (new) |
+| `src/config.rs`, `src/world.rs`, `src/sim.rs`, `src/render.rs`, `src/ui.rs`, `src/input.rs` | Plugin stubs (new) |
+| `TECH_DESIGN.md` | §1 to be updated with resolved versions |
 
 ---
 
-## 🧩 Contesto Tecnico
+## 🧩 Technical Context
 
-- **Comportamento attuale**: la root contiene solo documenti Markdown e un repo git inizializzato senza commit. Nessun codice Rust.
-- **Comportamento desiderato**: `cargo run` apre una finestra Bevy.
+- **Current behavior**: the root contains only Markdown documents and a git repo initialized with no commits. No Rust code.
+- **Desired behavior**: `cargo run` opens a Bevy window.
 
-**Vincolo di versione verificato:**
+**Verified version constraint:**
 
-| Componente | Versione | Nota |
+| Component | Version | Note |
 |---|---|---|
-| Toolchain locale attuale | 1.90.0 | **insufficiente** |
-| Bevy 0.19 | richiede Rust **≥ 1.95.0** | |
-| Stable disponibile | **1.97.1** | va installata |
-| `bevy_egui` | **0.41** | l'accoppiamento con bevy 0.19 è verificato (egui 0.35) |
+| Current local toolchain | 1.90.0 | **insufficient** |
+| Bevy 0.19 | requires Rust **≥ 1.95.0** | |
+| Available stable | **1.97.1** | needs installing |
+| `bevy_egui` | **0.41** | pairing with bevy 0.19 is verified (egui 0.35) |
 
-*Fallback se l'aggiornamento della toolchain non è praticabile:* bevy `0.18.1` + bevy_egui `0.39.x` girano su Rust 1.90. In quel caso aggiornare di conseguenza `TECH_DESIGN.md` §1 e questo task file.
+*Fallback if the toolchain upgrade isn't practical:* bevy `0.18.1` + bevy_egui `0.39.x` run on Rust 1.90. In that case update `TECH_DESIGN.md` §1 and this task file accordingly.
 
 ---
 
-## 🔨 Implementazione Suggerita
+## 🔨 Suggested Implementation
 
 1. **Toolchain**
 
    ```bash
    rustup update stable
-   rustc --version   # atteso: 1.97.1
+   rustc --version   # expected: 1.97.1
    ```
 
-   Creare `rust-toolchain.toml`:
+   Create `rust-toolchain.toml`:
 
    ```toml
    [toolchain]
@@ -76,7 +76,7 @@ Portare il progetto da "cartella con soli documenti" a **applicazione Bevy che s
    components = ["rustfmt", "clippy"]
    ```
 
-2. **Scaffold** — **`init`, non `new`**: la directory contiene già file.
+2. **Scaffold** — **`init`, not `new`**: the directory already has files.
 
    ```bash
    cargo init --name abiogenesis
@@ -85,7 +85,7 @@ Portare il progetto da "cartella con soli documenti" a **applicazione Bevy che s
    cargo add rand
    ```
 
-3. **Profilo di build.** Senza questo, la simulazione in debug è inguardabile: le dipendenze vanno compilate ottimizzate anche in dev. In `Cargo.toml`:
+3. **Build profile.** Without this, the debug-mode simulation is unwatchably slow: dependencies need to be compiled optimized even in dev. In `Cargo.toml`:
 
    ```toml
    [profile.dev]
@@ -95,7 +95,7 @@ Portare il progetto da "cartella con soli documenti" a **applicazione Bevy che s
    opt-level = 3
    ```
 
-4. **Stub dei plugin.** Un file per modulo, ciascuno con un `Plugin` vuoto:
+4. **Plugin stubs.** One file per module, each with an empty `Plugin`:
 
    ```rust
    use bevy::prelude::*;
@@ -107,7 +107,7 @@ Portare il progetto da "cartella con soli documenti" a **applicazione Bevy che s
    }
    ```
 
-5. **`main.rs`** — `DefaultPlugins` con la finestra configurata, più i sei plugin del progetto:
+5. **`main.rs`** — `DefaultPlugins` with the window configured, plus the project's six plugins:
 
    ```rust
    fn main() {
@@ -131,29 +131,29 @@ Portare il progetto da "cartella con soli documenti" a **applicazione Bevy che s
    }
    ```
 
-6. Riportare le versioni risolte (`cargo tree --depth 0` o `Cargo.lock`) in `TECH_DESIGN.md` §1.
+6. Record the resolved versions (`cargo tree --depth 0` or `Cargo.lock`) in `TECH_DESIGN.md` §1.
 
 ---
 
-## ⚠️ Vincoli e Attenzioni
+## ⚠️ Constraints and Caveats
 
-- **`cargo init`, non `cargo new`** — la cartella non è vuota.
-- **`EguiPlugin` non va ancora registrato**: è il task 008. Qui `bevy_egui` è solo una dipendenza dichiarata.
-- **Nessuna logica di gioco in questo task.** Gli stub restano vuoti; riempirli è compito dei task 002+.
-- L'API di `rand` ≥ 0.9 differisce da 0.8 (`thread_rng` → `rng`, `gen` → `random`): verificare la versione risolta prima di scrivere codice che la usa (task 003).
-- La prima build di Bevy scarica e compila molto: mettere in conto diversi minuti.
-
----
-
-## 🔗 Dipendenze
-
-- **Dipende da**: nessuno
-- **Blocca**: 002 (e a cascata tutti gli altri)
+- **`cargo init`, not `cargo new`** — the folder isn't empty.
+- **`EguiPlugin` isn't registered yet**: that's task 008. Here `bevy_egui` is just a declared dependency.
+- **No game logic in this task.** Stubs stay empty; filling them in is the job of tasks 002+.
+- The `rand` ≥ 0.9 API differs from 0.8 (`thread_rng` → `rng`, `gen` → `random`): verify the resolved version before writing code that uses it (task 003).
+- Bevy's first build downloads and compiles a lot: expect several minutes.
 
 ---
 
-## 🤖 Come delegare questo task a Claude CLI
+## 🔗 Dependencies
+
+- **Depends on**: none
+- **Blocks**: 002 (and cascades to everything else)
+
+---
+
+## 🤖 How to delegate this task to Claude CLI
 
 ```bash
-claude "$(cat tasks/001-scaffold-bevy.md)"$'\n\nEsegui questo task nel progetto corrente.'
+claude "$(cat tasks/001-scaffold-bevy.md)"$'\n\nExecute this task in the current project.'
 ```

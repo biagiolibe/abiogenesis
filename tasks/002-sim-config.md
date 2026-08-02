@@ -1,112 +1,112 @@
-# Task 002 — `SimConfig`: coefficienti centralizzati
+# Task 002 — `SimConfig`: centralized coefficients
 
 > **ID**: `002`
-> **Categoria**: Architettura
-> **Priorità**: 🔴 P1
-> **Stima**: ~1h
-> **Assegnato a**: non assegnato
-> **Sessione**: —
+> **Category**: Architecture
+> **Priority**: 🔴 P1
+> **Estimate**: ~1h
+> **Assigned to**: unassigned
+> **Session**: —
 
 ---
 
-## 🎯 Obiettivo
+## 🎯 Objective
 
-Trascrivere l'intera baseline numerica del GDD §5.9 in una **singola resource `SimConfig`**, punto unico di verità per ogni coefficiente della simulazione.
+Transcribe the entire numeric baseline from GDD §5.9 into a **single `SimConfig` resource**, the single source of truth for every simulation coefficient.
 
-È necessario perché il GDD §5.6 lo impone come decisione di design: *"tutti i coefficienti sono costanti nominate in un unico punto, così il tuning finale è rapido"*. Il tuning del bilanciamento è dichiarato come il lavoro più delicato del progetto (GDD §13, §14): se i numeri finiscono sparsi nel codice, quel lavoro diventa impraticabile.
+Necessary because GDD §5.6 mandates it as a design decision: *"all coefficients are named constants in a single place, so final tuning is fast."* Balance tuning is declared the most delicate work in the project (GDD §13, §14): if the numbers end up scattered through the code, that work becomes impractical.
 
-Si inseriscono **anche i coefficienti delle fasi successive** (matrice, taccuino, azioni): sono già decisi nel GDD e centralizzarli ora costa zero.
+**Coefficients for later phases are included too** (matrix, notebook, actions): they're already decided in the GDD, and centralizing them now costs nothing.
 
 ---
 
 ## 📋 Acceptance Criteria
 
-- [ ] Ogni valore numerico delle tabelle di GDD §5.9 ha una costante o un campo corrispondente in `SimConfig`.
-- [ ] `SimConfig` è registrata come `Resource` da `ConfigPlugin`.
-- [ ] Esiste `SimConfig::default()` che restituisce la baseline del GDD.
-- [ ] Nessun valore duplicato: ogni numero compare una volta sola.
-- [ ] Ogni campo ha un commento con l'unità di misura o il riferimento al GDD.
-- [ ] `cargo clippy -- -D warnings` pulito.
+- [ ] Every numeric value in the GDD §5.9 tables has a corresponding constant or field in `SimConfig`.
+- [ ] `SimConfig` is registered as a `Resource` by `ConfigPlugin`.
+- [ ] `SimConfig::default()` exists and returns the GDD baseline.
+- [ ] No duplicated values: each number appears exactly once.
+- [ ] Every field has a comment with its unit of measurement or GDD reference.
+- [ ] `cargo clippy -- -D warnings` clean.
 
 ---
 
-## 📁 File Rilevanti
+## 📁 Relevant Files
 
-| File | Ruolo |
-|------|-------|
-| `src/config.rs` | `SimConfig` e `ConfigPlugin` |
+| File | Role |
+|------|------|
+| `src/config.rs` | `SimConfig` and `ConfigPlugin` |
 
 ---
 
-## 🧩 Contesto Tecnico
+## 🧩 Technical Context
 
-- **Comportamento attuale**: `src/config.rs` è uno stub vuoto (task 001).
-- **Comportamento desiderato**: `SimConfig` disponibile come resource, con l'intera baseline del GDD.
+- **Current behavior**: `src/config.rs` is an empty stub (task 001).
+- **Desired behavior**: `SimConfig` available as a resource, with the entire GDD baseline.
 
-### La baseline da trascrivere (GDD §5.9)
+### The baseline to transcribe (GDD §5.9)
 
-**Ambiente** — tutte le scalari sono in `[0,1]`
+**Environment** — all scalars are in `[0,1]`
 
-| Costante | Valore |
+| Constant | Value |
 |---|---|
-| Diffusione ambientale (Fase 1+) | `0.05` / tick |
-| Gradiente luce: alto → basso | `0.9` → `0.2` |
-| Gradiente temperatura: sx → dx | `0.2` → `0.8` |
-| Zona tossica | `0.7` (resto `0.0`) |
+| Environmental diffusion (Phase 1+) | `0.05` / tick |
+| Light gradient: high → low | `0.9` → `0.2` |
+| Temperature gradient: left → right | `0.2` → `0.8` |
+| Toxic zone | `0.7` (elsewhere `0.0`) |
 
-**Tempo e azioni**
+**Time and actions**
 
-| Costante | Valore |
+| Constant | Value |
 |---|---|
 | `ERA_TICKS` | `25` |
-| Budget ere / mondo | `40` (iniziali) → `25` (tardi) |
-| Budget punti / era | `3` |
-| Costo azioni | seed `1`, stress `1`, cull `1`, splice `2` |
+| Era budget / world | `40` (early) → `25` (late) |
+| Point budget / era | `3` |
+| Action costs | seed `1`, stress `1`, cull `1`, splice `2` |
 
-**Energia e metabolismo** (per organismo)
+**Energy and metabolism** (per organism)
 
-| Costante | Valore |
+| Constant | Value |
 |---|---|
-| Energia al seed | `5.0` |
-| `upkeep` base | `0.5` / tick |
-| `crowd_factor` | `0.15` / vicino occupato |
+| Energy at seeding | `5.0` |
+| Base `upkeep` | `0.5` / tick |
+| `crowd_factor` | `0.15` / occupied neighbor |
 | `repro_threshold` | `10.0` |
-| `repro_cost` (al figlio) | `5.0` |
-| Fotolitico `metabolism_gain` | `2.0` |
-| Predatore `drain_cap` / `upkeep` | `2.0` / tick · `0.7` |
-| Decompositore `extract_rate` / `upkeep` | `1.5` / tick · `0.5` |
-| Residuo alla morte / decadimento | `3.0` · `0.2` / tick |
-| `temp_tolerance` (σ) default | `0.15` |
+| `repro_cost` (to the child) | `5.0` |
+| Photolithic `metabolism_gain` | `2.0` |
+| Predator `drain_cap` / `upkeep` | `2.0` / tick · `0.7` |
+| Decomposer `extract_rate` / `upkeep` | `1.5` / tick · `0.5` |
+| Residue on death / decay | `3.0` · `0.2` / tick |
+| Default `temp_tolerance` (σ) | `0.15` |
 
-**Tag e matrice**
+**Tags and matrix**
 
-| Costante | Valore |
+| Constant | Value |
 |---|---|
-| Pool globale tag | `10` |
-| Tag attivi / mondo | `5` (iniziali) → `8` (tardi) |
-| Tag per specie | `1–3` |
-| Intensità effetto / adiacenza | interi in `{−2,−1,0,+1,+2}` |
-| Densità matrice | ~`40%` coppie non nulle |
+| Global tag pool | `10` |
+| Active tags / world | `5` (early) → `8` (late) |
+| Tags per species | `1–3` |
+| Effect intensity / adjacency | integers in `{−2,−1,0,+1,+2}` |
+| Matrix density | ~`40%` non-zero pairs |
 
-**Taccuino**
+**Notebook**
 
-| Costante | Valore |
+| Constant | Value |
 |---|---|
-| Soglia di conferma / cella | `3.0` di evidenza cumulata |
-| Peso di un'osservazione | `1 / (1 + n_confonditori_adiacenti)` |
+| Confirmation threshold / cell | `3.0` cumulative evidence |
+| Weight of one observation | `1 / (1 + n_adjacent_confounders)` |
 
-**Griglia**
+**Grid**
 
-| Costante | Valore |
+| Constant | Value |
 |---|---|
-| Dimensione | `48×32` |
-| Vicinato | Moore (8) |
+| Size | `48×32` |
+| Neighborhood | Moore (8) |
 
 ---
 
-## 🔨 Implementazione Suggerita
+## 🔨 Suggested Implementation
 
-1. Raggruppare in sotto-struct tematiche invece di un'unica struct piatta da 30 campi — si legge meglio e rispecchia le tabelle del GDD:
+1. Group into themed sub-structs instead of a single flat struct with 30 fields — it reads better and mirrors the GDD tables:
 
    ```rust
    #[derive(Resource, Debug, Clone)]
@@ -120,7 +120,7 @@ Si inseriscono **anche i coefficienti delle fasi successive** (matrice, taccuino
    }
    ```
 
-2. Ogni sotto-struct implementa `Default` con i valori del GDD:
+2. Each sub-struct implements `Default` with the GDD values:
 
    ```rust
    #[derive(Debug, Clone)]
@@ -135,7 +135,7 @@ Si inseriscono **anche i coefficienti delle fasi successive** (matrice, taccuino
    }
    ```
 
-3. `ConfigPlugin` inserisce la resource:
+3. `ConfigPlugin` inserts the resource:
 
    ```rust
    impl Plugin for ConfigPlugin {
@@ -145,28 +145,28 @@ Si inseriscono **anche i coefficienti delle fasi successive** (matrice, taccuino
    }
    ```
 
-4. Usare `f32` per le scalari continue e `u32`/`i8` per i conteggi e le intensità della matrice.
+4. Use `f32` for continuous scalars and `u32`/`i8` for counts and matrix intensities.
 
 ---
 
-## ⚠️ Vincoli e Attenzioni
+## ⚠️ Constraints and Caveats
 
-- **Nessun valore va "arrotondato" o reinterpretato.** Il GDD §14 è esplicito: i numeri di §5.9 *"vanno confermati o ritoccati col playtest, non reinventati"*.
-- `src/config.rs` **non deve dipendere da `bevy::render` né da `bevy_egui`** (invariante 2, `TECH_DESIGN.md` §5). L'unico import Bevy ammesso è quello che serve per `derive(Resource)`.
-- I budget che nel GDD sono espressi come intervallo (ere per mondo `40 → 25`, tag attivi `5 → 8`) vanno modellati come coppia inizio/fine, non come valore singolo: serviranno alla curva di difficoltà in Fase 3.
-- Non implementare l'hot-reload: è previsto (`TECH_DESIGN.md` §4) ma appartiene alla fase di tuning. Qui basta che la config sia **una sola resource letta e mai duplicata**, così la migrazione sarà indolore.
-
----
-
-## 🔗 Dipendenze
-
-- **Dipende da**: 001
-- **Blocca**: 003
+- **No value should be "rounded" or reinterpreted.** GDD §14 is explicit: the §5.9 numbers *"need to be confirmed or adjusted through playtesting, not reinvented."*
+- `src/config.rs` **must not depend on `bevy::render` or `bevy_egui`** (invariant 2, `TECH_DESIGN.md` §5). The only Bevy import allowed is the one needed for `derive(Resource)`.
+- Budgets expressed in the GDD as a range (eras per world `40 → 25`, active tags `5 → 8`) should be modeled as a start/end pair, not a single value: the difficulty curve in Phase 3 will need them.
+- Do not implement hot-reload: it's planned (`TECH_DESIGN.md` §4) but belongs to the tuning phase. Here it's enough for the config to be **a single resource, read and never duplicated**, so the migration is painless.
 
 ---
 
-## 🤖 Come delegare questo task a Claude CLI
+## 🔗 Dependencies
+
+- **Depends on**: 001
+- **Blocks**: 003
+
+---
+
+## 🤖 How to delegate this task to Claude CLI
 
 ```bash
-claude "$(cat tasks/002-sim-config.md)"$'\n\nEsegui questo task nel progetto corrente.'
+claude "$(cat tasks/002-sim-config.md)"$'\n\nExecute this task in the current project.'
 ```

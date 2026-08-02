@@ -1,79 +1,79 @@
-# Task 007 — `GameState`/`EraState`, input, era animata
+# Task 007 — `GameState`/`EraState`, input, animated era
 
 > **ID**: `007`
-> **Categoria**: Feature
-> **Priorità**: 🟡 P2
-> **Stima**: ~2h
-> **Assegnato a**: non assegnato
-> **Sessione**: —
+> **Category**: Feature
+> **Priority**: 🟡 P2
+> **Estimate**: ~2h
+> **Assigned to**: unassigned
+> **Session**: —
 
 ---
 
-## 🎯 Obiettivo
+## 🎯 Objective
 
-Dare al giocatore il **controllo del tempo**: premere `space` fa avanzare un'era di `ERA_TICKS = 25` tick **animati uno per uno**, poi il gioco torna in attesa.
+Give the player **control over time**: pressing `space` advances an era of `ERA_TICKS = 25` ticks **animated one by one**, then the game returns to waiting.
 
-Questo task chiude il core loop della Fase 0. Il modello del tempo del GDD §4 non è un dettaglio di comodo: fa **coincidere il modello del tempo col loop mentale** del giocatore — pianifichi, esegui, osservi.
+This task closes Phase 0's core loop. GDD §4's time model isn't a convenience detail: it **makes the time model coincide with the player's mental loop** — plan, execute, observe.
 
 ---
 
 ## 📋 Acceptance Criteria
 
-- [ ] Esistono `GameState` (`Loading` → `MainMenu` → `Playing`) e il sotto-stato `EraState` (`Planning` / `Advancing` / `Observing`).
-- [ ] `space` in `Observing` (o `Planning`) avvia un'era: transizione ad `Advancing`.
-- [ ] L'era avanza di **esattamente 25 tick**, uno per frame fisso, **visibili come animazione**; poi torna a `Observing`.
-- [ ] `s` avanza di **un solo tick**, senza passare da `Advancing`.
-- [ ] `r` rigenera il mondo con un nuovo seed.
-- [ ] `Esc` esce.
-- [ ] Gli input di avanzamento sono **ignorati durante `Advancing`** (niente ere accodate per errore).
-- [ ] Il sistema di simulazione **non gira** fuori da `Advancing`.
-- [ ] Seminando un fotolitico in zona luminosa e premendo `space`, si vede una fioritura crescere tick per tick.
-- [ ] `cargo clippy -- -D warnings` pulito.
+- [ ] `GameState` (`Loading` → `MainMenu` → `Playing`) and the `EraState` sub-state (`Planning` / `Advancing` / `Observing`) exist.
+- [ ] `space` in `Observing` (or `Planning`) starts an era: transitions to `Advancing`.
+- [ ] The era advances by **exactly 25 ticks**, one per fixed frame, **visible as an animation**; then returns to `Observing`.
+- [ ] `s` advances by **a single tick**, without going through `Advancing`.
+- [ ] `r` regenerates the world with a new seed.
+- [ ] `Esc` quits.
+- [ ] Advancement inputs are **ignored during `Advancing`** (no eras queued by mistake).
+- [ ] The simulation system **doesn't run** outside `Advancing`.
+- [ ] Seeding a photolithic organism in a bright zone and pressing `space` shows a bloom growing tick by tick.
+- [ ] `cargo clippy -- -D warnings` clean.
 
 ---
 
-## 📁 File Rilevanti
+## 📁 Relevant Files
 
-| File | Ruolo |
-|------|-------|
-| `src/input.rs` | `InputPlugin`, mappatura tasti |
-| `src/sim.rs` | `SimPlugin`, run condition e `EraProgress` |
+| File | Role |
+|------|------|
+| `src/input.rs` | `InputPlugin`, key mapping |
+| `src/sim.rs` | `SimPlugin`, run condition and `EraProgress` |
 | `src/world.rs` | Reset/reseed |
-| `src/main.rs` | Registrazione degli stati |
+| `src/main.rs` | State registration |
 
 ---
 
-## 🧩 Contesto Tecnico
+## 🧩 Technical Context
 
-- **Comportamento attuale**: `step()` esiste ed è corretto (task 005), la griglia si vede (task 006), ma nulla lo invoca in modo controllato.
-- **Comportamento desiderato**: il giocatore governa l'avanzamento del tempo.
+- **Current behavior**: `step()` exists and is correct (task 005), the grid is visible (task 006), but nothing invokes it in a controlled way.
+- **Desired behavior**: the player governs the passage of time.
 
-### GDD §4 — Il modello delle ere
+### GDD §4 — The era model
 
-> Il tempo avanza a **ere**: il giocatore mette in coda una o più azioni, poi fa avanzare la simulazione di *N* tick in blocco e osserva il risultato.
+> Time advances in **eras**: the player queues one or more actions, then advances the simulation by *N* ticks in a block and observes the result.
 >
-> - **Animazione durante l'era:** l'avanzamento dei tick viene mostrato tick-per-tick (rapido), così si conserva la sensazione di "sistema che respira", ma il *controllo* resta a scatti deliberati.
-> - **Lunghezza dell'era:** `ERA_TICKS = 25` come default, regolabile.
+> - **Animation during the era:** tick advancement is shown tick-by-tick (fast), preserving the feeling of a "breathing system," while *control* remains deliberately step-wise.
+> - **Era length:** `ERA_TICKS = 25` as default, adjustable.
 
-### Il ciclo (GDD §16.4)
+### The cycle (GDD §16.4)
 
 ```
-PIANIFICA (budget azioni)  →  [SPACE]  →  AVANZA ERA (25 tick animati)  →  OSSERVA & REGISTRA
+PLAN (action budget)  →  [SPACE]  →  ADVANCE ERA (25 ticks, animated)  →  OBSERVE & RECORD
       ▲                                                                            │
       └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-`EraState` mappa 1:1 su questo ciclo (`TECH_DESIGN.md` §2). In Fase 0 `Planning` è di fatto vuoto — diventa significativo in Fase 2, con le azioni.
+`EraState` maps 1:1 onto this cycle (`TECH_DESIGN.md` §2). In Phase 0, `Planning` is effectively empty — it becomes meaningful in Phase 2, with actions.
 
-### Realizzazione (`TECH_DESIGN.md` §3.4)
+### Implementation (`TECH_DESIGN.md` §3.4)
 
-Il sistema di avanzamento gira in **`FixedUpdate`** con timestep configurabile — che qui regola la **velocità dell'animazione**, non la velocità della logica. Una resource `EraProgress` conta i tick residui; a zero, transizione a `Observing`.
+The advancement system runs in **`FixedUpdate`** with a configurable timestep — which here governs the **animation speed**, not the logic speed. An `EraProgress` resource counts remaining ticks; at zero, transition to `Observing`.
 
 ---
 
-## 🔨 Implementazione Suggerita
+## 🔨 Suggested Implementation
 
-1. **Stati**
+1. **States**
 
    ```rust
    #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default)]
@@ -95,9 +95,9 @@ Il sistema di avanzamento gira in **`FixedUpdate`** con timestep configurabile �
    }
    ```
 
-   In Fase 0 `Loading` può transitare direttamente a `Playing`; `MainMenu` resta uno stub (diventa reale in Fase 3).
+   In Phase 0, `Loading` can transition directly to `Playing`; `MainMenu` stays a stub (becomes real in Phase 3).
 
-2. **Contatore dell'era**
+2. **Era counter**
 
    ```rust
    /// Ticks left in the era currently being animated.
@@ -107,7 +107,7 @@ Il sistema di avanzamento gira in **`FixedUpdate`** con timestep configurabile �
    }
    ```
 
-3. **Avvio dell'era** — su `space`, solo se **non** si è già in `Advancing`:
+3. **Starting an era** — on `space`, only if **not** already in `Advancing`:
 
    ```rust
    fn start_era(/* ... */) {
@@ -116,7 +116,7 @@ Il sistema di avanzamento gira in **`FixedUpdate`** con timestep configurabile �
    }
    ```
 
-4. **Avanzamento** — in `FixedUpdate`, con run condition sullo stato:
+4. **Advancement** — in `FixedUpdate`, with a run condition on state:
 
    ```rust
    app.add_systems(
@@ -127,37 +127,37 @@ Il sistema di avanzamento gira in **`FixedUpdate`** con timestep configurabile �
    );
    ```
 
-   `advance_tick` chiama `step`, decrementa `remaining` e, a zero, incrementa `world.era` e passa a `Observing`.
+   `advance_tick` calls `step`, decrements `remaining`, and at zero, increments `world.era` and transitions to `Observing`.
 
-5. **Timestep.** Impostare `Time<Fixed>` a un ritmo che renda l'era percepibile ma rapida: **~20 tick/secondo** fa durare un'era circa 1.2 s, coerente con l'"avanzamento rapido" del GDD §4. Il valore va in `SimConfig` — è una manopola di *feel*, quindi da tarare.
+5. **Timestep.** Set `Time<Fixed>` to a rate that makes the era feel perceptible but fast: **~20 ticks/second** makes an era last about 1.2s, consistent with GDD §4's "fast advancement." The value goes in `SimConfig` — it's a *feel* knob, so it's tunable.
 
-6. **Singolo tick.** `s` chiama `step` una volta e basta, senza toccare gli stati: serve all'osservazione fine e al debug (GDD §11).
+6. **Single tick.** `s` calls `step` once, no state changes: useful for fine observation and debugging (GDD §11).
 
-7. **Reset.** `r` ricostruisce `SimWorld` con un nuovo seed. Il seed successivo va derivato **dall'RNG del mondo corrente**, non dall'orologio di sistema, per non introdurre non-determinismo (invariante 1). In alternativa, un contatore incrementale sul seed iniziale.
+7. **Reset.** `r` rebuilds `SimWorld` with a new seed. The next seed should be derived **from the current world's RNG**, not the system clock, to avoid introducing non-determinism (invariant 1). Alternatively, an incrementing counter on the initial seed.
 
-8. **Semina di partenza.** Perché l'animazione mostri qualcosa, il mondo deve nascere con almeno un organismo: seminare un fotolitico al centro della fascia luminosa alla creazione del mondo. È un provvisorio della Fase 0 — l'azione *semina* vera arriva in Fase 1 — quindi va marcato con un commento.
-
----
-
-## ⚠️ Vincoli e Attenzioni
-
-- **Non accodare ere.** Se `space` viene premuto durante `Advancing`, va ignorato: la run condition sullo stato è la difesa più semplice.
-- **Il timestep governa l'animazione, non la logica.** Cambiarlo deve alterare solo la velocità di riproduzione, mai il risultato della simulazione. Se cambiando il timestep cambia lo stato finale, l'invariante 1 è stata violata da qualche parte.
-- **Esattamente 25 tick per era.** Contare sul tempo trascorso invece che sui tick porta a ere di lunghezza variabile e distrugge la riproducibilità.
-- **Niente `Time` di Bevy dentro `step`** (invariante 1). Il tempo di Bevy decide *quando* chiamare `step`, mai *cosa* fa.
-- `q` come tasto di uscita era previsto dal GDD v0.3 ma è stato rimosso in v0.4: serve libero per l'input testuale futuro. Resta `Esc`.
+8. **Starting seed.** For the animation to show anything, the world needs to start with at least one organism: seed a photolithic organism at the center of the bright band when the world is created. This is a Phase 0 placeholder — the real *seed* action arrives in Phase 1 — so mark it with a comment.
 
 ---
 
-## 🔗 Dipendenze
+## ⚠️ Constraints and Caveats
 
-- **Dipende da**: 005, 006
-- **Blocca**: 008
+- **Don't queue eras.** If `space` is pressed during `Advancing`, it must be ignored: the state run condition is the simplest defense.
+- **The timestep governs animation, not logic.** Changing it must only alter playback speed, never the simulation's result. If changing the timestep changes the final state, invariant 1 has been violated somewhere.
+- **Exactly 25 ticks per era.** Counting elapsed time instead of ticks leads to eras of variable length and destroys reproducibility.
+- **No Bevy `Time` inside `step`** (invariant 1). Bevy's time decides *when* to call `step`, never *what* it does.
+- `q` as a quit key was planned in GDD v0.3 but removed in v0.4: it's kept free for future text input. `Esc` remains.
 
 ---
 
-## 🤖 Come delegare questo task a Claude CLI
+## 🔗 Dependencies
+
+- **Depends on**: 005, 006
+- **Blocks**: 008
+
+---
+
+## 🤖 How to delegate this task to Claude CLI
 
 ```bash
-claude "$(cat tasks/007-states-input-era.md)"$'\n\nEsegui questo task nel progetto corrente.'
+claude "$(cat tasks/007-states-input-era.md)"$'\n\nExecute this task in the current project.'
 ```
