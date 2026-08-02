@@ -2,8 +2,8 @@ use bevy::camera::{Camera, Viewport};
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
-use crate::state::EraState;
-use crate::world::{SimWorld, SpeciesId};
+use abiogenesis::state::EraState;
+use abiogenesis::world::{SimWorld, SpeciesId};
 
 /// On-screen width of the HUD panel, reserved from the camera's viewport so
 /// the panel never draws over the grid (task 008 acceptance criterion).

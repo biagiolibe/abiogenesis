@@ -32,9 +32,9 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 | Status | ID | Title | Priority | Depends on | Agent | Task File |
 |-------|----|--------|----------|------------|--------|-----------|
-| `[ ]` | 009 | Determinism tests and carrying-capacity validation | 🟡 P2 | 005 | — | [009](009-determinism-balance-tests.md) |
+| *(none)* | — | — | — | — | — | — |
 
-**Phase 0 exit gate:** do not move to Phase 1 while task 009's tests are red.
+**Phase 0 exit gate: cleared.** Task 009's determinism and balance tests are green — Phase 0 is complete.
 
 Later phases live as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) and expand into task files when we get there.
 
@@ -62,6 +62,7 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | `[x]` | 006 | Grid rendering with sprites + 2D camera | Claude | [006](done/006-grid-rendering.md) |
 | `[x]` | 007 | `GameState`/`EraState`, input, animated era | Claude | [007](done/007-states-input-era.md) |
 | `[x]` | 008 | `bevy_egui` HUD | Claude | [008](done/008-hud-egui.md) |
+| `[x]` | 009 | Determinism tests and carrying-capacity validation | Claude | [009](done/009-determinism-balance-tests.md) |
 
 ---
 

@@ -4,10 +4,10 @@
 
 use bevy::prelude::*;
 
-use crate::config::SimConfig;
-use crate::sim::{step, EraProgress};
-use crate::state::EraState;
-use crate::world::{seed_phase0_organism, SimWorld};
+use abiogenesis::config::SimConfig;
+use abiogenesis::sim::{step, EraProgress};
+use abiogenesis::state::EraState;
+use abiogenesis::world::{seed_phase0_organism, SimWorld};
 
 pub struct InputPlugin;
 

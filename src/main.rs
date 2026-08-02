@@ -1,20 +1,16 @@
-mod config;
 mod input;
 mod render;
-mod sim;
-mod state;
 mod ui;
-mod world;
 
+use abiogenesis::config::ConfigPlugin;
+use abiogenesis::sim::SimPlugin;
+use abiogenesis::state::{EraState, GameState};
+use abiogenesis::world::WorldPlugin;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
-use config::ConfigPlugin;
 use input::InputPlugin;
 use render::GridRenderPlugin;
-use sim::SimPlugin;
-use state::{EraState, GameState};
 use ui::UiPlugin;
-use world::WorldPlugin;
 
 fn main() {
     App::new()

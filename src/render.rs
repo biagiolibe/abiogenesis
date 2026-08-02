@@ -1,8 +1,8 @@
 use bevy::camera::ScalingMode;
 use bevy::prelude::*;
 
-use crate::config::SimConfig;
-use crate::world::SimWorld;
+use abiogenesis::config::SimConfig;
+use abiogenesis::world::SimWorld;
 
 /// Pixel size of one grid cell on screen. Presentation-only, not a
 /// simulation coefficient, so it stays local instead of living in
@@ -107,7 +107,7 @@ fn cell_color(world: &SimWorld, config: &SimConfig, x: usize, y: usize) -> Color
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::{Cell, Organism, SpeciesId};
+    use abiogenesis::world::{Cell, Organism, SpeciesId};
 
     #[test]
     fn occupied_cells_are_saturated_and_residue_desaturated() {
