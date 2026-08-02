@@ -48,7 +48,7 @@ PROPOSTE  →  (revisione)  →  BACKLOG  →  (sviluppo)  →  COMPLETATI
 
 **Traguardo:** guardi una specie fotolitica fiorire e stabilizzarsi grazie alla carrying capacity (GDD §13).
 
-- `[ ]` 001 — Toolchain, scaffold Cargo e app Bevy a plugin → [001](tasks/001-scaffold-bevy.md)
+- `[x]` 001 — Toolchain, scaffold Cargo e app Bevy a plugin → [001](tasks/done/001-scaffold-bevy.md)
 - `[ ]` 002 — `SimConfig`: coefficienti centralizzati → [002](tasks/002-sim-config.md)
 - `[ ]` 003 — Tipi di dominio e resource `SimWorld` → [003](tasks/003-domain-simworld.md)
 - `[ ]` 004 — Ambiente: gradienti statici → [004](tasks/004-environment-gradients.md)

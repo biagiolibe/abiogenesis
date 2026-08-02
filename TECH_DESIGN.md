@@ -10,14 +10,13 @@ Il **design di gioco** vive in [`abiogenesis-gdd.md`](abiogenesis-gdd.md) (v0.4)
 - **Linguaggio**: Rust (Edizione 2021)
 - **Toolchain**: **1.97.1**, pinnata in `rust-toolchain.toml`
   *Vincolo:* Bevy 0.19 richiede Rust ≥ 1.95.0.
-- **Engine**: **Bevy 0.19**
-- **UI**: **`bevy_egui` 0.41** (egui 0.35)
-- **RNG**: `rand`, con seed esplicito conservato nello stato del mondo
+- **Engine**: **Bevy 0.19.0**
+- **UI**: **`bevy_egui` 0.41.1** (egui 0.35.0)
+- **RNG**: **`rand` 0.10.2**, con seed esplicito conservato nello stato del mondo
 - **Fisica**: nessuna (simulazione a griglia, non continua)
 
-> **Da completare nel task 001**: riportare qui le versioni esatte risolte da `cargo add`.
-> Attenzione: l'API di `rand` ≥ 0.9 differisce da 0.8 (`thread_rng` → `rng`, `gen` → `random`, tratti rinominati).
-> *Fallback se la toolchain non si aggiorna:* bevy 0.18.1 + bevy_egui 0.39.x girano su Rust 1.90.
+> Versioni risolte da `cargo add` in task 001 (vedi `Cargo.lock`).
+> Attenzione: l'API di `rand` 0.10 differisce da 0.8 (`thread_rng` → `rng`, `gen` → `random`, tratti rinominati) — da tenere a mente in task 003 quando si inizializza l'RNG in `SimWorld`.
 
 ---
 

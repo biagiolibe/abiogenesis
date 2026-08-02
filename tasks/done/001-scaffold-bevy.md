@@ -19,13 +19,13 @@ Portare il progetto da "cartella con soli documenti" a **applicazione Bevy che s
 
 ## 📋 Acceptance Criteria
 
-- [ ] `rustc --version` riporta **1.97.1** e `rust-toolchain.toml` pinna quella versione.
-- [ ] `cargo build` compila senza errori.
-- [ ] `cargo run` apre una finestra con titolo `Abiogenesis` e sfondo uniforme (nessun contenuto: è corretto).
-- [ ] `cargo clippy -- -D warnings` è pulito.
-- [ ] I sei plugin esistono come stub e sono registrati in `main.rs`.
-- [ ] Le versioni esatte risolte da `cargo add` sono riportate in `TECH_DESIGN.md` §1, sostituendo la nota "Da completare nel task 001".
-- [ ] `.gitignore` copre `/target` (già presente: verificare).
+- [x] `rustc --version` riporta **1.97.1** e `rust-toolchain.toml` pinna quella versione.
+- [x] `cargo build` compila senza errori.
+- [x] `cargo run` apre una finestra con titolo `Abiogenesis` e sfondo uniforme (nessun contenuto: è corretto).
+- [x] `cargo clippy -- -D warnings` è pulito.
+- [x] I sei plugin esistono come stub e sono registrati in `main.rs`.
+- [x] Le versioni esatte risolte da `cargo add` sono riportate in `TECH_DESIGN.md` §1, sostituendo la nota "Da completare nel task 001".
+- [x] `.gitignore` copre `/target` (già presente: verificare).
 
 ---
 

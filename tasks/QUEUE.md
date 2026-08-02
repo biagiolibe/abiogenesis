@@ -32,7 +32,6 @@ claude "$(cat tasks/NNN-nome.md)"$'\n\nEsegui questo task nel progetto corrente.
 
 | Stato | ID | Titolo | Priorità | Dipende da | Agente | Task File |
 |-------|----|--------|----------|------------|--------|-----------|
-| `[ ]` | 001 | Toolchain, scaffold Cargo e app Bevy a plugin | 🔴 P1 | — | — | [001](001-scaffold-bevy.md) |
 | `[ ]` | 002 | `SimConfig`: coefficienti centralizzati | 🔴 P1 | 001 | — | [002](002-sim-config.md) |
 | `[ ]` | 003 | Tipi di dominio e resource `SimWorld` | 🔴 P1 | 002 | — | [003](003-domain-simworld.md) |
 | `[ ]` | 004 | Ambiente: gradienti statici | 🔴 P1 | 003 | — | [004](004-environment-gradients.md) |
@@ -62,6 +61,7 @@ Task che richiedono < 15 min e non necessitano di briefing dettagliato.
 
 | Stato | ID | Titolo | Agente | File |
 |-------|----|--------|--------|------|
+| `[x]` | 001 | Toolchain, scaffold Cargo e app Bevy a plugin | Claude | [001](done/001-scaffold-bevy.md) |
 
 ---
 
