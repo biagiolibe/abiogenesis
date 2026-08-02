@@ -70,8 +70,9 @@ pub struct SimWorld {
     pub era: u32,
     pub seed: u64,
     rng: StdRng,
-    /// Write-side double buffer for the tick (TECH_DESIGN.md §6, used from task 005).
-    scratch: Vec<Cell>,
+    /// Write-side double buffer for the tick (TECH_DESIGN.md §6). `pub(crate)`
+    /// so `sim::step` can read/write it directly without a cell-by-cell API.
+    pub(crate) scratch: Vec<Cell>,
 }
 
 impl SimWorld {

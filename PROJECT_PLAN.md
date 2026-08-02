@@ -52,7 +52,7 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 - `[x]` 002 — `SimConfig`: centralized coefficients → [002](tasks/done/002-sim-config.md)
 - `[x]` 003 — Domain types and `SimWorld` resource → [003](tasks/done/003-domain-simworld.md)
 - `[x]` 004 — Environment: static gradients → [004](tasks/done/004-environment-gradients.md)
-- `[ ]` 005 — Tick algorithm (Phase 0), pure and headless → [005](tasks/005-tick-algorithm.md)
+- `[x]` 005 — Tick algorithm (Phase 0), pure and headless → [005](tasks/done/005-tick-algorithm.md)
 - `[ ]` 006 — Grid rendering with sprites + 2D camera → [006](tasks/006-grid-rendering.md)
 - `[ ]` 007 — `GameState`/`EraState`, input, animated era → [007](tasks/007-states-input-era.md)
 - `[ ]` 008 — `bevy_egui` HUD → [008](tasks/008-hud-egui.md)
@@ -123,6 +123,7 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 - `[x]` Task 002 — `SimConfig`: centralized coefficients
 - `[x]` Task 003 — Domain types and `SimWorld` resource
 - `[x]` Task 004 — Environment: static gradients
+- `[x]` Task 005 — Tick algorithm (Phase 0), pure and headless
 
 ---
 
