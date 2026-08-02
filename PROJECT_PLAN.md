@@ -50,7 +50,7 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 
 - `[x]` 001 — Toolchain, Cargo scaffold, and plugin-based Bevy app → [001](tasks/done/001-scaffold-bevy.md)
 - `[x]` 002 — `SimConfig`: centralized coefficients → [002](tasks/done/002-sim-config.md)
-- `[ ]` 003 — Domain types and `SimWorld` resource → [003](tasks/003-domain-simworld.md)
+- `[x]` 003 — Domain types and `SimWorld` resource → [003](tasks/done/003-domain-simworld.md)
 - `[ ]` 004 — Environment: static gradients → [004](tasks/004-environment-gradients.md)
 - `[ ]` 005 — Tick algorithm (Phase 0), pure and headless → [005](tasks/005-tick-algorithm.md)
 - `[ ]` 006 — Grid rendering with sprites + 2D camera → [006](tasks/006-grid-rendering.md)
@@ -121,6 +121,7 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 - `[x]` Meridian bootstrap from the GDD: `TECH_DESIGN.md`, backlog, operational queue, Phase 0 task files
 - `[x]` Task 001 — Toolchain, Cargo scaffold, and plugin-based Bevy app
 - `[x]` Task 002 — `SimConfig`: centralized coefficients
+- `[x]` Task 003 — Domain types and `SimWorld` resource
 
 ---
 

@@ -32,7 +32,6 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 | Status | ID | Title | Priority | Depends on | Agent | Task File |
 |-------|----|--------|----------|------------|--------|-----------|
-| `[ ]` | 003 | Domain types and `SimWorld` resource | 🔴 P1 | 002 | — | [003](003-domain-simworld.md) |
 | `[ ]` | 004 | Environment: static gradients | 🔴 P1 | 003 | — | [004](004-environment-gradients.md) |
 | `[ ]` | 005 | Tick algorithm (Phase 0), pure and headless | 🔴 P1 | 004 | — | [005](005-tick-algorithm.md) |
 | `[ ]` | 006 | Grid rendering with sprites + 2D camera | 🟡 P2 | 003 | — | [006](006-grid-rendering.md) |
@@ -62,6 +61,7 @@ Tasks that take < 15 min and don't need a detailed briefing.
 |-------|----|--------|--------|------|
 | `[x]` | 001 | Toolchain, Cargo scaffold, and plugin-based Bevy app | Claude | [001](done/001-scaffold-bevy.md) |
 | `[x]` | 002 | `SimConfig`: centralized coefficients | Claude | [002](done/002-sim-config.md) |
+| `[x]` | 003 | Domain types and `SimWorld` resource | Claude | [003](done/003-domain-simworld.md) |
 
 ---
 
