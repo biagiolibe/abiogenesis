@@ -50,6 +50,11 @@ pub struct EnvironmentConfig {
     pub temperature_gradient_right: f32,
     /// Toxicity value inside the toxic zone, [0,1] (GDD §5.9). Elsewhere it's 0.0.
     pub toxic_zone_value: f32,
+    /// Width in cells of the Phase 0 toxic zone (bottom-right corner). Not in
+    /// the GDD baseline table; kept here rather than hand-written in `world.rs`.
+    pub toxic_zone_width: u32,
+    /// Height in cells of the Phase 0 toxic zone.
+    pub toxic_zone_height: u32,
 }
 
 impl Default for EnvironmentConfig {
@@ -61,6 +66,8 @@ impl Default for EnvironmentConfig {
             temperature_gradient_left: 0.2,
             temperature_gradient_right: 0.8,
             toxic_zone_value: 0.7,
+            toxic_zone_width: 8,
+            toxic_zone_height: 6,
         }
     }
 }

@@ -79,7 +79,7 @@ impl SimWorld {
         let width = config.grid.width as usize;
         let height = config.grid.height as usize;
         let cells = vec![Cell::default(); width * height];
-        Self {
+        let mut world = Self {
             width,
             height,
             scratch: cells.clone(),
@@ -89,7 +89,49 @@ impl SimWorld {
             era: 0,
             seed,
             rng: StdRng::seed_from_u64(seed),
+        };
+        world.apply_gradients(config);
+        world
+    }
+
+    /// Static Phase 0 gradients: light falls top→bottom, temperature rises
+    /// left→right. The two axes differ on purpose: their crossing is what
+    /// creates 2D niches (GDD §5.2). Doesn't touch the RNG, so it's
+    /// deterministic independently of the seed.
+    fn apply_gradients(&mut self, config: &SimConfig) {
+        let env = &config.environment;
+        let zone_x0 = self.width.saturating_sub(env.toxic_zone_width as usize);
+        let zone_y0 = self.height.saturating_sub(env.toxic_zone_height as usize);
+
+        for y in 0..self.height {
+            let ty = y as f32 / (self.height - 1).max(1) as f32;
+            let light = lerp(env.light_gradient_high, env.light_gradient_low, ty);
+            for x in 0..self.width {
+                let tx = x as f32 / (self.width - 1).max(1) as f32;
+                let temperature = lerp(
+                    env.temperature_gradient_left,
+                    env.temperature_gradient_right,
+                    tx,
+                );
+                let toxicity = if x >= zone_x0 && y >= zone_y0 {
+                    env.toxic_zone_value
+                } else {
+                    0.0
+                };
+                let idx = self.index(x, y);
+                self.cells[idx].light = light;
+                self.cells[idx].temperature = temperature;
+                self.cells[idx].toxicity = toxicity;
+            }
         }
+    }
+
+    /// Phase 1+: blend each scalar toward its neighbours' mean at
+    /// `diffusion_rate` per tick (GDD §5.2). Not active in Phase 0: gradients
+    /// are static, so the environment stays a fixed target while the tick
+    /// algorithm is tuned.
+    fn diffuse_environment(&mut self, _config: &SimConfig) {
+        // Intentionally empty in Phase 0.
     }
 
     pub fn index(&self, x: usize, y: usize) -> usize {
@@ -141,6 +183,12 @@ impl Plugin for WorldPlugin {
 fn spawn_world(mut commands: Commands, config: Res<SimConfig>) {
     // Fixed seed in Phase 0; interactive reseeding is task 007.
     commands.insert_resource(SimWorld::new(42, &config));
+}
+
+/// Exact at `t = 0.0` and `t = 1.0` (unlike `from + (to - from) * t`), which
+/// matters here: tests assert the grid extremes equal the GDD values exactly.
+fn lerp(from: f32, to: f32, t: f32) -> f32 {
+    from * (1.0 - t) + to * t
 }
 
 #[cfg(test)]
@@ -196,5 +244,54 @@ mod tests {
             8,
             "interior cell"
         );
+    }
+
+    #[test]
+    fn gradients_match_gdd_extremes() {
+        let config = test_config();
+        let world = SimWorld::new(42, &config);
+        let env = &config.environment;
+
+        assert_eq!(world.get(0, 0).light, env.light_gradient_high);
+        assert_eq!(world.get(0, world.height - 1).light, env.light_gradient_low);
+        assert_eq!(world.get(0, 0).temperature, env.temperature_gradient_left);
+        assert_eq!(
+            world.get(world.width - 1, 0).temperature,
+            env.temperature_gradient_right
+        );
+    }
+
+    #[test]
+    fn environment_scalars_stay_in_unit_range() {
+        let config = test_config();
+        let world = SimWorld::new(42, &config);
+
+        for cell in &world.cells {
+            assert!((0.0..=1.0).contains(&cell.light));
+            assert!((0.0..=1.0).contains(&cell.temperature));
+            assert!((0.0..=1.0).contains(&cell.toxicity));
+        }
+    }
+
+    #[test]
+    fn toxic_zone_is_isolated_to_its_corner() {
+        let config = test_config();
+        let world = SimWorld::new(42, &config);
+        let env = &config.environment;
+
+        assert_eq!(
+            world.get(world.width - 1, world.height - 1).toxicity,
+            env.toxic_zone_value
+        );
+        assert_eq!(world.get(0, 0).toxicity, 0.0);
+    }
+
+    #[test]
+    fn same_seed_produces_identical_environment() {
+        let config = test_config();
+        let a = SimWorld::new(42, &config);
+        let b = SimWorld::new(42, &config);
+
+        assert_eq!(a.cells, b.cells);
     }
 }
