@@ -62,7 +62,7 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 
 **Milestone:** true emergence appears; multiple species interact via the matrix (GDD §13).
 
-- `[ ]` 010 — Tag pool and per-species tag assignment (GDD §5.5) → [010](tasks/010-tag-pool-species-tags.md)
+- `[x]` 010 — Tag pool and per-species tag assignment (GDD §5.5) → [010](tasks/done/010-tag-pool-species-tags.md)
 - `[ ]` 011 — Hidden matrix generation with cyclicity constraint (GDD §5.5, §5.8) → [011](tasks/011-hidden-matrix-generation.md)
 - `[ ]` 012 — Adjacency (matrix) effect in the tick (GDD §5.6, step 3) → [012](tasks/012-matrix-adjacency-tick-effect.md)
 - `[ ]` 013 — Starting species palette, multiple species per world → [013](tasks/013-starting-species-palette.md)

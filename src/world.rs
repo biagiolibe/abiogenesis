@@ -4,6 +4,7 @@
 
 use bevy::prelude::*;
 use rand::rngs::StdRng;
+use rand::seq::IndexedRandom;
 use rand::RngExt;
 use rand::SeedableRng;
 
@@ -70,6 +71,10 @@ pub struct SimWorld {
     pub tick: u64,
     pub era: u32,
     pub seed: u64,
+    /// The world's active tag subset (GDD §5.5). Fixed to `TagId(0..active_tags_early)`
+    /// in Phase 1 — per-world procedural selection from the global pool is Phase 3
+    /// world generation (`PROJECT_PLAN.md`), not reimplemented here.
+    pub active_tags: Vec<TagId>,
     rng: StdRng,
     /// Write-side double buffer for the tick (TECH_DESIGN.md §6). `pub(crate)`
     /// so `sim::step` can read/write it directly without a cell-by-cell API.
@@ -81,6 +86,9 @@ impl SimWorld {
         let width = config.grid.width as usize;
         let height = config.grid.height as usize;
         let cells = vec![Cell::default(); width * height];
+        let active_tags = (0..config.tags.active_tags_early as u8)
+            .map(TagId)
+            .collect();
         let mut world = Self {
             width,
             height,
@@ -90,6 +98,7 @@ impl SimWorld {
             tick: 0,
             era: 0,
             seed,
+            active_tags,
             rng: StdRng::seed_from_u64(seed),
         };
         world.apply_gradients(config);
@@ -197,6 +206,21 @@ fn spawn_world(mut commands: Commands, config: Res<SimConfig>) {
     commands.insert_resource(world);
 }
 
+/// Draws 1..=3 tags for a new species from the world's active pool (GDD
+/// §5.5), without replacement, using the world's own RNG so species
+/// composition stays deterministic given the same seed.
+pub fn draw_species_tags(world: &mut SimWorld, config: &SimConfig) -> Vec<TagId> {
+    let n = world
+        .rng
+        .random_range(config.tags.tags_per_species_min..=config.tags.tags_per_species_max)
+        as usize;
+    world
+        .active_tags
+        .sample(&mut world.rng, n)
+        .copied()
+        .collect()
+}
+
 /// Phase 0 placeholder: seeds one photolithic organism at the top of the
 /// grid, where light is highest, so the era animation has something to
 /// grow. Phase 1's `seed` action replaces this with a player-chosen species
@@ -204,13 +228,14 @@ fn spawn_world(mut commands: Commands, config: Res<SimConfig>) {
 pub fn seed_phase0_organism(world: &mut SimWorld, config: &SimConfig) {
     let (cx, cy) = (world.width / 2, 0);
     let temperature = world.get(cx, cy).temperature;
+    let tags = draw_species_tags(world, config);
     let species_id = SpeciesId(world.species.len() as u8);
     world.species.push(Species {
         metabolism: Metabolism::Photolithic,
         temp_optimum: temperature,
         temp_tolerance: config.energy.default_temp_tolerance,
         repro_threshold: config.energy.repro_threshold,
-        tags: Vec::new(),
+        tags,
     });
     let idx = world.index(cx, cy);
     world.cells[idx].organism = Some(Organism {
@@ -326,5 +351,57 @@ mod tests {
         let b = SimWorld::new(42, &config);
 
         assert_eq!(a.cells, b.cells);
+    }
+
+    #[test]
+    fn active_tags_match_the_configured_pool() {
+        let config = test_config();
+        let world = SimWorld::new(42, &config);
+
+        assert_eq!(
+            world.active_tags.len(),
+            config.tags.active_tags_early as usize
+        );
+        for (i, tag) in world.active_tags.iter().enumerate() {
+            assert_eq!(tag.0, i as u8);
+        }
+    }
+
+    #[test]
+    fn drawn_species_tags_stay_within_bounds_and_the_active_pool() {
+        let config = test_config();
+        let mut world = SimWorld::new(42, &config);
+
+        for _ in 0..20 {
+            let tags = draw_species_tags(&mut world, &config);
+            assert!(
+                (config.tags.tags_per_species_min as usize
+                    ..=config.tags.tags_per_species_max as usize)
+                    .contains(&tags.len()),
+                "expected 1..=3 tags, got {}",
+                tags.len()
+            );
+            for tag in &tags {
+                assert!(
+                    world.active_tags.contains(tag),
+                    "drawn tag {:?} is not in the active pool",
+                    tag
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn same_seed_draws_identical_species_tags() {
+        let config = test_config();
+        let mut a = SimWorld::new(42, &config);
+        let mut b = SimWorld::new(42, &config);
+
+        for _ in 0..5 {
+            assert_eq!(
+                draw_species_tags(&mut a, &config),
+                draw_species_tags(&mut b, &config)
+            );
+        }
     }
 }
