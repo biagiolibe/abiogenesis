@@ -32,7 +32,6 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 | Status | ID | Title | Priority | Depends on | Agent | Task File |
 |-------|----|--------|----------|------------|--------|-----------|
-| `[ ]` | 011 | Hidden matrix generation with cyclicity constraint | 🔴 P1 | 010 | — | [011](011-hidden-matrix-generation.md) |
 | `[ ]` | 012 | Adjacency (matrix) effect in the tick | 🔴 P1 | 011 | — | [012](012-matrix-adjacency-tick-effect.md) |
 | `[ ]` | 013 | Starting species palette, multiple species per world | 🟡 P2 | 010 | — | [013](013-starting-species-palette.md) |
 | `[ ]` | 014 | Predator metabolism | 🟡 P2 | 005 | — | [014](014-predator-metabolism.md) |
@@ -70,6 +69,7 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | `[x]` | 008 | `bevy_egui` HUD | Claude | [008](done/008-hud-egui.md) |
 | `[x]` | 009 | Determinism tests and carrying-capacity validation | Claude | [009](done/009-determinism-balance-tests.md) |
 | `[x]` | 010 | Tag pool and per-species tag assignment | Claude | [010](done/010-tag-pool-species-tags.md) |
+| `[x]` | 011 | Hidden matrix generation with cyclicity constraint | Claude | [011](done/011-hidden-matrix-generation.md) |
 
 ---
 

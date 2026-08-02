@@ -8,7 +8,7 @@ use rand::seq::IndexedRandom;
 use rand::RngExt;
 use rand::SeedableRng;
 
-use crate::config::SimConfig;
+use crate::config::{SimConfig, TagConfig};
 
 /// How a species derives energy (GDD §5.4). Only `Photolithic` is active in
 /// Phase 0; the other variants exist now to avoid a refactor in Phase 1.
@@ -26,6 +26,27 @@ pub struct TagId(pub u8);
 /// Index into `SimWorld::species`. Kept small: species are few and never removed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpeciesId(pub u8);
+
+/// The secret tag x tag adjacency matrix (GDD §5.5): `get(exerter, receiver)`
+/// is the energy delta `receiver` gets from being adjacent to `exerter`. The
+/// diagonal is always `0` — a tag has no effect on itself, not stated
+/// explicitly in the GDD but implied by every worked example (§16.1).
+///
+/// Indexed directly by `TagId.0`, which assumes active tags are the
+/// contiguous `TagId(0..n)` range task 010 currently builds. If Phase 3
+/// world generation ever picks a non-contiguous subset of the global pool,
+/// this indexing needs to go through a tag→matrix-index lookup instead.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TagMatrix {
+    size: usize,
+    values: Vec<i8>,
+}
+
+impl TagMatrix {
+    pub fn get(&self, exerter: TagId, receiver: TagId) -> i8 {
+        self.values[exerter.0 as usize * self.size + receiver.0 as usize]
+    }
+}
 
 /// A species' genome (GDD §5.3): metabolism and environmental range are
 /// player-readable, tags are opaque and drive matrix interactions.
@@ -75,6 +96,8 @@ pub struct SimWorld {
     /// in Phase 1 — per-world procedural selection from the global pool is Phase 3
     /// world generation (`PROJECT_PLAN.md`), not reimplemented here.
     pub active_tags: Vec<TagId>,
+    /// The world's secret matrix (GDD §5.5), generated once at construction.
+    pub matrix: TagMatrix,
     rng: StdRng,
     /// Write-side double buffer for the tick (TECH_DESIGN.md §6). `pub(crate)`
     /// so `sim::step` can read/write it directly without a cell-by-cell API.
@@ -86,9 +109,11 @@ impl SimWorld {
         let width = config.grid.width as usize;
         let height = config.grid.height as usize;
         let cells = vec![Cell::default(); width * height];
-        let active_tags = (0..config.tags.active_tags_early as u8)
+        let mut rng = StdRng::seed_from_u64(seed);
+        let active_tags: Vec<TagId> = (0..config.tags.active_tags_early as u8)
             .map(TagId)
             .collect();
+        let matrix = generate_matrix(&active_tags, &config.tags, &mut rng);
         let mut world = Self {
             width,
             height,
@@ -99,7 +124,8 @@ impl SimWorld {
             era: 0,
             seed,
             active_tags,
-            rng: StdRng::seed_from_u64(seed),
+            matrix,
+            rng,
         };
         world.apply_gradients(config);
         world
@@ -204,6 +230,59 @@ fn spawn_world(mut commands: Commands, config: Res<SimConfig>) {
     let mut world = SimWorld::new(42, &config);
     seed_phase0_organism(&mut world, &config);
     commands.insert_resource(world);
+}
+
+/// Generates the world's secret tag matrix (GDD §5.5, §5.8). Each
+/// off-diagonal cell independently becomes non-zero with probability
+/// `matrix_density`; the diagonal always stays `0`. Afterwards, a negative
+/// 3-cycle is forced among 3 distinct active tags (overwriting whatever the
+/// random pass produced there) to guarantee at least one coexistence-sustaining
+/// RPS relationship exists (GDD §5.8, the worked example in §16.1) — there's
+/// no closed-form way to sample a sparse asymmetric matrix that's guaranteed
+/// to contain one, so forcing it after the fact is simpler than rejection
+/// sampling and always terminates.
+fn generate_matrix(active_tags: &[TagId], config: &TagConfig, rng: &mut StdRng) -> TagMatrix {
+    let n = active_tags.len();
+    let mut values = vec![0i8; n * n];
+
+    for exerter in 0..n {
+        for receiver in 0..n {
+            if exerter == receiver {
+                continue;
+            }
+            if rng.random_bool(config.matrix_density as f64) {
+                values[exerter * n + receiver] = nonzero_intensity(config, rng);
+            }
+        }
+    }
+
+    if n >= 3 {
+        let cycle: Vec<usize> = active_tags
+            .sample(rng, 3)
+            .map(|tag| tag.0 as usize)
+            .collect();
+        for &(exerter, receiver) in &[
+            (cycle[0], cycle[1]),
+            (cycle[1], cycle[2]),
+            (cycle[2], cycle[0]),
+        ] {
+            values[exerter * n + receiver] = rng.random_range(config.effect_intensity_min..=-1);
+        }
+    }
+
+    TagMatrix { size: n, values }
+}
+
+/// Draws a non-zero effect intensity in `[effect_intensity_min, effect_intensity_max]`
+/// (retrying past `0`, so a "non-zero cell" from the density roll is never
+/// silently downgraded to no effect).
+fn nonzero_intensity(config: &TagConfig, rng: &mut StdRng) -> i8 {
+    loop {
+        let v = rng.random_range(config.effect_intensity_min..=config.effect_intensity_max);
+        if v != 0 {
+            return v;
+        }
+    }
 }
 
 /// Draws 1..=3 tags for a new species from the world's active pool (GDD
@@ -403,5 +482,97 @@ mod tests {
                 draw_species_tags(&mut b, &config)
             );
         }
+    }
+
+    fn tag_pairs(world: &SimWorld) -> impl Iterator<Item = (TagId, TagId)> + '_ {
+        world
+            .active_tags
+            .iter()
+            .flat_map(move |&a| world.active_tags.iter().map(move |&b| (a, b)))
+    }
+
+    #[test]
+    fn matrix_values_are_in_configured_range() {
+        let config = test_config();
+        let world = SimWorld::new(42, &config);
+        let range = config.tags.effect_intensity_min..=config.tags.effect_intensity_max;
+
+        for (a, b) in tag_pairs(&world) {
+            assert!(range.contains(&world.matrix.get(a, b)));
+        }
+    }
+
+    #[test]
+    fn matrix_diagonal_is_always_zero() {
+        let config = test_config();
+        let world = SimWorld::new(42, &config);
+
+        for &tag in &world.active_tags {
+            assert_eq!(world.matrix.get(tag, tag), 0);
+        }
+    }
+
+    #[test]
+    fn matrix_density_is_close_to_configured_target() {
+        let config = test_config();
+        let world = SimWorld::new(42, &config);
+        let n = world.active_tags.len();
+        let off_diagonal = n * n - n;
+
+        let non_zero = tag_pairs(&world)
+            .filter(|&(a, b)| a != b)
+            .filter(|&(a, b)| world.matrix.get(a, b) != 0)
+            .count();
+        let density = non_zero as f32 / off_diagonal as f32;
+
+        assert!(
+            (density - config.tags.matrix_density).abs() < 0.25,
+            "expected density near {}, got {density} ({non_zero}/{off_diagonal})",
+            config.tags.matrix_density
+        );
+    }
+
+    #[test]
+    fn matrix_is_asymmetric_in_general() {
+        let config = test_config();
+        let world = SimWorld::new(42, &config);
+
+        let asymmetric = tag_pairs(&world)
+            .filter(|&(a, b)| a != b)
+            .any(|(a, b)| world.matrix.get(a, b) != world.matrix.get(b, a));
+        assert!(asymmetric, "matrix should not be forced symmetric");
+    }
+
+    #[test]
+    fn matrix_guarantees_a_negative_three_cycle() {
+        let config = test_config();
+        let world = SimWorld::new(42, &config);
+        let tags = &world.active_tags;
+
+        let has_cycle = tags.iter().any(|&a| {
+            tags.iter().any(|&b| {
+                tags.iter().any(|&c| {
+                    a != b
+                        && b != c
+                        && a != c
+                        && world.matrix.get(a, b) < 0
+                        && world.matrix.get(b, c) < 0
+                        && world.matrix.get(c, a) < 0
+                })
+            })
+        });
+        assert!(
+            has_cycle,
+            "matrix must contain at least one negative RPS cycle"
+        );
+    }
+
+    #[test]
+    fn same_seed_produces_identical_matrix() {
+        let config = test_config();
+        let a = SimWorld::new(42, &config);
+        let b = SimWorld::new(42, &config);
+
+        assert_eq!(a.matrix, b.matrix);
     }
 }
