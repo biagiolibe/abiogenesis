@@ -54,7 +54,7 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 - `[x]` 004 — Environment: static gradients → [004](tasks/done/004-environment-gradients.md)
 - `[x]` 005 — Tick algorithm (Phase 0), pure and headless → [005](tasks/done/005-tick-algorithm.md)
 - `[x]` 006 — Grid rendering with sprites + 2D camera → [006](tasks/done/006-grid-rendering.md)
-- `[ ]` 007 — `GameState`/`EraState`, input, animated era → [007](tasks/007-states-input-era.md)
+- `[x]` 007 — `GameState`/`EraState`, input, animated era → [007](tasks/done/007-states-input-era.md)
 - `[ ]` 008 — `bevy_egui` HUD → [008](tasks/008-hud-egui.md)
 - `[ ]` 009 — Determinism tests and carrying-capacity validation → [009](tasks/009-determinism-balance-tests.md)
 
@@ -125,6 +125,7 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 - `[x]` Task 004 — Environment: static gradients
 - `[x]` Task 005 — Tick algorithm (Phase 0), pure and headless
 - `[x]` Task 006 — Grid rendering with sprites + 2D camera
+- `[x]` Task 007 — `GameState`/`EraState`, input, animated era
 
 ---
 

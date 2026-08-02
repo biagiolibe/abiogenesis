@@ -2,6 +2,7 @@ mod config;
 mod input;
 mod render;
 mod sim;
+mod state;
 mod ui;
 mod world;
 
@@ -10,6 +11,7 @@ use config::ConfigPlugin;
 use input::InputPlugin;
 use render::GridRenderPlugin;
 use sim::SimPlugin;
+use state::{EraState, GameState};
 use ui::UiPlugin;
 use world::WorldPlugin;
 
@@ -30,5 +32,14 @@ fn main() {
             UiPlugin,
             InputPlugin,
         ))
+        .init_state::<GameState>()
+        .add_sub_state::<EraState>()
+        .add_systems(OnEnter(GameState::Loading), enter_playing)
         .run();
+}
+
+/// Phase 0: `Loading` transitions straight to `Playing`; `MainMenu` becomes
+/// real in Phase 3 (TECH_DESIGN.md §2).
+fn enter_playing(mut next_state: ResMut<NextState<GameState>>) {
+    next_state.set(GameState::Playing);
 }

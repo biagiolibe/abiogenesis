@@ -5,6 +5,7 @@ use bevy::prelude::*;
 use rand::RngExt;
 
 use crate::config::SimConfig;
+use crate::state::EraState;
 use crate::world::{Metabolism, Organism, SimWorld};
 
 /// Advances the simulation by one tick: for each occupied cell, computes
@@ -118,22 +119,74 @@ fn env_fit(temperature: f32, optimum: f32, tolerance: f32) -> f32 {
     (-(d * d) / (2.0 * tolerance * tolerance)).exp()
 }
 
+/// Groups the per-era simulation advancement (TECH_DESIGN.md §3.4).
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum SimSet {
+    Advance,
+}
+
+/// Ticks left in the era currently being animated (TECH_DESIGN.md §3.4).
+#[derive(Resource, Default)]
+pub struct EraProgress {
+    pub(crate) remaining: u32,
+}
+
+impl EraProgress {
+    pub fn start(&mut self, ticks: u32) {
+        self.remaining = ticks;
+    }
+
+    pub fn remaining(&self) -> u32 {
+        self.remaining
+    }
+
+    /// Used by the `r` key (world reset) to cancel any era in progress.
+    pub fn cancel(&mut self) {
+        self.remaining = 0;
+    }
+}
+
 pub struct SimPlugin;
 
 impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
-        // Always runs for now; per-EraState gating (SimSet::Advance) is task 007.
-        app.add_systems(FixedUpdate, advance_tick);
+        let era_tick_hz = app.world().resource::<SimConfig>().time.era_tick_hz as f64;
+        app.insert_resource(Time::<Fixed>::from_hz(era_tick_hz));
+        app.init_resource::<EraProgress>();
+        app.add_systems(
+            FixedUpdate,
+            advance_tick
+                .in_set(SimSet::Advance)
+                .run_if(in_state(EraState::Advancing)),
+        );
     }
 }
 
-fn advance_tick(mut world: ResMut<SimWorld>, config: Res<SimConfig>) {
+/// Advances one tick of the currently-animating era, then transitions back
+/// to `Observing` once `era_ticks` have been played out. Guards against a
+/// stray extra `FixedUpdate` execution landing before the state transition
+/// takes effect, which would otherwise run one tick too many.
+fn advance_tick(
+    mut world: ResMut<SimWorld>,
+    config: Res<SimConfig>,
+    mut progress: ResMut<EraProgress>,
+    mut next_state: ResMut<NextState<EraState>>,
+) {
+    if progress.remaining() == 0 {
+        return;
+    }
     step(&mut world, &config);
+    progress.remaining -= 1;
+    if progress.remaining() == 0 {
+        world.era += 1;
+        next_state.set(EraState::Observing);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::GameState;
     use crate::world::{Cell, Species, SpeciesId};
 
     const TOLERANCE: f32 = 1e-4;
@@ -235,5 +288,59 @@ mod tests {
         assert_eq!(world.tick, 0);
         step(&mut world, &config);
         assert_eq!(world.tick, 1);
+    }
+
+    /// Drives `advance_tick` on `Update` (rather than `FixedUpdate`) so the
+    /// count doesn't depend on wall-clock accumulation — this isolates the
+    /// counting/guard logic from schedule timing, which task 007 requires to
+    /// be exact regardless of frame-rate hitches.
+    #[test]
+    fn era_advances_exactly_era_ticks_then_stops_at_observing() {
+        let config = SimConfig::default();
+        let (world, _) = world_with_one_organism(0.7, 0.5, 5.0);
+
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.add_plugins(bevy::state::app::StatesPlugin);
+        app.insert_resource(config.clone());
+        app.insert_resource(world);
+        app.init_state::<GameState>();
+        app.add_sub_state::<EraState>();
+        app.init_resource::<EraProgress>();
+        app.add_systems(Update, advance_tick.run_if(in_state(EraState::Advancing)));
+
+        app.world_mut()
+            .resource_mut::<NextState<GameState>>()
+            .set(GameState::Playing);
+        app.update(); // apply GameState transition, establishing EraState::Observing
+
+        app.world_mut()
+            .resource_mut::<EraProgress>()
+            .start(config.time.era_ticks);
+        app.world_mut()
+            .resource_mut::<NextState<EraState>>()
+            .set(EraState::Advancing);
+
+        for _ in 0..config.time.era_ticks + 10 {
+            app.update();
+        }
+
+        let sim_world = app.world().resource::<SimWorld>();
+        assert_eq!(sim_world.tick, config.time.era_ticks as u64);
+        assert_eq!(sim_world.era, 1);
+        assert_eq!(
+            *app.world().resource::<State<EraState>>().get(),
+            EraState::Observing
+        );
+
+        for _ in 0..10 {
+            app.update();
+        }
+        let sim_world = app.world().resource::<SimWorld>();
+        assert_eq!(
+            sim_world.tick,
+            config.time.era_ticks as u64,
+            "no extra ticks should run once the era has ended"
+        );
     }
 }

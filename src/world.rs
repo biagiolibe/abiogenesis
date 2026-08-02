@@ -4,6 +4,7 @@
 
 use bevy::prelude::*;
 use rand::rngs::StdRng;
+use rand::RngExt;
 use rand::SeedableRng;
 
 use crate::config::SimConfig;
@@ -154,6 +155,13 @@ impl SimWorld {
         &mut self.rng
     }
 
+    /// Draws the next seed from this world's own RNG stream, so reseeding
+    /// (the `r` key) is derived from the run's own state, never the system
+    /// clock (invariant 1: no non-determinism).
+    pub fn next_seed(&mut self) -> u64 {
+        self.rng.random()
+    }
+
     /// Moore neighbourhood (8 cells), clipped at the grid borders (GDD §5.1).
     /// No wrap-around: the grid has real edges, so a corner cell has 3 neighbours.
     pub fn moore_neighbours(&self, x: usize, y: usize) -> impl Iterator<Item = usize> + '_ {
@@ -182,8 +190,33 @@ impl Plugin for WorldPlugin {
 }
 
 fn spawn_world(mut commands: Commands, config: Res<SimConfig>) {
-    // Fixed seed in Phase 0; interactive reseeding is task 007.
-    commands.insert_resource(SimWorld::new(42, &config));
+    // Initial seed is intentionally fixed for reproducible runs; only the
+    // `r` key (task 007) advances it from there.
+    let mut world = SimWorld::new(42, &config);
+    seed_phase0_organism(&mut world, &config);
+    commands.insert_resource(world);
+}
+
+/// Phase 0 placeholder: seeds one photolithic organism at the top of the
+/// grid, where light is highest, so the era animation has something to
+/// grow. Phase 1's `seed` action replaces this with a player-chosen species
+/// and location — do not extend this function, replace its call sites.
+pub fn seed_phase0_organism(world: &mut SimWorld, config: &SimConfig) {
+    let (cx, cy) = (world.width / 2, 0);
+    let temperature = world.get(cx, cy).temperature;
+    let species_id = SpeciesId(world.species.len() as u8);
+    world.species.push(Species {
+        metabolism: Metabolism::Photolithic,
+        temp_optimum: temperature,
+        temp_tolerance: config.energy.default_temp_tolerance,
+        repro_threshold: config.energy.repro_threshold,
+        tags: Vec::new(),
+    });
+    let idx = world.index(cx, cy);
+    world.cells[idx].organism = Some(Organism {
+        species: species_id,
+        energy: config.energy.seed_energy,
+    });
 }
 
 /// Exact at `t = 0.0` and `t = 1.0` (unlike `from + (to - from) * t`), which
@@ -195,7 +228,6 @@ fn lerp(from: f32, to: f32, t: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::RngExt;
 
     fn test_config() -> SimConfig {
         SimConfig::default()

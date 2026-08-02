@@ -83,6 +83,10 @@ pub struct TimeConfig {
     /// Action points granted per era (GDD §5.9).
     pub point_budget_per_era: u32,
     pub action_costs: ActionCosts,
+    /// Ticks per second during era animation (GDD §4). Presentation only —
+    /// changing it must never change simulation outcomes (invariant 1); it
+    /// only changes how fast the same `era_ticks` play back.
+    pub era_tick_hz: f32,
 }
 
 impl Default for TimeConfig {
@@ -93,6 +97,7 @@ impl Default for TimeConfig {
             era_budget_late: 25,
             point_budget_per_era: 3,
             action_costs: ActionCosts::default(),
+            era_tick_hz: 20.0,
         }
     }
 }
