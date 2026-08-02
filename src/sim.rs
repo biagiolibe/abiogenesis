@@ -45,15 +45,28 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) {
             Metabolism::Predator | Metabolism::Decomposer => 0.0,
         };
 
-        // 3. Hidden matrix effect: always 0 in Phase 0 (no active tags yet).
-        // Kept as a sum, not folded away, so Phase 1 only has to fill it in
-        // (invariant 4).
-        let interaction_delta = 0.0;
+        // 3. Hidden matrix effect (GDD §5.6 step 3, §5.5): additive and
+        // linear (invariant 4), read only from the snapshot like everything
+        // else here, so the tick stays order-independent. For every
+        // occupied Moore neighbour, for every (their tag, my tag) pair, sum
+        // the matrix entry — row = exerting tag, column = receiving tag.
+        let (x, y) = (idx % world.width, idx / world.width);
+        let mut interaction_delta = 0.0;
+        for neighbour_idx in world.moore_neighbours(x, y) {
+            let Some(neighbour) = world.cells[neighbour_idx].organism else {
+                continue;
+            };
+            let neighbour_species = &world.species[neighbour.species.0 as usize];
+            for &their_tag in &neighbour_species.tags {
+                for &my_tag in &species.tags {
+                    interaction_delta += world.matrix.get(their_tag, my_tag) as f32;
+                }
+            }
+        }
 
         // 4. Costs: base upkeep plus a carrying-capacity penalty per
         // occupied neighbour, read from the snapshot so the tick stays
         // order-independent.
-        let (x, y) = (idx % world.width, idx / world.width);
         let occupied_neighbours = world
             .moore_neighbours(x, y)
             .filter(|&n| world.cells[n].organism.is_some())
@@ -187,7 +200,7 @@ fn advance_tick(
 mod tests {
     use super::*;
     use crate::state::GameState;
-    use crate::world::{Cell, Species, SpeciesId};
+    use crate::world::{Cell, Species, SpeciesId, TagId, TagMatrix};
 
     const TOLERANCE: f32 = 1e-4;
 
@@ -340,6 +353,162 @@ mod tests {
         assert_eq!(
             sim_world.tick, config.time.era_ticks as u64,
             "no extra ticks should run once the era has ended"
+        );
+    }
+
+    /// Two adjacent photolithic organisms (species 0 at `(cx, cy)`, species 1
+    /// at `(cx + 1, cy)`), sharing `light`/`temperature` so the photolithic
+    /// gain term is identical to `world_with_one_organism`'s, and overriding
+    /// `world.matrix` with a hand-built one so the adjacency effect (task
+    /// 012) is exactly known.
+    fn world_with_two_neighbours(
+        matrix: TagMatrix,
+        tags_a: Vec<TagId>,
+        tags_b: Vec<TagId>,
+        light: f32,
+        temperature: f32,
+        energy_a: f32,
+        energy_b: f32,
+    ) -> (SimWorld, SimConfig) {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.matrix = matrix;
+        for tags in [tags_a, tags_b] {
+            world.species.push(Species {
+                metabolism: Metabolism::Photolithic,
+                temp_optimum: temperature,
+                temp_tolerance: config.energy.default_temp_tolerance,
+                repro_threshold: config.energy.repro_threshold,
+                tags,
+            });
+        }
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        for (dx, species, energy) in [(0, SpeciesId(0), energy_a), (1, SpeciesId(1), energy_b)] {
+            let idx = world.index(cx + dx, cy);
+            world.cells[idx] = Cell {
+                light,
+                temperature,
+                organism: Some(Organism { species, energy }),
+                ..world.cells[idx]
+            };
+        }
+        (world, config)
+    }
+
+    #[test]
+    fn negative_adjacency_effect_subtracts_energy() {
+        // 2-tag matrix: tag 0 (species A) harms tag 1 (species B) by -2;
+        // the reverse direction stays 0.
+        let matrix = TagMatrix {
+            size: 2,
+            values: vec![0, -2, 0, 0],
+        };
+        let (mut world, config) =
+            world_with_two_neighbours(matrix, vec![TagId(0)], vec![TagId(1)], 0.7, 0.5, 5.0, 5.0);
+        step(&mut world, &config);
+
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let b = world.get(cx + 1, cy).organism.expect("B survives");
+        // gain 1.4, upkeep 0.5, 1 occupied neighbour -> crowding 0.15,
+        // interaction_delta -2: net 5.0 + 1.4 - 0.5 - 0.15 - 2.0 = 3.75.
+        assert!((b.energy - 3.75).abs() < TOLERANCE, "got {}", b.energy);
+    }
+
+    #[test]
+    fn positive_adjacency_effect_adds_energy() {
+        let matrix = TagMatrix {
+            size: 2,
+            values: vec![0, 2, 0, 0],
+        };
+        let (mut world, config) =
+            world_with_two_neighbours(matrix, vec![TagId(0)], vec![TagId(1)], 0.7, 0.5, 5.0, 5.0);
+        step(&mut world, &config);
+
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let b = world.get(cx + 1, cy).organism.expect("B survives");
+        // net 5.0 + 1.4 - 0.5 - 0.15 + 2.0 = 7.75.
+        assert!((b.energy - 7.75).abs() < TOLERANCE, "got {}", b.energy);
+    }
+
+    #[test]
+    fn no_matching_tags_yields_zero_adjacency_effect() {
+        // Non-zero matrix entries exist, but B carries no tags at all, so
+        // the (their tag x my tag) double loop contributes nothing.
+        let matrix = TagMatrix {
+            size: 2,
+            values: vec![0, -2, -2, 0],
+        };
+        let (mut world, config) =
+            world_with_two_neighbours(matrix, vec![TagId(0)], Vec::new(), 0.7, 0.5, 5.0, 5.0);
+        step(&mut world, &config);
+
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let b = world.get(cx + 1, cy).organism.expect("B survives");
+        // net 5.0 + 1.4 - 0.5 - 0.15 + 0.0 = 5.75.
+        assert!((b.energy - 5.75).abs() < TOLERANCE, "got {}", b.energy);
+    }
+
+    #[test]
+    fn adjacency_effect_sums_over_multiple_neighbours() {
+        // Two A neighbours (west and east of B), each carrying tag 0, each
+        // contributing -1 to B (tag 1): total interaction_delta -2, and
+        // crowding now counts 2 occupied neighbours.
+        let matrix = TagMatrix {
+            size: 2,
+            values: vec![0, -1, 0, 0],
+        };
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.matrix = matrix;
+        world.species.push(Species {
+            metabolism: Metabolism::Photolithic,
+            temp_optimum: 0.5,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: vec![TagId(0)],
+        });
+        world.species.push(Species {
+            metabolism: Metabolism::Photolithic,
+            temp_optimum: 0.5,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: vec![TagId(1)],
+        });
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        for (dx, species, energy) in [
+            (-1i32, SpeciesId(0), 5.0),
+            (0, SpeciesId(1), 5.0),
+            (1, SpeciesId(0), 5.0),
+        ] {
+            let idx = world.index((cx as i32 + dx) as usize, cy);
+            world.cells[idx] = Cell {
+                light: 0.7,
+                temperature: 0.5,
+                organism: Some(Organism { species, energy }),
+                ..world.cells[idx]
+            };
+        }
+
+        step(&mut world, &config);
+
+        let b = world.get(cx, cy).organism.expect("B survives");
+        // net 5.0 + 1.4 - 0.5 - 0.15*2 + (-1 - 1) = 3.6.
+        assert!((b.energy - 3.6).abs() < TOLERANCE, "got {}", b.energy);
+    }
+
+    #[test]
+    fn phase_0_single_species_worlds_still_have_zero_interaction_delta() {
+        // Regression guard: existing single-species tests build worlds with
+        // no tags at all, so the matrix wiring must not change their result.
+        let (mut world, config) = world_with_one_organism(0.7, 0.5, 5.0);
+        step(&mut world, &config);
+
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let organism = world.get(cx, cy).organism.expect("organism survives");
+        assert!(
+            (organism.energy - 5.9).abs() < TOLERANCE,
+            "got {}",
+            organism.energy
         );
     }
 }

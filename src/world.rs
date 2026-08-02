@@ -38,8 +38,10 @@ pub struct SpeciesId(pub u8);
 /// this indexing needs to go through a tag→matrix-index lookup instead.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TagMatrix {
-    size: usize,
-    values: Vec<i8>,
+    // `pub(crate)`, not private: sim.rs's tests build hand-crafted matrices
+    // to verify the adjacency effect (task 012) against known values.
+    pub(crate) size: usize,
+    pub(crate) values: Vec<i8>,
 }
 
 impl TagMatrix {
