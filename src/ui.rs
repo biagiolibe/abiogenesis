@@ -26,14 +26,28 @@ fn hud_panel(
     mut contexts: EguiContexts,
     world: Res<SimWorld>,
     era_state: Res<State<EraState>>,
+    windows: Query<&Window>,
 ) -> Result {
+    let Ok(window) = windows.single() else {
+        return Ok(());
+    };
     let ctx = contexts.ctx_mut()?;
+    // `ctx.viewport_rect()` tracks the *camera's* viewport, not the window:
+    // once `reserve_hud_viewport` narrows the camera to make room for this
+    // panel, that narrowed rect would feed back in here next frame and the
+    // panel would carve HUD_WIDTH out of an already-shrunk area, eating it
+    // twice. Anchor on the window's own logical size instead, so this panel
+    // and the camera's viewport both derive from the same, un-shrunk source.
+    let full_rect = egui::Rect::from_min_size(
+        egui::Pos2::ZERO,
+        egui::vec2(window.width(), window.height()),
+    );
     let mut viewport_ui = egui::Ui::new(
         ctx.clone(),
         "viewport".into(),
         egui::UiBuilder::new()
             .layer_id(egui::LayerId::background())
-            .max_rect(ctx.viewport_rect()),
+            .max_rect(full_rect),
     );
 
     let stats = species_stats(&world);
