@@ -32,7 +32,6 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 | Status | ID | Title | Priority | Depends on | Agent | Task File |
 |-------|----|--------|----------|------------|--------|-----------|
-| `[ ]` | 014 | Predator metabolism | 🟡 P2 | 005 | — | [014](014-predator-metabolism.md) |
 | `[ ]` | 015 | Decomposer metabolism and residue cycle | 🟡 P2 | 014 | — | [015](015-decomposer-metabolism.md) |
 | `[ ]` | 016 | Environmental diffusion | 🟢 P3 | 004 | — | [016](016-environmental-diffusion.md) |
 | `[ ]` | 017 | Seed action with mouse cell selection | 🟡 P2 | 013, 008 | — | [017](017-seed-action-mouse-selection.md) |
@@ -70,6 +69,7 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | `[x]` | 011 | Hidden matrix generation with cyclicity constraint | Claude | [011](done/011-hidden-matrix-generation.md) |
 | `[x]` | 012 | Adjacency (matrix) effect in the tick | Claude | [012](done/012-matrix-adjacency-tick-effect.md) |
 | `[x]` | 013 | Starting species palette, multiple species per world | Claude | [013](done/013-starting-species-palette.md) |
+| `[x]` | 014 | Predator metabolism | Claude | [014](done/014-predator-metabolism.md) |
 
 ---
 

@@ -26,6 +26,48 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) {
         cell.residue = (cell.residue - energy.residue_decay).max(0.0);
     }
 
+    // Predation pre-pass (GDD §5.4): a shared-resource drain computed from
+    // the immutable snapshot, into per-cell accumulators, before the main
+    // loop — see TECH_DESIGN.md §6 "Shared resource drain". This keeps the
+    // tick order-independent: a predator never writes directly into a prey's
+    // scratch entry while iterating.
+    let mut predation_gain = vec![0.0f32; world.cells.len()];
+    let mut predation_loss = vec![0.0f32; world.cells.len()];
+    for (idx, cell) in world.cells.iter().enumerate() {
+        let Some(organism) = cell.organism else {
+            continue;
+        };
+        let species = &world.species[organism.species.0 as usize];
+        if species.metabolism != Metabolism::Predator {
+            continue;
+        }
+        let (x, y) = (idx % world.width, idx / world.width);
+        let prey: Vec<usize> = world
+            .moore_neighbours(x, y)
+            .filter(|&n| world.cells[n].organism.is_some())
+            .collect();
+        if prey.is_empty() {
+            continue;
+        }
+        let fit = env_fit(
+            cell.temperature,
+            species.temp_optimum,
+            species.temp_tolerance,
+        );
+        let available: f32 = prey
+            .iter()
+            .map(|&n| world.cells[n].organism.unwrap().energy)
+            .sum();
+        let drawn = (energy.predator_drain_cap * fit).min(available);
+        predation_gain[idx] = drawn;
+        // Split evenly across prey neighbours (GDD doesn't pin down a
+        // species-specific targeting rule for Phase 1).
+        let share = drawn / prey.len() as f32;
+        for &n in &prey {
+            predation_loss[n] += share;
+        }
+    }
+
     for idx in 0..world.cells.len() {
         let cell = world.cells[idx];
         let Some(organism) = cell.organism else {
@@ -41,8 +83,9 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) {
         );
         let gain = match species.metabolism {
             Metabolism::Photolithic => cell.light * energy.photolithic_metabolism_gain * fit,
-            // Predation and decomposition are Phase 1 (GDD §5.4).
-            Metabolism::Predator | Metabolism::Decomposer => 0.0,
+            Metabolism::Predator => predation_gain[idx],
+            // Decomposer gain is task 015.
+            Metabolism::Decomposer => 0.0,
         };
 
         // 3. Hidden matrix effect (GDD §5.6 step 3, §5.5): additive and
@@ -79,7 +122,10 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) {
         let crowding_penalty = energy.crowd_factor * occupied_neighbours as f32;
 
         // 5. Energy update.
-        let new_energy = organism.energy + gain + interaction_delta - upkeep - crowding_penalty;
+        let new_energy = organism.energy + gain + interaction_delta
+            - upkeep
+            - crowding_penalty
+            - predation_loss[idx];
 
         // 6. Death.
         if new_energy <= 0.0 {
@@ -494,6 +540,155 @@ mod tests {
         let b = world.get(cx, cy).organism.expect("B survives");
         // net 5.0 + 1.4 - 0.5 - 0.15*2 + (-1 - 1) = 3.6.
         assert!((b.energy - 3.6).abs() < TOLERANCE, "got {}", b.energy);
+    }
+
+    fn world_with_one_predator(temperature: f32, energy: f32) -> (SimWorld, SimConfig) {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.species.push(Species {
+            metabolism: Metabolism::Predator,
+            temp_optimum: temperature,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: Vec::new(),
+        });
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let idx = world.index(cx, cy);
+        world.cells[idx] = Cell {
+            light: 0.0,
+            temperature,
+            organism: Some(Organism {
+                species: SpeciesId(0),
+                energy,
+            }),
+            ..world.cells[idx]
+        };
+        (world, config)
+    }
+
+    #[test]
+    fn isolated_predator_collapses_with_no_gain() {
+        // GDD §5.9: seed_energy 5.0, predator_upkeep 0.7, no prey ⇒ dies
+        // after ceil(5.0 / 0.7) = 8 ticks, with zero gain every tick.
+        let (mut world, config) = world_with_one_predator(0.5, config_seed_energy());
+        let (cx, cy) = (world.width / 2, world.height / 2);
+
+        for tick in 1..=8 {
+            step(&mut world, &config);
+            let alive = world.get(cx, cy).organism.is_some();
+            if tick < 8 {
+                assert!(alive, "predator should still be alive at tick {tick}");
+            } else {
+                assert!(!alive, "predator should have died by tick {tick}");
+            }
+        }
+    }
+
+    fn config_seed_energy() -> f32 {
+        SimConfig::default().energy.seed_energy
+    }
+
+    #[test]
+    fn predator_with_abundant_prey_nets_positive_energy() {
+        let (mut world, config) = world_with_one_predator(0.5, 5.0);
+        let (cx, cy) = (world.width / 2, world.height / 2);
+
+        world.species.push(Species {
+            metabolism: Metabolism::Photolithic,
+            temp_optimum: 0.5,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: Vec::new(),
+        });
+        let neighbours: Vec<usize> = world.moore_neighbours(cx, cy).collect();
+        for &idx in &neighbours {
+            world.cells[idx].organism = Some(Organism {
+                species: SpeciesId(1),
+                energy: 20.0,
+            });
+        }
+
+        step(&mut world, &config);
+
+        let predator = world.get(cx, cy).organism.expect("predator survives");
+        // drain = min(predator_drain_cap, available) * fit = 2.0 (fit=1.0,
+        // available huge), upkeep 0.7, 8 occupied neighbours -> crowding
+        // 0.15*8=1.2: net 5.0 + 2.0 - 0.7 - 1.2 = 5.1.
+        assert!(
+            (predator.energy - 5.1).abs() < TOLERANCE,
+            "got {}",
+            predator.energy
+        );
+    }
+
+    #[test]
+    fn two_predators_sharing_one_prey_split_deterministically() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.species.push(Species {
+            metabolism: Metabolism::Predator,
+            temp_optimum: 0.5,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: Vec::new(),
+        });
+        world.species.push(Species {
+            metabolism: Metabolism::Photolithic,
+            temp_optimum: 0.5,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: Vec::new(),
+        });
+        // Prey at (cx, cy), predators at (cx - 1, cy) and (cx + 1, cy), both
+        // Moore-adjacent to the prey and sharing it as their only neighbour.
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let prey_idx = world.index(cx, cy);
+        world.cells[prey_idx] = Cell {
+            light: 0.0,
+            temperature: 0.5,
+            organism: Some(Organism {
+                species: SpeciesId(1),
+                energy: 20.0,
+            }),
+            ..world.cells[prey_idx]
+        };
+        for dx in [-1i32, 1] {
+            let idx = world.index((cx as i32 + dx) as usize, cy);
+            world.cells[idx] = Cell {
+                light: 0.0,
+                temperature: 0.5,
+                organism: Some(Organism {
+                    species: SpeciesId(0),
+                    energy: 5.0,
+                }),
+                ..world.cells[idx]
+            };
+        }
+
+        step(&mut world, &config);
+
+        let left = world
+            .get(cx - 1, cy)
+            .organism
+            .expect("left predator survives");
+        let right = world
+            .get(cx + 1, cy)
+            .organism
+            .expect("right predator survives");
+        assert!(
+            (left.energy - right.energy).abs() < TOLERANCE,
+            "left {} vs right {}",
+            left.energy,
+            right.energy
+        );
+        // Each predator's only prey neighbour is the shared one, so each
+        // draws its full drain_cap (fit=1.0, prey has plenty of energy):
+        // net 5.0 + 2.0 - 0.7 - 0.15 = 6.15.
+        assert!(
+            (left.energy - 6.15).abs() < TOLERANCE,
+            "got {}",
+            left.energy
+        );
     }
 
     #[test]
