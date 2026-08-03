@@ -92,6 +92,22 @@ fn cell_position(x: usize, y: usize, width: usize, height: usize) -> Vec3 {
     Vec3::new(wx, wy, 0.0)
 }
 
+/// Inverse of `cell_position`: the grid cell under a world-space point, or
+/// `None` if the point falls outside `[0, width) x [0, height)` (task 017 —
+/// clicks off the grid, e.g. on the HUD panel, must do nothing).
+pub fn world_to_cell(world_pos: Vec2, width: usize, height: usize) -> Option<(usize, usize)> {
+    let x = (world_pos.x / CELL_SIZE + (width as f32 - 1.0) / 2.0).round();
+    let y = ((height as f32 - 1.0) / 2.0 - world_pos.y / CELL_SIZE).round();
+    if x < 0.0 || y < 0.0 {
+        return None;
+    }
+    let (x, y) = (x as usize, y as usize);
+    if x >= width || y >= height {
+        return None;
+    }
+    Some((x, y))
+}
+
 /// The single place that decides a cell's color (GDD §11): occupied cells by
 /// species hue and energy, cells with leftover residue by a neutral hue
 /// scaled by how much is left, empty cells by a faint shading of `light`.
@@ -150,6 +166,27 @@ mod tests {
         };
         assert_eq!(empty.saturation, 0.0);
         assert!(empty.lightness < residue.lightness);
+    }
+
+    #[test]
+    fn world_to_cell_round_trips_with_cell_position() {
+        let (width, height) = (48, 32);
+        for (x, y) in [(0, 0), (47, 0), (0, 31), (47, 31), (24, 16)] {
+            let pos = cell_position(x, y, width, height).truncate();
+            assert_eq!(
+                world_to_cell(pos, width, height),
+                Some((x, y)),
+                "cell ({x}, {y}) did not round-trip"
+            );
+        }
+    }
+
+    #[test]
+    fn world_to_cell_rejects_points_outside_the_grid() {
+        let (width, height) = (48, 32);
+        let far_beyond = Vec2::splat(10_000.0);
+        assert_eq!(world_to_cell(far_beyond, width, height), None);
+        assert_eq!(world_to_cell(-far_beyond, width, height), None);
     }
 
     #[test]

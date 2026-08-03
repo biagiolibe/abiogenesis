@@ -9,6 +9,13 @@ use crate::render::GridCamera;
 use abiogenesis::state::EraState;
 use abiogenesis::world::{SimWorld, SpeciesId};
 
+/// The species the seed action (task 017) places on click. A UI intent, not
+/// simulation state: owned here, read by `input.rs`'s click-to-place system,
+/// same rationale as `EraProgress` living in `sim.rs` but written by
+/// `input.rs` (TECH_DESIGN.md §3.3 — `Ui` writes only intents).
+#[derive(Resource)]
+pub struct SelectedSpecies(pub SpeciesId);
+
 /// On-screen width of the HUD panel, reserved from the grid camera's
 /// viewport so the panel never draws over the grid (task 008 acceptance
 /// criterion). Presentation-only, not a simulation coefficient (see
@@ -34,7 +41,8 @@ impl Plugin for UiPlugin {
         app.world_mut()
             .resource_mut::<EguiGlobalSettings>()
             .auto_create_primary_context = false;
-        app.add_systems(Startup, spawn_hud_camera)
+        app.insert_resource(SelectedSpecies(SpeciesId(0)))
+            .add_systems(Startup, spawn_hud_camera)
             .add_systems(Update, reserve_hud_viewport)
             .add_systems(EguiPrimaryContextPass, hud_panel);
     }
@@ -93,6 +101,7 @@ fn hud_panel(
     mut contexts: EguiContexts,
     world: Res<SimWorld>,
     era_state: Res<State<EraState>>,
+    mut selected: ResMut<SelectedSpecies>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     let mut viewport_ui = egui::Ui::new(
@@ -124,6 +133,12 @@ fn hud_panel(
                     "  species {}: {} · avg energy {:.2}",
                     species.0, population, avg_energy
                 ));
+            }
+
+            ui.separator();
+            ui.label("Seed species (click an empty cell)");
+            for i in 0..world.species.len() as u8 {
+                ui.radio_value(&mut selected.0, SpeciesId(i), format!("species {i}"));
             }
 
             ui.separator();

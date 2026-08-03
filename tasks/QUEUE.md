@@ -32,9 +32,9 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 | Status | ID | Title | Priority | Depends on | Agent | Task File |
 |-------|----|--------|----------|------------|--------|-----------|
-| `[ ]` | 017 | Seed action with mouse cell selection | 🟡 P2 | 013, 008 | — | [017](017-seed-action-mouse-selection.md) |
+| `[ ]` | *(none — see below)* | — | — | — | — | — |
 
-Phase 0 is complete (tasks 001-009, archived below); its exit gate is cleared.
+Phase 0 is complete (tasks 001-009, archived below); its exit gate is cleared. Phase 1's task list (014-017) is also complete, archived below — next tasks expand from `PROJECT_PLAN.md`'s backlog when Phase 2 planning starts.
 
 Later phases live as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) and expand into task files when we get there.
 
@@ -70,6 +70,7 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | `[x]` | 014 | Predator metabolism | Claude | [014](done/014-predator-metabolism.md) |
 | `[x]` | 015 | Decomposer metabolism and residue cycle | Claude | [015](done/015-decomposer-metabolism.md) |
 | `[x]` | 016 | Environmental diffusion | Claude | [016](done/016-environmental-diffusion.md) |
+| `[x]` | 017 | Seed action with mouse cell selection | Claude | [017](done/017-seed-action-mouse-selection.md) |
 
 ---
 
