@@ -1,6 +1,30 @@
-# Implementation Status — Phase 0 & Phase 1
+# Implementation Status — Phase 0, Phase 1, and Phase 2 Track A
 
-What exists today in Abiogenesis, feature by feature, with the technical solution behind each one. Written as a snapshot after task 017; see `tasks/done/` for the task-by-task history and `TECH_DESIGN.md` for the architectural decisions this document assumes.
+What exists today in Abiogenesis, feature by feature, with the technical solution behind each one. Written as a snapshot after task 021 (Phase 2 Track A complete); see `tasks/done/` for the task-by-task history and `TECH_DESIGN.md` for the architectural decisions this document assumes.
+
+---
+
+## How to play, today
+
+**Goal**: seed life on an alien world governed by a hidden `tag × tag` matrix — every species secretly carries 1–3 tags, and adjacency between tagged organisms silently helps or hurts their energy. Nothing tells you the matrix directly; you deduce it from what you observe.
+
+**Controls**:
+- **Left click** an empty cell → seeds an organism of the currently-selected species (picked from the HUD panel, right side)
+- **Space** → starts an era: the simulation auto-advances a batch of ticks with animation
+- **S** → advances exactly one tick manually, for fine-grained observation
+- **R** → reseeds the world (new hidden matrix, new terrain, new starting palette) — never mid-animation-unsafe, allowed even while an era is advancing
+- **Tab** → opens/closes the Notebook window
+- **Esc** → quits
+
+**The loop**:
+1. Seed organisms of different species near each other on the grid.
+2. Advance ticks (`Space` or `S`). Each organism has a metabolism (photolithic, predator, decomposer) and gains/loses energy from light, temperature, crowding, and — critically — the tags of its occupied Moore neighbours, summed through the hidden matrix.
+3. Deaths and species extinctions are the *salient* events: they land in the Notebook's **Observation log** section, each tagged with the era they happened in.
+4. Every tick, every occupied-neighbour pair with tags that actually interact (non-zero matrix entry) contributes weighted evidence for that `(exerter_tag, receiver_tag)` hypothesis — an isolated observation counts fully, one crowded with other confounding tags counts for less (`weight = 1 / (1 + confounders)`).
+5. Once a tag pair's accumulated evidence crosses the confirmation threshold, that cell of the **Hypothesis grid** (Notebook, second section) flips from `?` to `+!`/`-!` — the sign only, never the magnitude, so the exact strength still has to be inferred from behavior.
+6. The Notebook's **Catalog** section lists every active tag (as a colored dot — tags are always glyphs/colors, never raw numbers) and every species' readable genome: metabolism, temperature range, and which tag dots it carries.
+
+**Not implemented yet** (next up, Track B starting at task 022): the action-budget economy that will gate `Seed` and add three new player actions — Stress, Cull, Splice — for actively probing the hidden matrix instead of only watching it play out.
 
 ---
 
@@ -8,7 +32,7 @@ What exists today in Abiogenesis, feature by feature, with the technical solutio
 
 **What**: a Bevy app with a real window, deterministic simulation, 2D rendering, an egui HUD, and keyboard/mouse input — structured as one `Plugin` per concern.
 
-**How**: `main.rs` wires six plugins onto `App`: `ConfigPlugin`, `WorldPlugin`, `SimPlugin`, `GridRenderPlugin`, `UiPlugin`, `InputPlugin`. Two crate halves:
+**How**: `main.rs` wires seven plugins onto `App`: `ConfigPlugin`, `WorldPlugin`, `SimPlugin`, `GridRenderPlugin`, `UiPlugin`, `NotebookPlugin`, `InputPlugin`. Two crate halves:
 - `abiogenesis` (lib): `config`, `world`, `sim`, `state` — pure simulation, no `bevy::render` or `bevy_egui` dependency, runnable headless.
 - `abiogenesis` (bin, `main.rs` + `render`/`ui`/`input` modules): the presentation layer that turns the lib into a playable window.
 
@@ -161,7 +185,39 @@ This is the only write path from the UI/input layer into `SimWorld` outside of e
 
 ---
 
-## 14. Testing strategy
+## 15. Simulation events (`src/sim.rs`, task 018)
+
+**What**: `sim::step` gained an output channel — `TickEvents { deaths, extinctions, adjacencies }` — without losing its "callable with no Bevy `App`" property (invariant 2). This is what the rest of Phase 2 is built on: the notebook consumes events, it never inspects the grid directly (`TECH_DESIGN.md` §4).
+
+**How**: `step` now returns `TickEvents` instead of `()`. `OrganismDied { cell, species }` is recorded at the existing death site; a pre-tick population count per species (scanned once at the top of `step`) lets a `1 -> 0` transition emit `SpeciesExtinct { species }` alongside the last individual's death. `AdjacencyObserved { receiver_species, exerter_tag, receiver_tag, n_confounders }` is emitted from the same adjacency loop that already sums `interaction_delta` (§8) — one record per occupied-neighbour, non-zero-matrix-entry pair. `n_confounders` is the count of *other* distinct tags among the receiver's occupied neighbours, excluding the exerter tag itself — an organism with exactly one neighbour carrying only the exerter tag yields `n_confounders = 0` (GDD §7's "isolated observation", weight 1.0). `advance_tick` (and `input.rs`'s single-tick `s` key — a second call site to `step` that would otherwise silently drop every event from a manual tick) drain `TickEvents` into Bevy `MessageWriter`s, registered via `App::add_message`.
+
+---
+
+## 16. Observation log / Notebook window (`src/notebook.rs`, task 019)
+
+**What**: the first visible piece of the notebook (GDD §7, §11) — a curated, era-tagged log of salient events, shown in an `egui::Window` toggled with `Tab`.
+
+**How**: `NotebookPlugin` owns `ObservationLog` (`Vec<LogEntry { era, text }>`) and `NotebookWindowOpen(bool)` — a plain UI toggle, not `EraState`, so opening the notebook never blocks or interacts with era advancement. `record_events` reads `MessageReader<SpeciesExtinct>` and appends one entry per extinction; `OrganismDied` is deliberately *not* logged per-event (GDD §7 wants salient signals, not an unfiltered per-tick feed) — a `// TODO: bloom detection` marks the cut second signal type rather than half-building it. The window itself shares `ui.rs`'s existing egui context (no second camera needed — `bevy_egui` supports multiple windows per `EguiPrimaryContextPass` frame) and renders entries in a scrollable `egui::ScrollArea`, oldest first. Reseeding (`r`) clears the log, since `world.era` resets to 0 and stale entries would otherwise show era numbers higher than the fresh run's current one.
+
+---
+
+## 17. Hypothesis confirmation engine (`src/notebook.rs`, task 020)
+
+**What**: the "B with a hint of C" model (GDD §7) that progressively reveals the hidden matrix — not a second opacity mechanic, the *same* matrix from §8, revealed cell by cell as evidence accumulates.
+
+**How**: `MatrixKnowledge` holds cumulative evidence per `(exerter_tag, receiver_tag)` pair, laid out exactly like `TagMatrix` (`exerter * size + receiver`) so the two stay trivially parallel. `accumulate_evidence` drains `MessageReader<AdjacencyObserved>` (§15) each frame, adding `config.notebook.observation_weight_numerator / (1 + n_confounders)` per event — 3 isolated observations (weight 1.0 each) or 12 heavily-confounded ones (weight 0.25 each) both reach the default threshold of `3.0`. A pair is `is_confirmed` once its evidence crosses that threshold; evidence only accumulates, never decays or resets within a run. Confirmation is monotonic by construction — the only place it resets is `input.rs`'s `r` key, which rebuilds `MatrixKnowledge` from scratch alongside the new `SimWorld`, since a new seed means a new (unrelated) hidden matrix. Sized from `config.tags.active_tags_early` at `NotebookPlugin::build` time — the tag *count* is config-fixed, only the matrix's *values* are seed-random, so this dodges any `Startup`-ordering dependency on `WorldPlugin`. `revealed_value` reads through to `world.matrix.get(...)` for a confirmed pair rather than storing its own snapshot of the value — there's only ever one `SimWorld` to read from.
+
+---
+
+## 18. Hypothesis grid UI + tag/species catalog (`src/notebook.rs`, task 021)
+
+**What**: the explicit "aha" of pillar 2 (GDD §7) — a live `active_tags × active_tags` table inside the Notebook window showing which hypotheses are confirmed, plus a catalog of every active tag and species' readable genome.
+
+**How**: `hypothesis_grid` (an `egui::Grid`, row = exerting tag, column = receiving tag, matching `TagMatrix::get`'s own convention) renders `?` for unconfirmed pairs, `+!`/`-!` for confirmed ones (sign read from `MatrixKnowledge::revealed_value`, magnitude never shown — GDD §5.5's "learned empirically"), and `·` on the diagonal (always 0 by construction, not a real hypothesis). There's no "confirmed zero effect" state: task 018 only emits `AdjacencyObserved` for non-zero matrix entries, so evidence never accumulates for a genuinely-zero pair — the grid only distinguishes unconfirmed from confirmed-non-zero. `catalog_panel` lists `world.active_tags` and, per species, its metabolism/temperature range alongside its tags — both tags and the catalog's tag dots use a deterministic golden-angle hue keyed on `TagId` (`tag_color`, same technique `render.rs`'s `SPECIES_HUE_STEP` uses for species), rendered as colored glyphs (`●`), never as raw tag numbers. Player-authored conjectures (GDD §5.9's `±?` state) aren't implemented — cut for this task, left as a follow-up.
+
+---
+
+## 19. Testing strategy
 
 **What exists**: unit tests co-located in every module (`#[cfg(test)] mod tests`) plus two headless integration suites, `tests/determinism.rs` and `tests/balance.rs`.
 
@@ -169,8 +225,9 @@ This is the only write path from the UI/input layer into `SimWorld` outside of e
 - **Determinism**: same seed ⇒ byte-identical `SimWorld` state (environment, matrix, species tags) at construction, and identical multi-tick trajectories through `sim::step` and `diffuse_environment` — different seeds provably diverge.
 - **Balance**: carrying-capacity stall (a crowded photolithic organism's net energy matches the hand-computed GDD figure), bloom-then-stabilize population curves, dark-zone non-habitability, population never reaching exactly zero under the tuned coefficients.
 - **Per-mechanic unit tests**: every metabolism's boundary behavior (isolated predator collapses on the GDD's exact tick count, decomposer with no residue behaves like a photolithic organism in the dark, residue never goes negative under contention), the matrix's structural guarantees (diagonal zero, cyclicity, density, asymmetry), diffusion's fixed-point/smoothing/range properties, and the render layer's coordinate math (`cell_position`/`world_to_cell` round-trip).
+- **Notebook/events (tasks 018–020)**: `sim.rs` tests cover a death producing exactly one `OrganismDied`, a species' last organism dying also producing `SpeciesExtinct`, an adjacency between tagged organisms producing the expected `AdjacencyObserved`, and the confounder count against GDD §7's own worked numbers. `notebook.rs` tests (in `src/main.rs`'s binary target, since the module depends on `bevy_egui` and can't live in the headless lib crate) cover the extinction-to-log-entry path via a minimal `App` + `MessageWriter`, `MatrixKnowledge`'s pure accumulation logic directly (no `App` needed), and `accumulate_evidence`'s confounder-weight wiring end to end.
 - All of this runs **without a Bevy `App`** where possible (`sim`/`world` tests construct `SimWorld` + `SimConfig` directly), which is only possible because of the ECS-free architecture in §3 — this is the payoff of that decision, not incidental.
 
 ---
 
-*Snapshot after task 017 (2026-08-03). Phase 2 (notebook, hypothesis confirmation, stress/cull/splice, action budget) is backlog, not yet started.*
+*Snapshot after task 021 (2026-08-03). Phase 2 Track A (018–021: events, notebook, confirmation engine, hypothesis grid) is complete. Track B (022–025: action budget economy, Stress, Cull, Splice) is backlog, not yet started.*
