@@ -5,7 +5,8 @@ use bevy_egui::{
     egui, EguiContexts, EguiGlobalSettings, EguiPrimaryContextPass, PrimaryEguiContext,
 };
 
-use crate::render::GridCamera;
+use crate::notebook::tag_glyph;
+use crate::render::{species_label, GridCamera};
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::ActionBudget;
 use abiogenesis::state::EraState;
@@ -196,8 +197,10 @@ fn hud_panel(
             }
             for (species, population, avg_energy) in &stats {
                 ui.label(format!(
-                    "  species {}: {} · avg energy {:.2}",
-                    species.0, population, avg_energy
+                    "  {}: {} · avg energy {:.2}",
+                    species_label(*species),
+                    population,
+                    avg_energy
                 ));
             }
 
@@ -215,7 +218,7 @@ fn hud_panel(
             ui.separator();
             ui.label("Seed species (click an empty cell)");
             for i in 0..world.species.len() as u8 {
-                ui.radio_value(&mut selected.0, SpeciesId(i), format!("species {i}"));
+                ui.radio_value(&mut selected.0, SpeciesId(i), species_label(SpeciesId(i)));
             }
 
             if selected_action.0 == ActionMode::Splice {
@@ -249,7 +252,7 @@ fn splice_panel(ui: &mut egui::Ui, world: &SimWorld, draft: &mut SpliceDraft) {
         ui.radio_value(
             &mut draft.source,
             Some(SpeciesId(i)),
-            format!("species {i}"),
+            species_label(SpeciesId(i)),
         );
     }
 
@@ -290,11 +293,11 @@ fn splice_panel(ui: &mut egui::Ui, world: &SimWorld, draft: &mut SpliceDraft) {
                 let species = &world.species[source.0 as usize];
                 ui.label("Remove tag:");
                 for &tag in &species.tags {
-                    ui.radio_value(old, Some(tag), format!("tag {}", tag.0));
+                    ui.radio_value(old, Some(tag), format!("tag {}", tag_glyph(tag)));
                 }
                 ui.label("Add tag:");
                 for &tag in &world.active_tags {
-                    ui.radio_value(new, Some(tag), format!("tag {}", tag.0));
+                    ui.radio_value(new, Some(tag), format!("tag {}", tag_glyph(tag)));
                 }
             } else {
                 ui.weak("  (pick a source species first)");
@@ -308,7 +311,11 @@ fn splice_panel(ui: &mut egui::Ui, world: &SimWorld, draft: &mut SpliceDraft) {
                     if species.tags.contains(&candidate) {
                         continue;
                     }
-                    ui.radio_value(tag, Some(candidate), format!("tag {}", candidate.0));
+                    ui.radio_value(
+                        tag,
+                        Some(candidate),
+                        format!("tag {}", tag_glyph(candidate)),
+                    );
                 }
             } else {
                 ui.weak("  (pick a source species first)");

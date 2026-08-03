@@ -2,7 +2,7 @@ use bevy::camera::ScalingMode;
 use bevy::prelude::*;
 
 use abiogenesis::config::SimConfig;
-use abiogenesis::world::SimWorld;
+use abiogenesis::world::{SimWorld, SpeciesId};
 
 /// Pixel size of one grid cell on screen. Presentation-only, not a
 /// simulation coefficient, so it stays local instead of living in
@@ -12,6 +12,25 @@ const CELL_SIZE: f32 = 16.0;
 /// Golden-angle hue step: successive `SpeciesId`s get visually distinct
 /// hues without any per-species color configuration.
 const SPECIES_HUE_STEP: f32 = 137.5;
+
+/// Fixed, unordered word list for `species_label` (task 029). Species carry
+/// no design secrecy constraint (unlike tags, GDD §11), so a generated name
+/// is purely a legibility upgrade over bare "species N" — deterministic
+/// from `SpeciesId`, no stored/editable state, same "derive from id"
+/// approach as `SPECIES_HUE_STEP`/`TAG_HUE_STEP`.
+const SPECIES_NAMES: [&str; 16] = [
+    "Nyx", "Kael", "Sable", "Rook", "Vesk", "Lira", "Thorn", "Onyx", "Fenn", "Skye", "Brakk",
+    "Cass", "Drys", "Elm", "Fira", "Grix",
+];
+
+/// A species' display label: a stable generated name plus its numeric id,
+/// e.g. "Nyx (species 0)" — legible without requiring the player to
+/// memorize raw indices, while keeping the number for disambiguation once
+/// `Splice` (task 025) pushes the species count past the word list's length.
+pub fn species_label(id: SpeciesId) -> String {
+    let name = SPECIES_NAMES[id.0 as usize % SPECIES_NAMES.len()];
+    format!("{name} (species {})", id.0)
+}
 
 /// Links a rendered sprite back to its cell in `SimWorld`. The sprite is a
 /// view: simulation state lives in the resource, never here (TECH_DESIGN §3.1).

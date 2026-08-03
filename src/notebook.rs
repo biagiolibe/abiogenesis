@@ -10,7 +10,9 @@ use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::{AdjacencyObserved, OrganismDied, SpeciesExtinct};
-use abiogenesis::world::{SimWorld, TagId};
+use abiogenesis::world::{SimWorld, SpeciesId, TagId};
+
+use crate::render::species_label;
 
 /// One curated log line, tagged with the era it happened in. `text`
 /// describes the event only; the window prepends the era.
@@ -206,6 +208,21 @@ fn tag_color(tag: TagId) -> egui::Color32 {
 
 const TAG_GLYPH: &str = "●";
 
+/// Fixed Greek-letter alphabet for `tag_glyph` (task 029): opaque, stable
+/// within a run, deterministic from `TagId` — never a hint at the tag's
+/// effect (GDD §11 "nameless glyphs/colors, learned empirically").
+const TAG_LETTERS: [&str; 24] = [
+    "α", "β", "γ", "δ", "ε", "ζ", "η", "θ", "ι", "κ", "λ", "μ", "ν", "ξ", "ο", "π", "ρ", "σ", "τ",
+    "υ", "φ", "χ", "ψ", "ω",
+];
+
+/// A tag's stable opaque letter, alongside its color, so a player can say
+/// "tag α" instead of pointing at a colored dot — purely a more
+/// distinguishable handle, not a hint at meaning (GDD §11).
+pub fn tag_glyph(tag: TagId) -> &'static str {
+    TAG_LETTERS[tag.0 as usize % TAG_LETTERS.len()]
+}
+
 /// Draws the notebook as its own `egui::Window`, sharing the HUD's egui
 /// context (`ui.rs`'s dedicated full-viewport camera) rather than a second
 /// camera — `bevy_egui` supports multiple windows/panels per frame from the
@@ -262,12 +279,18 @@ fn hypothesis_grid(ui: &mut egui::Ui, world: &SimWorld, knowledge: &MatrixKnowle
         .show(ui, |ui| {
             ui.label(""); // corner cell
             for &receiver in &world.active_tags {
-                ui.colored_label(tag_color(receiver), TAG_GLYPH);
+                ui.colored_label(
+                    tag_color(receiver),
+                    format!("{TAG_GLYPH} {}", tag_glyph(receiver)),
+                );
             }
             ui.end_row();
 
             for &exerter in &world.active_tags {
-                ui.colored_label(tag_color(exerter), TAG_GLYPH);
+                ui.colored_label(
+                    tag_color(exerter),
+                    format!("{TAG_GLYPH} {}", tag_glyph(exerter)),
+                );
                 for &receiver in &world.active_tags {
                     if exerter == receiver {
                         // The diagonal is always 0 by construction
@@ -293,7 +316,7 @@ fn catalog_panel(ui: &mut egui::Ui, world: &SimWorld) {
     ui.label("Active tags");
     ui.horizontal(|ui| {
         for &tag in &world.active_tags {
-            ui.colored_label(tag_color(tag), TAG_GLYPH);
+            ui.colored_label(tag_color(tag), format!("{TAG_GLYPH} {}", tag_glyph(tag)));
         }
     });
 
@@ -302,11 +325,14 @@ fn catalog_panel(ui: &mut egui::Ui, world: &SimWorld) {
     for (id, species) in world.species.iter().enumerate() {
         ui.horizontal(|ui| {
             ui.label(format!(
-                "species {id}: {:?} · temp {:.2}±{:.2}",
-                species.metabolism, species.temp_optimum, species.temp_tolerance
+                "{}: {:?} · temp {:.2}±{:.2}",
+                species_label(SpeciesId(id as u8)),
+                species.metabolism,
+                species.temp_optimum,
+                species.temp_tolerance
             ));
             for &tag in &species.tags {
-                ui.colored_label(tag_color(tag), TAG_GLYPH);
+                ui.colored_label(tag_color(tag), format!("{TAG_GLYPH} {}", tag_glyph(tag)));
             }
         });
     }
