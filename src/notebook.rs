@@ -40,10 +40,11 @@ pub struct NotebookWindowOpen(pub bool);
 /// confirmed, rather than storing its own copy of the value — simpler, and
 /// there's only ever one `SimWorld` to read from.
 ///
-/// `evidence`/`is_confirmed`/`revealed_value` have no reader yet — task 021
-/// (hypothesis grid UI) is the consumer; the accumulation side (this task)
-/// is complete and correct ahead of it, same rationale as `world.rs`'s
-/// module-level `allow(dead_code)`.
+/// There is no "confirmed zero effect" state (GDD §5.9's `0` cell): task
+/// 018 only emits `AdjacencyObserved` for pairs with a non-zero matrix
+/// entry, so evidence never accumulates for a genuinely-zero pair — the
+/// hypothesis grid (021) only distinguishes `?` (unconfirmed) from `±!`
+/// (confirmed non-zero, sign shown).
 #[derive(Resource)]
 pub struct MatrixKnowledge {
     size: usize,
@@ -51,7 +52,6 @@ pub struct MatrixKnowledge {
     evidence: Vec<f32>,
 }
 
-#[allow(dead_code)]
 impl MatrixKnowledge {
     pub fn new(active_tags: usize, threshold: f32) -> Self {
         Self {
@@ -153,6 +153,21 @@ fn record_events(
     }
 }
 
+/// Golden-angle hue step for tags, same technique `render.rs` uses for
+/// `SpeciesId` (`SPECIES_HUE_STEP`) — successive `TagId`s get visually
+/// distinct colors with no per-tag configuration.
+const TAG_HUE_STEP: f32 = 137.5;
+
+/// A tag's color, deterministic from its id. Tags stay "nameless
+/// glyphs/colors, learned empirically" (GDD §11) — never rendered as a raw
+/// number.
+fn tag_color(tag: TagId) -> egui::Color32 {
+    let hue = (tag.0 as f32 * TAG_HUE_STEP % 360.0) / 360.0;
+    egui::ecolor::Hsva::new(hue, 0.75, 0.9, 1.0).into()
+}
+
+const TAG_GLYPH: &str = "●";
+
 /// Draws the notebook as its own `egui::Window`, sharing the HUD's egui
 /// context (`ui.rs`'s dedicated full-viewport camera) rather than a second
 /// camera — `bevy_egui` supports multiple windows/panels per frame from the
@@ -161,6 +176,8 @@ fn notebook_window(
     mut contexts: EguiContexts,
     mut open: ResMut<NotebookWindowOpen>,
     log: Res<ObservationLog>,
+    world: Res<SimWorld>,
+    knowledge: Res<MatrixKnowledge>,
 ) -> Result {
     if !open.0 {
         return Ok(());
@@ -169,16 +186,92 @@ fn notebook_window(
     egui::Window::new("Notebook")
         .open(&mut open.0)
         .show(ctx, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                if log.entries.is_empty() {
-                    ui.weak("(no observations yet)");
-                }
-                for entry in &log.entries {
-                    ui.label(format!("Era {}: {}", entry.era, entry.text));
-                }
-            });
+            ui.heading("Observation log");
+            egui::ScrollArea::vertical()
+                .id_salt("observation_log")
+                .max_height(150.0)
+                .show(ui, |ui| {
+                    if log.entries.is_empty() {
+                        ui.weak("(no observations yet)");
+                    }
+                    for entry in &log.entries {
+                        ui.label(format!("Era {}: {}", entry.era, entry.text));
+                    }
+                });
+
+            ui.separator();
+            ui.heading("Hypothesis grid");
+            hypothesis_grid(ui, &world, &knowledge);
+
+            ui.separator();
+            ui.heading("Catalog");
+            catalog_panel(ui, &world);
         });
     Ok(())
+}
+
+/// The `active_tags x active_tags` evidence table (GDD §7, §5.9): row =
+/// exerting tag, column = receiving tag, matching `TagMatrix::get`'s own
+/// convention. Never renders an unconfirmed cell's real value — only
+/// `MatrixKnowledge::is_confirmed` gates a sign reveal.
+///
+/// Player-authored conjectures (GDD §5.9's `±?` state — marking a guess
+/// before it's confirmed) aren't implemented: cut for this task, left as a
+/// follow-up rather than a half-built annotation feature.
+fn hypothesis_grid(ui: &mut egui::Ui, world: &SimWorld, knowledge: &MatrixKnowledge) {
+    egui::Grid::new("hypothesis_grid")
+        .striped(true)
+        .show(ui, |ui| {
+            ui.label(""); // corner cell
+            for &receiver in &world.active_tags {
+                ui.colored_label(tag_color(receiver), TAG_GLYPH);
+            }
+            ui.end_row();
+
+            for &exerter in &world.active_tags {
+                ui.colored_label(tag_color(exerter), TAG_GLYPH);
+                for &receiver in &world.active_tags {
+                    if exerter == receiver {
+                        // The diagonal is always 0 by construction
+                        // (`world.rs`'s matrix generation): not a real
+                        // hypothesis, so it's shown distinct from `?`.
+                        ui.weak("·");
+                    } else if let Some(value) = knowledge.revealed_value(exerter, receiver, world) {
+                        ui.label(if value > 0 { "+!" } else { "-!" });
+                    } else {
+                        ui.weak("?");
+                    }
+                }
+                ui.end_row();
+            }
+        });
+}
+
+/// Lists the active tag pool and every species' readable genome fields
+/// alongside its (still-opaque) tags. Phase 2's whole active pool is
+/// visible from the seed selector already, so per-encounter tag discovery
+/// isn't modeled here — that's a Phase 3 worldgen concern.
+fn catalog_panel(ui: &mut egui::Ui, world: &SimWorld) {
+    ui.label("Active tags");
+    ui.horizontal(|ui| {
+        for &tag in &world.active_tags {
+            ui.colored_label(tag_color(tag), TAG_GLYPH);
+        }
+    });
+
+    ui.add_space(4.0);
+    ui.label("Species");
+    for (id, species) in world.species.iter().enumerate() {
+        ui.horizontal(|ui| {
+            ui.label(format!(
+                "species {id}: {:?} · temp {:.2}±{:.2}",
+                species.metabolism, species.temp_optimum, species.temp_tolerance
+            ));
+            for &tag in &species.tags {
+                ui.colored_label(tag_color(tag), TAG_GLYPH);
+            }
+        });
+    }
 }
 
 #[cfg(test)]
