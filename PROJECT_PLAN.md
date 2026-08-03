@@ -75,11 +75,19 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 
 **Milestone:** the *deduction game* is born, not just the simulation (GDD §13).
 
-- `[ ]` Notebook: egui window with log, `tag × tag` hypothesis grid, catalog (GDD §7)
-- `[ ]` Observation log built by consuming simulation events (`TECH_DESIGN.md` §4)
-- `[ ]` **Confirmation model** "B with a hint of C": weighted evidence `1/(1+n_confounders)`, threshold `3.0` (GDD §7)
-- `[ ]` **Stress / cull / splice** actions (GDD §6)
-- `[ ]` Action budget per era: 3 points, differentiated costs; `EraState::Planning` becomes real (GDD §6)
+**Track A — notebook and deduction** (018 unlocks 019 and 020; 020 unlocks 021):
+
+- `[x]` 018 — Simulation event foundation: `OrganismDied`, `SpeciesExtinct`, raw adjacency-observation records emitted from `sim::step`/`advance_tick` (`TECH_DESIGN.md` §4)
+- `[x]` 019 — Observation log: `notebook` module/plugin, egui window toggled with `tab`, log built by consuming the events from 018 (GDD §7, §11)
+- `[ ]` 020 — Hypothesis confirmation engine: `MatrixKnowledge` resource, weighted evidence `1/(1+n_confounders)`, threshold `3.0` (GDD §7, §5.9)
+- `[ ]` 021 — Hypothesis grid UI + tag/species catalog, reading `MatrixKnowledge` from 020 (GDD §7, §11)
+
+**Track B — action budget and new actions** (022 unlocks 023–025):
+
+- `[ ]` 022 — Action budget economy: `ActionBudget` resource (3 pts/era baseline), `Seed` becomes budget-gated instead of free; no new `EraState` — `Observing` doubles as observe+plan (GDD §6, §5.9)
+- `[ ]` 023 — **Stress** action: alter an environmental scalar in an area, cost 1 (GDD §6)
+- `[ ]` 024 — **Cull** action: remove an organism/species in an area, cost 1 (GDD §6)
+- `[ ]` 025 — **Splice** action: modify a species' genome (tag or thermal optimum), cost 2 (GDD §6)
 
 ### 🏁 Phase 3 — The run
 

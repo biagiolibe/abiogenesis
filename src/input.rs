@@ -6,7 +6,7 @@ use bevy::camera::Camera;
 use bevy::prelude::*;
 
 use abiogenesis::config::SimConfig;
-use abiogenesis::sim::{step, EraProgress};
+use abiogenesis::sim::{step, AdjacencyObserved, EraProgress, OrganismDied, SpeciesExtinct};
 use abiogenesis::state::EraState;
 use abiogenesis::world::{seed_starting_palette, Organism, SimWorld};
 
@@ -55,12 +55,18 @@ fn single_tick(
     era_state: Res<State<EraState>>,
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
+    mut died: MessageWriter<OrganismDied>,
+    mut extinct: MessageWriter<SpeciesExtinct>,
+    mut adjacencies: MessageWriter<AdjacencyObserved>,
 ) {
     if *era_state.get() == EraState::Advancing {
         return;
     }
     if keys.just_pressed(KeyCode::KeyS) {
-        step(&mut world, &config);
+        let events = step(&mut world, &config);
+        died.write_batch(events.deaths);
+        extinct.write_batch(events.extinctions);
+        adjacencies.write_batch(events.adjacencies);
     }
 }
 

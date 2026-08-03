@@ -1,4 +1,5 @@
 mod input;
+mod notebook;
 mod render;
 mod ui;
 
@@ -9,6 +10,7 @@ use abiogenesis::world::WorldPlugin;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use input::InputPlugin;
+use notebook::NotebookPlugin;
 use render::GridRenderPlugin;
 use ui::UiPlugin;
 
@@ -28,6 +30,7 @@ fn main() {
             SimPlugin,
             GridRenderPlugin,
             UiPlugin,
+            NotebookPlugin,
             InputPlugin,
         ))
         .init_state::<GameState>()

@@ -6,7 +6,58 @@ use rand::RngExt;
 
 use crate::config::SimConfig;
 use crate::state::EraState;
-use crate::world::{Metabolism, Organism, SimWorld};
+use crate::world::{Metabolism, Organism, SimWorld, SpeciesId, TagId};
+
+/// One organism's energy reached zero and it was removed this tick.
+#[derive(Debug, Clone, Copy, Message)]
+pub struct OrganismDied {
+    pub cell: usize,
+    pub species: SpeciesId,
+}
+
+/// A species' population went from `> 0` at the start of the tick to `0` at
+/// the end of it. Emitted alongside the `OrganismDied` events for its last
+/// individuals, not instead of them.
+#[derive(Debug, Clone, Copy, Message)]
+pub struct SpeciesExtinct {
+    pub species: SpeciesId,
+}
+
+/// One raw piece of evidence for the confirmation engine (task 020, GDD
+/// §7): a receiver organism of `receiver_species` had a Moore neighbour
+/// carrying `exerter_tag` while it itself carried `receiver_tag`.
+///
+/// `n_confounders` is the count of *other* distinct tags — besides
+/// `exerter_tag` — present among the receiver's occupied Moore neighbours
+/// this tick, i.e. how many other things could plausibly have affected the
+/// receiver's energy besides the `exerter_tag -> receiver_tag` relationship
+/// this record is evidence for. This is per-organism-per-hypothesis, not
+/// per-neighbour-pair: an organism with exactly one neighbour, carrying only
+/// `exerter_tag`, yields `n_confounders = 0` (weight 1.0, GDD §7's
+/// "isolated observation" example); three other confounding tags among its
+/// neighbours yields `n_confounders = 3` (weight 0.25). Only the
+/// *receiver's own* tags are excluded from the count — if a neighbour
+/// happens to also carry `receiver_tag`, that neighbour still counts as a
+/// confounder, since a same-tag neighbour is just as plausible a source of
+/// some other effect as any other tag would be.
+#[derive(Debug, Clone, Copy, Message)]
+pub struct AdjacencyObserved {
+    pub receiver_species: SpeciesId,
+    pub exerter_tag: TagId,
+    pub receiver_tag: TagId,
+    pub n_confounders: u32,
+}
+
+/// Everything `step()` produced this tick, for `advance_tick` to drain into
+/// Bevy `MessageWriter`s. Kept as a plain struct (not `MessageWriter`
+/// parameters on `step()` itself) so `step()` stays callable without a Bevy
+/// `App` (invariant 2) — see existing `sim.rs` unit tests.
+#[derive(Debug, Default)]
+pub struct TickEvents {
+    pub deaths: Vec<OrganismDied>,
+    pub extinctions: Vec<SpeciesExtinct>,
+    pub adjacencies: Vec<AdjacencyObserved>,
+}
 
 /// Advances the simulation by one tick: for each occupied cell, computes
 /// metabolic gain, applies costs, resolves death and reproduction. Reads
@@ -14,8 +65,18 @@ use crate::world::{Metabolism, Organism, SimWorld};
 /// `world.scratch`, then swaps the two — no "acted this tick" guard needed,
 /// no dependency on iteration order, newborns don't act this tick by
 /// construction (TECH_DESIGN.md §6).
-pub fn step(world: &mut SimWorld, config: &SimConfig) {
+pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
     let energy = &config.energy;
+    let mut events = TickEvents::default();
+
+    // Pre-tick population count per species, for extinction detection
+    // (1 -> 0 transition) once deaths are recorded below.
+    let mut population = vec![0u32; world.species.len()];
+    for cell in world.cells.iter() {
+        if let Some(organism) = cell.organism {
+            population[organism.species.0 as usize] += 1;
+        }
+    }
 
     // Start the write side as a copy of the snapshot; every field below
     // (environment scalars, residue, organism) gets overwritten in place.
@@ -149,6 +210,23 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) {
         // the matrix entry — row = exerting tag, column = receiving tag.
         let (x, y) = (idx % world.width, idx / world.width);
         let mut interaction_delta = 0.0;
+
+        // Distinct exerter tags carried by this organism's occupied Moore
+        // neighbours, gathered up front so the confounder count (see
+        // `AdjacencyObserved`'s doc comment) is available for every
+        // observation emitted below without re-scanning neighbours per tag.
+        let mut neighbour_tags: Vec<TagId> = Vec::new();
+        for neighbour_idx in world.moore_neighbours(x, y) {
+            if let Some(neighbour) = world.cells[neighbour_idx].organism {
+                let neighbour_species = &world.species[neighbour.species.0 as usize];
+                for &tag in &neighbour_species.tags {
+                    if !neighbour_tags.contains(&tag) {
+                        neighbour_tags.push(tag);
+                    }
+                }
+            }
+        }
+
         for neighbour_idx in world.moore_neighbours(x, y) {
             let Some(neighbour) = world.cells[neighbour_idx].organism else {
                 continue;
@@ -156,7 +234,18 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) {
             let neighbour_species = &world.species[neighbour.species.0 as usize];
             for &their_tag in &neighbour_species.tags {
                 for &my_tag in &species.tags {
-                    interaction_delta += world.matrix.get(their_tag, my_tag) as f32;
+                    let entry = world.matrix.get(their_tag, my_tag);
+                    interaction_delta += entry as f32;
+                    if entry != 0 {
+                        let n_confounders =
+                            neighbour_tags.iter().filter(|&&t| t != their_tag).count() as u32;
+                        events.adjacencies.push(AdjacencyObserved {
+                            receiver_species: organism.species,
+                            exerter_tag: their_tag,
+                            receiver_tag: my_tag,
+                            n_confounders,
+                        });
+                    }
                 }
             }
         }
@@ -187,6 +276,17 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) {
             // Fixed on death, not decayed leftover + this value (invariant
             // in task spec): a death this tick overwrites the residue.
             world.scratch[idx].residue = energy.residue_on_death;
+            events.deaths.push(OrganismDied {
+                cell: idx,
+                species: organism.species,
+            });
+            let species_idx = organism.species.0 as usize;
+            population[species_idx] -= 1;
+            if population[species_idx] == 0 {
+                events.extinctions.push(SpeciesExtinct {
+                    species: organism.species,
+                });
+            }
             continue;
         }
 
@@ -224,6 +324,7 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) {
 
     std::mem::swap(&mut world.cells, &mut world.scratch);
     world.tick += 1;
+    events
 }
 
 /// Gaussian environmental fitness around the species' thermal optimum (GDD §5.9).
@@ -266,6 +367,9 @@ impl Plugin for SimPlugin {
         let era_tick_hz = app.world().resource::<SimConfig>().time.era_tick_hz as f64;
         app.insert_resource(Time::<Fixed>::from_hz(era_tick_hz));
         app.init_resource::<EraProgress>();
+        app.add_message::<OrganismDied>();
+        app.add_message::<SpeciesExtinct>();
+        app.add_message::<AdjacencyObserved>();
         app.add_systems(
             FixedUpdate,
             advance_tick
@@ -284,11 +388,17 @@ fn advance_tick(
     config: Res<SimConfig>,
     mut progress: ResMut<EraProgress>,
     mut next_state: ResMut<NextState<EraState>>,
+    mut died: MessageWriter<OrganismDied>,
+    mut extinct: MessageWriter<SpeciesExtinct>,
+    mut adjacencies: MessageWriter<AdjacencyObserved>,
 ) {
     if progress.remaining() == 0 {
         return;
     }
-    step(&mut world, &config);
+    let events = step(&mut world, &config);
+    died.write_batch(events.deaths);
+    extinct.write_batch(events.extinctions);
+    adjacencies.write_batch(events.adjacencies);
     progress.remaining -= 1;
     if progress.remaining() == 0 {
         world.era += 1;
@@ -420,6 +530,9 @@ mod tests {
         app.init_state::<GameState>();
         app.add_sub_state::<EraState>();
         app.init_resource::<EraProgress>();
+        app.add_message::<OrganismDied>();
+        app.add_message::<SpeciesExtinct>();
+        app.add_message::<AdjacencyObserved>();
         app.add_systems(Update, advance_tick.run_if(in_state(EraState::Advancing)));
 
         app.world_mut()
@@ -885,5 +998,168 @@ mod tests {
             "got {}",
             organism.energy
         );
+    }
+
+    #[test]
+    fn death_produces_exactly_one_organism_died_event() {
+        // Two same-species organisms, far enough apart not to interact: one
+        // starved in the dark with near-zero energy (dies this tick), one
+        // healthy (survives) — so exactly one death should be recorded, and
+        // the species survives (population 2 -> 1), so no extinction.
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.species.push(Species {
+            metabolism: Metabolism::Photolithic,
+            temp_optimum: 0.5,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: Vec::new(),
+        });
+        let dying_idx = world.index(1, 1);
+        world.cells[dying_idx] = Cell {
+            light: 0.0,
+            temperature: 0.5,
+            organism: Some(Organism {
+                species: SpeciesId(0),
+                energy: 0.05,
+            }),
+            ..world.cells[dying_idx]
+        };
+        let (sx, sy) = (world.width - 2, world.height - 2);
+        let surviving_idx = world.index(sx, sy);
+        world.cells[surviving_idx] = Cell {
+            light: 0.7,
+            temperature: 0.5,
+            organism: Some(Organism {
+                species: SpeciesId(0),
+                energy: 5.0,
+            }),
+            ..world.cells[surviving_idx]
+        };
+
+        let events = step(&mut world, &config);
+
+        assert_eq!(events.deaths.len(), 1);
+        assert_eq!(events.deaths[0].cell, dying_idx);
+        assert_eq!(events.deaths[0].species, SpeciesId(0));
+        assert!(
+            events.extinctions.is_empty(),
+            "species still has a survivor, should not be extinct"
+        );
+        assert!(world.get(1, 1).organism.is_none());
+    }
+
+    #[test]
+    fn last_organism_of_species_dying_emits_extinction() {
+        // A single organism, alone in the world: its death (energy <= 0)
+        // must also drop its species' population to 0.
+        let (mut world, config) = world_with_one_organism(0.0, 0.5, 0.05);
+
+        let events = step(&mut world, &config);
+
+        assert_eq!(events.deaths.len(), 1);
+        assert_eq!(events.extinctions.len(), 1);
+        assert_eq!(events.extinctions[0].species, SpeciesId(0));
+    }
+
+    #[test]
+    fn adjacency_between_tagged_organisms_produces_expected_observation() {
+        // Matrix entry (exerter tag 0 -> receiver tag 1) is non-zero, the
+        // reverse direction is zero: A -> B is observed, B -> A is not.
+        let matrix = TagMatrix {
+            size: 2,
+            values: vec![0, -2, 0, 0],
+        };
+        let (mut world, config) =
+            world_with_two_neighbours(matrix, vec![TagId(0)], vec![TagId(1)], 0.7, 0.5, 5.0, 5.0);
+
+        let events = step(&mut world, &config);
+
+        assert_eq!(events.adjacencies.len(), 1);
+        let obs = events.adjacencies[0];
+        assert_eq!(obs.receiver_species, SpeciesId(1));
+        assert_eq!(obs.exerter_tag, TagId(0));
+        assert_eq!(obs.receiver_tag, TagId(1));
+        assert_eq!(
+            obs.n_confounders, 0,
+            "B has exactly one neighbour, carrying only the exerter tag"
+        );
+    }
+
+    #[test]
+    fn confounder_count_matches_gdd_examples() {
+        // Receiver R (tag 1) at the center, with four occupied Moore
+        // neighbours: one carrying the exerter tag 0, three others carrying
+        // three other distinct tags (2, 3, 4) that don't participate in any
+        // non-zero matrix entry themselves — they're pure confounders. Only
+        // matrix entry (tag 0 -> tag 1) is non-zero, so exactly one
+        // AdjacencyObserved is produced, with n_confounders = 3 (GDD §7:
+        // three confounding tags -> weight 0.25).
+        let size = 5;
+        let mut values = vec![0i8; size * size];
+        values[1] = 3; // exerter tag 0 -> receiver tag 1
+        let matrix = TagMatrix { size, values };
+
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.matrix = matrix;
+        for tags in [
+            vec![TagId(0)],
+            vec![TagId(1)],
+            vec![TagId(2)],
+            vec![TagId(3)],
+            vec![TagId(4)],
+        ] {
+            world.species.push(Species {
+                metabolism: Metabolism::Photolithic,
+                temp_optimum: 0.5,
+                temp_tolerance: config.energy.default_temp_tolerance,
+                repro_threshold: config.energy.repro_threshold,
+                tags,
+            });
+        }
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        // Receiver at center (species 1, tag 1); four neighbours at the
+        // cardinal Moore offsets, each a distinct species/tag.
+        let placements = [
+            (0i32, 0i32, SpeciesId(1)),
+            (-1, 0, SpeciesId(0)),
+            (1, 0, SpeciesId(2)),
+            (0, -1, SpeciesId(3)),
+            (0, 1, SpeciesId(4)),
+        ];
+        for (dx, dy, species) in placements {
+            let idx = world.index((cx as i32 + dx) as usize, (cy as i32 + dy) as usize);
+            world.cells[idx] = Cell {
+                light: 0.7,
+                temperature: 0.5,
+                organism: Some(Organism {
+                    species,
+                    energy: 5.0,
+                }),
+                ..world.cells[idx]
+            };
+        }
+
+        let events = step(&mut world, &config);
+
+        let observed: Vec<_> = events
+            .adjacencies
+            .iter()
+            .filter(|obs| obs.receiver_species == SpeciesId(1))
+            .collect();
+        assert_eq!(
+            observed.len(),
+            1,
+            "only the (tag 0 -> tag 1) entry is non-zero"
+        );
+        assert_eq!(observed[0].exerter_tag, TagId(0));
+        assert_eq!(observed[0].receiver_tag, TagId(1));
+        assert_eq!(
+            observed[0].n_confounders, 3,
+            "three other distinct tags among the receiver's neighbours"
+        );
+        let weight = 1.0 / (1.0 + observed[0].n_confounders as f32);
+        assert!((weight - 0.25).abs() < TOLERANCE);
     }
 }
