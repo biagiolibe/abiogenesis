@@ -9,7 +9,7 @@ use crate::render::GridCamera;
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::ActionBudget;
 use abiogenesis::state::EraState;
-use abiogenesis::world::{SimWorld, SpeciesId};
+use abiogenesis::world::{SimWorld, SpeciesId, TagId};
 
 /// The species the seed action (task 017) places on click. A UI intent, not
 /// simulation state: owned here, read by `input.rs`'s click-to-place system,
@@ -18,9 +18,9 @@ use abiogenesis::world::{SimWorld, SpeciesId};
 #[derive(Resource)]
 pub struct SelectedSpecies(pub SpeciesId);
 
-/// What a left-click does (GDD §6). `Cull`/`Splice` are scaffolded now
-/// (task 023) so their selector entries exist ahead of 024/025 implementing
-/// the click behavior — selecting them today just does nothing on click.
+/// What a left-click does (GDD §6). `Splice` (task 025) doesn't act on a
+/// grid click at all — it drives a small editor panel instead — but stays
+/// in this enum so the mode selector treats all four actions uniformly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActionMode {
     Seed,
@@ -34,6 +34,42 @@ pub enum ActionMode {
 /// who never touches the new selector.
 #[derive(Resource)]
 pub struct SelectedAction(pub ActionMode);
+
+/// One in-progress `Splice` edit (GDD §6): swap one tag for another, or
+/// shift the thermal optimum by `config.energy.splice_temp_shift`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SpliceEditChoice {
+    SwapTag {
+        old: Option<TagId>,
+        new: Option<TagId>,
+    },
+    ShiftTempOptimum {
+        warmer: bool,
+    },
+}
+
+impl Default for SpliceEditChoice {
+    fn default() -> Self {
+        Self::SwapTag {
+            old: None,
+            new: None,
+        }
+    }
+}
+
+/// The player's in-progress `Splice` selections (task 025) — a UI intent
+/// like `SelectedSpecies`/`SelectedAction`, not simulation state. `Splice`
+/// targets a *species definition* rather than a grid cell, so unlike
+/// Seed/Stress/Cull it has no single click to resolve; `apply_requested`
+/// is the intent `input.rs`'s `apply_splice` system reads and clears once
+/// consumed, keeping the actual `SimWorld` mutation (TECH_DESIGN.md §3.3 —
+/// `Ui` writes only intents) out of this egui panel.
+#[derive(Resource, Default)]
+pub struct SpliceDraft {
+    pub source: Option<SpeciesId>,
+    pub edit: SpliceEditChoice,
+    pub apply_requested: bool,
+}
 
 /// On-screen width of the HUD panel, reserved from the grid camera's
 /// viewport so the panel never draws over the grid (task 008 acceptance
@@ -62,6 +98,7 @@ impl Plugin for UiPlugin {
             .auto_create_primary_context = false;
         app.insert_resource(SelectedSpecies(SpeciesId(0)))
             .insert_resource(SelectedAction(ActionMode::Seed))
+            .init_resource::<SpliceDraft>()
             .add_systems(Startup, spawn_hud_camera)
             .add_systems(Update, reserve_hud_viewport)
             .add_systems(EguiPrimaryContextPass, hud_panel);
@@ -117,12 +154,14 @@ fn reserve_hud_viewport(
 
 /// Side panel with the numeric readout of GDD §11. Reads `SimWorld`
 /// read-only: the UI never writes simulation state (TECH_DESIGN.md §3.3).
+#[allow(clippy::too_many_arguments)]
 fn hud_panel(
     mut contexts: EguiContexts,
     world: Res<SimWorld>,
     era_state: Res<State<EraState>>,
     mut selected: ResMut<SelectedSpecies>,
     mut selected_action: ResMut<SelectedAction>,
+    mut splice_draft: ResMut<SpliceDraft>,
     budget: Res<ActionBudget>,
     config: Res<SimConfig>,
 ) -> Result {
@@ -162,16 +201,22 @@ fn hud_panel(
             ui.label("Action");
             ui.radio_value(&mut selected_action.0, ActionMode::Seed, "Seed");
             ui.radio_value(&mut selected_action.0, ActionMode::Stress, "Stress");
-            // Cull/Splice (tasks 024/025): selectable now so the enum/UI
-            // scaffolding doesn't need touching again, but clicking with
-            // either selected does nothing yet.
-            ui.radio_value(&mut selected_action.0, ActionMode::Cull, "Cull (soon)");
-            ui.radio_value(&mut selected_action.0, ActionMode::Splice, "Splice (soon)");
+            ui.radio_value(&mut selected_action.0, ActionMode::Cull, "Cull");
+            ui.radio_value(
+                &mut selected_action.0,
+                ActionMode::Splice,
+                "Splice (cost 2)",
+            );
 
             ui.separator();
             ui.label("Seed species (click an empty cell)");
             for i in 0..world.species.len() as u8 {
                 ui.radio_value(&mut selected.0, SpeciesId(i), format!("species {i}"));
+            }
+
+            if selected_action.0 == ActionMode::Splice {
+                ui.separator();
+                splice_panel(ui, &world, &mut splice_draft);
             }
 
             ui.separator();
@@ -187,6 +232,60 @@ fn hud_panel(
         });
 
     Ok(())
+}
+
+/// The `Splice` editor (task 025, GDD §6 — "the most powerful and most
+/// expensive experimental tool"): pick a source species and one edit,
+/// staged in `SpliceDraft` until "Apply" is pressed. Read-only against
+/// `SimWorld`, same as `hud_panel` — the actual mutation happens in
+/// `input.rs`'s `apply_splice`, reading `apply_requested` as an intent.
+fn splice_panel(ui: &mut egui::Ui, world: &SimWorld, draft: &mut SpliceDraft) {
+    ui.label("Splice: source species");
+    for i in 0..world.species.len() as u8 {
+        ui.radio_value(
+            &mut draft.source,
+            Some(SpeciesId(i)),
+            format!("species {i}"),
+        );
+    }
+
+    ui.label("Edit");
+    let is_swap = matches!(draft.edit, SpliceEditChoice::SwapTag { .. });
+    if ui.radio(is_swap, "Swap a tag").clicked() {
+        draft.edit = SpliceEditChoice::SwapTag {
+            old: None,
+            new: None,
+        };
+    }
+    if ui.radio(!is_swap, "Shift temperature optimum").clicked() {
+        draft.edit = SpliceEditChoice::ShiftTempOptimum { warmer: true };
+    }
+
+    match &mut draft.edit {
+        SpliceEditChoice::SwapTag { old, new } => {
+            if let Some(source) = draft.source {
+                let species = &world.species[source.0 as usize];
+                ui.label("Remove tag:");
+                for &tag in &species.tags {
+                    ui.radio_value(old, Some(tag), format!("tag {}", tag.0));
+                }
+                ui.label("Add tag:");
+                for &tag in &world.active_tags {
+                    ui.radio_value(new, Some(tag), format!("tag {}", tag.0));
+                }
+            } else {
+                ui.weak("  (pick a source species first)");
+            }
+        }
+        SpliceEditChoice::ShiftTempOptimum { warmer } => {
+            ui.radio_value(warmer, true, "warmer");
+            ui.radio_value(warmer, false, "colder");
+        }
+    }
+
+    if ui.button("Apply splice").clicked() {
+        draft.apply_requested = true;
+    }
 }
 
 /// Population and mean energy per species, computed from the grid. Average

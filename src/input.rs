@@ -10,11 +10,11 @@ use abiogenesis::sim::{
     step, ActionBudget, AdjacencyObserved, EraProgress, OrganismDied, SpeciesExtinct,
 };
 use abiogenesis::state::EraState;
-use abiogenesis::world::{seed_starting_palette, Organism, SimWorld};
+use abiogenesis::world::{seed_starting_palette, Organism, SimWorld, SpeciesId};
 
 use crate::notebook::{MatrixKnowledge, ObservationLog};
 use crate::render::{world_to_cell, GridCamera};
-use crate::ui::{ActionMode, SelectedAction, SelectedSpecies};
+use crate::ui::{ActionMode, SelectedAction, SelectedSpecies, SpliceDraft, SpliceEditChoice};
 
 pub struct InputPlugin;
 
@@ -30,6 +30,7 @@ impl Plugin for InputPlugin {
                 seed_organism_on_click,
                 stress_on_click,
                 cull_on_click,
+                apply_splice,
             ),
         );
     }
@@ -112,6 +113,8 @@ fn reseed_world(
     mut knowledge: ResMut<MatrixKnowledge>,
     mut log: ResMut<ObservationLog>,
     mut budget: ResMut<ActionBudget>,
+    mut selected: ResMut<SelectedSpecies>,
+    mut splice_draft: ResMut<SpliceDraft>,
 ) {
     if keys.just_pressed(KeyCode::KeyR) {
         let new_seed = world.next_seed();
@@ -129,6 +132,12 @@ fn reseed_world(
         // era numbers higher than the fresh run's current era.
         log.entries.clear();
         budget.refill(config.time.point_budget_per_era);
+        // `Splice` (task 025) can grow `world.species` past the fresh
+        // world's starting count; a `SelectedSpecies` left pointing at an
+        // index that no longer exists would panic the next time anything
+        // indexes `world.species` by it (e.g. `ui.rs::species_stats`).
+        selected.0 = SpeciesId(0);
+        *splice_draft = SpliceDraft::default();
     }
 }
 
@@ -256,10 +265,283 @@ fn cull_on_click(
     budget.points_remaining -= config.time.action_costs.cull;
 }
 
+/// Applies a `Splice` (GDD §6) once the HUD's editor panel (`ui.rs`) sets
+/// `SpliceDraft::apply_requested` — the one action whose trigger is an egui
+/// button rather than a grid click, so it has no `clicked_cell` call, but
+/// otherwise follows the same `Observing`-only, budget-check-then-decrement
+/// pattern as the other three. Creates a **new** species (`world.species`
+/// append) with the edit applied, rather than mutating the source species
+/// in place: mutating in place would retroactively change every
+/// already-alive organism of that species, but "modify a species' genome"
+/// (GDD §6) reads as introducing a variant, not rewriting history — species
+/// identity otherwise stays stable for a run (GDD §5.6 step 7 only floats
+/// child-genome mutation as a *future* idea). Silently does nothing if the
+/// draft is incomplete (no source picked, or a `SwapTag` missing either
+/// tag) rather than partially applying it.
+fn apply_splice(
+    era_state: Res<State<EraState>>,
+    mut draft: ResMut<SpliceDraft>,
+    mut world: ResMut<SimWorld>,
+    config: Res<SimConfig>,
+    mut budget: ResMut<ActionBudget>,
+) {
+    if !draft.apply_requested {
+        return;
+    }
+    draft.apply_requested = false;
+    if *era_state.get() == EraState::Advancing {
+        return;
+    }
+    let Some(source) = draft.source else {
+        return;
+    };
+    let Some(source_species) = world.species.get(source.0 as usize) else {
+        return;
+    };
+    let mut new_species = source_species.clone();
+    match draft.edit {
+        SpliceEditChoice::SwapTag {
+            old: Some(old),
+            new: Some(new),
+        } => {
+            let Some(pos) = new_species.tags.iter().position(|&tag| tag == old) else {
+                return;
+            };
+            new_species.tags[pos] = new;
+        }
+        SpliceEditChoice::ShiftTempOptimum { warmer } => {
+            let delta = if warmer {
+                config.energy.splice_temp_shift
+            } else {
+                -config.energy.splice_temp_shift
+            };
+            new_species.temp_optimum = (new_species.temp_optimum + delta).clamp(0.0, 1.0);
+        }
+        // Incomplete SwapTag selection (missing old and/or new tag).
+        SpliceEditChoice::SwapTag { .. } => return,
+    }
+    if budget.points_remaining < config.time.action_costs.splice {
+        return;
+    }
+    world.species.push(new_species);
+    budget.points_remaining -= config.time.action_costs.splice;
+    *draft = SpliceDraft::default();
+}
+
 /// `Esc` quits. `q` was planned in GDD v0.3 but removed in v0.4, kept free
 /// for future text input.
 fn quit(keys: Res<ButtonInput<KeyCode>>, mut exit: MessageWriter<AppExit>) {
     if keys.just_pressed(KeyCode::Escape) {
         exit.write(AppExit::Success);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use abiogenesis::world::{Species, SpeciesId, TagId};
+    use bevy::state::state::State;
+
+    /// A world with two active tags and one species carrying only tag 0,
+    /// enough to exercise both `SpliceEditChoice` variants without needing
+    /// the full RNG-driven world generation.
+    fn world_with_one_taggable_species() -> (SimWorld, SimConfig) {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.active_tags = vec![TagId(0), TagId(1)];
+        world.species.push(Species {
+            metabolism: abiogenesis::world::Metabolism::Photolithic,
+            temp_optimum: 0.5,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: vec![TagId(0)],
+        });
+        (world, config)
+    }
+
+    fn app_with(world: SimWorld, config: SimConfig, draft: SpliceDraft) -> App {
+        let mut app = App::new();
+        app.insert_resource(config);
+        app.insert_resource(world);
+        app.insert_resource(State::new(EraState::Observing));
+        app.insert_resource(ActionBudget {
+            points_remaining: 3,
+        });
+        app.insert_resource(draft);
+        app.add_systems(Update, apply_splice);
+        app
+    }
+
+    #[test]
+    fn swap_tag_splice_appends_a_new_species_and_leaves_the_source_untouched() {
+        let (world, config) = world_with_one_taggable_species();
+        let mut app = app_with(
+            world,
+            config,
+            SpliceDraft {
+                source: Some(SpeciesId(0)),
+                edit: SpliceEditChoice::SwapTag {
+                    old: Some(TagId(0)),
+                    new: Some(TagId(1)),
+                },
+                apply_requested: true,
+            },
+        );
+        app.update();
+
+        let world = app.world().resource::<SimWorld>();
+        assert_eq!(
+            world.species.len(),
+            2,
+            "the splice should append, not replace"
+        );
+        assert_eq!(
+            world.species[0].tags,
+            vec![TagId(0)],
+            "the source species must stay unchanged"
+        );
+        assert_eq!(
+            world.species[1].tags,
+            vec![TagId(1)],
+            "the new species should carry the swapped-in tag"
+        );
+
+        let budget = app.world().resource::<ActionBudget>();
+        assert_eq!(budget.points_remaining, 1, "splice costs 2 points");
+
+        let draft = app.world().resource::<SpliceDraft>();
+        assert!(!draft.apply_requested, "the intent must be consumed");
+        assert_eq!(
+            draft.source, None,
+            "the draft resets after a successful splice"
+        );
+    }
+
+    #[test]
+    fn shift_temp_splice_clamps_to_the_unit_range() {
+        let (mut world, config) = world_with_one_taggable_species();
+        world.species[0].temp_optimum = 0.95;
+        let mut app = app_with(
+            world,
+            config,
+            SpliceDraft {
+                source: Some(SpeciesId(0)),
+                edit: SpliceEditChoice::ShiftTempOptimum { warmer: true },
+                apply_requested: true,
+            },
+        );
+        app.update();
+
+        let world = app.world().resource::<SimWorld>();
+        assert_eq!(world.species.len(), 2);
+        assert_eq!(
+            world.species[0].temp_optimum, 0.95,
+            "the source species must stay unchanged"
+        );
+        assert_eq!(
+            world.species[1].temp_optimum, 1.0,
+            "a warmer shift past 1.0 should clamp, not wrap or panic"
+        );
+    }
+
+    #[test]
+    fn incomplete_swap_tag_draft_does_nothing() {
+        let (world, config) = world_with_one_taggable_species();
+        let mut app = app_with(
+            world,
+            config,
+            SpliceDraft {
+                source: Some(SpeciesId(0)),
+                // Only `old` picked, no `new` tag yet.
+                edit: SpliceEditChoice::SwapTag {
+                    old: Some(TagId(0)),
+                    new: None,
+                },
+                apply_requested: true,
+            },
+        );
+        app.update();
+
+        let world = app.world().resource::<SimWorld>();
+        assert_eq!(
+            world.species.len(),
+            1,
+            "an incomplete draft must not splice"
+        );
+        let budget = app.world().resource::<ActionBudget>();
+        assert_eq!(budget.points_remaining, 3, "nothing should be spent");
+    }
+
+    #[test]
+    fn splice_without_enough_budget_does_nothing() {
+        let (world, config) = world_with_one_taggable_species();
+        let mut app = app_with(
+            world,
+            config,
+            SpliceDraft {
+                source: Some(SpeciesId(0)),
+                edit: SpliceEditChoice::ShiftTempOptimum { warmer: true },
+                apply_requested: true,
+            },
+        );
+        app.world_mut()
+            .resource_mut::<ActionBudget>()
+            .points_remaining = 1;
+        app.update();
+
+        let world = app.world().resource::<SimWorld>();
+        assert_eq!(
+            world.species.len(),
+            1,
+            "an unaffordable splice must not apply"
+        );
+    }
+
+    #[test]
+    fn reseed_resets_a_selected_species_left_pointing_past_the_fresh_worlds_registry() {
+        // Simulates having spliced past the starting-palette species count
+        // (task 025) and left the seed selector pointing at the spliced-in
+        // species, then pressing `r`. The fresh world only ever starts with
+        // 2 species (`seed_starting_palette`), so `SelectedSpecies` must be
+        // pulled back in range or the next seed click indexes out of bounds.
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        seed_starting_palette(&mut world, &config);
+        world.species.push(world.species[0].clone()); // pretend a splice happened
+
+        let mut keys = ButtonInput::<KeyCode>::default();
+        keys.press(KeyCode::KeyR);
+
+        let mut app = App::new();
+        app.insert_resource(config);
+        app.insert_resource(world);
+        app.insert_resource(keys);
+        app.insert_resource(EraProgress::default());
+        app.insert_resource(NextState::<EraState>::default());
+        app.insert_resource(MatrixKnowledge::new(5, 3.0));
+        app.insert_resource(ObservationLog::default());
+        app.insert_resource(ActionBudget::default());
+        app.insert_resource(SelectedSpecies(SpeciesId(2)));
+        app.insert_resource(SpliceDraft {
+            source: Some(SpeciesId(2)),
+            ..SpliceDraft::default()
+        });
+        app.add_systems(Update, reseed_world);
+        app.update();
+
+        let world = app.world().resource::<SimWorld>();
+        assert_eq!(
+            world.species.len(),
+            2,
+            "a fresh world starts with the starting palette's species count"
+        );
+        let selected = app.world().resource::<SelectedSpecies>();
+        assert_eq!(
+            selected.0,
+            SpeciesId(0),
+            "a selection past the fresh world's species count must be reset, not left dangling"
+        );
+        let draft = app.world().resource::<SpliceDraft>();
+        assert_eq!(draft.source, None, "the splice draft should reset too");
     }
 }

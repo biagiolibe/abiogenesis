@@ -159,6 +159,9 @@ pub struct EnergyConfig {
     pub residue_decay: f32,
     /// Default temperature tolerance (σ) for species without an explicit override.
     pub default_temp_tolerance: f32,
+    /// How much the `Splice` action (GDD §6) shifts a new species'
+    /// `temp_optimum` away from its source's, before clamping to `[0,1]`.
+    pub splice_temp_shift: f32,
 }
 
 impl Default for EnergyConfig {
@@ -177,6 +180,7 @@ impl Default for EnergyConfig {
             residue_on_death: 3.0,
             residue_decay: 0.2,
             default_temp_tolerance: 0.15,
+            splice_temp_shift: 0.15,
         }
     }
 }

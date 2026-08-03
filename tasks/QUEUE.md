@@ -28,13 +28,9 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 ## 🏃 Active Queue
 
-**Phase 2 — Deduction.** Milestone: the *deduction game* is born, not just the simulation (GDD §13).
+**Phase 2 — Deduction.** Milestone: the *deduction game* is born, not just the simulation (GDD §13). **Complete** (018–025, both tracks) — nothing queued.
 
-| Status | ID | Title | Priority | Depends on | Agent | Task File |
-|-------|----|--------|----------|------------|--------|-----------|
-| `[ ]` | 025 | Splice action | 🟡 P2 | 022 | unassigned | [025](025-splice-action.md) |
-
-Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown above comes from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions). Take the first available `[ ]` task and work it per Meridian's "one task at a time" rule: `[ ]` → `[/]` when starting, `[x]` and archived to `done/` when finished.
+Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished.
 
 Later phases (3 and Final tuning) live as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) and expand into task files when we get there.
 
@@ -78,6 +74,7 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | `[x]` | 022 | Action budget economy (`ActionBudget`, `Seed` becomes budget-gated) | Claude | [022](done/022-action-budget-economy.md) |
 | `[x]` | 023 | Stress action | Claude | [023](done/023-stress-action.md) |
 | `[x]` | 024 | Cull action | Claude | [024](done/024-cull-action.md) |
+| `[x]` | 025 | Splice action | Claude | [025](done/025-splice-action.md) |
 
 ---
 
