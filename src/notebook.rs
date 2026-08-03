@@ -3,11 +3,13 @@
 // (TECH_DESIGN.md §4). Read-only with respect to `SimWorld` (TECH_DESIGN.md
 // §3.3) — this module never mutates simulation state.
 
+use std::collections::HashSet;
+
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
 use abiogenesis::config::SimConfig;
-use abiogenesis::sim::{AdjacencyObserved, SpeciesExtinct};
+use abiogenesis::sim::{AdjacencyObserved, OrganismDied, SpeciesExtinct};
 use abiogenesis::world::{SimWorld, TagId};
 
 /// One curated log line, tagged with the era it happened in. `text`
@@ -28,6 +30,20 @@ pub struct ObservationLog {
 /// advancement.
 #[derive(Resource, Default)]
 pub struct NotebookWindowOpen(pub bool);
+
+/// Cell indices currently holding a player-`Seed`-ed organism (task 026),
+/// written by `input.rs::seed_organism_on_click` on a successful placement.
+/// A raw cell index alone can't tell "the organism I placed" from "whatever
+/// happens to occupy this cell later" — every consumer that checks this set
+/// must remove the entry it matched against (`record_events` on death,
+/// `input.rs::cull_on_click` on removal), so a cell's "player-placed-ness"
+/// never survives past the one organism it was recorded for. This is
+/// presentation-side bookkeeping, not simulation state, so the "no
+/// `HashMap`/`HashSet` iteration in sim/world/config" determinism rule
+/// (`TECH_DESIGN.md` §5) doesn't apply — only membership checks and
+/// removals are ever performed on it, never iteration.
+#[derive(Resource, Default)]
+pub struct PlayerPlacedCells(pub HashSet<usize>);
 
 /// Cumulative weighted evidence for every `(exerter_tag, receiver_tag)`
 /// pair (GDD §7's "B with a hint of C" confirmation model) — the mechanism
@@ -103,6 +119,7 @@ impl Plugin for NotebookPlugin {
         app.insert_resource(knowledge)
             .init_resource::<ObservationLog>()
             .init_resource::<NotebookWindowOpen>()
+            .init_resource::<PlayerPlacedCells>()
             .add_systems(
                 Update,
                 (toggle_notebook, record_events, accumulate_evidence),
@@ -134,15 +151,23 @@ fn toggle_notebook(keys: Res<ButtonInput<KeyCode>>, mut open: ResMut<NotebookWin
     }
 }
 
-/// Appends salient events to the log. Species extinctions always log;
-/// individual `OrganismDied` events don't (GDD §7: the log is curated, not
-/// an unfiltered per-tick feed).
+/// Appends salient events to the log. Species extinctions always log.
+/// Individual `OrganismDied` events don't, *except* for an organism the
+/// player placed via `Seed` (task 026) — GDD §7 wants the log curated, not
+/// an unfiltered per-tick feed, but a death of something the player
+/// deliberately spent a budget point on is exactly the kind of salient
+/// signal that filter should let through. `PlayerPlacedCells` is the
+/// marker: every death's cell is checked against it and removed either way
+/// (whether or not it matched), so a cell's "player-placed" status is
+/// consumed by the first thing that happens to it, never stale.
 ///
 /// TODO: bloom detection (population of a species crossing some multiple of
 /// its starting count within an era) as a second salient-event type.
 fn record_events(
     world: Res<SimWorld>,
     mut extinctions: MessageReader<SpeciesExtinct>,
+    mut deaths: MessageReader<OrganismDied>,
+    mut placed: ResMut<PlayerPlacedCells>,
     mut log: ResMut<ObservationLog>,
 ) {
     for event in extinctions.read() {
@@ -150,6 +175,19 @@ fn record_events(
             era: world.era,
             text: format!("species {} went extinct", event.species.0),
         });
+    }
+
+    for event in deaths.read() {
+        if placed.0.remove(&event.cell) {
+            let (x, y) = (event.cell % world.width, event.cell / world.width);
+            log.entries.push(LogEntry {
+                era: world.era,
+                text: format!(
+                    "your species {} organism at ({x}, {y}) died",
+                    event.species.0
+                ),
+            });
+        }
     }
 }
 
@@ -280,17 +318,23 @@ mod tests {
     use abiogenesis::config::SimConfig;
     use abiogenesis::world::SpeciesId;
 
+    fn app_for_record_events(world: SimWorld) -> App {
+        let mut app = App::new();
+        app.insert_resource(world);
+        app.init_resource::<ObservationLog>();
+        app.init_resource::<PlayerPlacedCells>();
+        app.add_message::<SpeciesExtinct>();
+        app.add_message::<OrganismDied>();
+        app.add_systems(Update, record_events);
+        app
+    }
+
     #[test]
     fn extinction_message_appends_a_log_entry() {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
         world.era = 3;
-
-        let mut app = App::new();
-        app.insert_resource(world);
-        app.init_resource::<ObservationLog>();
-        app.add_message::<SpeciesExtinct>();
-        app.add_systems(Update, record_events);
+        let mut app = app_for_record_events(world);
 
         app.world_mut()
             .resource_mut::<Messages<SpeciesExtinct>>()
@@ -303,6 +347,97 @@ mod tests {
         assert_eq!(log.entries.len(), 1);
         assert_eq!(log.entries[0].era, 3);
         assert!(log.entries[0].text.contains("species 2"));
+    }
+
+    #[test]
+    fn a_player_placed_organisms_death_logs_and_consumes_the_marker() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.era = 4;
+        let mut app = app_for_record_events(world);
+        app.world_mut()
+            .resource_mut::<PlayerPlacedCells>()
+            .0
+            .insert(137);
+
+        app.world_mut()
+            .resource_mut::<Messages<OrganismDied>>()
+            .write(OrganismDied {
+                cell: 137,
+                species: SpeciesId(0),
+            });
+        app.update();
+
+        let log = app.world().resource::<ObservationLog>();
+        assert_eq!(log.entries.len(), 1);
+        assert_eq!(log.entries[0].era, 4);
+        assert!(
+            log.entries[0].text.contains("species 0"),
+            "got: {}",
+            log.entries[0].text
+        );
+        let placed = app.world().resource::<PlayerPlacedCells>();
+        assert!(
+            !placed.0.contains(&137),
+            "the marker must be consumed once logged"
+        );
+    }
+
+    #[test]
+    fn a_reproduced_organisms_death_does_not_log() {
+        // Same death event, but the cell was never recorded as
+        // player-placed (i.e. this organism was born via reproduction) —
+        // task 019's "no per-tick flood" guarantee must hold.
+        let config = SimConfig::default();
+        let world = SimWorld::new(42, &config);
+        let mut app = app_for_record_events(world);
+
+        app.world_mut()
+            .resource_mut::<Messages<OrganismDied>>()
+            .write(OrganismDied {
+                cell: 42,
+                species: SpeciesId(0),
+            });
+        app.update();
+
+        let log = app.world().resource::<ObservationLog>();
+        assert!(
+            log.entries.is_empty(),
+            "an untracked (reproduced) organism's death must not log"
+        );
+    }
+
+    #[test]
+    fn a_player_placed_organism_still_logs_after_surviving_several_eras() {
+        // The marker must not expire on its own — only a matching death (or
+        // an explicit clear, e.g. Cull/reseed) removes it.
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.era = 1;
+        let mut app = app_for_record_events(world);
+        app.world_mut()
+            .resource_mut::<PlayerPlacedCells>()
+            .0
+            .insert(9);
+
+        // A few eras pass with no death — nothing happens, marker persists.
+        for era in 2..=5 {
+            app.world_mut().resource_mut::<SimWorld>().era = era;
+            app.update();
+        }
+        assert!(app.world().resource::<PlayerPlacedCells>().0.contains(&9));
+
+        app.world_mut()
+            .resource_mut::<Messages<OrganismDied>>()
+            .write(OrganismDied {
+                cell: 9,
+                species: SpeciesId(1),
+            });
+        app.update();
+
+        let log = app.world().resource::<ObservationLog>();
+        assert_eq!(log.entries.len(), 1);
+        assert_eq!(log.entries[0].era, 5);
     }
 
     const THRESHOLD: f32 = 3.0;

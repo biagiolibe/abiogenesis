@@ -12,7 +12,7 @@ use abiogenesis::sim::{
 use abiogenesis::state::EraState;
 use abiogenesis::world::{seed_starting_palette, Organism, SimWorld, SpeciesId};
 
-use crate::notebook::{MatrixKnowledge, ObservationLog};
+use crate::notebook::{MatrixKnowledge, ObservationLog, PlayerPlacedCells};
 use crate::render::{world_to_cell, GridCamera};
 use crate::ui::{ActionMode, SelectedAction, SelectedSpecies, SpliceDraft, SpliceEditChoice};
 
@@ -115,6 +115,7 @@ fn reseed_world(
     mut budget: ResMut<ActionBudget>,
     mut selected: ResMut<SelectedSpecies>,
     mut splice_draft: ResMut<SpliceDraft>,
+    mut placed: ResMut<PlayerPlacedCells>,
 ) {
     if keys.just_pressed(KeyCode::KeyR) {
         let new_seed = world.next_seed();
@@ -138,6 +139,10 @@ fn reseed_world(
         // indexes `world.species` by it (e.g. `ui.rs::species_stats`).
         selected.0 = SpeciesId(0);
         *splice_draft = SpliceDraft::default();
+        // Cell indices from the previous world mean nothing in the fresh
+        // one — a stale entry could wrongly mark whatever ends up in that
+        // cell next as "player-placed".
+        placed.0.clear();
     }
 }
 
@@ -148,7 +153,9 @@ fn reseed_world(
 /// follow. Clicks outside the grid (the HUD panel, letterboxed margins) are
 /// silently ignored via `world_to_cell`. Costs `config.time.action_costs.seed`
 /// action points (task 022); an unaffordable click does nothing at all, not
-/// even the empty-cell check.
+/// even the empty-cell check. Records the cell into `PlayerPlacedCells`
+/// (task 026) so the Notebook can log a salient entry if this organism
+/// later dies.
 #[allow(clippy::too_many_arguments)]
 fn seed_organism_on_click(
     buttons: Res<ButtonInput<MouseButton>>,
@@ -160,6 +167,7 @@ fn seed_organism_on_click(
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
     mut budget: ResMut<ActionBudget>,
+    mut placed: ResMut<PlayerPlacedCells>,
 ) {
     if selected_action.0 != ActionMode::Seed {
         return;
@@ -174,6 +182,7 @@ fn seed_organism_on_click(
         return;
     }
 
+    let index = world.index(x, y);
     let cell = world.get_mut(x, y);
     if cell.organism.is_some() {
         return;
@@ -183,6 +192,7 @@ fn seed_organism_on_click(
         energy: config.energy.seed_energy,
     });
     budget.points_remaining -= config.time.action_costs.seed;
+    placed.0.insert(index);
 }
 
 /// Left-click while `ActionMode::Stress` is selected (GDD §6 "Stress"):
@@ -232,7 +242,14 @@ fn stress_on_click(
 /// deposits no residue — GDD §5.6 step 6 ties residue to *death* by the
 /// tick algorithm (energy `<= 0`), not to an organism's removal by any
 /// means, and a player-culled organism is removed by fiat rather than
-/// starving or being predated.
+/// starving or being predated. Also clears the cell from `PlayerPlacedCells`
+/// (task 026) if present — a culled organism generates no `OrganismDied`
+/// (it never goes through `sim::step`), so nothing would otherwise remove
+/// the stale entry, and a *later* organism placed at the same cell must not
+/// inherit a "player-placed" marker that was really about a different,
+/// already-culled individual. This does mean a culled player-placed
+/// organism itself never gets a Notebook entry — a known gap, not fixed
+/// here (see task 024's own note on `Cull` emitting no event at all).
 #[allow(clippy::too_many_arguments)]
 fn cull_on_click(
     buttons: Res<ButtonInput<MouseButton>>,
@@ -243,6 +260,7 @@ fn cull_on_click(
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
     mut budget: ResMut<ActionBudget>,
+    mut placed: ResMut<PlayerPlacedCells>,
 ) {
     if selected_action.0 != ActionMode::Cull {
         return;
@@ -254,6 +272,7 @@ fn cull_on_click(
         return;
     };
 
+    let index = world.index(x, y);
     let cell = world.get_mut(x, y);
     if cell.organism.is_none() {
         return;
@@ -263,6 +282,7 @@ fn cull_on_click(
     }
     cell.organism = None;
     budget.points_remaining -= config.time.action_costs.cull;
+    placed.0.remove(&index);
 }
 
 /// Applies a `Splice` (GDD §6) once the HUD's editor panel (`ui.rs`) sets
@@ -309,6 +329,16 @@ fn apply_splice(
             };
             new_species.tags[pos] = new;
         }
+        SpliceEditChoice::AddTag { tag: Some(tag) } => {
+            // Defense-in-depth against a stale draft (e.g. picked before
+            // switching to a source that's already at the cap): the UI
+            // gates this too, but a leftover selection must still no-op
+            // here rather than push past GDD §5.3's 3-tag cap.
+            if new_species.tags.len() >= 3 {
+                return;
+            }
+            new_species.tags.push(tag);
+        }
         SpliceEditChoice::ShiftTempOptimum { warmer } => {
             let delta = if warmer {
                 config.energy.splice_temp_shift
@@ -317,8 +347,8 @@ fn apply_splice(
             };
             new_species.temp_optimum = (new_species.temp_optimum + delta).clamp(0.0, 1.0);
         }
-        // Incomplete SwapTag selection (missing old and/or new tag).
-        SpliceEditChoice::SwapTag { .. } => return,
+        // Incomplete SwapTag/AddTag selection (missing tag(s)).
+        SpliceEditChoice::SwapTag { .. } | SpliceEditChoice::AddTag { tag: None } => return,
     }
     if budget.points_remaining < config.time.action_costs.splice {
         return;
@@ -445,6 +475,65 @@ mod tests {
     }
 
     #[test]
+    fn add_tag_splice_appends_a_tag_without_removing_any() {
+        let (world, config) = world_with_one_taggable_species();
+        let mut app = app_with(
+            world,
+            config,
+            SpliceDraft {
+                source: Some(SpeciesId(0)),
+                edit: SpliceEditChoice::AddTag {
+                    tag: Some(TagId(1)),
+                },
+                apply_requested: true,
+            },
+        );
+        app.update();
+
+        let world = app.world().resource::<SimWorld>();
+        assert_eq!(
+            world.species.len(),
+            2,
+            "the splice should append, not replace"
+        );
+        assert_eq!(
+            world.species[0].tags,
+            vec![TagId(0)],
+            "the source species must stay unchanged"
+        );
+        assert_eq!(
+            world.species[1].tags,
+            vec![TagId(0), TagId(1)],
+            "the new species should carry the original tag plus the added one"
+        );
+    }
+
+    #[test]
+    fn add_tag_splice_does_nothing_on_a_species_already_at_the_cap() {
+        let (mut world, config) = world_with_one_taggable_species();
+        world.species[0].tags = vec![TagId(0), TagId(1), TagId(0)];
+        let mut app = app_with(
+            world,
+            config,
+            SpliceDraft {
+                source: Some(SpeciesId(0)),
+                edit: SpliceEditChoice::AddTag {
+                    tag: Some(TagId(1)),
+                },
+                apply_requested: true,
+            },
+        );
+        app.update();
+
+        let world = app.world().resource::<SimWorld>();
+        assert_eq!(
+            world.species.len(),
+            1,
+            "adding a tag to a species already at the 3-tag cap must not apply"
+        );
+    }
+
+    #[test]
     fn incomplete_swap_tag_draft_does_nothing() {
         let (world, config) = world_with_one_taggable_species();
         let mut app = app_with(
@@ -526,6 +615,7 @@ mod tests {
             source: Some(SpeciesId(2)),
             ..SpliceDraft::default()
         });
+        app.insert_resource(PlayerPlacedCells(std::collections::HashSet::from([1, 5])));
         app.add_systems(Update, reseed_world);
         app.update();
 
@@ -543,5 +633,10 @@ mod tests {
         );
         let draft = app.world().resource::<SpliceDraft>();
         assert_eq!(draft.source, None, "the splice draft should reset too");
+        let placed = app.world().resource::<PlayerPlacedCells>();
+        assert!(
+            placed.0.is_empty(),
+            "stale player-placed cell indices from the old world must not carry over"
+        );
     }
 }

@@ -32,8 +32,6 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 | Status | ID | Title | Priority | Depends on | Agent | Task File |
 |-------|----|--------|----------|------------|--------|-----------|
-| `[ ]` | 026 | Log salient organism deaths, not just extinctions | 🟡 P2 | 018, 019, 022 | unassigned | [026](026-salient-death-logging.md) |
-| `[ ]` | 027 | Splice: add a real "Add tag" option, not just "Swap" | 🟡 P2 | 025 | unassigned | [027](027-splice-add-tag.md) |
 | `[ ]` | 028 | Distinguish "no evidence" from "unconfirmed evidence" in the hypothesis grid | 🟢 P3 | 020, 021 | unassigned | [028](028-partial-evidence-visibility.md) |
 | `[ ]` | 029 | Stable tag identifiers and readable species names | 🟡 P2 | 021, 025 | unassigned | [029](029-tag-identifiers-species-names.md) |
 | `[ ]` | 030 | HUD reorganization: grouping, icons, tooltips, bars | 🟡 P2 | 022, 023, 025 | unassigned | [030](030-hud-reorganization.md) |
@@ -86,6 +84,8 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | `[x]` | 023 | Stress action | Claude | [023](done/023-stress-action.md) |
 | `[x]` | 024 | Cull action | Claude | [024](done/024-cull-action.md) |
 | `[x]` | 025 | Splice action | Claude | [025](done/025-splice-action.md) |
+| `[x]` | 026 | Log salient organism deaths, not just extinctions | Claude | [026](done/026-salient-death-logging.md) |
+| `[x]` | 027 | Splice: add a real "Add tag" option, not just "Swap" | Claude | [027](done/027-splice-add-tag.md) |
 
 ---
 

@@ -35,13 +35,17 @@ pub enum ActionMode {
 #[derive(Resource)]
 pub struct SelectedAction(pub ActionMode);
 
-/// One in-progress `Splice` edit (GDD §6): swap one tag for another, or
+/// One in-progress `Splice` edit (GDD §6): swap one tag for another, add a
+/// tag to a species with room under the 1-3 tag cap (GDD §5.3, task 027), or
 /// shift the thermal optimum by `config.energy.splice_temp_shift`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpliceEditChoice {
     SwapTag {
         old: Option<TagId>,
         new: Option<TagId>,
+    },
+    AddTag {
+        tag: Option<TagId>,
     },
     ShiftTempOptimum {
         warmer: bool,
@@ -249,15 +253,34 @@ fn splice_panel(ui: &mut egui::Ui, world: &SimWorld, draft: &mut SpliceDraft) {
         );
     }
 
+    // A species already at GDD §5.3's 3-tag cap has no room to grow, so
+    // "Add a tag" is only offered when the selected source has fewer than 3.
+    let has_room = draft
+        .source
+        .and_then(|source| world.species.get(source.0 as usize))
+        .is_some_and(|species| species.tags.len() < 3);
+
     ui.label("Edit");
     let is_swap = matches!(draft.edit, SpliceEditChoice::SwapTag { .. });
+    let is_add = matches!(draft.edit, SpliceEditChoice::AddTag { .. });
     if ui.radio(is_swap, "Swap a tag").clicked() {
         draft.edit = SpliceEditChoice::SwapTag {
             old: None,
             new: None,
         };
     }
-    if ui.radio(!is_swap, "Shift temperature optimum").clicked() {
+    ui.add_enabled_ui(has_room, |ui| {
+        if ui.radio(is_add, "Add a tag").clicked() {
+            draft.edit = SpliceEditChoice::AddTag { tag: None };
+        }
+    });
+    if !has_room {
+        ui.weak("  (source already has 3 tags)");
+    }
+    if ui
+        .radio(!is_swap && !is_add, "Shift temperature optimum")
+        .clicked()
+    {
         draft.edit = SpliceEditChoice::ShiftTempOptimum { warmer: true };
     }
 
@@ -272,6 +295,20 @@ fn splice_panel(ui: &mut egui::Ui, world: &SimWorld, draft: &mut SpliceDraft) {
                 ui.label("Add tag:");
                 for &tag in &world.active_tags {
                     ui.radio_value(new, Some(tag), format!("tag {}", tag.0));
+                }
+            } else {
+                ui.weak("  (pick a source species first)");
+            }
+        }
+        SpliceEditChoice::AddTag { tag } => {
+            if let Some(source) = draft.source {
+                let species = &world.species[source.0 as usize];
+                ui.label("Add tag:");
+                for &candidate in &world.active_tags {
+                    if species.tags.contains(&candidate) {
+                        continue;
+                    }
+                    ui.radio_value(tag, Some(candidate), format!("tag {}", candidate.0));
                 }
             } else {
                 ui.weak("  (pick a source species first)");
