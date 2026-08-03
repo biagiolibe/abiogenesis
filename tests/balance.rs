@@ -5,7 +5,7 @@
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::step;
-use abiogenesis::world::{seed_phase0_organism, SimWorld};
+use abiogenesis::world::{seed_starting_palette, SimWorld};
 
 /// Long enough for the bloom to grow, saturate, and settle (suggested
 /// implementation: 300-500 ticks).
@@ -29,7 +29,7 @@ fn population(world: &SimWorld) -> usize {
 fn run_nominal_scenario(seed: u64, ticks: usize) -> (SimWorld, Vec<usize>) {
     let config = SimConfig::default();
     let mut world = SimWorld::new(seed, &config);
-    seed_phase0_organism(&mut world, &config);
+    seed_starting_palette(&mut world, &config);
 
     let mut history = Vec::with_capacity(ticks);
     for _ in 0..ticks {

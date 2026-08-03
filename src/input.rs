@@ -7,7 +7,7 @@ use bevy::prelude::*;
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::{step, EraProgress};
 use abiogenesis::state::EraState;
-use abiogenesis::world::{seed_phase0_organism, SimWorld};
+use abiogenesis::world::{seed_starting_palette, SimWorld};
 
 pub struct InputPlugin;
 
@@ -65,7 +65,7 @@ fn reseed_world(
     if keys.just_pressed(KeyCode::KeyR) {
         let new_seed = world.next_seed();
         *world = SimWorld::new(new_seed, &config);
-        seed_phase0_organism(&mut world, &config);
+        seed_starting_palette(&mut world, &config);
         progress.cancel();
         next_state.set(EraState::Observing);
     }
