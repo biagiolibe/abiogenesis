@@ -32,7 +32,6 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 | Status | ID | Title | Priority | Depends on | Agent | Task File |
 |-------|----|--------|----------|------------|--------|-----------|
-| `[ ]` | 023 | Stress action | 🟡 P2 | 022 | unassigned | [023](023-stress-action.md) |
 | `[ ]` | 024 | Cull action | 🟡 P2 | 022, 023 | unassigned | [024](024-cull-action.md) |
 | `[ ]` | 025 | Splice action | 🟡 P2 | 022 | unassigned | [025](025-splice-action.md) |
 
@@ -78,6 +77,7 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | `[x]` | 020 | Hypothesis confirmation engine (`MatrixKnowledge`, weighted evidence) | Claude | [020](done/020-hypothesis-confirmation-engine.md) |
 | `[x]` | 021 | Hypothesis grid UI + tag/species catalog | Claude | [021](done/021-hypothesis-grid-ui-catalog.md) |
 | `[x]` | 022 | Action budget economy (`ActionBudget`, `Seed` becomes budget-gated) | Claude | [022](done/022-action-budget-economy.md) |
+| `[x]` | 023 | Stress action | Claude | [023](done/023-stress-action.md) |
 
 ---
 

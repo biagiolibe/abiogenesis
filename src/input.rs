@@ -14,7 +14,7 @@ use abiogenesis::world::{seed_starting_palette, Organism, SimWorld};
 
 use crate::notebook::{MatrixKnowledge, ObservationLog};
 use crate::render::{world_to_cell, GridCamera};
-use crate::ui::SelectedSpecies;
+use crate::ui::{ActionMode, SelectedAction, SelectedSpecies};
 
 pub struct InputPlugin;
 
@@ -28,9 +28,33 @@ impl Plugin for InputPlugin {
                 reseed_world,
                 quit,
                 seed_organism_on_click,
+                stress_on_click,
             ),
         );
     }
+}
+
+/// Resolves the current left-click, if any, to a grid cell — the
+/// window-cursor → camera → world-position → grid-coordinate pipeline task
+/// 017 worked out for `Seed`, factored out so every click action (task 023
+/// onward) reuses it instead of re-deriving the same edge cases. Returns
+/// `None` for anything from "no click this frame" to "clicked outside the
+/// grid" — callers don't need to distinguish why.
+fn clicked_cell(
+    buttons: &ButtonInput<MouseButton>,
+    windows: &Query<&Window>,
+    cameras: &Query<(&Camera, &GlobalTransform), With<GridCamera>>,
+    width: usize,
+    height: usize,
+) -> Option<(usize, usize)> {
+    if !buttons.just_pressed(MouseButton::Left) {
+        return None;
+    }
+    let window = windows.single().ok()?;
+    let cursor = window.cursor_position()?;
+    let (camera, camera_transform) = cameras.single().ok()?;
+    let world_pos = camera.viewport_to_world_2d(camera_transform, cursor).ok()?;
+    world_to_cell(world_pos, width, height)
 }
 
 /// `space`: starts an era, unless one is already advancing (acceptance
@@ -107,43 +131,33 @@ fn reseed_world(
     }
 }
 
-/// Left-click: places an organism of the currently-selected species (GDD §6
-/// "Seed") in the clicked cell, if it's empty, affordable, and
-/// `EraState::Observing` — the same "ignored mid-`Advancing`" rule the other
-/// player-driven systems in this file follow. Clicks outside the grid (the
-/// HUD panel, letterboxed margins) are silently ignored via `world_to_cell`.
-/// Costs `config.time.action_costs.seed` action points (task 022); an
-/// unaffordable click does nothing at all, not even the empty-cell check.
+/// Left-click while `ActionMode::Seed` is selected: places an organism of
+/// the currently-selected species (GDD §6 "Seed") in the clicked cell, if
+/// it's empty, affordable, and `EraState::Observing` — the same "ignored
+/// mid-`Advancing`" rule the other player-driven systems in this file
+/// follow. Clicks outside the grid (the HUD panel, letterboxed margins) are
+/// silently ignored via `world_to_cell`. Costs `config.time.action_costs.seed`
+/// action points (task 022); an unaffordable click does nothing at all, not
+/// even the empty-cell check.
 #[allow(clippy::too_many_arguments)]
 fn seed_organism_on_click(
     buttons: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
     era_state: Res<State<EraState>>,
+    selected_action: Res<SelectedAction>,
     selected: Res<SelectedSpecies>,
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
     mut budget: ResMut<ActionBudget>,
 ) {
+    if selected_action.0 != ActionMode::Seed {
+        return;
+    }
     if *era_state.get() == EraState::Advancing {
         return;
     }
-    if !buttons.just_pressed(MouseButton::Left) {
-        return;
-    }
-    let Ok(window) = windows.single() else {
-        return;
-    };
-    let Some(cursor) = window.cursor_position() else {
-        return;
-    };
-    let Ok((camera, camera_transform)) = cameras.single() else {
-        return;
-    };
-    let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor) else {
-        return;
-    };
-    let Some((x, y)) = world_to_cell(world_pos, world.width, world.height) else {
+    let Some((x, y)) = clicked_cell(&buttons, &windows, &cameras, world.width, world.height) else {
         return;
     };
     if budget.points_remaining < config.time.action_costs.seed {
@@ -159,6 +173,45 @@ fn seed_organism_on_click(
         energy: config.energy.seed_energy,
     });
     budget.points_remaining -= config.time.action_costs.seed;
+}
+
+/// Left-click while `ActionMode::Stress` is selected (GDD §6 "Stress"):
+/// shifts the clicked cell's temperature by `config.environment.stress_delta`,
+/// clamped to `[0,1]` (the existing scalar-range invariant) — temperature,
+/// not toxicity, since `sim::step`'s `env_fit` reads temperature every tick
+/// and toxicity currently isn't read anywhere, so a stressed cell has an
+/// observable effect on any organism sitting on it (subject to environmental
+/// diffusion smearing it back toward neighbours over subsequent ticks, same
+/// as any other scalar). Unlike `Seed`, occupancy isn't a precondition —
+/// Stress targets the environment, so it works on empty and occupied cells
+/// alike. Same budget-check-then-decrement pattern as `Seed`.
+#[allow(clippy::too_many_arguments)]
+fn stress_on_click(
+    buttons: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window>,
+    cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
+    era_state: Res<State<EraState>>,
+    selected_action: Res<SelectedAction>,
+    mut world: ResMut<SimWorld>,
+    config: Res<SimConfig>,
+    mut budget: ResMut<ActionBudget>,
+) {
+    if selected_action.0 != ActionMode::Stress {
+        return;
+    }
+    if *era_state.get() == EraState::Advancing {
+        return;
+    }
+    let Some((x, y)) = clicked_cell(&buttons, &windows, &cameras, world.width, world.height) else {
+        return;
+    };
+    if budget.points_remaining < config.time.action_costs.stress {
+        return;
+    }
+
+    let cell = world.get_mut(x, y);
+    cell.temperature = (cell.temperature + config.environment.stress_delta).clamp(0.0, 1.0);
+    budget.points_remaining -= config.time.action_costs.stress;
 }
 
 /// `Esc` quits. `q` was planned in GDD v0.3 but removed in v0.4, kept free

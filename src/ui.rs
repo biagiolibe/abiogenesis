@@ -18,6 +18,23 @@ use abiogenesis::world::{SimWorld, SpeciesId};
 #[derive(Resource)]
 pub struct SelectedSpecies(pub SpeciesId);
 
+/// What a left-click does (GDD §6). `Cull`/`Splice` are scaffolded now
+/// (task 023) so their selector entries exist ahead of 024/025 implementing
+/// the click behavior — selecting them today just does nothing on click.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionMode {
+    Seed,
+    Stress,
+    Cull,
+    Splice,
+}
+
+/// The currently-selected click action. A UI intent like `SelectedSpecies`,
+/// defaulting to `Seed` so existing click behavior is unchanged for anyone
+/// who never touches the new selector.
+#[derive(Resource)]
+pub struct SelectedAction(pub ActionMode);
+
 /// On-screen width of the HUD panel, reserved from the grid camera's
 /// viewport so the panel never draws over the grid (task 008 acceptance
 /// criterion). Presentation-only, not a simulation coefficient (see
@@ -44,6 +61,7 @@ impl Plugin for UiPlugin {
             .resource_mut::<EguiGlobalSettings>()
             .auto_create_primary_context = false;
         app.insert_resource(SelectedSpecies(SpeciesId(0)))
+            .insert_resource(SelectedAction(ActionMode::Seed))
             .add_systems(Startup, spawn_hud_camera)
             .add_systems(Update, reserve_hud_viewport)
             .add_systems(EguiPrimaryContextPass, hud_panel);
@@ -104,6 +122,7 @@ fn hud_panel(
     world: Res<SimWorld>,
     era_state: Res<State<EraState>>,
     mut selected: ResMut<SelectedSpecies>,
+    mut selected_action: ResMut<SelectedAction>,
     budget: Res<ActionBudget>,
     config: Res<SimConfig>,
 ) -> Result {
@@ -138,6 +157,16 @@ fn hud_panel(
                     species.0, population, avg_energy
                 ));
             }
+
+            ui.separator();
+            ui.label("Action");
+            ui.radio_value(&mut selected_action.0, ActionMode::Seed, "Seed");
+            ui.radio_value(&mut selected_action.0, ActionMode::Stress, "Stress");
+            // Cull/Splice (tasks 024/025): selectable now so the enum/UI
+            // scaffolding doesn't need touching again, but clicking with
+            // either selected does nothing yet.
+            ui.radio_value(&mut selected_action.0, ActionMode::Cull, "Cull (soon)");
+            ui.radio_value(&mut selected_action.0, ActionMode::Splice, "Splice (soon)");
 
             ui.separator();
             ui.label("Seed species (click an empty cell)");

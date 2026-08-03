@@ -55,6 +55,13 @@ pub struct EnvironmentConfig {
     pub toxic_zone_width: u32,
     /// Height in cells of the Phase 0 toxic zone.
     pub toxic_zone_height: u32,
+    /// How much the `Stress` action (GDD §6) shifts a clicked cell's
+    /// temperature, before clamping to `[0,1]`. Temperature, not toxicity:
+    /// `sim::step`'s `env_fit` reads temperature every tick, so a stressed
+    /// cell has an observable, deducible effect on organisms sitting on it —
+    /// toxicity is currently written (world generation, diffusion) but read
+    /// by nothing in the tick, so stressing it would be an inert action.
+    pub stress_delta: f32,
 }
 
 impl Default for EnvironmentConfig {
@@ -68,6 +75,7 @@ impl Default for EnvironmentConfig {
             toxic_zone_value: 0.7,
             toxic_zone_width: 8,
             toxic_zone_height: 6,
+            stress_delta: 0.3,
         }
     }
 }
