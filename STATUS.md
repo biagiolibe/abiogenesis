@@ -1,0 +1,176 @@
+# Implementation Status — Phase 0 & Phase 1
+
+What exists today in Abiogenesis, feature by feature, with the technical solution behind each one. Written as a snapshot after task 017; see `tasks/done/` for the task-by-task history and `TECH_DESIGN.md` for the architectural decisions this document assumes.
+
+---
+
+## 1. Application shell
+
+**What**: a Bevy app with a real window, deterministic simulation, 2D rendering, an egui HUD, and keyboard/mouse input — structured as one `Plugin` per concern.
+
+**How**: `main.rs` wires six plugins onto `App`: `ConfigPlugin`, `WorldPlugin`, `SimPlugin`, `GridRenderPlugin`, `UiPlugin`, `InputPlugin`. Two crate halves:
+- `abiogenesis` (lib): `config`, `world`, `sim`, `state` — pure simulation, no `bevy::render` or `bevy_egui` dependency, runnable headless.
+- `abiogenesis` (bin, `main.rs` + `render`/`ui`/`input` modules): the presentation layer that turns the lib into a playable window.
+
+This split is what lets determinism/balance tests run without a GPU or window (`cargo test` spins up `SimWorld` + `sim::step` directly, no `App`).
+
+---
+
+## 2. Configuration (`src/config.rs`)
+
+**What**: every numeric coefficient in the game lives in one `SimConfig` resource, grouped by domain (`grid`, `environment`, `time`, `energy`, `tags`, `notebook`), each with GDD §5.9-sourced defaults.
+
+**How**: plain structs with `Default` impls, no magic numbers elsewhere in the codebase (project convention, enforced by review rather than tooling). `ConfigPlugin` just calls `init_resource::<SimConfig>()`. Not yet hot-reloadable (RON migration is backlog, Phase-tuning item) — read-only at runtime today.
+
+---
+
+## 3. World state (`src/world.rs`)
+
+**What**: `SimWorld` is the single source of truth for the simulation — a dense grid of `Cell`s, the species registry, the hidden tag matrix, and the seeded RNG. Not ECS: Bevy entities only exist for rendering (TECH_DESIGN.md §3.1), so the tick algorithm is a plain Rust sweep over `Vec<Cell>`, independently testable and fully deterministic.
+
+**How**:
+- `Cell { temperature, light, toxicity, organism: Option<Organism>, residue }` — single occupancy, no stacking (GDD §5.1).
+- `Organism { species: SpeciesId, energy }`, `Species { metabolism, temp_optimum, temp_tolerance, repro_threshold, tags }`.
+- Double-buffered: `SimWorld` holds both `cells` (read-side snapshot) and a `pub(crate) scratch` (write-side), swapped at the end of every tick (`sim::step`) — this is *the* mechanism that keeps the whole tick order-independent (TECH_DESIGN.md invariant 1): every system this tick reads only from `cells`, writes only to `scratch`, and no cell's outcome depends on which order cells were visited in.
+- `rng: StdRng`, seeded once at `SimWorld::new(seed, config)`, exposed only via `rng_mut()` so nothing can clone it out and desync determinism. `next_seed()` draws the next reseed value from this same stream — reseeding (`r` key) never touches the system clock.
+- `moore_neighbours(x, y)` — the 8-cell neighbourhood, clipped at grid borders (a corner cell has 3, an edge cell 5), used by every spatial mechanic below.
+
+---
+
+## 4. Environment (§5.2)
+
+**What**: two static gradients (light falls top→bottom, temperature rises left→right, deliberately crossed axes so they carve 2D niches) plus a toxic corner zone, all seeded once at world construction — and, since task 016, all three scalars now diffuse toward their neighbours' mean every tick.
+
+**How**:
+- `apply_gradients` (called once in `SimWorld::new`) linearly interpolates `light`/`temperature` across the grid and stamps a fixed-size toxic rectangle in the bottom-right corner. Exact at `t=0`/`t=1` via a custom `lerp`, not `f32::lerp`, so grid-extreme cells match the GDD's baseline values exactly (tested).
+- `diffuse_environment(config)` (task 016): for every cell, blends `temperature`/`light`/`toxicity` toward the mean of its Moore neighbours at `diffusion_rate` (0.05/tick) — reads `self.cells` (snapshot), writes `self.scratch`, same double-buffering discipline as everything else. `sim::step` calls it every tick, right after the scratch copy. A uniform field is a fixed point (tested); a perturbed cell smooths out over ticks without overshoot, staying in `[0,1]`.
+- `residue` is explicitly *not* diffused — it's a separate mechanic (decay + decomposer extraction, §7 below), not an "environmental scalar" in the GDD §5.2 sense.
+
+---
+
+## 5. The tick algorithm (`src/sim.rs::step`, GDD §5.6)
+
+**What**: the heart of the simulation — one `step(world, config)` call advances every organism by one tick: environmental diffusion, metabolic gain, matrix-driven interaction, upkeep costs, death, and reproduction. Pure function, no Bevy `App` required, so it's exhaustively unit-tested headless.
+
+**How**, in the fixed order `step` actually executes:
+
+1. **Scratch reset**: `world.scratch.copy_from_slice(&world.cells)` — write-side starts as a copy of the previous tick.
+2. **Diffusion** (§4 above) — writes into `scratch`.
+3. **Residue decay pre-pass**: every cell's `residue` drops by `residue_decay` per tick (floored at 0), independent of whether it currently holds an organism.
+4. **Predation pre-pass** (§6 below) and **decomposition pre-pass** (§7 below) — both shared-resource accumulator passes computed from the snapshot, *before* the main loop.
+5. **Main per-cell loop**, for every occupied cell, reading only `world.cells` (never `scratch`) for neighbour lookups:
+   - **Environmental fitness**: Gaussian `env_fit(temperature, optimum, tolerance) = exp(-(Δt)² / (2·tolerance²))` — how close the cell's temperature is to the species' optimum.
+   - **Metabolic gain**: `Photolithic → light × photolithic_metabolism_gain × fit`; `Predator`/`Decomposer` pull their gain from the accumulator arrays computed in step 4.
+   - **Matrix adjacency effect** (§8 below): summed additive delta from every occupied Moore neighbour's tags.
+   - **Costs**: a metabolism-specific base upkeep, plus a carrying-capacity penalty (`crowd_factor × occupied_neighbour_count`) — this crowding term is what turns unbounded photolithic growth into an S-curve that stabilizes (Phase 0's whole milestone).
+   - **Energy update**: `new_energy = energy + gain + interaction_delta − upkeep − crowding − predation_loss − (implicit via decomposer path)`.
+   - **Death**: `new_energy ≤ 0` clears the organism and stamps `residue = residue_on_death`, overwriting whatever residue/decay was there — a death this tick always wins.
+   - **Reproduction**: if `new_energy ≥ repro_threshold`, picks a random empty Moore neighbour (via `world.rng_mut()`, so it's deterministic given the seed) and splits off a child at `repro_cost` energy; re-checks `scratch` at write time so two parents can't double-claim the same birth cell.
+6. **Swap**: `mem::swap(&mut world.cells, &mut world.scratch)`, `world.tick += 1`.
+
+**Why this shape**: TECH_DESIGN.md's "Tick Processing Order" decision is double buffering over a shuffled-iteration-with-guard alternative — no guard to maintain, no dependency on visitation order, newborns can't act the same tick they're born (by construction, since they only exist in `scratch`, never scanned by the loop that's iterating `cells`).
+
+---
+
+## 6. Predator metabolism (task 014, GDD §5.4)
+
+**What**: predators drain energy from occupied Moore neighbours instead of photosynthesizing — the first mechanic where one cell's outcome depends on a *different* cell's state.
+
+**How**: a **pre-pass accumulator**, not a direct write into a neighbour's `scratch` entry (that would make the outcome depend on scan order). Before the main loop: for every predator cell, `drawn = min(predator_drain_cap × fit, sum of occupied neighbours' energy)`, split evenly across those neighbours; `predation_gain[idx] = drawn` (the predator's own gain), `predation_loss[n] += share` for each prey neighbour `n`. The main loop later folds `predation_gain[idx]` into `gain` and subtracts `predation_loss[idx]` from the energy update. Two predators sharing one prey each compute independently from the same snapshot — deterministic regardless of which one is processed first, though (as documented) their combined draw isn't capped against each other, only against `drain_cap` individually.
+
+**Balance** (GDD §5.9 quick-check, verified by test): an isolated predator with no prey collapses in exactly `⌈seed_energy / predator_upkeep⌉ = ⌈5.0/0.7⌉ = 8` ticks.
+
+---
+
+## 7. Decomposer metabolism and the residue cycle (task 015, GDD §5.4)
+
+**What**: decomposers extract energy from residue in their own cell *and* Moore neighbours (unlike predation, decomposition includes the acting cell itself — a decomposer can sit directly on dead matter). Closes the loop *death → residue → decomposer bloom → (via the matrix) fertilizes photolithics → new biomass → new deaths* (GDD §16.3).
+
+**How**: extends task 014's accumulator pattern with two differences, documented in `TECH_DESIGN.md` §6:
+- **Source scope**: `sources = {own cell} ∪ moore_neighbours`, filtered to residue `> 0`.
+- **Order**: the decomposer pre-pass reads `world.scratch`'s residue — i.e. *after* the decay pre-pass already ran — so decay and extraction compose (decay first) instead of one clobbering the other. Extraction is distributed proportionally to each source's residue share, then a final `.max(0.0)` clamp on the whole accumulator application guards against multiple decomposers overdrawing the same pool (each sizes its draw against the same undrained snapshot, so their combined total can exceed what's there — the clamp is the correctness backstop, not the primary mechanism).
+
+---
+
+## 8. Tags and the hidden matrix (tasks 010–012, GDD §5.5)
+
+**What**: the game's central mystery. Every species carries 1–3 opaque tags from a global pool; a hidden `tag × tag` matrix defines how adjacency between tagged organisms affects energy — this is what the player is meant to reverse-engineer in Phase 2's notebook.
+
+**How**:
+- **Tag pool**: `TagId(u8)`, indexed directly (assumes the active set is the contiguous range `0..active_tags_early` — noted as a Phase 3 risk if world generation ever picks a non-contiguous subset).
+- **Species tag assignment** (`draw_species_tags`): 1–3 tags sampled without replacement from `world.active_tags`, using the world's own RNG.
+- **Matrix generation** (`generate_matrix`, task 011): each off-diagonal `(exerter, receiver)` cell independently becomes non-zero with probability `matrix_density` (~40%), diagonal always 0 (a tag never affects itself). Then a **negative 3-cycle** is forced among 3 random active tags — `A→B`, `B→C`, `C→A` all negative — overwriting whatever the random pass produced there. This guarantees at least one rock-paper-scissors-style coexistence relationship exists (GDD §5.8's cyclicity anti-degeneration lever), because there's no efficient closed-form way to *sample* a sparse asymmetric matrix guaranteed to contain a negative cycle — forcing it after the fact always terminates, rejection sampling might not.
+- **Adjacency effect in the tick** (task 012): for every occupied Moore neighbour, for every `(their_tag, my_tag)` pair, sum `matrix.get(their_tag, my_tag)` into `interaction_delta`, added straight into the energy update — additive and linear (TECH_DESIGN.md invariant 4), read only from the snapshot.
+
+---
+
+## 9. Starting palette (task 013)
+
+**What**: a placeholder for Phase 3's real procedural world generation — two photolithic species seeded at opposite temperature extremes (cold/left, hot/right) on the top (brightest) row, so the matrix adjacency effect has more than one species to act on out of the box.
+
+**How**: `seed_starting_palette`, called once from `WorldPlugin`'s `Startup` system and again on every `r` (reseed). Explicitly marked "do not extend — replace its call sites" once Phase 3 world generation exists.
+
+---
+
+## 10. Rendering (`src/render.rs`)
+
+**What**: one sprite per grid cell, colored by simulation state, plus the camera that projects the grid into the window — kept strictly read-only against `SimWorld` (TECH_DESIGN §3.1: entities are a view, never a data source).
+
+**How**:
+- `spawn_camera` (`GridRenderPlugin`, `Startup`): an orthographic `Camera2d` with `ScalingMode::AutoMin` pinned to the grid's pixel size, so a bigger window just letterboxes rather than clipping. Tagged `GridCamera` (see §12) to distinguish it from the dedicated HUD camera.
+- `spawn_grid`: one `Sprite` entity per cell, positioned once via `cell_position(x, y, w, h)` (grid centered on the origin, row 0 at the top — Bevy's Y grows upward while row index grows downward, so the mapping flips Y).
+- `sync_grid_colors` (`Update`): every frame, recomputes each sprite's `Sprite::color` from `cell_color`, the single place that decides how a cell looks: occupied cells get a per-species hue (`golden-angle` hue step so consecutive `SpeciesId`s are visually distinct with no manual palette) and lightness scaled by energy fraction toward `repro_threshold`; residue-only cells get a desaturated amber scaled by remaining residue; empty cells get a faint grey scaled by `light`.
+- `world_to_cell(world_pos, width, height)` (task 017): the exact algebraic inverse of `cell_position`, rounding to the nearest cell and rejecting anything outside `[0,width) × [0,height)` — this is what turns a mouse click into a grid coordinate (§13).
+
+---
+
+## 11. Game/era state machine (`src/state.rs`, task 007)
+
+**What**: two nested Bevy `States` mirroring GDD §16.4's Plan → Advance → Observe loop.
+
+**How**: `GameState` (`Loading → MainMenu → Playing`, `MainMenu` unreachable until Phase 3's real menu) and a `SubStates` `EraState` (`Planning`, `Observing` default, `Advancing`) that only exists while `GameState::Playing`. `Planning` is a stub today — becomes real once Phase 2's action budget exists.
+
+**Era animation** (`SimPlugin`, task 007/009): `EraProgress` resource counts down remaining ticks; `advance_tick` runs in `FixedUpdate` at `era_tick_hz` (20 Hz, presentation-only — never changes simulation outcomes), gated to `EraState::Advancing`, calling `sim::step` once per fixed tick and transitioning back to `Observing` when the countdown hits zero. A single `Update`-scheduled guard prevents a stray extra `FixedUpdate` execution from running one tick too many right at the state boundary.
+
+---
+
+## 12. HUD (`src/ui.rs`, tasks 008 & the mid-session fix)
+
+**What**: an egui side panel showing era/tick/seed/state, live per-species population and average energy, and (task 017) the species selector for seeding.
+
+**How, and why it needed a dedicated camera**: `bevy_egui` derives its own paint canvas (`RawInput::screen_rect`) from whichever camera carries the primary egui context, specifically that camera's `physical_viewport_rect()` — not the window. Early on this was the same camera rendering the grid, and cropping *that* camera's `Viewport` to reserve room for the HUD (so the panel wouldn't draw over the grid) also cropped away the area egui itself could paint into, making the panel invisible in some configurations. Fixed by giving egui its own camera:
+- `spawn_hud_camera`: a second `Camera2d`, `order: 1` (composites after the grid camera), `ClearColorConfig::None` (doesn't erase the grid's output), `RenderLayers` no grid entity is ever assigned to (renders nothing of the scene, only the egui overlay), carrying `PrimaryEguiContext`. `EguiGlobalSettings::auto_create_primary_context` is disabled so `bevy_egui` doesn't instead auto-attach to the grid camera (the first one spawned).
+- `reserve_hud_viewport` still crops the *grid* camera's `Viewport` by `HUD_WIDTH` (260px) every frame (tracks window resizes) — but now that only affects what the grid camera draws, not egui's canvas.
+- `hud_panel` (`EguiPrimaryContextPass`) builds a full-window background-layer `Ui` and shows an `egui::Panel::right` inside it, `exact_size(HUD_WIDTH)`, `resizable(false)`.
+- `SelectedSpecies(SpeciesId)` resource (task 017): a UI intent, not simulation state, written by the HUD's radio buttons and read by `input.rs`'s click handler — same ownership rationale as `EraProgress` living in `sim.rs` but being written from `input.rs`.
+
+---
+
+## 13. Input (`src/input.rs`, tasks 007 & 017)
+
+**What**: keyboard shortcuts for the core loop, plus the first real player action — seeding an organism by clicking a grid cell.
+
+**How**:
+- `space` — starts an era (`EraProgress::start` + transition to `Advancing`), ignored while already `Advancing`.
+- `s` — advances exactly one tick directly (`sim::step`), no state transition; useful for fine-grained observation. Also ignored mid-`Advancing`.
+- `r` — reseeds: draws a new seed from the *current* world's RNG (never the system clock), rebuilds `SimWorld` from scratch, re-runs `seed_starting_palette`, cancels any in-flight era. Allowed even mid-`Advancing` — a full reset legitimately invalidates whatever was playing.
+- `Esc` — quits (`AppExit`).
+- **Seed action** (task 017, `seed_organism_on_click`): on left-click, while `Observing`, converts the cursor position through the *grid* camera specifically (`Query<..., With<GridCamera>>` — there are two cameras now, see §12) via `Camera::viewport_to_world_2d`, then `render::world_to_cell` to resolve a grid coordinate. Silently no-ops if: mid-`Advancing`, no cursor position, the click landed outside the grid (including on the HUD — `world_to_cell` naturally rejects it since the grid camera's cropped viewport means off-grid clicks map to world coordinates beyond the grid's actual extent), or the target cell is already occupied. Otherwise places `Organism { species: selected.0, energy: seed_energy }`. No action-budget point is charged (that economy doesn't exist until Phase 2).
+
+This is the only write path from the UI/input layer into `SimWorld` outside of era advancement and reseeding — `TECH_DESIGN.md` §3.3 scopes the `Ui`/input layer as read-only except for turning player intent into exactly this kind of mutation.
+
+---
+
+## 14. Testing strategy
+
+**What exists**: unit tests co-located in every module (`#[cfg(test)] mod tests`) plus two headless integration suites, `tests/determinism.rs` and `tests/balance.rs`.
+
+**How it's organized**:
+- **Determinism**: same seed ⇒ byte-identical `SimWorld` state (environment, matrix, species tags) at construction, and identical multi-tick trajectories through `sim::step` and `diffuse_environment` — different seeds provably diverge.
+- **Balance**: carrying-capacity stall (a crowded photolithic organism's net energy matches the hand-computed GDD figure), bloom-then-stabilize population curves, dark-zone non-habitability, population never reaching exactly zero under the tuned coefficients.
+- **Per-mechanic unit tests**: every metabolism's boundary behavior (isolated predator collapses on the GDD's exact tick count, decomposer with no residue behaves like a photolithic organism in the dark, residue never goes negative under contention), the matrix's structural guarantees (diagonal zero, cyclicity, density, asymmetry), diffusion's fixed-point/smoothing/range properties, and the render layer's coordinate math (`cell_position`/`world_to_cell` round-trip).
+- All of this runs **without a Bevy `App`** where possible (`sim`/`world` tests construct `SimWorld` + `SimConfig` directly), which is only possible because of the ECS-free architecture in §3 — this is the payoff of that decision, not incidental.
+
+---
+
+*Snapshot after task 017 (2026-08-03). Phase 2 (notebook, hypothesis confirmation, stress/cull/splice, action budget) is backlog, not yet started.*
