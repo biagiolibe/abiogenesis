@@ -29,6 +29,7 @@ impl Plugin for InputPlugin {
                 quit,
                 seed_organism_on_click,
                 stress_on_click,
+                cull_on_click,
             ),
         );
     }
@@ -212,6 +213,47 @@ fn stress_on_click(
     let cell = world.get_mut(x, y);
     cell.temperature = (cell.temperature + config.environment.stress_delta).clamp(0.0, 1.0);
     budget.points_remaining -= config.time.action_costs.stress;
+}
+
+/// Left-click while `ActionMode::Cull` is selected (GDD §6 "Cull"): removes
+/// the organism at the clicked cell, if any — the empty/occupied asymmetry
+/// mirrors `Seed`'s but inverted (`Seed` needs an empty cell, `Cull` needs
+/// an occupied one), so occupancy is checked *before* spending the budget:
+/// clicking an empty cell costs nothing and does nothing. Deliberately
+/// deposits no residue — GDD §5.6 step 6 ties residue to *death* by the
+/// tick algorithm (energy `<= 0`), not to an organism's removal by any
+/// means, and a player-culled organism is removed by fiat rather than
+/// starving or being predated.
+#[allow(clippy::too_many_arguments)]
+fn cull_on_click(
+    buttons: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window>,
+    cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
+    era_state: Res<State<EraState>>,
+    selected_action: Res<SelectedAction>,
+    mut world: ResMut<SimWorld>,
+    config: Res<SimConfig>,
+    mut budget: ResMut<ActionBudget>,
+) {
+    if selected_action.0 != ActionMode::Cull {
+        return;
+    }
+    if *era_state.get() == EraState::Advancing {
+        return;
+    }
+    let Some((x, y)) = clicked_cell(&buttons, &windows, &cameras, world.width, world.height) else {
+        return;
+    };
+
+    let cell = world.get_mut(x, y);
+    if cell.organism.is_none() {
+        return;
+    }
+    if budget.points_remaining < config.time.action_costs.cull {
+        return;
+    }
+    cell.organism = None;
+    budget.points_remaining -= config.time.action_costs.cull;
 }
 
 /// `Esc` quits. `q` was planned in GDD v0.3 but removed in v0.4, kept free
