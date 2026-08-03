@@ -35,6 +35,88 @@ impl Plugin for GridRenderPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, (spawn_camera, spawn_grid))
             .add_systems(Update, sync_grid_colors);
+        #[cfg(debug_assertions)]
+        {
+            app.init_resource::<debug_view::DebugView>().add_systems(
+                Update,
+                (
+                    debug_view::toggle_debug_view,
+                    debug_view::apply_debug_view.after(sync_grid_colors),
+                ),
+            );
+        }
+    }
+}
+
+/// A dev-only heatmap overlay for the raw environment scalars (`Stress`,
+/// task 023, revealed the need: `toxicity` has no visible effect anywhere,
+/// which was only discoverable by grepping the tick code, not by playing).
+/// Never compiled into a release build — the game's whole deduction pillar
+/// (GDD §7, §11) is built on the player *not* having direct instrument
+/// readouts, so this must not leak past development.
+#[cfg(debug_assertions)]
+mod debug_view {
+    use super::GridCell;
+    use bevy::prelude::*;
+
+    use abiogenesis::world::SimWorld;
+
+    /// `F1` cycles through these. `Normal` defers entirely to `cell_color` —
+    /// this module never touches rendering unless a non-`Normal` view is
+    /// active.
+    #[derive(Resource, Default, Clone, Copy, PartialEq, Eq)]
+    pub enum DebugView {
+        #[default]
+        Normal,
+        Temperature,
+        Toxicity,
+        Light,
+    }
+
+    impl DebugView {
+        fn next(self) -> Self {
+            match self {
+                DebugView::Normal => DebugView::Temperature,
+                DebugView::Temperature => DebugView::Toxicity,
+                DebugView::Toxicity => DebugView::Light,
+                DebugView::Light => DebugView::Normal,
+            }
+        }
+    }
+
+    pub fn toggle_debug_view(keys: Res<ButtonInput<KeyCode>>, mut view: ResMut<DebugView>) {
+        if keys.just_pressed(KeyCode::F1) {
+            *view = view.next();
+        }
+    }
+
+    /// Runs after `sync_grid_colors` and overwrites its output when a
+    /// non-`Normal` view is selected, so the normal rendering path in
+    /// `cell_color` stays untouched by this module's existence.
+    pub fn apply_debug_view(
+        world: Res<SimWorld>,
+        view: Res<DebugView>,
+        mut cells: Query<(&GridCell, &mut Sprite)>,
+    ) {
+        if *view == DebugView::Normal {
+            return;
+        }
+        for (cell, mut sprite) in &mut cells {
+            let scalar = match *view {
+                DebugView::Normal => unreachable!(),
+                DebugView::Temperature => world.get(cell.x, cell.y).temperature,
+                DebugView::Toxicity => world.get(cell.x, cell.y).toxicity,
+                DebugView::Light => world.get(cell.x, cell.y).light,
+            };
+            sprite.color = heat_color(scalar);
+        }
+    }
+
+    /// Blue (0.0, cold/low) to red (1.0, hot/high) through the hue wheel —
+    /// a standard heatmap gradient, not tied to any in-game color meaning.
+    fn heat_color(value: f32) -> Color {
+        let hue = 240.0 * (1.0 - value.clamp(0.0, 1.0));
+        Color::hsl(hue, 0.85, 0.5)
     }
 }
 

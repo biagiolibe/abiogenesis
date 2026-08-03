@@ -47,7 +47,7 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 | Status | Description | Priority |
 |-------|-------------|----------|
-| `[ ]` | *(none)* | — |
+| `[x]` | Dev-only `F1` heatmap overlay for raw environment scalars (temperature/toxicity/light), `#[cfg(debug_assertions)]`-gated so it never ships in release — surfaced by task 023's discovery that toxicity has no in-tick effect and isn't otherwise visible | 🟢 P3 |
 
 ---
 
