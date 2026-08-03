@@ -32,7 +32,6 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 | Status | ID | Title | Priority | Depends on | Agent | Task File |
 |-------|----|--------|----------|------------|--------|-----------|
-| `[ ]` | 020 | Hypothesis confirmation engine (`MatrixKnowledge`, weighted evidence) | 🟡 P2 | 018 | unassigned | [020](020-hypothesis-confirmation-engine.md) |
 | `[ ]` | 021 | Hypothesis grid UI + tag/species catalog | 🟡 P2 | 020 | unassigned | [021](021-hypothesis-grid-ui-catalog.md) |
 | `[ ]` | 022 | Action budget economy (`ActionBudget`, `Seed` becomes budget-gated) | 🔴 P1 | — | unassigned | [022](022-action-budget-economy.md) |
 | `[ ]` | 023 | Stress action | 🟡 P2 | 022 | unassigned | [023](023-stress-action.md) |
@@ -78,6 +77,7 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | `[x]` | 017 | Seed action with mouse cell selection | Claude | [017](done/017-seed-action-mouse-selection.md) |
 | `[x]` | 018 | Simulation event foundation (`OrganismDied`, `SpeciesExtinct`, adjacency observations) | Claude | [018](done/018-simulation-event-foundation.md) |
 | `[x]` | 019 | Observation log (notebook window, `tab` toggle) | Claude | [019](done/019-observation-log-notebook-window.md) |
+| `[x]` | 020 | Hypothesis confirmation engine (`MatrixKnowledge`, weighted evidence) | Claude | [020](done/020-hypothesis-confirmation-engine.md) |
 
 ---
 

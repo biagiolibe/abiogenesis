@@ -6,8 +6,9 @@
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
-use abiogenesis::sim::SpeciesExtinct;
-use abiogenesis::world::SimWorld;
+use abiogenesis::config::SimConfig;
+use abiogenesis::sim::{AdjacencyObserved, SpeciesExtinct};
+use abiogenesis::world::{SimWorld, TagId};
 
 /// One curated log line, tagged with the era it happened in. `text`
 /// describes the event only; the window prepends the era.
@@ -28,14 +29,100 @@ pub struct ObservationLog {
 #[derive(Resource, Default)]
 pub struct NotebookWindowOpen(pub bool);
 
+/// Cumulative weighted evidence for every `(exerter_tag, receiver_tag)`
+/// pair (GDD §7's "B with a hint of C" confirmation model) — the mechanism
+/// that progressively reveals `world.matrix`, not a second opacity layer.
+/// Sized and laid out exactly like `TagMatrix`
+/// (`exerter.0 * size + receiver.0`) so the two stay trivially parallel for
+/// task 021's UI.
+///
+/// Reads through to `world.matrix` for the revealed sign once a pair is
+/// confirmed, rather than storing its own copy of the value — simpler, and
+/// there's only ever one `SimWorld` to read from.
+///
+/// `evidence`/`is_confirmed`/`revealed_value` have no reader yet — task 021
+/// (hypothesis grid UI) is the consumer; the accumulation side (this task)
+/// is complete and correct ahead of it, same rationale as `world.rs`'s
+/// module-level `allow(dead_code)`.
+#[derive(Resource)]
+pub struct MatrixKnowledge {
+    size: usize,
+    threshold: f32,
+    evidence: Vec<f32>,
+}
+
+#[allow(dead_code)]
+impl MatrixKnowledge {
+    pub fn new(active_tags: usize, threshold: f32) -> Self {
+        Self {
+            size: active_tags,
+            threshold,
+            evidence: vec![0.0; active_tags * active_tags],
+        }
+    }
+
+    pub fn record(&mut self, exerter: TagId, receiver: TagId, weight: f32) {
+        let idx = exerter.0 as usize * self.size + receiver.0 as usize;
+        self.evidence[idx] += weight;
+    }
+
+    pub fn evidence(&self, exerter: TagId, receiver: TagId) -> f32 {
+        self.evidence[exerter.0 as usize * self.size + receiver.0 as usize]
+    }
+
+    pub fn is_confirmed(&self, exerter: TagId, receiver: TagId) -> bool {
+        self.evidence(exerter, receiver) >= self.threshold
+    }
+
+    /// The real matrix value for a confirmed pair, `None` if not yet
+    /// confirmed. Reads through `world.matrix`, not a stored snapshot.
+    pub fn revealed_value(&self, exerter: TagId, receiver: TagId, world: &SimWorld) -> Option<i8> {
+        self.is_confirmed(exerter, receiver)
+            .then(|| world.matrix.get(exerter, receiver))
+    }
+}
+
 pub struct NotebookPlugin;
 
 impl Plugin for NotebookPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<ObservationLog>()
+        // `MatrixKnowledge`'s size depends on `SimConfig::tags`, but not on
+        // any randomness `SimWorld` generation adds — `active_tags_early`
+        // fixes the *count* of active tags, only the matrix's values are
+        // seed-dependent (see `world::SimWorld::new`). Reading `SimConfig`
+        // here (already inserted synchronously by `ConfigPlugin::build`,
+        // which runs first in `main.rs`'s plugin tuple) avoids needing
+        // `SimWorld` to exist yet, so this doesn't need `Startup` ordering
+        // against `WorldPlugin` — same pattern as `SimPlugin::build` reading
+        // `era_tick_hz` off `SimConfig` directly.
+        let config = app.world().resource::<SimConfig>();
+        let knowledge = MatrixKnowledge::new(
+            config.tags.active_tags_early as usize,
+            config.notebook.confirmation_threshold,
+        );
+        app.insert_resource(knowledge)
+            .init_resource::<ObservationLog>()
             .init_resource::<NotebookWindowOpen>()
-            .add_systems(Update, (toggle_notebook, record_events))
+            .add_systems(
+                Update,
+                (toggle_notebook, record_events, accumulate_evidence),
+            )
             .add_systems(EguiPrimaryContextPass, notebook_window);
+    }
+}
+
+/// Drains `AdjacencyObserved` (task 018) into `MatrixKnowledge`, weighting
+/// each observation `observation_weight_numerator / (1 + n_confounders)`
+/// (GDD §7).
+fn accumulate_evidence(
+    config: Res<SimConfig>,
+    mut observed: MessageReader<AdjacencyObserved>,
+    mut knowledge: ResMut<MatrixKnowledge>,
+) {
+    for event in observed.read() {
+        let weight =
+            config.notebook.observation_weight_numerator / (1.0 + event.n_confounders as f32);
+        knowledge.record(event.exerter_tag, event.receiver_tag, weight);
     }
 }
 
@@ -123,5 +210,83 @@ mod tests {
         assert_eq!(log.entries.len(), 1);
         assert_eq!(log.entries[0].era, 3);
         assert!(log.entries[0].text.contains("species 2"));
+    }
+
+    const THRESHOLD: f32 = 3.0;
+
+    #[test]
+    fn three_isolated_observations_reach_the_threshold_exactly() {
+        // GDD §7: n_confounders = 0 -> weight 1.0 each; 3 * 1.0 == threshold.
+        let mut knowledge = MatrixKnowledge::new(2, THRESHOLD);
+        for _ in 0..3 {
+            knowledge.record(TagId(0), TagId(1), 1.0);
+        }
+        assert!((knowledge.evidence(TagId(0), TagId(1)) - 3.0).abs() < 1e-6);
+        assert!(knowledge.is_confirmed(TagId(0), TagId(1)));
+    }
+
+    #[test]
+    fn confounded_observations_need_four_times_as_many() {
+        // n_confounders = 3 -> weight 0.25 each; 12 * 0.25 == threshold.
+        let mut knowledge = MatrixKnowledge::new(2, THRESHOLD);
+        for _ in 0..11 {
+            knowledge.record(TagId(0), TagId(1), 0.25);
+        }
+        assert!(
+            !knowledge.is_confirmed(TagId(0), TagId(1)),
+            "11 * 0.25 = 2.75, just under threshold"
+        );
+
+        knowledge.record(TagId(0), TagId(1), 0.25);
+        assert!(
+            knowledge.is_confirmed(TagId(0), TagId(1)),
+            "the 12th observation crosses the threshold"
+        );
+    }
+
+    #[test]
+    fn accumulate_evidence_applies_the_confounder_weight() {
+        let config = SimConfig::default();
+        let mut app = App::new();
+        app.insert_resource(config.clone());
+        app.insert_resource(MatrixKnowledge::new(
+            5,
+            config.notebook.confirmation_threshold,
+        ));
+        app.add_message::<AdjacencyObserved>();
+        app.add_systems(Update, accumulate_evidence);
+
+        app.world_mut()
+            .resource_mut::<Messages<AdjacencyObserved>>()
+            .write(AdjacencyObserved {
+                receiver_species: SpeciesId(0),
+                exerter_tag: TagId(0),
+                receiver_tag: TagId(1),
+                n_confounders: 3,
+            });
+        app.update();
+
+        let knowledge = app.world().resource::<MatrixKnowledge>();
+        assert!(
+            (knowledge.evidence(TagId(0), TagId(1)) - 0.25).abs() < 1e-6,
+            "expected numerator(1.0) / (1 + 3 confounders) = 0.25, got {}",
+            knowledge.evidence(TagId(0), TagId(1))
+        );
+    }
+
+    #[test]
+    fn unconfirmed_pairs_do_not_reveal_a_value() {
+        let config = SimConfig::default();
+        let world = SimWorld::new(42, &config);
+        let (exerter, receiver) = (world.active_tags[0], world.active_tags[1]);
+        let mut knowledge = MatrixKnowledge::new(world.active_tags.len(), THRESHOLD);
+
+        assert_eq!(knowledge.revealed_value(exerter, receiver, &world), None);
+
+        knowledge.record(exerter, receiver, THRESHOLD);
+        assert_eq!(
+            knowledge.revealed_value(exerter, receiver, &world),
+            Some(world.matrix.get(exerter, receiver))
+        );
     }
 }

@@ -10,6 +10,7 @@ use abiogenesis::sim::{step, AdjacencyObserved, EraProgress, OrganismDied, Speci
 use abiogenesis::state::EraState;
 use abiogenesis::world::{seed_starting_palette, Organism, SimWorld};
 
+use crate::notebook::{MatrixKnowledge, ObservationLog};
 use crate::render::{world_to_cell, GridCamera};
 use crate::ui::SelectedSpecies;
 
@@ -80,6 +81,8 @@ fn reseed_world(
     config: Res<SimConfig>,
     mut progress: ResMut<EraProgress>,
     mut next_state: ResMut<NextState<EraState>>,
+    mut knowledge: ResMut<MatrixKnowledge>,
+    mut log: ResMut<ObservationLog>,
 ) {
     if keys.just_pressed(KeyCode::KeyR) {
         let new_seed = world.next_seed();
@@ -87,6 +90,15 @@ fn reseed_world(
         seed_starting_palette(&mut world, &config);
         progress.cancel();
         next_state.set(EraState::Observing);
+        // A new seed means a new hidden matrix (task 011): stale confirmed
+        // evidence from the previous run must not carry over.
+        *knowledge = MatrixKnowledge::new(
+            config.tags.active_tags_early as usize,
+            config.notebook.confirmation_threshold,
+        );
+        // `world.era` resets to 0 above; stale entries would otherwise show
+        // era numbers higher than the fresh run's current era.
+        log.entries.clear();
     }
 }
 

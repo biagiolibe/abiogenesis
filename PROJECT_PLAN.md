@@ -79,7 +79,7 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 
 - `[x]` 018 — Simulation event foundation: `OrganismDied`, `SpeciesExtinct`, raw adjacency-observation records emitted from `sim::step`/`advance_tick` (`TECH_DESIGN.md` §4)
 - `[x]` 019 — Observation log: `notebook` module/plugin, egui window toggled with `tab`, log built by consuming the events from 018 (GDD §7, §11)
-- `[ ]` 020 — Hypothesis confirmation engine: `MatrixKnowledge` resource, weighted evidence `1/(1+n_confounders)`, threshold `3.0` (GDD §7, §5.9)
+- `[x]` 020 — Hypothesis confirmation engine: `MatrixKnowledge` resource, weighted evidence `1/(1+n_confounders)`, threshold `3.0` (GDD §7, §5.9)
 - `[ ]` 021 — Hypothesis grid UI + tag/species catalog, reading `MatrixKnowledge` from 020 (GDD §7, §11)
 
 **Track B — action budget and new actions** (022 unlocks 023–025):
