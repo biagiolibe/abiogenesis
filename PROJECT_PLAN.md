@@ -84,7 +84,7 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 
 **Track B — action budget and new actions** (022 unlocks 023–025):
 
-- `[ ]` 022 — Action budget economy: `ActionBudget` resource (3 pts/era baseline), `Seed` becomes budget-gated instead of free; no new `EraState` — `Observing` doubles as observe+plan (GDD §6, §5.9)
+- `[x]` 022 — Action budget economy: `ActionBudget` resource (3 pts/era baseline), `Seed` becomes budget-gated instead of free; no new `EraState` — `Observing` doubles as observe+plan (GDD §6, §5.9)
 - `[ ]` 023 — **Stress** action: alter an environmental scalar in an area, cost 1 (GDD §6)
 - `[ ]` 024 — **Cull** action: remove an organism/species in an area, cost 1 (GDD §6)
 - `[ ]` 025 — **Splice** action: modify a species' genome (tag or thermal optimum), cost 2 (GDD §6)

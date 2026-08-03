@@ -6,7 +6,9 @@ use bevy::camera::Camera;
 use bevy::prelude::*;
 
 use abiogenesis::config::SimConfig;
-use abiogenesis::sim::{step, AdjacencyObserved, EraProgress, OrganismDied, SpeciesExtinct};
+use abiogenesis::sim::{
+    step, ActionBudget, AdjacencyObserved, EraProgress, OrganismDied, SpeciesExtinct,
+};
 use abiogenesis::state::EraState;
 use abiogenesis::world::{seed_starting_palette, Organism, SimWorld};
 
@@ -75,6 +77,7 @@ fn single_tick(
 /// system clock, invariant 1), cancelling any era in progress. Allowed even
 /// mid-`Advancing`: a full world reset legitimately invalidates whatever
 /// animation was playing.
+#[allow(clippy::too_many_arguments)]
 fn reseed_world(
     keys: Res<ButtonInput<KeyCode>>,
     mut world: ResMut<SimWorld>,
@@ -83,6 +86,7 @@ fn reseed_world(
     mut next_state: ResMut<NextState<EraState>>,
     mut knowledge: ResMut<MatrixKnowledge>,
     mut log: ResMut<ObservationLog>,
+    mut budget: ResMut<ActionBudget>,
 ) {
     if keys.just_pressed(KeyCode::KeyR) {
         let new_seed = world.next_seed();
@@ -99,15 +103,18 @@ fn reseed_world(
         // `world.era` resets to 0 above; stale entries would otherwise show
         // era numbers higher than the fresh run's current era.
         log.entries.clear();
+        budget.refill(config.time.point_budget_per_era);
     }
 }
 
 /// Left-click: places an organism of the currently-selected species (GDD §6
-/// "Seed", the only Phase 1 action) in the clicked cell, if it's empty and
+/// "Seed") in the clicked cell, if it's empty, affordable, and
 /// `EraState::Observing` — the same "ignored mid-`Advancing`" rule the other
 /// player-driven systems in this file follow. Clicks outside the grid (the
 /// HUD panel, letterboxed margins) are silently ignored via `world_to_cell`.
-/// No action-budget point is charged: that economy is Phase 2.
+/// Costs `config.time.action_costs.seed` action points (task 022); an
+/// unaffordable click does nothing at all, not even the empty-cell check.
+#[allow(clippy::too_many_arguments)]
 fn seed_organism_on_click(
     buttons: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
@@ -116,6 +123,7 @@ fn seed_organism_on_click(
     selected: Res<SelectedSpecies>,
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
+    mut budget: ResMut<ActionBudget>,
 ) {
     if *era_state.get() == EraState::Advancing {
         return;
@@ -138,6 +146,9 @@ fn seed_organism_on_click(
     let Some((x, y)) = world_to_cell(world_pos, world.width, world.height) else {
         return;
     };
+    if budget.points_remaining < config.time.action_costs.seed {
+        return;
+    }
 
     let cell = world.get_mut(x, y);
     if cell.organism.is_some() {
@@ -147,6 +158,7 @@ fn seed_organism_on_click(
         species: selected.0,
         energy: config.energy.seed_energy,
     });
+    budget.points_remaining -= config.time.action_costs.seed;
 }
 
 /// `Esc` quits. `q` was planned in GDD v0.3 but removed in v0.4, kept free

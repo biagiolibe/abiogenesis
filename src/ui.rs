@@ -6,6 +6,8 @@ use bevy_egui::{
 };
 
 use crate::render::GridCamera;
+use abiogenesis::config::SimConfig;
+use abiogenesis::sim::ActionBudget;
 use abiogenesis::state::EraState;
 use abiogenesis::world::{SimWorld, SpeciesId};
 
@@ -102,6 +104,8 @@ fn hud_panel(
     world: Res<SimWorld>,
     era_state: Res<State<EraState>>,
     mut selected: ResMut<SelectedSpecies>,
+    budget: Res<ActionBudget>,
+    config: Res<SimConfig>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     let mut viewport_ui = egui::Ui::new(
@@ -142,7 +146,11 @@ fn hud_panel(
             }
 
             ui.separator();
-            // Placeholder: objective and action budget arrive in Phase 3 (GDD §8, §6).
+            ui.label(format!(
+                "Actions: {} / {}",
+                budget.points_remaining, config.time.point_budget_per_era
+            ));
+            // Placeholder: objective arrives in Phase 3 (GDD §8).
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                 ui.weak("space era · s tick · r reseed · Esc quit");

@@ -360,13 +360,49 @@ impl EraProgress {
     }
 }
 
+/// The player's action points for the current `EraState::Observing` window
+/// (GDD §6): `Seed` and, from tasks 023-025, Stress/Cull/Splice each spend
+/// from this pool. Refilled to `config.time.point_budget_per_era` whenever
+/// an era finishes (`advance_tick`'s "era just ended" branch) and by the
+/// `r` key alongside every other piece of fresh-world state.
+#[derive(Resource, Default)]
+pub struct ActionBudget {
+    pub points_remaining: u32,
+}
+
+impl ActionBudget {
+    pub fn refill(&mut self, points: u32) {
+        self.points_remaining = points;
+    }
+
+    /// Spends `cost` points if affordable, returning whether it succeeded.
+    /// Leaves `points_remaining` untouched on failure — callers should
+    /// treat a `false` return as "do nothing", not a partial spend.
+    pub fn try_spend(&mut self, cost: u32) -> bool {
+        if self.points_remaining >= cost {
+            self.points_remaining -= cost;
+            true
+        } else {
+            false
+        }
+    }
+}
+
 pub struct SimPlugin;
 
 impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
-        let era_tick_hz = app.world().resource::<SimConfig>().time.era_tick_hz as f64;
+        let config = app.world().resource::<SimConfig>();
+        let era_tick_hz = config.time.era_tick_hz as f64;
+        let point_budget_per_era = config.time.point_budget_per_era;
         app.insert_resource(Time::<Fixed>::from_hz(era_tick_hz));
         app.init_resource::<EraProgress>();
+        // `init_resource` alone would leave `points_remaining = 0` (the
+        // `Default` impl) until the first era finishes — the very first
+        // `Observing` window needs a full budget too.
+        app.insert_resource(ActionBudget {
+            points_remaining: point_budget_per_era,
+        });
         app.add_message::<OrganismDied>();
         app.add_message::<SpeciesExtinct>();
         app.add_message::<AdjacencyObserved>();
@@ -383,11 +419,17 @@ impl Plugin for SimPlugin {
 /// to `Observing` once `era_ticks` have been played out. Guards against a
 /// stray extra `FixedUpdate` execution landing before the state transition
 /// takes effect, which would otherwise run one tick too many.
+///
+/// Each parameter is a distinct Bevy resource/writer this system needs, not
+/// incidental complexity — splitting it wouldn't reduce the coupling, only
+/// hide it, so the arg count is allowed rather than fought.
+#[allow(clippy::too_many_arguments)]
 fn advance_tick(
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
     mut progress: ResMut<EraProgress>,
     mut next_state: ResMut<NextState<EraState>>,
+    mut budget: ResMut<ActionBudget>,
     mut died: MessageWriter<OrganismDied>,
     mut extinct: MessageWriter<SpeciesExtinct>,
     mut adjacencies: MessageWriter<AdjacencyObserved>,
@@ -402,6 +444,7 @@ fn advance_tick(
     progress.remaining -= 1;
     if progress.remaining() == 0 {
         world.era += 1;
+        budget.refill(config.time.point_budget_per_era);
         next_state.set(EraState::Observing);
     }
 }
@@ -530,6 +573,7 @@ mod tests {
         app.init_state::<GameState>();
         app.add_sub_state::<EraState>();
         app.init_resource::<EraProgress>();
+        app.init_resource::<ActionBudget>();
         app.add_message::<OrganismDied>();
         app.add_message::<SpeciesExtinct>();
         app.add_message::<AdjacencyObserved>();
@@ -539,6 +583,12 @@ mod tests {
             .resource_mut::<NextState<GameState>>()
             .set(GameState::Playing);
         app.update(); // apply GameState transition, establishing EraState::Observing
+
+        // Spend the whole starting budget before the era advances, so a
+        // refill (vs. just leaving it untouched) is what's actually tested.
+        app.world_mut()
+            .resource_mut::<ActionBudget>()
+            .points_remaining = 0;
 
         app.world_mut()
             .resource_mut::<EraProgress>()
@@ -557,6 +607,11 @@ mod tests {
         assert_eq!(
             *app.world().resource::<State<EraState>>().get(),
             EraState::Observing
+        );
+        assert_eq!(
+            app.world().resource::<ActionBudget>().points_remaining,
+            config.time.point_budget_per_era,
+            "the budget should refill when the era ends"
         );
 
         for _ in 0..10 {
@@ -1161,5 +1216,31 @@ mod tests {
         );
         let weight = 1.0 / (1.0 + observed[0].n_confounders as f32);
         assert!((weight - 0.25).abs() < TOLERANCE);
+    }
+
+    #[test]
+    fn action_budget_spends_when_affordable_and_refuses_when_not() {
+        let mut budget = ActionBudget {
+            points_remaining: 1,
+        };
+        assert!(budget.try_spend(1));
+        assert_eq!(budget.points_remaining, 0);
+        assert!(
+            !budget.try_spend(1),
+            "insufficient points should refuse the spend"
+        );
+        assert_eq!(
+            budget.points_remaining, 0,
+            "a refused spend must not touch the balance"
+        );
+    }
+
+    #[test]
+    fn action_budget_refill_resets_to_the_given_amount() {
+        let mut budget = ActionBudget {
+            points_remaining: 0,
+        };
+        budget.refill(3);
+        assert_eq!(budget.points_remaining, 3);
     }
 }
