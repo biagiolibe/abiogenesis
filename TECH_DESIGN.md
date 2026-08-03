@@ -71,7 +71,7 @@ Each module has its own `Plugin` to encapsulate its systems.
 | `WorldPlugin` | `world` | `SimWorld` resource: grid, species registry, seeded RNG, tick/era counters; world generation |
 | `SimPlugin` | `sim` | Tick advancement; invokes the pure `sim::step` logic |
 | `GridRenderPlugin` | `render` | Grid sprites, 2D camera, state → color synchronization |
-| `UiPlugin` | `ui` | `bevy_egui` panels: HUD and (Phase 2) notebook |
+| `UiPlugin` | `ui` | `bevy_egui` panels (HUD, Phase 2 notebook) and their dedicated camera (§6 "HUD camera") |
 | `InputPlugin` | `input` | Keyboard/mouse → game intents |
 
 Modules planned for later phases: `notebook` (Phase 2), `actions` (Phase 2), `worldgen` (Phase 3).
@@ -179,6 +179,12 @@ Two differences for decomposition (task 015), noted because predation didn't nee
 
 - **Source scope**: a decomposer draws from its *own* cell plus its Moore neighbours (predation only ever draws from neighbours — a predator can't eat itself).
 - **Decay/extraction order**: residue decay already runs as its own pre-pass before this one. The decomposer pre-pass reads `world.scratch`'s residue (post-decay), so the two compose — decay first, extraction second — rather than the extraction pre-pass overwriting the decay pre-pass's work. The extraction accumulator is applied with a final `.max(0.0)` clamp, since two decomposers competing for the same residue each size their own draw against the same undrained snapshot and can together overdraw it; residue must never go negative regardless.
+
+### HUD camera
+
+`bevy_egui` auto-attaches its primary context to the first camera spawned, and derives egui's own paint canvas (`RawInput::screen_rect`) from that camera's `Camera::physical_viewport_rect()` — not the window (`update_ui_screen_rect`, bevy_egui `lib.rs`). If the grid camera is that camera, cropping its `Viewport` to reserve room for the HUD panel (so the panel doesn't draw over the grid) also crops egui's paint canvas by the same amount, and anything laid out in the reserved strip — i.e. the HUD panel itself — falls outside the canvas and never renders. This isn't a corner case to guard against; it's a straightforward consequence of one camera serving two purposes with conflicting viewport needs.
+
+**Decided:** `UiPlugin` disables `EguiGlobalSettings::auto_create_primary_context` and spawns its own dedicated camera (`spawn_hud_camera`) carrying `PrimaryEguiContext`, at the window's full viewport, `order: 1` (renders after/over the grid camera), `ClearColorConfig::None` (doesn't erase the grid camera's output), and a `RenderLayers` no grid entity is ever assigned to (so it draws nothing of the scene, only the egui overlay). `GridRenderPlugin`'s camera is marked `GridCamera`; `reserve_hud_viewport` crops only that camera's `Viewport`, leaving the HUD camera — and therefore egui's screen_rect — at full size. The grid camera renders the grid narrowed to make room for the panel; the HUD camera composites the panel on top, unclipped.
 
 ---
 

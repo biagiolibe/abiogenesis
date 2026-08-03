@@ -1,23 +1,90 @@
-use bevy::camera::{Camera, Viewport};
+use bevy::camera::visibility::RenderLayers;
+use bevy::camera::{Camera, ClearColorConfig, Viewport};
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
+use bevy_egui::{
+    egui, EguiContexts, EguiGlobalSettings, EguiPrimaryContextPass, PrimaryEguiContext,
+};
 
+use crate::render::GridCamera;
 use abiogenesis::state::EraState;
 use abiogenesis::world::{SimWorld, SpeciesId};
 
-/// On-screen width of the HUD panel, reserved from the camera's viewport so
-/// the panel never draws over the grid (task 008 acceptance criterion).
-/// Presentation-only, not a simulation coefficient (see `render::CELL_SIZE`
-/// for the same rationale).
+/// On-screen width of the HUD panel, reserved from the grid camera's
+/// viewport so the panel never draws over the grid (task 008 acceptance
+/// criterion). Presentation-only, not a simulation coefficient (see
+/// `render::CELL_SIZE` for the same rationale).
 const HUD_WIDTH: f32 = 260.0;
+
+/// `RenderLayers` for the dedicated egui camera: no grid entity is ever
+/// assigned to it, so this camera draws nothing of the scene, only the
+/// egui overlay (TECH_DESIGN.md §6 "HUD camera").
+const HUD_CAMERA_LAYER: usize = 1;
 
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(EguiPrimaryContextPass, hud_panel)
-            .add_systems(Update, reserve_hud_viewport);
+        // bevy_egui otherwise auto-attaches the primary egui context to the
+        // first camera spawned — the grid camera. Since egui derives its own
+        // paint canvas (`screen_rect`) from that camera's `Viewport`
+        // (TECH_DESIGN.md §6 "HUD camera"), sharing it with the grid camera
+        // means cropping the grid camera's viewport to make room for the
+        // HUD also crops away the HUD's own paint canvas. A dedicated,
+        // full-viewport camera for egui avoids the conflict.
+        app.world_mut()
+            .resource_mut::<EguiGlobalSettings>()
+            .auto_create_primary_context = false;
+        app.add_systems(Startup, spawn_hud_camera)
+            .add_systems(Update, reserve_hud_viewport)
+            .add_systems(EguiPrimaryContextPass, hud_panel);
     }
+}
+
+/// Full-viewport camera dedicated to egui (TECH_DESIGN.md §6 "HUD camera").
+/// Renders after the grid camera (`order: 1`) without clearing its output
+/// (`ClearColorConfig::None`), and on a `RenderLayers` no grid entity uses,
+/// so it composites only the egui overlay on top of the grid.
+fn spawn_hud_camera(mut commands: Commands) {
+    commands.spawn((
+        Camera2d,
+        PrimaryEguiContext,
+        Camera {
+            order: 1,
+            clear_color: ClearColorConfig::None,
+            ..default()
+        },
+        RenderLayers::layer(HUD_CAMERA_LAYER),
+    ));
+}
+
+/// Shrinks the grid camera's viewport by `HUD_WIDTH` so the grid renders
+/// next to the panel instead of underneath it. Runs every frame to track
+/// window resizes; cheap at this scale and avoids a second source of truth
+/// for the window size. Targets only `GridCamera` — the HUD camera's
+/// viewport must stay full-size, since it doubles as egui's paint canvas.
+fn reserve_hud_viewport(
+    windows: Query<&Window>,
+    mut cameras: Query<&mut Camera, With<GridCamera>>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let Ok(mut camera) = cameras.single_mut() else {
+        return;
+    };
+
+    let hud_px = (HUD_WIDTH * window.scale_factor()) as u32;
+    let full_width = window.physical_width();
+    let full_height = window.physical_height();
+    if full_width <= hud_px || full_height == 0 {
+        return;
+    }
+
+    camera.viewport = Some(Viewport {
+        physical_position: UVec2::ZERO,
+        physical_size: UVec2::new(full_width - hud_px, full_height),
+        ..default()
+    });
 }
 
 /// Side panel with the numeric readout of GDD §11. Reads `SimWorld`
@@ -26,28 +93,14 @@ fn hud_panel(
     mut contexts: EguiContexts,
     world: Res<SimWorld>,
     era_state: Res<State<EraState>>,
-    windows: Query<&Window>,
 ) -> Result {
-    let Ok(window) = windows.single() else {
-        return Ok(());
-    };
     let ctx = contexts.ctx_mut()?;
-    // `ctx.viewport_rect()` tracks the *camera's* viewport, not the window:
-    // once `reserve_hud_viewport` narrows the camera to make room for this
-    // panel, that narrowed rect would feed back in here next frame and the
-    // panel would carve HUD_WIDTH out of an already-shrunk area, eating it
-    // twice. Anchor on the window's own logical size instead, so this panel
-    // and the camera's viewport both derive from the same, un-shrunk source.
-    let full_rect = egui::Rect::from_min_size(
-        egui::Pos2::ZERO,
-        egui::vec2(window.width(), window.height()),
-    );
     let mut viewport_ui = egui::Ui::new(
         ctx.clone(),
         "viewport".into(),
         egui::UiBuilder::new()
             .layer_id(egui::LayerId::background())
-            .max_rect(full_rect),
+            .max_rect(ctx.viewport_rect()),
     );
 
     let stats = species_stats(&world);
@@ -108,30 +161,4 @@ fn species_stats(world: &SimWorld) -> Vec<(SpeciesId, usize, f32)> {
             )
         })
         .collect()
-}
-
-/// Shrinks the camera's viewport by `HUD_WIDTH` so the grid renders next to
-/// the panel instead of underneath it. Runs every frame to track window
-/// resizes; cheap at this scale and avoids a second source of truth for the
-/// window size.
-fn reserve_hud_viewport(windows: Query<&Window>, mut cameras: Query<&mut Camera>) {
-    let Ok(window) = windows.single() else {
-        return;
-    };
-    let Ok(mut camera) = cameras.single_mut() else {
-        return;
-    };
-
-    let hud_px = (HUD_WIDTH * window.scale_factor()) as u32;
-    let full_width = window.physical_width();
-    let full_height = window.physical_height();
-    if full_width <= hud_px || full_height == 0 {
-        return;
-    }
-
-    camera.viewport = Some(Viewport {
-        physical_position: UVec2::ZERO,
-        physical_size: UVec2::new(full_width - hud_px, full_height),
-        ..default()
-    });
 }

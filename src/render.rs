@@ -21,6 +21,14 @@ struct GridCell {
     y: usize,
 }
 
+/// Marks the camera that renders the grid, as opposed to the dedicated
+/// camera `ui::UiPlugin` spawns for egui (TECH_DESIGN.md §6 "HUD camera").
+/// Lets `ui::reserve_hud_viewport` crop this camera's `Viewport` without
+/// touching the egui camera's, whose own viewport doubles as egui's paint
+/// canvas.
+#[derive(Component)]
+pub struct GridCamera;
+
 pub struct GridRenderPlugin;
 
 impl Plugin for GridRenderPlugin {
@@ -35,6 +43,7 @@ fn spawn_camera(mut commands: Commands, config: Res<SimConfig>) {
     let height = config.grid.height as f32 * CELL_SIZE;
     commands.spawn((
         Camera2d,
+        GridCamera,
         Projection::Orthographic(OrthographicProjection {
             // Never smaller than the grid, so it never clips on resize; a
             // wider/taller window just shows more letterboxed space.
