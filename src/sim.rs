@@ -17,9 +17,14 @@ use crate::world::{Metabolism, Organism, SimWorld};
 pub fn step(world: &mut SimWorld, config: &SimConfig) {
     let energy = &config.energy;
 
-    // Environment scalars are static in Phase 0, so start the write side as
-    // a copy of the snapshot; organism/residue fields get overwritten below.
+    // Start the write side as a copy of the snapshot; every field below
+    // (environment scalars, residue, organism) gets overwritten in place.
     world.scratch.copy_from_slice(&world.cells);
+
+    // Environmental diffusion (GDD §5.2): reads neighbours from the
+    // snapshot (`world.cells`), writes into `world.scratch`, so it must run
+    // after the copy above or its writes would be clobbered by it.
+    world.diffuse_environment(config);
 
     // Residue decays every tick unless a death overwrites it further down.
     for cell in world.scratch.iter_mut() {

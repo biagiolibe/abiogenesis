@@ -68,7 +68,7 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 - `[x]` 013 — Starting species palette, multiple species per world → [013](tasks/done/013-starting-species-palette.md)
 - `[x]` 014 — Predator metabolism (GDD §5.4) → [014](tasks/done/014-predator-metabolism.md)
 - `[x]` 015 — Decomposer metabolism and residue cycle (GDD §5.4) → [015](tasks/done/015-decomposer-metabolism.md)
-- `[ ]` 016 — Environmental diffusion (GDD §5.2, Phase 1+) → [016](tasks/016-environmental-diffusion.md)
+- `[x]` 016 — Environmental diffusion (GDD §5.2, Phase 1+) → [016](tasks/done/016-environmental-diffusion.md)
 - `[ ]` 017 — Seed action with mouse cell selection (GDD §6) → [017](tasks/017-seed-action-mouse-selection.md)
 
 ### 🎨 Phase 2 — Deduction

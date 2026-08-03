@@ -165,12 +165,32 @@ impl SimWorld {
         }
     }
 
-    /// Phase 1+: blend each scalar toward its neighbours' mean at
-    /// `diffusion_rate` per tick (GDD §5.2). Not active in Phase 0: gradients
-    /// are static, so the environment stays a fixed target while the tick
-    /// algorithm is tuned.
-    fn diffuse_environment(&mut self, _config: &SimConfig) {
-        // Intentionally empty in Phase 0.
+    /// Blends each of `temperature`, `light`, `toxicity` toward the mean of
+    /// its Moore neighbours, at `diffusion_rate` per tick (GDD §5.2). Reads
+    /// neighbours from the snapshot (`self.cells`) and writes into
+    /// `self.scratch`, the same double-buffering discipline `sim::step` uses
+    /// for organism energy and residue, so the result never depends on
+    /// iteration order (TECH_DESIGN.md invariant 1). Doesn't touch
+    /// `residue`: that's a separate mechanic with its own decay (task 005),
+    /// not an "environmental scalar" in the GDD §5.2 sense.
+    pub fn diffuse_environment(&mut self, config: &SimConfig) {
+        let rate = config.environment.diffusion_rate;
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = self.index(x, y);
+                let neighbours: Vec<usize> = self.moore_neighbours(x, y).collect();
+                let n = neighbours.len() as f32;
+                let mean = |get: fn(&Cell) -> f32| {
+                    neighbours.iter().map(|&i| get(&self.cells[i])).sum::<f32>() / n
+                };
+                let cell = &self.cells[idx];
+                self.scratch[idx].temperature =
+                    cell.temperature + rate * (mean(|c| c.temperature) - cell.temperature);
+                self.scratch[idx].light = cell.light + rate * (mean(|c| c.light) - cell.light);
+                self.scratch[idx].toxicity =
+                    cell.toxicity + rate * (mean(|c| c.toxicity) - cell.toxicity);
+            }
+        }
     }
 
     pub fn index(&self, x: usize, y: usize) -> usize {
@@ -442,6 +462,108 @@ mod tests {
         let b = SimWorld::new(42, &config);
 
         assert_eq!(a.cells, b.cells);
+    }
+
+    /// Mirrors the double-buffering discipline `sim::step` uses: copy the
+    /// snapshot into `scratch`, diffuse from `cells` into `scratch`, swap.
+    /// Lets these tests drive `diffuse_environment` over several ticks
+    /// without going through the full tick algorithm.
+    fn diffuse_tick(world: &mut SimWorld, config: &SimConfig) {
+        world.scratch.copy_from_slice(&world.cells);
+        world.diffuse_environment(config);
+        std::mem::swap(&mut world.cells, &mut world.scratch);
+    }
+
+    #[test]
+    fn uniform_field_is_a_fixed_point_of_diffusion() {
+        let config = test_config();
+        let mut world = SimWorld::new(42, &config);
+        for cell in &mut world.cells {
+            cell.light = 0.5;
+            cell.temperature = 0.5;
+            cell.toxicity = 0.5;
+        }
+        let before = world.cells.clone();
+
+        diffuse_tick(&mut world, &config);
+
+        assert_eq!(world.cells, before, "a uniform field must not drift");
+    }
+
+    #[test]
+    fn diffusion_smooths_a_single_perturbed_cell() {
+        let config = test_config();
+        let mut world = SimWorld::new(42, &config);
+        for cell in &mut world.cells {
+            cell.light = 0.2;
+            cell.temperature = 0.2;
+            cell.toxicity = 0.2;
+        }
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        {
+            let hot = world.get_mut(cx, cy);
+            hot.light = 0.9;
+            hot.temperature = 0.9;
+            hot.toxicity = 0.9;
+        }
+        let (nx, ny) = (cx + 1, cy);
+
+        let mut previous_center = world.get(cx, cy).temperature;
+        for tick in 1..=5 {
+            diffuse_tick(&mut world, &config);
+            let center = world.get(cx, cy).temperature;
+            let neighbour = world.get(nx, ny).temperature;
+
+            assert!(
+                center < previous_center,
+                "tick {tick}: center should keep cooling toward its neighbours, got {center} >= {previous_center}"
+            );
+            assert!(
+                neighbour > 0.2,
+                "tick {tick}: neighbour should warm above the baseline, got {neighbour}"
+            );
+            assert!((0.0..=1.0).contains(&center));
+            assert!((0.0..=1.0).contains(&neighbour));
+            previous_center = center;
+        }
+    }
+
+    #[test]
+    fn diffusion_keeps_scalars_in_unit_range_over_many_ticks() {
+        let config = test_config();
+        let mut world = SimWorld::new(42, &config);
+
+        for _ in 0..50 {
+            diffuse_tick(&mut world, &config);
+        }
+
+        for cell in &world.cells {
+            assert!((0.0..=1.0).contains(&cell.light));
+            assert!((0.0..=1.0).contains(&cell.temperature));
+            assert!((0.0..=1.0).contains(&cell.toxicity));
+        }
+    }
+
+    #[test]
+    fn diffusion_does_not_touch_the_rng_and_stays_deterministic() {
+        let config = test_config();
+        let mut a = SimWorld::new(42, &config);
+        let mut b = SimWorld::new(42, &config);
+
+        for _ in 0..10 {
+            diffuse_tick(&mut a, &config);
+            diffuse_tick(&mut b, &config);
+        }
+
+        assert_eq!(
+            a.cells, b.cells,
+            "same seed must yield the same diffusion trajectory"
+        );
+        assert_eq!(
+            a.rng_mut().random::<u64>(),
+            b.rng_mut().random::<u64>(),
+            "diffusion must not consume any RNG state"
+        );
     }
 
     #[test]
