@@ -175,6 +175,11 @@ Predator and decomposer metabolisms (Phase 1, tasks 014-015) both draw from a re
 
 **Decided:** both mechanics compute a same-sized accumulator array (e.g. `predation_loss: Vec<f32>`) from the immutable snapshot (`world.cells`) in a **pre-pass**, before the main per-cell loop — the same shape as the existing residue-decay pre-pass. The main loop then applies the accumulated gain/loss as an extra term in the energy update, exactly like `interaction_delta`. No cell is ever written to from outside its own iteration; contention over a shared resource (two predators sharing a prey, two decomposers sharing a residue pool) is resolved by the pre-pass itself, deterministically, independent of the main loop's order.
 
+Two differences for decomposition (task 015), noted because predation didn't need them:
+
+- **Source scope**: a decomposer draws from its *own* cell plus its Moore neighbours (predation only ever draws from neighbours — a predator can't eat itself).
+- **Decay/extraction order**: residue decay already runs as its own pre-pass before this one. The decomposer pre-pass reads `world.scratch`'s residue (post-decay), so the two compose — decay first, extraction second — rather than the extraction pre-pass overwriting the decay pre-pass's work. The extraction accumulator is applied with a final `.max(0.0)` clamp, since two decomposers competing for the same residue each size their own draw against the same undrained snapshot and can together overdraw it; residue must never go negative regardless.
+
 ---
 
 *Last revised: 2026-08-03*

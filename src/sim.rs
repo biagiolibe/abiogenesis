@@ -68,6 +68,56 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) {
         }
     }
 
+    // Decomposition pre-pass (GDD §5.4): extends the shared-resource drain
+    // pattern above to residue. Draws from the decomposer's own cell plus
+    // its Moore neighbours, reading `world.scratch`'s residue — which has
+    // already been decayed above — so decay and extraction compose in a
+    // fixed, documented order (decay first) rather than one overwriting the
+    // other (TECH_DESIGN.md §6 "Shared resource drain").
+    let mut decomposition_gain = vec![0.0f32; world.cells.len()];
+    let mut residue_loss = vec![0.0f32; world.cells.len()];
+    for (idx, cell) in world.cells.iter().enumerate() {
+        let Some(organism) = cell.organism else {
+            continue;
+        };
+        let species = &world.species[organism.species.0 as usize];
+        if species.metabolism != Metabolism::Decomposer {
+            continue;
+        }
+        let (x, y) = (idx % world.width, idx / world.width);
+        let sources: Vec<usize> = std::iter::once(idx)
+            .chain(world.moore_neighbours(x, y))
+            .filter(|&n| world.scratch[n].residue > 0.0)
+            .collect();
+        if sources.is_empty() {
+            continue;
+        }
+        let fit = env_fit(
+            cell.temperature,
+            species.temp_optimum,
+            species.temp_tolerance,
+        );
+        let available: f32 = sources.iter().map(|&n| world.scratch[n].residue).sum();
+        let drawn = (energy.decomposer_extract_rate * fit).min(available);
+        decomposition_gain[idx] = drawn;
+        // Distribute proportionally to each source's residue share, capped
+        // at that source's own residue so a single decomposer's draw can
+        // never overdraw one of its sources.
+        for &n in &sources {
+            let share = drawn * world.scratch[n].residue / available;
+            residue_loss[n] += share.min(world.scratch[n].residue);
+        }
+    }
+
+    // Apply the accumulated extraction. A final clamp to 0.0 is the
+    // multi-decomposer safety net: two decomposers competing for the same
+    // residue each compute their share against the same pre-extraction
+    // snapshot, so their combined draw can exceed what's actually there —
+    // residue must never go negative regardless.
+    for (cell, loss) in world.scratch.iter_mut().zip(residue_loss.iter()) {
+        cell.residue = (cell.residue - loss).max(0.0);
+    }
+
     for idx in 0..world.cells.len() {
         let cell = world.cells[idx];
         let Some(organism) = cell.organism else {
@@ -84,8 +134,7 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) {
         let gain = match species.metabolism {
             Metabolism::Photolithic => cell.light * energy.photolithic_metabolism_gain * fit,
             Metabolism::Predator => predation_gain[idx],
-            // Decomposer gain is task 015.
-            Metabolism::Decomposer => 0.0,
+            Metabolism::Decomposer => decomposition_gain[idx],
         };
 
         // 3. Hidden matrix effect (GDD §5.6 step 3, §5.5): additive and
@@ -688,6 +737,132 @@ mod tests {
             (left.energy - 6.15).abs() < TOLERANCE,
             "got {}",
             left.energy
+        );
+    }
+
+    fn world_with_one_decomposer(temperature: f32, energy: f32) -> (SimWorld, SimConfig) {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.species.push(Species {
+            metabolism: Metabolism::Decomposer,
+            temp_optimum: temperature,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: Vec::new(),
+        });
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let idx = world.index(cx, cy);
+        world.cells[idx] = Cell {
+            light: 0.0,
+            temperature,
+            organism: Some(Organism {
+                species: SpeciesId(0),
+                energy,
+            }),
+            ..world.cells[idx]
+        };
+        (world, config)
+    }
+
+    #[test]
+    fn decomposer_with_no_residue_behaves_like_dark_photolithic() {
+        // No residue anywhere ⇒ gain 0, loses decomposer_upkeep (0.5) per
+        // tick, same shape as photolithic_in_the_dark_eventually_dies.
+        let (mut world, config) = world_with_one_decomposer(0.5, config_seed_energy());
+        let (cx, cy) = (world.width / 2, world.height / 2);
+
+        step(&mut world, &config);
+        let organism = world.get(cx, cy).organism.expect("survives the first tick");
+        assert!(
+            (organism.energy - (config_seed_energy() - config.energy.decomposer_upkeep)).abs()
+                < TOLERANCE,
+            "expected net -upkeep/tick with no residue, got {}",
+            organism.energy - config_seed_energy()
+        );
+
+        for _ in 0..200 {
+            if world.get(cx, cy).organism.is_none() {
+                break;
+            }
+            step(&mut world, &config);
+        }
+        assert!(
+            world.get(cx, cy).organism.is_none(),
+            "decomposer with no residue in range should not survive long-term"
+        );
+    }
+
+    #[test]
+    fn decomposer_adjacent_to_residue_gains_and_residue_shrinks() {
+        let (mut world, config) = world_with_one_decomposer(0.5, 5.0);
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let neighbour_idx = world
+            .moore_neighbours(cx, cy)
+            .next()
+            .expect("has a neighbour");
+        world.cells[neighbour_idx].residue = 10.0;
+
+        step(&mut world, &config);
+
+        let decomposer = world.get(cx, cy).organism.expect("decomposer survives");
+        // decay first: 10.0 - residue_decay(0.2) = 9.8 available; drawn =
+        // min(decomposer_extract_rate(1.5) * fit(1.0), 9.8) = 1.5; net
+        // 5.0 + 1.5 - decomposer_upkeep(0.5) = 6.0.
+        assert!(
+            (decomposer.energy - 6.0).abs() < TOLERANCE,
+            "got {}",
+            decomposer.energy
+        );
+        let (nx, ny) = (neighbour_idx % world.width, neighbour_idx / world.width);
+        assert!(
+            (world.get(nx, ny).residue - 8.3).abs() < TOLERANCE,
+            "expected residue reduced by the drawn amount, got {}",
+            world.get(nx, ny).residue
+        );
+    }
+
+    #[test]
+    fn residue_never_goes_negative_under_competing_decomposers() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.species.push(Species {
+            metabolism: Metabolism::Decomposer,
+            temp_optimum: 0.5,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: Vec::new(),
+        });
+        // Residue cell at (cx, cy); two decomposers straddle it on the same
+        // row so each is Moore-adjacent only to the residue cell, not to
+        // each other, and each independently computes the full residue as
+        // available — their combined draw exceeds what's actually there.
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let residue_idx = world.index(cx, cy);
+        world.cells[residue_idx].residue = 2.0;
+        for dx in [-1i32, 1] {
+            let idx = world.index((cx as i32 + dx) as usize, cy);
+            world.cells[idx] = Cell {
+                light: 0.0,
+                temperature: 0.5,
+                organism: Some(Organism {
+                    species: SpeciesId(0),
+                    energy: 5.0,
+                }),
+                ..world.cells[idx]
+            };
+        }
+
+        step(&mut world, &config);
+
+        assert!(
+            world.get(cx, cy).residue >= 0.0,
+            "residue must never go negative, got {}",
+            world.get(cx, cy).residue
+        );
+        assert!(
+            world.get(cx, cy).residue.abs() < TOLERANCE,
+            "expected residue fully depleted (over-drawn to 0), got {}",
+            world.get(cx, cy).residue
         );
     }
 
