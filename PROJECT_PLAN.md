@@ -89,6 +89,17 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 - `[x]` 024 — **Cull** action: remove an organism/species in an area, cost 1 (GDD §6)
 - `[x]` 025 — **Splice** action: modify a species' genome (tag or thermal optimum), cost 2 (GDD §6)
 
+**Playtest follow-up** (raised 2026-08-03, after both tracks above shipped):
+
+- `[ ]` 026 — Log salient organism deaths, not just extinctions: a player-`Seed`-ed organism dying leaves zero trace in the Notebook today, which a first playtest found disorienting (GDD §7, §11)
+- `[ ]` 027 — Splice: add a real "Add tag" option, not just "Swap" — a species with room under GDD §5.3's 1-3 tag cap should be able to gain a tag without sacrificing an existing one
+- `[ ]` 028 (🟢 P3, low priority — revisit later) — Distinguish "no evidence" from "unconfirmed evidence" in the hypothesis grid: a `?` cell today can mean either a truly zero matrix interaction or a real one with too little evidence yet, indistinguishable to the player
+- `[ ]` 029 — Stable tag identifiers (opaque, e.g. Greek letters — GDD §11 still bars descriptive names) and readable species display names, replacing bare "species N"
+- `[ ]` 030 — HUD reorganization: visual grouping, icon buttons for actions, a progress bar for the action budget, tooltips — presentation-only restructuring of `ui.rs`, no new information or mechanics
+- `[ ]` 031 — Hypothesis grid as a graph (tag nodes in a circle, confirmed relationships as colored directed edges) instead of the current `?`/`+!`/`-!` spreadsheet table — same `MatrixKnowledge` data, different rendering
+- `[ ]` 032 — Distinguish organisms by shape (metabolism), not just color — occupied cells are flat colored squares today, indistinguishable by metabolism without checking the HUD
+- `[ ]` 033 (bugfix-flavored) — Render the toxic zone visibly during normal play — `cell_color` never reads `toxicity` today; the only way to see it is the dev-only `F1` overlay
+
 ### 🏁 Phase 3 — The run
 
 **Milestone:** a complete game cycle, world after world (GDD §13).
@@ -99,6 +110,8 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 - `[ ]` **Difficulty curve**: 5 → ~8 active tags, more hostile environments, shorter budget (GDD §9)
 - `[ ]` Run flow: main menu, victory, defeat, transition to the next world
 - `[ ]` Minimal meta-progression, without persistence (GDD §10)
+
+> **💡 Design idea (2026-08-03 playtest, not yet scoped into a task):** a mechanism that progressively "reveals" some tag semantics over the course of a run — surfaced during discussion of task 029's naming, but this is a bigger design question than a display fix. Overlaps partly with what the Hypothesis grid already does (confirming a matrix cell *is* a form of progressive reveal, just of behavior, not meaning) — needs more definition before it becomes a task: what would actually be revealed, when, and does it risk collapsing the deduction pillar the same way named tags would (GDD §11). Revisit once Phase 3's difficulty curve is being designed.
 
 ### 🎚️ Final tuning — *the real art*
 

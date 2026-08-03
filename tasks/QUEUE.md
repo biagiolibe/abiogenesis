@@ -28,9 +28,20 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 ## 🏃 Active Queue
 
-**Phase 2 — Deduction.** Milestone: the *deduction game* is born, not just the simulation (GDD §13). **Complete** (018–025, both tracks) — nothing queued.
+**Phase 2 — Deduction.** Milestone: the *deduction game* is born, not just the simulation (GDD §13). Core scope (018–025, both tracks) is **complete**; one follow-up surfaced by playtesting is queued below.
 
-Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished.
+| Status | ID | Title | Priority | Depends on | Agent | Task File |
+|-------|----|--------|----------|------------|--------|-----------|
+| `[ ]` | 026 | Log salient organism deaths, not just extinctions | 🟡 P2 | 018, 019, 022 | unassigned | [026](026-salient-death-logging.md) |
+| `[ ]` | 027 | Splice: add a real "Add tag" option, not just "Swap" | 🟡 P2 | 025 | unassigned | [027](027-splice-add-tag.md) |
+| `[ ]` | 028 | Distinguish "no evidence" from "unconfirmed evidence" in the hypothesis grid | 🟢 P3 | 020, 021 | unassigned | [028](028-partial-evidence-visibility.md) |
+| `[ ]` | 029 | Stable tag identifiers and readable species names | 🟡 P2 | 021, 025 | unassigned | [029](029-tag-identifiers-species-names.md) |
+| `[ ]` | 030 | HUD reorganization: grouping, icons, tooltips, bars | 🟡 P2 | 022, 023, 025 | unassigned | [030](030-hud-reorganization.md) |
+| `[ ]` | 031 | Hypothesis grid as a graph, not a spreadsheet table | 🟡 P2 | 020, 021 | unassigned | [031](031-hypothesis-grid-as-graph.md) |
+| `[ ]` | 032 | Distinguish organisms by shape (metabolism), not just color | 🟡 P2 | 006, 010-012 | unassigned | [032](032-organism-shape-legibility.md) |
+| `[ ]` | 033 | Render the toxic zone visibly during normal play | 🟡 P2 | 004, 010 | unassigned | [033](033-visible-toxicity.md) |
+
+Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
 Later phases (3 and Final tuning) live as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) and expand into task files when we get there.
 
