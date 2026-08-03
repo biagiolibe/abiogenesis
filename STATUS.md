@@ -1,30 +1,36 @@
-# Implementation Status — Phase 0, Phase 1, and Phase 2 Track A
+# Implementation Status — Phase 0, Phase 1, and Phase 2 (complete)
 
-What exists today in Abiogenesis, feature by feature, with the technical solution behind each one. Written as a snapshot after task 021 (Phase 2 Track A complete); see `tasks/done/` for the task-by-task history and `TECH_DESIGN.md` for the architectural decisions this document assumes.
+What exists today in Abiogenesis, feature by feature, with the technical solution behind each one. Written as a snapshot after task 025 — Phase 2 is fully done, both tracks; see `tasks/done/` for the task-by-task history and `TECH_DESIGN.md` for the architectural decisions this document assumes.
 
 ---
 
 ## How to play, today
 
-**Goal**: seed life on an alien world governed by a hidden `tag × tag` matrix — every species secretly carries 1–3 tags, and adjacency between tagged organisms silently helps or hurts their energy. Nothing tells you the matrix directly; you deduce it from what you observe.
+**Goal**: seed life on an alien world governed by a hidden `tag × tag` matrix — every species secretly carries 1–3 tags, and adjacency between tagged organisms silently helps or hurts their energy. Nothing tells you the matrix directly; you deduce it from what you observe, then spend a limited action budget each era to actively probe it.
 
 **Controls**:
-- **Left click** an empty cell → seeds an organism of the currently-selected species (picked from the HUD panel, right side)
-- **Space** → starts an era: the simulation auto-advances a batch of ticks with animation
+- **Action selector** (HUD, right side): pick `Seed`, `Stress`, `Cull`, or `Splice` — this decides what a left-click does
+- **Left click** an empty cell in `Seed` mode → places an organism of the currently-selected species, costs 1 action point
+- **Left click** any cell in `Stress` mode → shifts that cell's temperature by a fixed step, costs 1 action point
+- **Left click** an occupied cell in `Cull` mode → removes the organism there (no residue left behind), costs 1 action point
+- **`Splice` mode** → opens a small editor panel (pick a source species, then swap one of its tags or shift its thermal optimum); "Apply splice" creates a **new** species, costs 2 action points
+- **Space** → starts an era: the simulation auto-advances a batch of ticks with animation, then the action budget refills to 3
 - **S** → advances exactly one tick manually, for fine-grained observation
-- **R** → reseeds the world (new hidden matrix, new terrain, new starting palette) — never mid-animation-unsafe, allowed even while an era is advancing
+- **R** → reseeds the world (new hidden matrix, new terrain, new starting palette, fresh action budget) — allowed even while an era is advancing
 - **Tab** → opens/closes the Notebook window
+- **F1** (dev builds only) → cycles a debug heatmap overlay (temperature / toxicity / light), stripped entirely from release builds
 - **Esc** → quits
 
 **The loop**:
-1. Seed organisms of different species near each other on the grid.
+1. Seed organisms of different species near each other on the grid, spending action points from a 3-per-era budget (GDD §6).
 2. Advance ticks (`Space` or `S`). Each organism has a metabolism (photolithic, predator, decomposer) and gains/loses energy from light, temperature, crowding, and — critically — the tags of its occupied Moore neighbours, summed through the hidden matrix.
-3. Deaths and species extinctions are the *salient* events: they land in the Notebook's **Observation log** section, each tagged with the era they happened in.
+3. Deaths and species extinctions are the *salient* events: they land in the Notebook's **Observation log** section, each tagged with the era they happened in. (Note: `Cull`-ed organisms are removed by player fiat, not by the tick algorithm, so they don't generate a log entry — a deliberate GDD §5.6 reading, but it means a species can be silently erased this way.)
 4. Every tick, every occupied-neighbour pair with tags that actually interact (non-zero matrix entry) contributes weighted evidence for that `(exerter_tag, receiver_tag)` hypothesis — an isolated observation counts fully, one crowded with other confounding tags counts for less (`weight = 1 / (1 + confounders)`).
 5. Once a tag pair's accumulated evidence crosses the confirmation threshold, that cell of the **Hypothesis grid** (Notebook, second section) flips from `?` to `+!`/`-!` — the sign only, never the magnitude, so the exact strength still has to be inferred from behavior.
 6. The Notebook's **Catalog** section lists every active tag (as a colored dot — tags are always glyphs/colors, never raw numbers) and every species' readable genome: metabolism, temperature range, and which tag dots it carries.
+7. Beyond just watching, `Stress` and `Splice` let you actively perturb the world to generate more (and more targeted) evidence — e.g. stress a cell to isolate a temperature effect from a matrix effect, or splice a new species variant to test a specific tag combination.
 
-**Not implemented yet** (next up, Track B starting at task 022): the action-budget economy that will gate `Seed` and add three new player actions — Stress, Cull, Splice — for actively probing the hidden matrix instead of only watching it play out.
+Phase 2 is now complete — the deduction game (notebook + confirmation) and the action economy (budget + all four actions) both exist. Phase 3 (procedural worldgen, real objectives/win conditions, main menu) is backlog, not yet started.
 
 ---
 
@@ -177,15 +183,62 @@ This split is what lets determinism/balance tests run without a GPU or window (`
 **How**:
 - `space` — starts an era (`EraProgress::start` + transition to `Advancing`), ignored while already `Advancing`.
 - `s` — advances exactly one tick directly (`sim::step`), no state transition; useful for fine-grained observation. Also ignored mid-`Advancing`.
-- `r` — reseeds: draws a new seed from the *current* world's RNG (never the system clock), rebuilds `SimWorld` from scratch, re-runs `seed_starting_palette`, cancels any in-flight era. Allowed even mid-`Advancing` — a full reset legitimately invalidates whatever was playing.
+- `r` — reseeds: draws a new seed from the *current* world's RNG (never the system clock), rebuilds `SimWorld` from scratch, re-runs `seed_starting_palette`, cancels any in-flight era, and (task 022 onward) resets `ActionBudget`, `MatrixKnowledge`, the observation log, `SelectedSpecies`, and `SpliceDraft` — everything that would otherwise refer to a world/matrix/species registry that no longer exists. Allowed even mid-`Advancing` — a full reset legitimately invalidates whatever was playing.
 - `Esc` — quits (`AppExit`).
-- **Seed action** (task 017, `seed_organism_on_click`): on left-click, while `Observing`, converts the cursor position through the *grid* camera specifically (`Query<..., With<GridCamera>>` — there are two cameras now, see §12) via `Camera::viewport_to_world_2d`, then `render::world_to_cell` to resolve a grid coordinate. Silently no-ops if: mid-`Advancing`, no cursor position, the click landed outside the grid (including on the HUD — `world_to_cell` naturally rejects it since the grid camera's cropped viewport means off-grid clicks map to world coordinates beyond the grid's actual extent), or the target cell is already occupied. Otherwise places `Organism { species: selected.0, energy: seed_energy }`. No action-budget point is charged (that economy doesn't exist until Phase 2).
+- **`clicked_cell` helper** (task 023): the window-cursor → *grid* camera (`Query<..., With<GridCamera>>`, see §12) → world-position → grid-coordinate pipeline task 017 built for `Seed`, factored out so every click action reuses it instead of re-deriving the edge cases (off-grid clicks, no cursor, etc.).
+- **Seed action** (task 017, extended by 022): on left-click while `ActionMode::Seed`, `Observing`, and affordable, places `Organism { species: selected.0, energy: seed_energy }` in an empty clicked cell and spends `action_costs.seed` (1) point. An unaffordable click does nothing at all, not even the empty-cell check.
 
-This is the only write path from the UI/input layer into `SimWorld` outside of era advancement and reseeding — `TECH_DESIGN.md` §3.3 scopes the `Ui`/input layer as read-only except for turning player intent into exactly this kind of mutation.
+This is one of several write paths from the UI/input layer into `SimWorld`, all gated the same way (`Observing`-only, budget-check-then-decrement) — `TECH_DESIGN.md` §3.3 scopes the `Ui`/input layer as read-only except for turning player intent into exactly this kind of mutation.
 
 ---
 
-## 15. Simulation events (`src/sim.rs`, task 018)
+## 14. Action budget economy (`src/sim.rs`, task 022, GDD §6)
+
+**What**: a per-era pool of action points (3 by default) that `Seed` — and, from tasks 023-025, every other player action — spends from. No new `EraState`: `Observing` already doubles as "observe last era, plan the next" (its existing doc comment), so the confirmed design keeps budget-spending there rather than adding a `Planning` state.
+
+**How**: `ActionBudget { points_remaining: u32 }` with `refill(points)`/`try_spend(cost) -> bool`. Initialized to a full budget at `SimPlugin::build` time (reading `config.time.point_budget_per_era` off `SimConfig`, already inserted synchronously by `ConfigPlugin` — same pattern `NotebookPlugin` uses for `MatrixKnowledge`'s sizing), so the very first `Observing` window isn't stuck at the `Default`-derived `0`. Refilled inside `advance_tick`'s existing "era just ended" branch — once per era transition, not once per frame. Every action system (§13, §15-17 below) checks affordability *before* committing its effect and decrements only on actual success — an unaffordable or otherwise-invalid click spends nothing.
+
+---
+
+## 15. Stress action (`src/input.rs`, task 023, GDD §6)
+
+**What**: the second player action — click a cell to shift its temperature by a fixed step, costing 1 action point. Works on empty and occupied cells alike (it targets the environment, not an organism), unlike `Seed`.
+
+**How**: `stress_on_click` mirrors `seed_organism_on_click`'s budget-then-effect shape but with occupancy no longer a precondition: `cell.temperature = (cell.temperature + config.environment.stress_delta).clamp(0.0, 1.0)`. **Temperature, not toxicity**, despite GDD §6 offering both as examples — `sim::step`'s `env_fit` (§5) reads temperature every tick, while toxicity is currently written (world generation, diffusion) but read by nothing in the tick, so stressing it would be an inert action; this was only discoverable by grepping the tick code, not by playing, which is what motivated the F1 debug overlay (§18). A headless integration test (`tests/action_effects.rs`) verifies the effect is real and dramatic: an organism whose cell gets the full 3-point stress budget applied to its temperature (pushing it far from its thermal optimum) dies outright within one era, where an untouched baseline survives comfortably (~7.6 avg energy) — needed because temperature isn't rendered and the effect is easy to miss via imprecise clicking. Diffusion (§4) gradually smears a stressed cell's temperature back toward its neighbours over subsequent ticks, so the effect is a temporary perturbation, not a permanent terrain edit.
+
+Also introduces the `ActionMode` (`Seed`/`Stress`/`Cull`/`Splice`) and `SelectedAction` resources (`ui.rs`) and the HUD's mode-selector radio buttons — scaffolding tasks 024/025 reuse without touching the selector again.
+
+---
+
+## 16. Cull action (`src/input.rs`, task 024, GDD §6)
+
+**What**: the third player action — click an occupied cell to remove the organism there, costing 1 action point. The simplest of the four: mostly wiring onto task 023's scaffolding.
+
+**How**: `cull_on_click` inverts `Seed`'s empty/occupied precondition (needs an *occupied* cell) and, notably, inverts the check order too: occupancy is checked *before* spending the budget, so clicking an empty cell in `Cull` mode costs nothing and does nothing (`Seed`'s unaffordable-click-skips-everything ordering doesn't apply the same way here, since the "wrong precondition" case must never cost a point). Deliberately deposits **no residue** — GDD §5.6 step 6 ties residue to *death* by the tick algorithm (energy `<= 0`), not to an organism's removal by any means, and a player-culled organism is removed by fiat rather than starving or being predated. One known gap, not fixed by this task: a culled organism doesn't emit `OrganismDied`/`SpeciesExtinct` (§15's events), since `cull_on_click` bypasses `sim::step` entirely — a species can be silently wiped from the world this way with nothing showing up in the Notebook's observation log.
+
+---
+
+## 17. Splice action (`src/ui.rs` + `src/input.rs`, task 025, GDD §6)
+
+**What**: the fourth and most expensive player action (2 points) — GDD §6's "most powerful and most expensive experimental tool": edit a species' genome (swap one tag, or shift its thermal optimum) to create a deliberate variant. Unlike the other three, its target is a *species definition*, not a grid cell, so it drives a small editor panel instead of a click.
+
+**How**: `SpliceDraft` (`ui.rs`) is a UI-intent resource — source species, the in-progress edit (`SpliceEditChoice::SwapTag { old, new }` or `ShiftTempOptimum { warmer }`), and an `apply_requested` flag — staged entirely by `splice_panel`'s egui widgets (shown in the HUD only while `ActionMode::Splice` is selected) with zero direct `SimWorld` writes, honoring `Ui` writes-only-intents (TECH_DESIGN.md §3.3). `input.rs::apply_splice` reads `apply_requested` as the actual trigger — the one action whose "click" is an egui button, not a grid click — and, once budget-affordable and the draft is complete, **clones the source `Species` into a new one** with the edit applied and appends it to `world.species`, rather than mutating the source in place: mutating in place would retroactively change every already-alive organism of that species, but "modify a species' genome" (GDD §6) reads as introducing a variant, with species identity otherwise stable for a run (GDD §5.6 step 7 only floats child-genome mutation as a *future* idea). The new species is automatically seedable — `hud_panel`'s existing `Seed` selector already iterates `0..world.species.len()`, so nothing there needed to change.
+
+**A real bug this surfaced and fixed**: `Splice` is the first mechanism that grows `world.species` past its starting count (previously always exactly 2, from `seed_starting_palette`). A `SelectedSpecies` left pointing at a spliced-in species, followed by `r` (which rebuilds a fresh 2-species world), would index out of bounds the next time anything read `world.species` by that id — `ui.rs::species_stats` gets there first, without even needing a tick to run. `reseed_world` now resets `SelectedSpecies` to `SpeciesId(0)` and clears `SpliceDraft` alongside everything else it already resets, with a regression test reproducing the exact splice → select → reseed → click sequence.
+
+`SpeciesId` is a `u8`, and `world.rs` documents species as "few and never removed" — `Splice` is the first thing that grows the registry at player will, so that assumption now has a 256-species ceiling behind it. Unreachable in practice at 2 points per splice from a 3-point-per-era budget, but worth knowing if that budget or cost ever gets retuned.
+
+---
+
+## 18. Dev-only debug view (`src/render.rs`, Quick Task alongside 023)
+
+**What**: `F1` cycles a full-grid heatmap overlay — Normal → Temperature → Toxicity → Light → Normal — that reads a raw environment scalar straight off `SimWorld` instead of the normal species/residue/light-shaded rendering (§10). Surfaced directly by task 023's discovery that `toxicity` has no in-tick effect and no other visibility: that gap was only findable by grepping the code, not by playing.
+
+**How**: entirely inside a `#[cfg(debug_assertions)] mod debug_view` in `render.rs` — `DebugView` resource, `toggle_debug_view` (the `F1` key), and `apply_debug_view` (runs `.after(sync_grid_colors)`, overwrites the normal-path sprite colors when a non-`Normal` view is active, leaving `cell_color`/`sync_grid_colors` themselves untouched). Compiles out of `--release` builds entirely (verified both profiles build clean) — deliberate, since the game's whole deduction pillar (GDD §7, §11) depends on the player *not* having a direct instrument readout of hidden/backing scalars, so this must never leak past development.
+
+---
+
+## 19. Simulation events (`src/sim.rs`, task 018)
 
 **What**: `sim::step` gained an output channel — `TickEvents { deaths, extinctions, adjacencies }` — without losing its "callable with no Bevy `App`" property (invariant 2). This is what the rest of Phase 2 is built on: the notebook consumes events, it never inspects the grid directly (`TECH_DESIGN.md` §4).
 
@@ -193,7 +246,7 @@ This is the only write path from the UI/input layer into `SimWorld` outside of e
 
 ---
 
-## 16. Observation log / Notebook window (`src/notebook.rs`, task 019)
+## 20. Observation log / Notebook window (`src/notebook.rs`, task 019)
 
 **What**: the first visible piece of the notebook (GDD §7, §11) — a curated, era-tagged log of salient events, shown in an `egui::Window` toggled with `Tab`.
 
@@ -201,15 +254,15 @@ This is the only write path from the UI/input layer into `SimWorld` outside of e
 
 ---
 
-## 17. Hypothesis confirmation engine (`src/notebook.rs`, task 020)
+## 21. Hypothesis confirmation engine (`src/notebook.rs`, task 020)
 
 **What**: the "B with a hint of C" model (GDD §7) that progressively reveals the hidden matrix — not a second opacity mechanic, the *same* matrix from §8, revealed cell by cell as evidence accumulates.
 
-**How**: `MatrixKnowledge` holds cumulative evidence per `(exerter_tag, receiver_tag)` pair, laid out exactly like `TagMatrix` (`exerter * size + receiver`) so the two stay trivially parallel. `accumulate_evidence` drains `MessageReader<AdjacencyObserved>` (§15) each frame, adding `config.notebook.observation_weight_numerator / (1 + n_confounders)` per event — 3 isolated observations (weight 1.0 each) or 12 heavily-confounded ones (weight 0.25 each) both reach the default threshold of `3.0`. A pair is `is_confirmed` once its evidence crosses that threshold; evidence only accumulates, never decays or resets within a run. Confirmation is monotonic by construction — the only place it resets is `input.rs`'s `r` key, which rebuilds `MatrixKnowledge` from scratch alongside the new `SimWorld`, since a new seed means a new (unrelated) hidden matrix. Sized from `config.tags.active_tags_early` at `NotebookPlugin::build` time — the tag *count* is config-fixed, only the matrix's *values* are seed-random, so this dodges any `Startup`-ordering dependency on `WorldPlugin`. `revealed_value` reads through to `world.matrix.get(...)` for a confirmed pair rather than storing its own snapshot of the value — there's only ever one `SimWorld` to read from.
+**How**: `MatrixKnowledge` holds cumulative evidence per `(exerter_tag, receiver_tag)` pair, laid out exactly like `TagMatrix` (`exerter * size + receiver`) so the two stay trivially parallel. `accumulate_evidence` drains `MessageReader<AdjacencyObserved>` (§19) each frame, adding `config.notebook.observation_weight_numerator / (1 + n_confounders)` per event — 3 isolated observations (weight 1.0 each) or 12 heavily-confounded ones (weight 0.25 each) both reach the default threshold of `3.0`. A pair is `is_confirmed` once its evidence crosses that threshold; evidence only accumulates, never decays or resets within a run. Confirmation is monotonic by construction — the only place it resets is `input.rs`'s `r` key, which rebuilds `MatrixKnowledge` from scratch alongside the new `SimWorld`, since a new seed means a new (unrelated) hidden matrix. Sized from `config.tags.active_tags_early` at `NotebookPlugin::build` time — the tag *count* is config-fixed, only the matrix's *values* are seed-random, so this dodges any `Startup`-ordering dependency on `WorldPlugin`. `revealed_value` reads through to `world.matrix.get(...)` for a confirmed pair rather than storing its own snapshot of the value — there's only ever one `SimWorld` to read from.
 
 ---
 
-## 18. Hypothesis grid UI + tag/species catalog (`src/notebook.rs`, task 021)
+## 22. Hypothesis grid UI + tag/species catalog (`src/notebook.rs`, task 021)
 
 **What**: the explicit "aha" of pillar 2 (GDD §7) — a live `active_tags × active_tags` table inside the Notebook window showing which hypotheses are confirmed, plus a catalog of every active tag and species' readable genome.
 
@@ -217,17 +270,18 @@ This is the only write path from the UI/input layer into `SimWorld` outside of e
 
 ---
 
-## 19. Testing strategy
+## 23. Testing strategy
 
-**What exists**: unit tests co-located in every module (`#[cfg(test)] mod tests`) plus two headless integration suites, `tests/determinism.rs` and `tests/balance.rs`.
+**What exists**: unit tests co-located in every module (`#[cfg(test)] mod tests`) plus three headless integration suites, `tests/determinism.rs`, `tests/balance.rs`, and `tests/action_effects.rs`.
 
 **How it's organized**:
 - **Determinism**: same seed ⇒ byte-identical `SimWorld` state (environment, matrix, species tags) at construction, and identical multi-tick trajectories through `sim::step` and `diffuse_environment` — different seeds provably diverge.
 - **Balance**: carrying-capacity stall (a crowded photolithic organism's net energy matches the hand-computed GDD figure), bloom-then-stabilize population curves, dark-zone non-habitability, population never reaching exactly zero under the tuned coefficients.
 - **Per-mechanic unit tests**: every metabolism's boundary behavior (isolated predator collapses on the GDD's exact tick count, decomposer with no residue behaves like a photolithic organism in the dark, residue never goes negative under contention), the matrix's structural guarantees (diagonal zero, cyclicity, density, asymmetry), diffusion's fixed-point/smoothing/range properties, and the render layer's coordinate math (`cell_position`/`world_to_cell` round-trip).
 - **Notebook/events (tasks 018–020)**: `sim.rs` tests cover a death producing exactly one `OrganismDied`, a species' last organism dying also producing `SpeciesExtinct`, an adjacency between tagged organisms producing the expected `AdjacencyObserved`, and the confounder count against GDD §7's own worked numbers. `notebook.rs` tests (in `src/main.rs`'s binary target, since the module depends on `bevy_egui` and can't live in the headless lib crate) cover the extinction-to-log-entry path via a minimal `App` + `MessageWriter`, `MatrixKnowledge`'s pure accumulation logic directly (no `App` needed), and `accumulate_evidence`'s confounder-weight wiring end to end.
-- All of this runs **without a Bevy `App`** where possible (`sim`/`world` tests construct `SimWorld` + `SimConfig` directly), which is only possible because of the ECS-free architecture in §3 — this is the payoff of that decision, not incidental.
+- **Actions (tasks 022–025)**: `sim.rs` covers `ActionBudget::try_spend`/`refill` directly, plus an `advance_tick` integration test asserting the budget refills exactly on the era-end transition. `tests/action_effects.rs` verifies `Stress`'s effect headlessly (a stressed organism dies within one era where an untouched baseline survives at ~7.6 avg energy) — added specifically because the effect isn't rendered and is easy to miss via imprecise manual clicking. `input.rs` tests cover `apply_splice`'s core logic with a minimal `App` (tag-swap creates a new species and leaves the source untouched, temperature-shift clamps to `[0,1]`, an incomplete or unaffordable draft applies nothing) and the reseed-after-splice regression: a `SelectedSpecies` pointing past a fresh world's species count must be reset, not left dangling (it previously wasn't, and would panic the next frame anything indexed `world.species` by it).
+- All of this runs **without a Bevy `App`** where possible (`sim`/`world` tests construct `SimWorld` + `SimConfig` directly), which is only possible because of the ECS-free architecture in §3 — this is the payoff of that decision, not incidental. Where a test genuinely needs Bevy machinery (state resources, message queues), it builds the smallest `App` that exercises the system under test rather than the full `main.rs` wiring.
 
 ---
 
-*Snapshot after task 021 (2026-08-03). Phase 2 Track A (018–021: events, notebook, confirmation engine, hypothesis grid) is complete. Track B (022–025: action budget economy, Stress, Cull, Splice) is backlog, not yet started.*
+*Snapshot after task 025 (2026-08-03). Phase 2 is complete: Track A (018–021: events, notebook, confirmation engine, hypothesis grid) and Track B (022–025: action budget economy, Stress, Cull, Splice) are both done. Phase 3 (procedural worldgen, real objectives, main menu) and Final Tuning are backlog, not yet started.*
