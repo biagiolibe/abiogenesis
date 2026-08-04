@@ -12,13 +12,18 @@ use abiogenesis::config::SimConfig;
 use abiogenesis::sim::{AdjacencyObserved, OrganismDied, SpeciesExtinct};
 use abiogenesis::world::{SimWorld, SpeciesId, TagId, TagSlot};
 
-use crate::render::species_label;
+use crate::render::{species_color, species_label};
 use crate::text;
 
 /// One curated log line, tagged with the era it happened in. `text`
-/// describes the event only; the window prepends the era.
+/// describes the event only; the window prepends the era. `species` is the
+/// entry's subject, if it has one (every current entry kind does) — carried
+/// separately from `text` (rather than baked into the string) so the window
+/// can render a `species_color` swatch alongside the line, the same
+/// glyph+color pattern `ui.rs`'s Population/Seed Palette panels use.
 pub struct LogEntry {
     pub era: u32,
+    pub species: SpeciesId,
     pub text: String,
 }
 
@@ -181,7 +186,8 @@ fn record_events(
     for event in extinctions.read() {
         log.entries.push(LogEntry {
             era: world.era,
-            text: text::extinction_message(event.species.0),
+            species: event.species,
+            text: text::extinction_message(&species_label(event.species)),
         });
     }
 
@@ -190,7 +196,8 @@ fn record_events(
             let (x, y) = (event.cell % world.width, event.cell / world.width);
             log.entries.push(LogEntry {
                 era: world.era,
-                text: text::player_organism_death_message(event.species.0, x, y),
+                species: event.species,
+                text: text::player_organism_death_message(&species_label(event.species), x, y),
             });
         }
     }
@@ -247,13 +254,17 @@ fn notebook_window(
             ui.heading(text::HEADING_OBSERVATION_LOG);
             egui::ScrollArea::vertical()
                 .id_salt("observation_log")
-                .max_height(150.0)
+                .max_height(220.0)
+                .stick_to_bottom(true)
                 .show(ui, |ui| {
                     if log.entries.is_empty() {
                         ui.weak(text::NO_OBSERVATIONS_YET);
                     }
                     for entry in &log.entries {
-                        ui.label(text::log_entry_line(entry.era, &entry.text));
+                        ui.horizontal(|ui| {
+                            ui.colored_label(species_color(entry.species), TAG_GLYPH);
+                            ui.label(text::log_entry_line(entry.era, &entry.text));
+                        });
                     }
                 });
 

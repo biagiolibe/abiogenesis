@@ -60,6 +60,7 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | Status | Description | Priority |
 |-------|-------------|----------|
 | `[x]` | Dev-only `F1` heatmap overlay for raw environment scalars (temperature/toxicity/light), `#[cfg(debug_assertions)]`-gated so it never ships in release — surfaced by task 023's discovery that toxicity has no in-tick effect and isn't otherwise visible | 🟢 P3 |
+| `[x]` | Observation log legibility: `LogEntry` carries its `SpeciesId` so each line gets a `species_color` swatch (matching the Population/Seed Palette pattern), messages use `species_label` instead of raw `species N`, and the scroll area sticks to the newest entry (`stick_to_bottom`) instead of leaving new events off-screen — raised directly by the player as "poco leggibile" | 🟢 P3 |
 
 ---
 

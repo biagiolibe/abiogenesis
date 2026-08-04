@@ -111,12 +111,12 @@ pub fn log_entry_line(era: u32, text: &str) -> String {
     format!("Era {era}: {text}")
 }
 
-pub fn extinction_message(species_id: u8) -> String {
-    format!("species {species_id} went extinct")
+pub fn extinction_message(species_label: &str) -> String {
+    format!("{species_label} went extinct")
 }
 
-pub fn player_organism_death_message(species_id: u8, x: usize, y: usize) -> String {
-    format!("your species {species_id} organism at ({x}, {y}) died")
+pub fn player_organism_death_message(species_label: &str, x: usize, y: usize) -> String {
+    format!("your {species_label} organism at ({x}, {y}) died")
 }
 
 // --- Notebook — hypothesis graph (`notebook.rs::hypothesis_grid`) ---
