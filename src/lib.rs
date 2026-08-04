@@ -4,6 +4,7 @@
 // `App` — proof, not assertion, that the sim is render-independent.
 
 pub mod config;
+pub mod objectives;
 pub mod run;
 pub mod sim;
 pub mod state;

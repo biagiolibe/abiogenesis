@@ -19,14 +19,21 @@ This task introduces the `Objective` type and the engine that evaluates its sati
 
 ## 📋 Acceptance Criteria
 
-- [ ] New `src/objectives.rs` module with `enum Objective`, at least the three variants from the GDD examples: `Coexistence { min_species: u32, ticks: u32 }`, `SurviveIn { zone: ZoneKind, ticks: u32 }` (where `ZoneKind` covers at least the toxic zone), `TriggerBloom { .. }` (define the minimal parameters needed to recognize a "bloom" — check whether a bloom concept already exists in the code, otherwise define it here in observable terms, e.g. a species' population above a threshold in an area).
-- [ ] `ObjectiveProgress` resource that tracks progress toward the current objective (e.g. a counter of consecutive ticks in which the condition is true).
-- [ ] Pure function `pub fn evaluate(objective: &Objective, world: &SimWorld, progress: &mut ObjectiveProgress) -> WorldOutcome` (or similar — see task 041 for the shared `WorldOutcome`), called by a system in `src/sim.rs` after `advance_tick`.
-- [ ] **"≥3 species for 50 ticks" uses a consecutive count**: if the condition is interrupted (e.g. a species goes extinct), the counter resets to zero, it does not decrement — this must be handled explicitly at the era boundary (50 ticks = 2 eras at `ERA_TICKS=25`), not implicitly assumed.
-- [ ] Objectives are expressed **only on quantities observable by the player** (species count, population, zone occupancy, bloom events) — **never on cells of the hidden biochemical matrix**: an objective that indirectly revealed a matrix value would break the deduction pillar (GDD §11).
-- [ ] `evaluate` is headless-testable: no dependency on `bevy::render`/`bevy_egui` (invariant 2), testable with a hand-built `SimWorld`, without waiting for the worldgen of tasks 038/039.
-- [ ] Tests: at least one test per `Objective` variant, including a test that verifies the consecutive count resets when the condition is interrupted.
-- [ ] `cargo clippy -- -D warnings` clean, `cargo test` green.
+- [x] New `src/objectives.rs` module with `enum Objective`: `Coexistence { min_species: u32, ticks: u32 }`, `SurviveIn { species: SpeciesId, zone: ZoneKind, ticks: u32 }` (`ZoneKind::Toxic` for now), `TriggerBloom { species: SpeciesId, population_threshold: u32 }` — a single-tick population threshold, matching the bloom-detection direction already sketched as a TODO in `notebook.rs`'s salient-event log.
+- [x] `ObjectiveProgress` resource: `consecutive_ticks: u32` (streak counter) + `satisfied: bool` (sticky — once cleared, stays cleared even if the condition later breaks).
+- [x] Pure function `pub fn evaluate(objective: &Objective, world: &SimWorld, progress: &mut ObjectiveProgress) -> WorldOutcome`. Driving system lives in `objectives.rs` itself (`ObjectivesPlugin`, `evaluate_current_objective`), scheduled `.after(SimSet::Advance)` in `FixedUpdate` — not literally inside `sim.rs`, to keep the "one module = one Plugin" convention; ordering against `advance_tick` is via the existing `SimSet`, not a hard dependency on `sim.rs`'s internals.
+- [x] Consecutive-tick counting: `evaluate_sustained` increments on a true condition, resets to `0` (never decrements) the tick it's false. Runs every simulated tick (same `FixedUpdate` cadence as `advance_tick`), so a 50-tick/2-era objective accumulates correctly across era boundaries by construction — nothing resets the counter when an era ends, only `evaluate` itself does.
+- [x] Objectives reference only observable quantities (species count, zone occupancy via `cell.toxicity`, population) — never `world.matrix`/`TagMatrix`.
+- [x] `evaluate` is a pure function of `(&Objective, &SimWorld, &mut ObjectiveProgress)`, no Bevy dependency, no RNG — tested entirely with hand-built `SimWorld`s (`world_with_species`/`place` test helpers), independent of worldgen.
+- [x] Tests: one (or more) per variant, plus a dedicated reset-on-interruption test and a "stays cleared after the condition later breaks" test.
+- [x] `cargo clippy --all-targets -- -D warnings` clean, `cargo test` green (83 tests total).
+
+## Implementation summary
+
+- `src/objectives.rs` (new): `ZoneKind`, `Objective`, `WorldOutcome` (shared type task 041 will extend with its own `Failed` producer), `ObjectiveProgress`, `CurrentObjective` (resource, `Option<Objective>`, `None` until task 042 wires worldgen), `CurrentWorldOutcome` (resource, last `evaluate` result), `evaluate()`, `ObjectivesPlugin`.
+- `src/lib.rs`: exported `pub mod objectives;`.
+- `src/main.rs`: registered `ObjectivesPlugin` in the plugin tuple, after `SimPlugin`.
+- Design note: `TriggerBloom` deliberately isn't a sustained condition like the other two — a bloom is a triggering *event* (population crosses a threshold in a single tick), not a state to hold, so it skips `evaluate_sustained` and sets `satisfied` directly.
 
 ---
 

@@ -5,6 +5,7 @@ mod text;
 mod ui;
 
 use abiogenesis::config::ConfigPlugin;
+use abiogenesis::objectives::ObjectivesPlugin;
 use abiogenesis::run::RunPlugin;
 use abiogenesis::sim::SimPlugin;
 use abiogenesis::state::{EraState, GameState};
@@ -31,6 +32,7 @@ fn main() {
             RunPlugin,
             WorldPlugin,
             SimPlugin,
+            ObjectivesPlugin,
             GridRenderPlugin,
             UiPlugin,
             NotebookPlugin,
