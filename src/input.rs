@@ -369,7 +369,7 @@ fn quit(keys: Res<ButtonInput<KeyCode>>, mut exit: MessageWriter<AppExit>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use abiogenesis::world::{Species, SpeciesId, TagId};
+    use abiogenesis::world::{Species, SpeciesId, TagId, TagSlot};
     use bevy::state::state::State;
 
     /// A world with two active tags and one species carrying only tag 0,
@@ -384,7 +384,7 @@ mod tests {
             temp_optimum: 0.5,
             temp_tolerance: config.energy.default_temp_tolerance,
             repro_threshold: config.energy.repro_threshold,
-            tags: vec![TagId(0)],
+            tags: vec![TagSlot(0)],
         });
         (world, config)
     }
@@ -411,8 +411,8 @@ mod tests {
             SpliceDraft {
                 source: Some(SpeciesId(0)),
                 edit: SpliceEditChoice::SwapTag {
-                    old: Some(TagId(0)),
-                    new: Some(TagId(1)),
+                    old: Some(TagSlot(0)),
+                    new: Some(TagSlot(1)),
                 },
                 apply_requested: true,
             },
@@ -427,12 +427,12 @@ mod tests {
         );
         assert_eq!(
             world.species[0].tags,
-            vec![TagId(0)],
+            vec![TagSlot(0)],
             "the source species must stay unchanged"
         );
         assert_eq!(
             world.species[1].tags,
-            vec![TagId(1)],
+            vec![TagSlot(1)],
             "the new species should carry the swapped-in tag"
         );
 
@@ -483,7 +483,7 @@ mod tests {
             SpliceDraft {
                 source: Some(SpeciesId(0)),
                 edit: SpliceEditChoice::AddTag {
-                    tag: Some(TagId(1)),
+                    tag: Some(TagSlot(1)),
                 },
                 apply_requested: true,
             },
@@ -498,12 +498,12 @@ mod tests {
         );
         assert_eq!(
             world.species[0].tags,
-            vec![TagId(0)],
+            vec![TagSlot(0)],
             "the source species must stay unchanged"
         );
         assert_eq!(
             world.species[1].tags,
-            vec![TagId(0), TagId(1)],
+            vec![TagSlot(0), TagSlot(1)],
             "the new species should carry the original tag plus the added one"
         );
     }
@@ -511,14 +511,14 @@ mod tests {
     #[test]
     fn add_tag_splice_does_nothing_on_a_species_already_at_the_cap() {
         let (mut world, config) = world_with_one_taggable_species();
-        world.species[0].tags = vec![TagId(0), TagId(1), TagId(0)];
+        world.species[0].tags = vec![TagSlot(0), TagSlot(1), TagSlot(0)];
         let mut app = app_with(
             world,
             config,
             SpliceDraft {
                 source: Some(SpeciesId(0)),
                 edit: SpliceEditChoice::AddTag {
-                    tag: Some(TagId(1)),
+                    tag: Some(TagSlot(1)),
                 },
                 apply_requested: true,
             },
@@ -543,7 +543,7 @@ mod tests {
                 source: Some(SpeciesId(0)),
                 // Only `old` picked, no `new` tag yet.
                 edit: SpliceEditChoice::SwapTag {
-                    old: Some(TagId(0)),
+                    old: Some(TagSlot(0)),
                     new: None,
                 },
                 apply_requested: true,

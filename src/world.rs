@@ -19,9 +19,22 @@ pub enum Metabolism {
     Decomposer,
 }
 
-/// Index into a tag pool (GDD §5.5). Opaque to the player.
+/// Identity of a tag in the *global* pool of `TagConfig::global_tag_pool`
+/// tags (GDD §5.5). Opaque to the player. Stable across worlds — used only
+/// where a tag's name/color/glyph is resolved (`text.rs`/`ui.rs`/`render.rs`),
+/// never to index `TagMatrix`/`MatrixKnowledge` directly (see `TagSlot`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TagId(pub u8);
+
+/// Position of a tag within *this world's* active subset (task 036),
+/// distinct from `TagId`'s pool-wide identity. `SimWorld::active_tags: Vec<TagId>`
+/// is the only slot→identity map — `active_tags[slot.0 as usize]` recovers the
+/// `TagId` for display. Every matrix/evidence lookup (`TagMatrix::get`,
+/// `MatrixKnowledge`) is keyed by `TagSlot`, not `TagId`, so a world can pick
+/// a non-contiguous subset of the global pool (Phase 3 world generation,
+/// task 038) without breaking the array indexing below.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TagSlot(pub u8);
 
 /// Index into `SimWorld::species`. Kept small: species are few and never removed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,10 +45,9 @@ pub struct SpeciesId(pub u8);
 /// diagonal is always `0` — a tag has no effect on itself, not stated
 /// explicitly in the GDD but implied by every worked example (§16.1).
 ///
-/// Indexed directly by `TagId.0`, which assumes active tags are the
-/// contiguous `TagId(0..n)` range task 010 currently builds. If Phase 3
-/// world generation ever picks a non-contiguous subset of the global pool,
-/// this indexing needs to go through a tag→matrix-index lookup instead.
+/// Indexed by `TagSlot`, this world's active-subset position, not `TagId`
+/// (task 036) — the matrix only ever has as many rows/columns as this world
+/// has active tags, regardless of which slice of the global pool they are.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TagMatrix {
     // `pub(crate)`, not private: sim.rs's tests build hand-crafted matrices
@@ -45,7 +57,7 @@ pub struct TagMatrix {
 }
 
 impl TagMatrix {
-    pub fn get(&self, exerter: TagId, receiver: TagId) -> i8 {
+    pub fn get(&self, exerter: TagSlot, receiver: TagSlot) -> i8 {
         self.values[exerter.0 as usize * self.size + receiver.0 as usize]
     }
 }
@@ -58,8 +70,9 @@ pub struct Species {
     pub temp_optimum: f32,
     pub temp_tolerance: f32,
     pub repro_threshold: f32,
-    /// 1..=3 tags (GDD §5.3).
-    pub tags: Vec<TagId>,
+    /// 1..=3 tags (GDD §5.3), as positions in the owning world's active
+    /// subset (`TagSlot`), not global pool identities.
+    pub tags: Vec<TagSlot>,
 }
 
 /// A living instance of a species occupying a cell.
@@ -94,9 +107,11 @@ pub struct SimWorld {
     pub tick: u64,
     pub era: u32,
     pub seed: u64,
-    /// The world's active tag subset (GDD §5.5). Fixed to `TagId(0..active_tags_early)`
-    /// in Phase 1 — per-world procedural selection from the global pool is Phase 3
-    /// world generation (`PROJECT_PLAN.md`), not reimplemented here.
+    /// The world's active tag subset (GDD §5.5): `active_tags[slot.0 as usize]`
+    /// is the `TagId` a given `TagSlot` refers to in this world. Fixed to
+    /// `TagId(0..active_tags_early)` in Phase 1 — per-world procedural
+    /// selection from the global pool is Phase 3 world generation
+    /// (`PROJECT_PLAN.md`), not reimplemented here.
     pub active_tags: Vec<TagId>,
     /// The world's secret matrix (GDD §5.5), generated once at construction.
     pub matrix: TagMatrix,
@@ -115,7 +130,7 @@ impl SimWorld {
         let active_tags: Vec<TagId> = (0..config.tags.active_tags_early as u8)
             .map(TagId)
             .collect();
-        let matrix = generate_matrix(&active_tags, &config.tags, &mut rng);
+        let matrix = generate_matrix(active_tags.len(), &config.tags, &mut rng);
         let mut world = Self {
             width,
             height,
@@ -254,17 +269,20 @@ fn spawn_world(mut commands: Commands, config: Res<SimConfig>) {
     commands.insert_resource(world);
 }
 
-/// Generates the world's secret tag matrix (GDD §5.5, §5.8). Each
-/// off-diagonal cell independently becomes non-zero with probability
+/// Generates the world's secret tag matrix (GDD §5.5, §5.8), sized to
+/// `slot_count` — the number of tags this world has active, regardless of
+/// which `TagId`s from the global pool they are (task 036: the matrix is
+/// indexed by `TagSlot`, so it only ever needs to know how many slots exist).
+/// Each off-diagonal cell independently becomes non-zero with probability
 /// `matrix_density`; the diagonal always stays `0`. Afterwards, a negative
-/// 3-cycle is forced among 3 distinct active tags (overwriting whatever the
-/// random pass produced there) to guarantee at least one coexistence-sustaining
-/// RPS relationship exists (GDD §5.8, the worked example in §16.1) — there's
-/// no closed-form way to sample a sparse asymmetric matrix that's guaranteed
-/// to contain one, so forcing it after the fact is simpler than rejection
+/// 3-cycle is forced among 3 distinct slots (overwriting whatever the random
+/// pass produced there) to guarantee at least one coexistence-sustaining RPS
+/// relationship exists (GDD §5.8, the worked example in §16.1) — there's no
+/// closed-form way to sample a sparse asymmetric matrix that's guaranteed to
+/// contain one, so forcing it after the fact is simpler than rejection
 /// sampling and always terminates.
-fn generate_matrix(active_tags: &[TagId], config: &TagConfig, rng: &mut StdRng) -> TagMatrix {
-    let n = active_tags.len();
+fn generate_matrix(slot_count: usize, config: &TagConfig, rng: &mut StdRng) -> TagMatrix {
+    let n = slot_count;
     let mut values = vec![0i8; n * n];
 
     for exerter in 0..n {
@@ -279,10 +297,8 @@ fn generate_matrix(active_tags: &[TagId], config: &TagConfig, rng: &mut StdRng) 
     }
 
     if n >= 3 {
-        let cycle: Vec<usize> = active_tags
-            .sample(rng, 3)
-            .map(|tag| tag.0 as usize)
-            .collect();
+        let slots: Vec<usize> = (0..n).collect();
+        let cycle: Vec<usize> = slots.sample(rng, 3).copied().collect();
         for &(exerter, receiver) in &[
             (cycle[0], cycle[1]),
             (cycle[1], cycle[2]),
@@ -309,17 +325,17 @@ fn nonzero_intensity(config: &TagConfig, rng: &mut StdRng) -> i8 {
 
 /// Draws 1..=3 tags for a new species from the world's active pool (GDD
 /// §5.5), without replacement, using the world's own RNG so species
-/// composition stays deterministic given the same seed.
-pub fn draw_species_tags(world: &mut SimWorld, config: &SimConfig) -> Vec<TagId> {
+/// composition stays deterministic given the same seed. Returns `TagSlot`s
+/// (task 036), since `Species.tags` is keyed by position in the world's
+/// active subset, not global pool identity.
+pub fn draw_species_tags(world: &mut SimWorld, config: &SimConfig) -> Vec<TagSlot> {
     let n = world
         .rng
         .random_range(config.tags.tags_per_species_min..=config.tags.tags_per_species_max)
         as usize;
-    world
-        .active_tags
-        .sample(&mut world.rng, n)
-        .copied()
-        .collect()
+    let slot_count = world.active_tags.len() as u8;
+    let slots: Vec<TagSlot> = (0..slot_count).map(TagSlot).collect();
+    slots.sample(&mut world.rng, n).copied().collect()
 }
 
 /// Phase 1 placeholder: seeds a small starting palette of 2 photolithic
@@ -596,8 +612,8 @@ mod tests {
             );
             for tag in &tags {
                 assert!(
-                    world.active_tags.contains(tag),
-                    "drawn tag {:?} is not in the active pool",
+                    (tag.0 as usize) < world.active_tags.len(),
+                    "drawn slot {:?} is out of bounds for the active pool",
                     tag
                 );
             }
@@ -618,11 +634,9 @@ mod tests {
         }
     }
 
-    fn tag_pairs(world: &SimWorld) -> impl Iterator<Item = (TagId, TagId)> + '_ {
-        world
-            .active_tags
-            .iter()
-            .flat_map(move |&a| world.active_tags.iter().map(move |&b| (a, b)))
+    fn tag_pairs(world: &SimWorld) -> impl Iterator<Item = (TagSlot, TagSlot)> + '_ {
+        let n = world.active_tags.len() as u8;
+        (0..n).flat_map(move |a| (0..n).map(move |b| (TagSlot(a), TagSlot(b))))
     }
 
     #[test]
@@ -641,8 +655,9 @@ mod tests {
         let config = test_config();
         let world = SimWorld::new(42, &config);
 
-        for &tag in &world.active_tags {
-            assert_eq!(world.matrix.get(tag, tag), 0);
+        for i in 0..world.active_tags.len() as u8 {
+            let slot = TagSlot(i);
+            assert_eq!(world.matrix.get(slot, slot), 0);
         }
     }
 
@@ -681,17 +696,17 @@ mod tests {
     fn matrix_guarantees_a_negative_three_cycle() {
         let config = test_config();
         let world = SimWorld::new(42, &config);
-        let tags = &world.active_tags;
+        let n = world.active_tags.len() as u8;
 
-        let has_cycle = tags.iter().any(|&a| {
-            tags.iter().any(|&b| {
-                tags.iter().any(|&c| {
+        let has_cycle = (0..n).any(|a| {
+            (0..n).any(|b| {
+                (0..n).any(|c| {
                     a != b
                         && b != c
                         && a != c
-                        && world.matrix.get(a, b) < 0
-                        && world.matrix.get(b, c) < 0
-                        && world.matrix.get(c, a) < 0
+                        && world.matrix.get(TagSlot(a), TagSlot(b)) < 0
+                        && world.matrix.get(TagSlot(b), TagSlot(c)) < 0
+                        && world.matrix.get(TagSlot(c), TagSlot(a)) < 0
                 })
             })
         });

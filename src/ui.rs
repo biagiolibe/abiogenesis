@@ -11,7 +11,7 @@ use crate::text;
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::ActionBudget;
 use abiogenesis::state::EraState;
-use abiogenesis::world::{SimWorld, SpeciesId, TagId};
+use abiogenesis::world::{SimWorld, SpeciesId, TagSlot};
 
 /// The species the seed action (task 017) places on click. A UI intent, not
 /// simulation state: owned here, read by `input.rs`'s click-to-place system,
@@ -43,11 +43,11 @@ pub struct SelectedAction(pub ActionMode);
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpliceEditChoice {
     SwapTag {
-        old: Option<TagId>,
-        new: Option<TagId>,
+        old: Option<TagSlot>,
+        new: Option<TagSlot>,
     },
     AddTag {
-        tag: Option<TagId>,
+        tag: Option<TagSlot>,
     },
     ShiftTempOptimum {
         warmer: bool,
@@ -356,12 +356,14 @@ fn splice_panel(ui: &mut egui::Ui, world: &SimWorld, draft: &mut SpliceDraft) {
             if let Some(source) = draft.source {
                 let species = &world.species[source.0 as usize];
                 ui.label(text::REMOVE_TAG_LABEL);
-                for &tag in &species.tags {
-                    ui.radio_value(old, Some(tag), text::tag_option_label(tag_glyph(tag)));
+                for &slot in &species.tags {
+                    let tag = world.active_tags[slot.0 as usize];
+                    ui.radio_value(old, Some(slot), text::tag_option_label(tag_glyph(tag)));
                 }
                 ui.label(text::ADD_TAG_LABEL);
-                for &tag in &world.active_tags {
-                    ui.radio_value(new, Some(tag), text::tag_option_label(tag_glyph(tag)));
+                for (i, &tag) in world.active_tags.iter().enumerate() {
+                    let slot = TagSlot(i as u8);
+                    ui.radio_value(new, Some(slot), text::tag_option_label(tag_glyph(tag)));
                 }
             } else {
                 ui.weak(text::PICK_SOURCE_HINT);
@@ -371,13 +373,14 @@ fn splice_panel(ui: &mut egui::Ui, world: &SimWorld, draft: &mut SpliceDraft) {
             if let Some(source) = draft.source {
                 let species = &world.species[source.0 as usize];
                 ui.label(text::ADD_TAG_LABEL);
-                for &candidate in &world.active_tags {
-                    if species.tags.contains(&candidate) {
+                for (i, &candidate) in world.active_tags.iter().enumerate() {
+                    let slot = TagSlot(i as u8);
+                    if species.tags.contains(&slot) {
                         continue;
                     }
                     ui.radio_value(
                         tag,
-                        Some(candidate),
+                        Some(slot),
                         text::tag_option_label(tag_glyph(candidate)),
                     );
                 }

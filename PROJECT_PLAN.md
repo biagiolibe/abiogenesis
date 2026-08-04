@@ -103,14 +103,42 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 
 ### 🏁 Phase 3 — The run
 
-**Milestone:** a complete game cycle, world after world (GDD §13).
+**Milestone:** a complete game cycle, world after world (GDD §13). Broken into 12 task files (035–046) from the 2026-08-04 planning session — see the approved plan for the full rationale (endless-until-failure model, `TagSlot` refactor, difficulty-curve function). Dependency graph:
 
-- `[ ]` **Objectives** system per world and satisfaction check (GDD §8)
-- `[ ]` **Procedural world generation**: matrix, environment, active tags, species, objectives (GDD §9)
-- `[ ]` Failure conditions: total extinction + finite era budget (GDD §8)
-- `[ ]` **Difficulty curve**: 5 → ~8 active tags, more hostile environments, shorter budget (GDD §9)
-- `[ ]` Run flow: main menu, victory, defeat, transition to the next world
-- `[ ]` Minimal meta-progression, without persistence (GDD §10)
+```
+035 (foundation)
+ ├─ 036 (TagSlot) ──────┐
+ ├─ 037 (WorldParams) ──┤
+ │                      ├─ 038 ── 039 ─────────────┐
+ ├─ 040 (objectives) ───┼─ 041                      │
+ │                  └── 042 (per-world objective) ──┤
+ │                  └── 043 (objective HUD)         │
+ └─ 044 (main menu) ─────────────────────────────── 045 (transition) ── 046 (meta-progression)
+```
+
+**Foundation:**
+
+- `[x]` 035 — Run/world state foundation: `GameState::{WorldCleared, Defeat}`, `RunProgress` resource, `EraCompleted` event → [035](tasks/done/035-run-world-state-foundation.md)
+
+**Track A — worldgen** (036 and 037 in parallel; both feed 038 → 039):
+
+- `[x]` 036 — `TagSlot` newtype: compiler-driven fix for `TagMatrix`'s contiguous-`TagId` indexing assumption, prerequisite for non-contiguous tag-subset selection (GDD §9) → [036](tasks/done/036-tag-slot-newtype.md)
+- `[ ]` 037 — `WorldParams` and difficulty curve: pure `world_params(world_index, config)` function (GDD §9; literal acceptance criterion from §16: World 2 has 6 active tags) → [037](tasks/037-world-params-difficulty-curve.md)
+- `[ ]` 038 — Worldgen: matrix, tag subset, environmental hostility, replacing the hardcoded `(0..active_tags_early)` selection and static gradients → [038](tasks/038-worldgen-matrix-tags-environment.md)
+- `[ ]` 039 — Worldgen: starting species pool, replacing the explicit `seed_starting_palette` placeholder → [039](tasks/039-worldgen-starting-species-pool.md)
+
+**Track B — run rules** (040 starts right after 035, parallel to Track A):
+
+- `[ ]` 040 — Objectives: `Objective` type + evaluation engine (GDD §8 examples: coexistence, toxic-zone survival, bloom trigger) → [040](tasks/040-objectives-type-evaluation-engine.md)
+- `[ ]` 041 — Failure conditions: total extinction + era-budget-per-world exhaustion (GDD §8) → [041](tasks/041-failure-conditions.md)
+- `[ ]` 042 — Worldgen: per-world objective generation and severity scaling → [042](tasks/042-worldgen-objective-generation.md)
+- `[ ]` 043 — Objective HUD, filling the `ui.rs:243` placeholder (GDD §11) → [043](tasks/043-objective-hud.md)
+
+**Track C — shell and convergence:**
+
+- `[ ]` 044 — Main menu: wires `GameState::MainMenu`, generates `run_seed`, the one legitimate point outside the sim where run variety originates → [044](tasks/044-main-menu.md)
+- `[ ]` 045 — World-cleared/defeat screens + world transition: shared `start_world` reset function (replaces the ad-hoc `r`-key reset in `input.rs`) → [045](tasks/045-world-transition-defeat-screens.md)
+- `[ ]` 046 — Minimal meta-progression: in-session unlocks (no disk persistence), GDD §10 → [046](tasks/046-minimal-meta-progression.md)
 
 > **💡 Design idea (2026-08-03 playtest, not yet scoped into a task):** a mechanism that progressively "reveals" some tag semantics over the course of a run — surfaced during discussion of task 029's naming, but this is a bigger design question than a display fix. Overlaps partly with what the Hypothesis grid already does (confirming a matrix cell *is* a form of progressive reveal, just of behavior, not meaning) — needs more definition before it becomes a task: what would actually be revealed, when, and does it risk collapsing the deduction pillar the same way named tags would (GDD §11). Revisit once Phase 3's difficulty curve is being designed.
 

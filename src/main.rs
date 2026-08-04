@@ -5,6 +5,7 @@ mod text;
 mod ui;
 
 use abiogenesis::config::ConfigPlugin;
+use abiogenesis::run::RunPlugin;
 use abiogenesis::sim::SimPlugin;
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::WorldPlugin;
@@ -27,6 +28,7 @@ fn main() {
         .add_plugins(EguiPlugin::default())
         .add_plugins((
             ConfigPlugin,
+            RunPlugin,
             WorldPlugin,
             SimPlugin,
             GridRenderPlugin,

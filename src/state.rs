@@ -10,13 +10,20 @@
 use bevy::prelude::*;
 
 /// Top-level app state (TECH_DESIGN.md §2). `Loading` and `MainMenu` are
-/// stubs in Phase 0 — `MainMenu` becomes real in Phase 3.
+/// stubs in Phase 0 — `MainMenu` becomes real in Phase 3. `WorldCleared` and
+/// `Defeat` are Phase 3 additions (task 035): interstitials for, respectively,
+/// "the world's objective was met, advance to the next one" and "the run
+/// ended" (GDD §8) — the run itself is endless-until-failure, there is no
+/// terminal "Victory" state. Both are unreachable until task 041 (failure
+/// conditions) and task 045 (world transition) wire them up.
 #[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum GameState {
     #[default]
     Loading,
     MainMenu,
     Playing,
+    WorldCleared,
+    Defeat,
 }
 
 /// Mirrors the player-facing loop of GDD §16.4: Plan → Advance → Observe.

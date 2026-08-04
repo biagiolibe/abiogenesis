@@ -6,7 +6,7 @@ use rand::RngExt;
 
 use crate::config::SimConfig;
 use crate::state::EraState;
-use crate::world::{Metabolism, Organism, SimWorld, SpeciesId, TagId};
+use crate::world::{Metabolism, Organism, SimWorld, SpeciesId, TagSlot};
 
 /// One organism's energy reached zero and it was removed this tick.
 #[derive(Debug, Clone, Copy, Message)]
@@ -21,6 +21,16 @@ pub struct OrganismDied {
 #[derive(Debug, Clone, Copy, Message)]
 pub struct SpeciesExtinct {
     pub species: SpeciesId,
+}
+
+/// An era finished (TECH_DESIGN.md §4): `era` is `world.era` after the
+/// increment, i.e. how many eras this world has completed so far. The hook
+/// run-flow logic (failure conditions, task 041; world transition, task 045)
+/// uses instead of duplicating the "era just ended" check that already lives
+/// in `advance_tick`.
+#[derive(Debug, Clone, Copy, Message)]
+pub struct EraCompleted {
+    pub era: u32,
 }
 
 /// One raw piece of evidence for the confirmation engine (task 020, GDD
@@ -43,8 +53,8 @@ pub struct SpeciesExtinct {
 #[derive(Debug, Clone, Copy, Message)]
 pub struct AdjacencyObserved {
     pub receiver_species: SpeciesId,
-    pub exerter_tag: TagId,
-    pub receiver_tag: TagId,
+    pub exerter_tag: TagSlot,
+    pub receiver_tag: TagSlot,
     pub n_confounders: u32,
 }
 
@@ -215,7 +225,7 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
         // neighbours, gathered up front so the confounder count (see
         // `AdjacencyObserved`'s doc comment) is available for every
         // observation emitted below without re-scanning neighbours per tag.
-        let mut neighbour_tags: Vec<TagId> = Vec::new();
+        let mut neighbour_tags: Vec<TagSlot> = Vec::new();
         for neighbour_idx in world.moore_neighbours(x, y) {
             if let Some(neighbour) = world.cells[neighbour_idx].organism {
                 let neighbour_species = &world.species[neighbour.species.0 as usize];
@@ -406,6 +416,7 @@ impl Plugin for SimPlugin {
         app.add_message::<OrganismDied>();
         app.add_message::<SpeciesExtinct>();
         app.add_message::<AdjacencyObserved>();
+        app.add_message::<EraCompleted>();
         app.add_systems(
             FixedUpdate,
             advance_tick
@@ -433,6 +444,7 @@ fn advance_tick(
     mut died: MessageWriter<OrganismDied>,
     mut extinct: MessageWriter<SpeciesExtinct>,
     mut adjacencies: MessageWriter<AdjacencyObserved>,
+    mut era_completed: MessageWriter<EraCompleted>,
 ) {
     if progress.remaining() == 0 {
         return;
@@ -445,6 +457,7 @@ fn advance_tick(
     if progress.remaining() == 0 {
         world.era += 1;
         budget.refill(config.time.point_budget_per_era);
+        era_completed.write(EraCompleted { era: world.era });
         next_state.set(EraState::Observing);
     }
 }
@@ -453,7 +466,7 @@ fn advance_tick(
 mod tests {
     use super::*;
     use crate::state::GameState;
-    use crate::world::{Cell, Species, SpeciesId, TagId, TagMatrix};
+    use crate::world::{Cell, Species, SpeciesId, TagMatrix, TagSlot};
 
     const TOLERANCE: f32 = 1e-4;
 
@@ -577,6 +590,7 @@ mod tests {
         app.add_message::<OrganismDied>();
         app.add_message::<SpeciesExtinct>();
         app.add_message::<AdjacencyObserved>();
+        app.add_message::<EraCompleted>();
         app.add_systems(Update, advance_tick.run_if(in_state(EraState::Advancing)));
 
         app.world_mut()
@@ -631,8 +645,8 @@ mod tests {
     /// 012) is exactly known.
     fn world_with_two_neighbours(
         matrix: TagMatrix,
-        tags_a: Vec<TagId>,
-        tags_b: Vec<TagId>,
+        tags_a: Vec<TagSlot>,
+        tags_b: Vec<TagSlot>,
         light: f32,
         temperature: f32,
         energy_a: f32,
@@ -671,8 +685,15 @@ mod tests {
             size: 2,
             values: vec![0, -2, 0, 0],
         };
-        let (mut world, config) =
-            world_with_two_neighbours(matrix, vec![TagId(0)], vec![TagId(1)], 0.7, 0.5, 5.0, 5.0);
+        let (mut world, config) = world_with_two_neighbours(
+            matrix,
+            vec![TagSlot(0)],
+            vec![TagSlot(1)],
+            0.7,
+            0.5,
+            5.0,
+            5.0,
+        );
         step(&mut world, &config);
 
         let (cx, cy) = (world.width / 2, world.height / 2);
@@ -688,8 +709,15 @@ mod tests {
             size: 2,
             values: vec![0, 2, 0, 0],
         };
-        let (mut world, config) =
-            world_with_two_neighbours(matrix, vec![TagId(0)], vec![TagId(1)], 0.7, 0.5, 5.0, 5.0);
+        let (mut world, config) = world_with_two_neighbours(
+            matrix,
+            vec![TagSlot(0)],
+            vec![TagSlot(1)],
+            0.7,
+            0.5,
+            5.0,
+            5.0,
+        );
         step(&mut world, &config);
 
         let (cx, cy) = (world.width / 2, world.height / 2);
@@ -707,7 +735,7 @@ mod tests {
             values: vec![0, -2, -2, 0],
         };
         let (mut world, config) =
-            world_with_two_neighbours(matrix, vec![TagId(0)], Vec::new(), 0.7, 0.5, 5.0, 5.0);
+            world_with_two_neighbours(matrix, vec![TagSlot(0)], Vec::new(), 0.7, 0.5, 5.0, 5.0);
         step(&mut world, &config);
 
         let (cx, cy) = (world.width / 2, world.height / 2);
@@ -733,14 +761,14 @@ mod tests {
             temp_optimum: 0.5,
             temp_tolerance: config.energy.default_temp_tolerance,
             repro_threshold: config.energy.repro_threshold,
-            tags: vec![TagId(0)],
+            tags: vec![TagSlot(0)],
         });
         world.species.push(Species {
             metabolism: Metabolism::Photolithic,
             temp_optimum: 0.5,
             temp_tolerance: config.energy.default_temp_tolerance,
             repro_threshold: config.energy.repro_threshold,
-            tags: vec![TagId(1)],
+            tags: vec![TagSlot(1)],
         });
         let (cx, cy) = (world.width / 2, world.height / 2);
         for (dx, species, energy) in [
@@ -1125,16 +1153,23 @@ mod tests {
             size: 2,
             values: vec![0, -2, 0, 0],
         };
-        let (mut world, config) =
-            world_with_two_neighbours(matrix, vec![TagId(0)], vec![TagId(1)], 0.7, 0.5, 5.0, 5.0);
+        let (mut world, config) = world_with_two_neighbours(
+            matrix,
+            vec![TagSlot(0)],
+            vec![TagSlot(1)],
+            0.7,
+            0.5,
+            5.0,
+            5.0,
+        );
 
         let events = step(&mut world, &config);
 
         assert_eq!(events.adjacencies.len(), 1);
         let obs = events.adjacencies[0];
         assert_eq!(obs.receiver_species, SpeciesId(1));
-        assert_eq!(obs.exerter_tag, TagId(0));
-        assert_eq!(obs.receiver_tag, TagId(1));
+        assert_eq!(obs.exerter_tag, TagSlot(0));
+        assert_eq!(obs.receiver_tag, TagSlot(1));
         assert_eq!(
             obs.n_confounders, 0,
             "B has exactly one neighbour, carrying only the exerter tag"
@@ -1159,11 +1194,11 @@ mod tests {
         let mut world = SimWorld::new(42, &config);
         world.matrix = matrix;
         for tags in [
-            vec![TagId(0)],
-            vec![TagId(1)],
-            vec![TagId(2)],
-            vec![TagId(3)],
-            vec![TagId(4)],
+            vec![TagSlot(0)],
+            vec![TagSlot(1)],
+            vec![TagSlot(2)],
+            vec![TagSlot(3)],
+            vec![TagSlot(4)],
         ] {
             world.species.push(Species {
                 metabolism: Metabolism::Photolithic,
@@ -1208,8 +1243,8 @@ mod tests {
             1,
             "only the (tag 0 -> tag 1) entry is non-zero"
         );
-        assert_eq!(observed[0].exerter_tag, TagId(0));
-        assert_eq!(observed[0].receiver_tag, TagId(1));
+        assert_eq!(observed[0].exerter_tag, TagSlot(0));
+        assert_eq!(observed[0].receiver_tag, TagSlot(1));
         assert_eq!(
             observed[0].n_confounders, 3,
             "three other distinct tags among the receiver's neighbours"

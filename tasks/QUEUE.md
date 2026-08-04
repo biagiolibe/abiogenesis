@@ -28,11 +28,28 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 ## 🏃 Active Queue
 
-**Phase 2 — Deduction** is fully **complete**: core scope (018–025, both tracks), every playtest-driven follow-up (026–028, 030–033), and the localization-prep task (034). Nothing queued right now — the next task file comes from a new playtest/planning pass or from Phase 3.
+**Phase 2 — Deduction** is fully **complete**: core scope (018–025, both tracks), every playtest-driven follow-up (026–028, 030–033), and the localization-prep task (034).
+
+**Phase 3 — The run** is now planned and broken into 12 task files (035–046), from the 2026-08-04 planning session (see `PROJECT_PLAN.md`'s Phase 3 section and the approved plan for the full dependency graph). Task 035 (run/world state foundation) is the only task with no dependencies — start there.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[x]` | 035 | Run/world state foundation | none | [035](done/035-run-world-state-foundation.md) |
+| `[x]` | 036 | `TagSlot` newtype: compiler-driven matrix indexing | none | [036](done/036-tag-slot-newtype.md) |
+| `[ ]` | 037 | `WorldParams` and difficulty curve | none | [037](037-world-params-difficulty-curve.md) |
+| `[ ]` | 038 | Worldgen: matrix, tag subset, environmental hostility | 036, 037 | [038](038-worldgen-matrix-tags-environment.md) |
+| `[ ]` | 039 | Worldgen: starting species pool | 038 | [039](039-worldgen-starting-species-pool.md) |
+| `[ ]` | 040 | Objectives: type + evaluation engine | none | [040](040-objectives-type-evaluation-engine.md) |
+| `[ ]` | 041 | Failure conditions | 040 | [041](041-failure-conditions.md) |
+| `[ ]` | 042 | Worldgen: per-world objective generation | 038, 040 | [042](042-worldgen-objective-generation.md) |
+| `[ ]` | 043 | Objective HUD | 040 | [043](043-objective-hud.md) |
+| `[ ]` | 044 | Main menu | 035 | [044](044-main-menu.md) |
+| `[ ]` | 045 | World-cleared/defeat screens + world transition | 035, 038, 039, 040, 041, 042, 044 | [045](045-world-transition-defeat-screens.md) |
+| `[ ]` | 046 | Minimal meta-progression | 039, 045 | [046](046-minimal-meta-progression.md) |
 
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
-Later phases (3 and Final tuning) live as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) and expand into task files when we get there.
+Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) and expands into task files after Phase 3.
 
 ---
 
@@ -84,7 +101,9 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | `[x]` | 033 | Render the toxic zone visibly during normal play | Claude | [033](done/033-visible-toxicity.md) |
 | `[x]` | 028 | Distinguish "no evidence" from "unconfirmed evidence" in the hypothesis grid | Claude | [028](done/028-partial-evidence-visibility.md) |
 | `[x]` | 034 | Centralize player-facing text behind a single `text` module | Claude | [034](done/034-centralize-player-facing-text.md) |
+| `[x]` | 035 | Run/world state foundation (`GameState::{WorldCleared,Defeat}`, `RunProgress`, `EraCompleted`) | Claude | [035](done/035-run-world-state-foundation.md) |
+| `[x]` | 036 | `TagSlot` newtype: compiler-driven matrix indexing | Claude | [036](done/036-tag-slot-newtype.md) |
 
 ---
 
-*Last updated: 2026-08-04*
+*Last updated: 2026-08-04 (Phase 3 planning)*

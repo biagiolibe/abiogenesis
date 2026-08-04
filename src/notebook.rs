@@ -10,7 +10,7 @@ use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::{AdjacencyObserved, OrganismDied, SpeciesExtinct};
-use abiogenesis::world::{SimWorld, SpeciesId, TagId};
+use abiogenesis::world::{SimWorld, SpeciesId, TagId, TagSlot};
 
 use crate::render::species_label;
 use crate::text;
@@ -80,22 +80,27 @@ impl MatrixKnowledge {
         }
     }
 
-    pub fn record(&mut self, exerter: TagId, receiver: TagId, weight: f32) {
+    pub fn record(&mut self, exerter: TagSlot, receiver: TagSlot, weight: f32) {
         let idx = exerter.0 as usize * self.size + receiver.0 as usize;
         self.evidence[idx] += weight;
     }
 
-    pub fn evidence(&self, exerter: TagId, receiver: TagId) -> f32 {
+    pub fn evidence(&self, exerter: TagSlot, receiver: TagSlot) -> f32 {
         self.evidence[exerter.0 as usize * self.size + receiver.0 as usize]
     }
 
-    pub fn is_confirmed(&self, exerter: TagId, receiver: TagId) -> bool {
+    pub fn is_confirmed(&self, exerter: TagSlot, receiver: TagSlot) -> bool {
         self.evidence(exerter, receiver) >= self.threshold
     }
 
     /// The real matrix value for a confirmed pair, `None` if not yet
     /// confirmed. Reads through `world.matrix`, not a stored snapshot.
-    pub fn revealed_value(&self, exerter: TagId, receiver: TagId, world: &SimWorld) -> Option<i8> {
+    pub fn revealed_value(
+        &self,
+        exerter: TagSlot,
+        receiver: TagSlot,
+        world: &SimWorld,
+    ) -> Option<i8> {
         self.is_confirmed(exerter, receiver)
             .then(|| world.matrix.get(exerter, receiver))
     }
@@ -324,11 +329,12 @@ fn hypothesis_grid(ui: &mut egui::Ui, world: &SimWorld, knowledge: &MatrixKnowle
         })
         .collect();
 
-    for (ei, &exerter) in tags.iter().enumerate() {
-        for (ri, &receiver) in tags.iter().enumerate() {
-            if exerter == receiver {
+    for ei in 0..tags.len() {
+        for ri in 0..tags.len() {
+            if ei == ri {
                 continue;
             }
+            let (exerter, receiver) = (TagSlot(ei as u8), TagSlot(ri as u8));
             if let Some(value) = knowledge.revealed_value(exerter, receiver, world) {
                 let color = if value > 0 {
                     EDGE_POSITIVE_COLOR
@@ -343,6 +349,7 @@ fn hypothesis_grid(ui: &mut egui::Ui, world: &SimWorld, knowledge: &MatrixKnowle
     }
 
     for (i, &tag) in tags.iter().enumerate() {
+        let slot = TagSlot(i as u8);
         let pos = positions[i];
         painter.circle_filled(pos, NODE_RADIUS, tag_color(tag));
         painter.text(
@@ -356,7 +363,7 @@ fn hypothesis_grid(ui: &mut egui::Ui, world: &SimWorld, knowledge: &MatrixKnowle
         let node_rect = egui::Rect::from_center_size(pos, egui::Vec2::splat(NODE_RADIUS * 2.0));
         let node_id = response.id.with(("hypothesis_node", tag.0));
         let node_response = ui.interact(node_rect, node_id, egui::Sense::hover());
-        node_response.on_hover_text(node_tooltip_text(tag, tags, world, knowledge));
+        node_response.on_hover_text(node_tooltip_text(slot, tag, tags, world, knowledge));
     }
 }
 
@@ -400,35 +407,37 @@ fn draw_partial_marker(painter: &egui::Painter, from: egui::Pos2, to: egui::Pos2
 /// confirmed relationship it takes part in, and — without sign or magnitude
 /// (task 028) — which pairs have partial, unconfirmed evidence.
 fn node_tooltip_text(
+    slot: TagSlot,
     tag: TagId,
     tags: &[TagId],
     world: &SimWorld,
     knowledge: &MatrixKnowledge,
 ) -> String {
     let mut lines = vec![text::node_tag_line(tag_glyph(tag))];
-    for &other in tags {
-        if other == tag {
+    for (oi, &other) in tags.iter().enumerate() {
+        if oi == slot.0 as usize {
             continue;
         }
-        if let Some(value) = knowledge.revealed_value(tag, other, world) {
+        let other_slot = TagSlot(oi as u8);
+        if let Some(value) = knowledge.revealed_value(slot, other_slot, world) {
             lines.push(text::confirmed_relation_line(
                 tag_glyph(tag),
                 tag_glyph(other),
                 value > 0,
             ));
-        } else if knowledge.evidence(tag, other) > 0.0 {
+        } else if knowledge.evidence(slot, other_slot) > 0.0 {
             lines.push(text::partial_relation_line(
                 tag_glyph(tag),
                 tag_glyph(other),
             ));
         }
-        if let Some(value) = knowledge.revealed_value(other, tag, world) {
+        if let Some(value) = knowledge.revealed_value(other_slot, slot, world) {
             lines.push(text::confirmed_relation_line(
                 tag_glyph(other),
                 tag_glyph(tag),
                 value > 0,
             ));
-        } else if knowledge.evidence(other, tag) > 0.0 {
+        } else if knowledge.evidence(other_slot, slot) > 0.0 {
             lines.push(text::partial_relation_line(
                 tag_glyph(other),
                 tag_glyph(tag),
@@ -463,7 +472,8 @@ fn catalog_panel(ui: &mut egui::Ui, world: &SimWorld) {
                 species.temp_optimum,
                 species.temp_tolerance,
             ));
-            for &tag in &species.tags {
+            for &slot in &species.tags {
+                let tag = world.active_tags[slot.0 as usize];
                 ui.colored_label(tag_color(tag), format!("{TAG_GLYPH} {}", tag_glyph(tag)));
             }
         });
@@ -605,10 +615,10 @@ mod tests {
         // GDD §7: n_confounders = 0 -> weight 1.0 each; 3 * 1.0 == threshold.
         let mut knowledge = MatrixKnowledge::new(2, THRESHOLD);
         for _ in 0..3 {
-            knowledge.record(TagId(0), TagId(1), 1.0);
+            knowledge.record(TagSlot(0), TagSlot(1), 1.0);
         }
-        assert!((knowledge.evidence(TagId(0), TagId(1)) - 3.0).abs() < 1e-6);
-        assert!(knowledge.is_confirmed(TagId(0), TagId(1)));
+        assert!((knowledge.evidence(TagSlot(0), TagSlot(1)) - 3.0).abs() < 1e-6);
+        assert!(knowledge.is_confirmed(TagSlot(0), TagSlot(1)));
     }
 
     #[test]
@@ -616,16 +626,16 @@ mod tests {
         // n_confounders = 3 -> weight 0.25 each; 12 * 0.25 == threshold.
         let mut knowledge = MatrixKnowledge::new(2, THRESHOLD);
         for _ in 0..11 {
-            knowledge.record(TagId(0), TagId(1), 0.25);
+            knowledge.record(TagSlot(0), TagSlot(1), 0.25);
         }
         assert!(
-            !knowledge.is_confirmed(TagId(0), TagId(1)),
+            !knowledge.is_confirmed(TagSlot(0), TagSlot(1)),
             "11 * 0.25 = 2.75, just under threshold"
         );
 
-        knowledge.record(TagId(0), TagId(1), 0.25);
+        knowledge.record(TagSlot(0), TagSlot(1), 0.25);
         assert!(
-            knowledge.is_confirmed(TagId(0), TagId(1)),
+            knowledge.is_confirmed(TagSlot(0), TagSlot(1)),
             "the 12th observation crosses the threshold"
         );
     }
@@ -646,17 +656,17 @@ mod tests {
             .resource_mut::<Messages<AdjacencyObserved>>()
             .write(AdjacencyObserved {
                 receiver_species: SpeciesId(0),
-                exerter_tag: TagId(0),
-                receiver_tag: TagId(1),
+                exerter_tag: TagSlot(0),
+                receiver_tag: TagSlot(1),
                 n_confounders: 3,
             });
         app.update();
 
         let knowledge = app.world().resource::<MatrixKnowledge>();
         assert!(
-            (knowledge.evidence(TagId(0), TagId(1)) - 0.25).abs() < 1e-6,
+            (knowledge.evidence(TagSlot(0), TagSlot(1)) - 0.25).abs() < 1e-6,
             "expected numerator(1.0) / (1 + 3 confounders) = 0.25, got {}",
-            knowledge.evidence(TagId(0), TagId(1))
+            knowledge.evidence(TagSlot(0), TagSlot(1))
         );
     }
 
@@ -664,7 +674,7 @@ mod tests {
     fn unconfirmed_pairs_do_not_reveal_a_value() {
         let config = SimConfig::default();
         let world = SimWorld::new(42, &config);
-        let (exerter, receiver) = (world.active_tags[0], world.active_tags[1]);
+        let (exerter, receiver) = (TagSlot(0), TagSlot(1));
         let mut knowledge = MatrixKnowledge::new(world.active_tags.len(), THRESHOLD);
 
         assert_eq!(knowledge.revealed_value(exerter, receiver, &world), None);
