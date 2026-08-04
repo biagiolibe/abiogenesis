@@ -5,33 +5,33 @@
 > **Priority**: 🔴 P1
 > **Estimate**: ~2h
 > **Assigned to**: unassigned
-> **Session**: 2026-08-04, Fase 3 planning session
+> **Session**: 2026-08-04, Phase 3 planning session
 
 ---
 
 ## 🎯 Objective
 
-Fase 3 ("The run", GDD §8-§10) introduce il concetto di run multi-mondo: successo → mondo successivo, fallimento → fine run. Questo task posa le fondamenta minime senza cui nessun altro task di Fase 3 può procedere:
+Phase 3 ("The run", GDD §8-§10) introduces the concept of a multi-world run: success → next world, failure → end of run. This task lays the minimal foundation without which no other Phase 3 task can proceed:
 
-1. Nuove varianti `GameState::{WorldCleared, Defeat}` (interstiziali, non un vero "Victory" — il GDD non descrive mai una vittoria di run, solo "successo → mondo successivo" ad libitum: la run è endless-until-failure).
-2. Resource `RunProgress` che traccia in che punto della run ci troviamo (indice mondo, seed lineage, sblocchi).
-3. Evento `EraCompleted`, già documentato in `TECH_DESIGN.md` §4 ("Emesso da `sim`, consumato da `ui`, run flow (Phase 3)") ma mai implementato — è il gancio con cui i task successivi (failure conditions, transizione di mondo) osserveranno la fine di un'era senza duplicare logica dentro `advance_tick`.
+1. New `GameState::{WorldCleared, Defeat}` variants (interstitial, not a real "Victory" — the GDD never describes a run victory, only "success → next world" ad libitum: the run is endless-until-failure).
+2. `RunProgress` resource that tracks where we are in the run (world index, seed lineage, unlocks).
+3. `EraCompleted` event, already documented in `TECH_DESIGN.md` §4 ("Emitted by `sim`, consumed by `ui`, run flow (Phase 3)") but never implemented — it's the hook through which later tasks (failure conditions, world transition) will observe the end of an era without duplicating logic inside `advance_tick`.
 
-Questo è deliberatamente un task "silenzioso": introduce tipi e un evento, non li collega ancora a input/UI. `main.rs` NON va toccato — il bypass `Loading → Playing` resta com'è finché non esiste una UI di main menu (task futuro 044); cambiarlo ora farebbe bootare il gioco su uno stato senza UI, rompendo la verifica manuale per tutti i task intermedi di Fase 3.
+This is deliberately a "silent" task: it introduces types and an event, without wiring them to input/UI yet. `main.rs` must NOT be touched — the `Loading → Playing` bypass stays as it is until a main menu UI exists (future task 044); changing it now would boot the game into a state with no UI, breaking manual verification for all the intermediate Phase 3 tasks.
 
 ---
 
 ## 📋 Acceptance Criteria
 
-- [x] `GameState` (`src/state.rs`) ha due nuove varianti `WorldCleared` e `Defeat`, accanto a `Loading`, `MainMenu`, `Playing`.
-- [x] Nuova resource `RunProgress` con almeno i campi: `run_seed: u64`, `world_index: u32`, `world_seed: u64`, `worlds_cleared: u32`, `unlocks: Unlocks` (dove `Unlocks` è una struct/enum minimale, vuota o quasi — la popolazione reale è task 046, qui serve solo il campo per non dover rifare lo shape della resource dopo). Implementata in nuovo modulo `src/run.rs` (esportato da `lib.rs`), non in `world.rs`.
-- [x] `RunProgress` è inserita come resource all'avvio, tramite `RunPlugin::build` (`app.init_resource::<RunProgress>()`), registrato in `main.rs`.
-- [x] Nuovo evento/`Message` `EraCompleted` (segue il pattern esistente di `OrganismDied`/`SpeciesExtinct` in `src/sim.rs`), emesso da `advance_tick` nello stesso punto in cui oggi incrementa `world.era` e richiama `next_state.set(EraState::Observing)`.
-- [x] `EraCompleted` è registrato come `Message`/evento in `SimPlugin` (`app.add_message::<EraCompleted>()`), oltre che nel test manuale che costruisce un `App` a mano in `sim.rs`.
-- [x] `main.rs` non introduce nuove state transition: il bypass `Loading → Playing` resta invariato — l'unica modifica è la registrazione di `RunPlugin` nella tupla dei plugin (necessaria per inserire la resource `RunProgress` all'avvio, come previsto dall'implementazione suggerita del task).
-- [x] Nessun sistema esistente legge ancora `WorldCleared`/`Defeat`/`RunProgress`/`EraCompleted` per pilotare la UI o l'input — sono solo raggiungibili/emessi, non consumati.
-- [x] `cargo clippy -- -D warnings` pulito.
-- [x] `cargo test` verde (68 test totali, nessuna regressione).
+- [x] `GameState` (`src/state.rs`) has two new variants `WorldCleared` and `Defeat`, alongside `Loading`, `MainMenu`, `Playing`.
+- [x] New `RunProgress` resource with at least the fields: `run_seed: u64`, `world_index: u32`, `world_seed: u64`, `worlds_cleared: u32`, `unlocks: Unlocks` (where `Unlocks` is a minimal struct/enum, empty or nearly so — actual population is task 046, here we only need the field so the resource's shape doesn't have to be redone later). Implemented in a new `src/run.rs` module (exported from `lib.rs`), not in `world.rs`.
+- [x] `RunProgress` is inserted as a resource at startup, via `RunPlugin::build` (`app.init_resource::<RunProgress>()`), registered in `main.rs`.
+- [x] New `EraCompleted` event/`Message` (follows the existing `OrganismDied`/`SpeciesExtinct` pattern in `src/sim.rs`), emitted by `advance_tick` at the same point where it currently increments `world.era` and calls `next_state.set(EraState::Observing)`.
+- [x] `EraCompleted` is registered as a `Message`/event in `SimPlugin` (`app.add_message::<EraCompleted>()`), as well as in the manual test that builds an `App` by hand in `sim.rs`.
+- [x] `main.rs` introduces no new state transition: the `Loading → Playing` bypass remains unchanged — the only modification is registering `RunPlugin` in the plugin tuple (needed to insert the `RunProgress` resource at startup, as required by the task's suggested implementation).
+- [x] No existing system yet reads `WorldCleared`/`Defeat`/`RunProgress`/`EraCompleted` to drive UI or input — they are only reachable/emitted, not consumed.
+- [x] `cargo clippy -- -D warnings` clean.
+- [x] `cargo test` green (68 tests total, no regressions).
 
 ---
 
@@ -39,16 +39,16 @@ Questo è deliberatamente un task "silenzioso": introduce tipi e un evento, non 
 
 | File | Role |
 |------|------|
-| `src/state.rs` | Aggiunta delle varianti `GameState::{WorldCleared, Defeat}`. |
-| `src/sim.rs` | `advance_tick` (righe ~427-450): emissione di `EraCompleted` nello stesso punto in cui oggi avviene l'incremento di `world.era`; definizione del tipo evento accanto a `OrganismDied`/`SpeciesExtinct` (righe ~20-25); registrazione in `SimPlugin`. |
-| `src/run.rs` (nuovo, da valutare) | Definizione di `RunProgress` e `Unlocks`, se si preferisce non sovraccaricare `world.rs`. |
-| `src/main.rs` | **Solo lettura** — verificare che il bypass `OnEnter(GameState::Loading) → enter_playing` resti invariato; non aggiungere qui la registrazione delle nuove plugin/resource se non strettamente necessario (va bene farlo da un nuovo `RunPlugin`, ma senza toccare la logica di stato). |
+| `src/state.rs` | Addition of the `GameState::{WorldCleared, Defeat}` variants. |
+| `src/sim.rs` | `advance_tick` (lines ~427-450): emission of `EraCompleted` at the same point where `world.era` is currently incremented; event type definition alongside `OrganismDied`/`SpeciesExtinct` (lines ~20-25); registration in `SimPlugin`. |
+| `src/run.rs` (new, to be assessed) | Definition of `RunProgress` and `Unlocks`, if it's preferable not to overload `world.rs`. |
+| `src/main.rs` | **Read-only** — verify that the `OnEnter(GameState::Loading) → enter_playing` bypass remains unchanged; do not add the registration of new plugins/resources here unless strictly necessary (it's fine to do it from a new `RunPlugin`, but without touching state logic). |
 
 ---
 
 ## 🧩 Technical Context
 
-**Stato attuale (`src/state.rs`, 32 righe, letto per intero):**
+**Current state (`src/state.rs`, 32 lines, read in full):**
 ```rust
 #[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum GameState {
@@ -67,9 +67,9 @@ pub enum EraState {
     Advancing,
 }
 ```
-`GameState::MainMenu` ed `EraState::Planning` sono oggi irraggiungibili (`#![allow(dead_code)]` in testa al file) — commentati esplicitamente come "diventano raggiungibili nelle fasi successive". Le nuove varianti `WorldCleared`/`Defeat` saranno nello stesso stato: dichiarate ma non ancora raggiunte da nessuna transizione, finché i task 041/045 non le collegano.
+`GameState::MainMenu` and `EraState::Planning` are currently unreachable (`#![allow(dead_code)]` at the top of the file) — explicitly commented as "become reachable in later phases". The new `WorldCleared`/`Defeat` variants will be in the same state: declared but not yet reached by any transition, until tasks 041/045 wire them up.
 
-**`advance_tick` attuale (`src/sim.rs`, righe ~427-450):**
+**Current `advance_tick` (`src/sim.rs`, lines ~427-450):**
 ```rust
 fn advance_tick(
     mut world: ResMut<SimWorld>,
@@ -94,26 +94,26 @@ fn advance_tick(
     }
 }
 ```
-`EraCompleted` va scritto nello stesso branch `if progress.remaining() == 0` (dopo `world.era += 1`), come nuovo parametro `mut era_completed: MessageWriter<EraCompleted>`. Contenuto minimo dell'evento: `struct EraCompleted { pub era: u32 }` (l'era appena conclusa), sufficiente per i consumer futuri (failure conditions leggeranno `world.era`/`RunProgress` direttamente dalla resource, non serve altro payload qui).
+`EraCompleted` should be written in the same `if progress.remaining() == 0` branch (after `world.era += 1`), as a new `mut era_completed: MessageWriter<EraCompleted>` parameter. Minimal event content: `struct EraCompleted { pub era: u32 }` (the era just concluded), sufficient for future consumers (failure conditions will read `world.era`/`RunProgress` directly from the resource, no other payload is needed here).
 
-**`SpeciesExtinct`/`OrganismDied` come pattern di riferimento** (`src/sim.rs`, righe ~20-25):
+**`SpeciesExtinct`/`OrganismDied` as the reference pattern** (`src/sim.rs`, lines ~20-25):
 ```rust
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SpeciesExtinct { pub species: SpeciesId }
 ```
-`EraCompleted` segue la stessa forma (`#[derive(Message, ...)]`).
+`EraCompleted` follows the same shape (`#[derive(Message, ...)]`).
 
-**`TECH_DESIGN.md` §4** documenta già la tabella eventi con `EraCompleted` assegnato a "run flow (Phase 3)" — questo task la rende reale, non introduce un concetto nuovo rispetto all'architettura documentata.
+**`TECH_DESIGN.md` §4** already documents the event table with `EraCompleted` assigned to "run flow (Phase 3)" — this task makes it real, it does not introduce a concept new to the documented architecture.
 
-- **Comportamento attuale**: non esiste alcun concetto di "run" o "mondo corrente in una sequenza" — il gioco genera un solo `SimWorld` all'avvio (seed fisso `42`) e lo si può solo riseedare manualmente col tasto `r`. Non c'è modo di sapere "quanti mondi ha superato il giocatore" o "qual è il seed della run in corso".
-- **Comportamento desiderato dopo questo task**: esistono i tipi (`GameState::{WorldCleared, Defeat}`, `RunProgress`, `EraCompleted`) su cui i task successivi costruiranno failure conditions, worldgen procedurale e transizione di mondo — ma il gioco si comporta esattamente come oggi dal punto di vista del giocatore (nessuna UI, nessuna transizione nuova raggiungibile).
+- **Current behavior**: there is no concept of a "run" or "current world within a sequence" — the game generates a single `SimWorld` at startup (fixed seed `42`) and it can only be manually reseeded with the `r` key. There's no way to know "how many worlds has the player cleared" or "what is the seed of the current run".
+- **Desired behavior after this task**: the types exist (`GameState::{WorldCleared, Defeat}`, `RunProgress`, `EraCompleted`) on which later tasks will build failure conditions, procedural worldgen, and world transition — but the game behaves exactly as it does today from the player's point of view (no UI, no newly reachable transition).
 
 ---
 
 ## 🔨 Suggested Implementation
 
-1. In `src/state.rs`, aggiungere `WorldCleared` e `Defeat` a `GameState`. Aggiornare eventuali `match` esaustivi altrove nel codice che elencano le varianti di `GameState` (`cargo build` li segnalerà come errori di compilazione se esistono — è il modo più affidabile per trovarli tutti).
-2. Decidere dove vive `RunProgress`: se il progetto preferisce un nuovo modulo dedicato (consigliato, dato che i task 044-046 lo estenderanno con logica di transizione/meta-progressione), creare `src/run.rs` con:
+1. In `src/state.rs`, add `WorldCleared` and `Defeat` to `GameState`. Update any exhaustive `match`es elsewhere in the code that list `GameState` variants (`cargo build` will flag them as compile errors if they exist — this is the most reliable way to find them all).
+2. Decide where `RunProgress` lives: if the project prefers a new dedicated module (recommended, since tasks 044-046 will extend it with transition/meta-progression logic), create `src/run.rs` with:
    ```rust
    #[derive(Resource, Debug, Clone, Default)]
    pub struct RunProgress {
@@ -125,14 +125,14 @@ pub struct SpeciesExtinct { pub species: SpeciesId }
    }
 
    #[derive(Debug, Clone, Default)]
-   pub struct Unlocks; // popolata dal task 046
+   pub struct Unlocks; // populated by task 046
    ```
-   Non serve ancora un `Plugin` dedicato se non c'è logica di sistema da registrare — può bastare `app.init_resource::<RunProgress>()` chiamato da `WorldPlugin` o da un nuovo `RunPlugin` minimale in `main.rs` (in tal caso è l'unica riga che main.rs guadagna, senza toccare la logica `Loading → Playing`).
-3. In `src/sim.rs`: aggiungere `EraCompleted` accanto a `SpeciesExtinct`, aggiungere il parametro `MessageWriter<EraCompleted>` ad `advance_tick`, emetterlo subito dopo `world.era += 1`. Registrare l'evento in `SimPlugin::build` (`app.add_message::<EraCompleted>()`, stessa API usata per gli eventi esistenti — verificare il nome esatto del metodo cercando come sono registrati `OrganismDied`/`SpeciesExtinct` nello stesso file).
-4. Eseguire `cargo build`, `cargo clippy -- -D warnings`, `cargo test` e correggere ogni `match` non esaustivo o warning di variante inutilizzata (`#[allow(dead_code)]` già presente in `state.rs` copre le nuove varianti finché restano irraggiungibili).
+   A dedicated `Plugin` isn't needed yet if there's no system logic to register — `app.init_resource::<RunProgress>()` called from `WorldPlugin` or a new minimal `RunPlugin` in `main.rs` can suffice (in that case it's the only line `main.rs` gains, without touching `Loading → Playing` logic).
+3. In `src/sim.rs`: add `EraCompleted` alongside `SpeciesExtinct`, add the `MessageWriter<EraCompleted>` parameter to `advance_tick`, emit it right after `world.era += 1`. Register the event in `SimPlugin::build` (`app.add_message::<EraCompleted>()`, same API used for existing events — verify the exact method name by checking how `OrganismDied`/`SpeciesExtinct` are registered in the same file).
+4. Run `cargo build`, `cargo clippy -- -D warnings`, `cargo test` and fix any non-exhaustive `match` or unused-variant warning (`#[allow(dead_code)]` already present in `state.rs` covers the new variants as long as they remain unreachable).
 
 ```rust
-// Esempio EraCompleted, accanto a SpeciesExtinct in src/sim.rs
+// EraCompleted example, alongside SpeciesExtinct in src/sim.rs
 #[derive(Message, Debug, Clone, Copy)]
 pub struct EraCompleted {
     pub era: u32,
@@ -143,23 +143,23 @@ pub struct EraCompleted {
 
 ## ⚠️ Constraints and Caveats
 
-- **Determinismo (TECH_DESIGN.md §5, invariante 1)**: `RunProgress::run_seed`/`world_seed` sono dati, non generati qui — questo task non introduce ancora un generatore di seed (arriva col main menu, task 044). Se serve un valore di default per `RunProgress::default()`, usare `0`, non un clock read.
-- **Nessun magic number fuori da `SimConfig`**: questo task non introduce nuovi coefficienti numerici (l'era budget vive già in `SimConfig::time`), quindi non tocca `config.rs`.
-- **`sim`/`world`/`config` restano headless** (invariante 2): `EraCompleted` e `RunProgress` non devono dipendere da `bevy::render`/`bevy_egui`.
-- **Non anticipare i task successivi**: non implementare qui il check di estinzione totale, il consumo di `EraCompleted` per il game over, o la UI del main menu — sono task 040/041/044/045. Questo task si ferma alla definizione dei tipi e all'emissione dell'evento.
-- **Stile**: seguire le convenzioni di `TECH_DESIGN.md` e il pattern esistente per eventi/resource nel resto del codebase.
+- **Determinism (TECH_DESIGN.md §5, invariant 1)**: `RunProgress::run_seed`/`world_seed` are data, not generated here — this task does not yet introduce a seed generator (it arrives with the main menu, task 044). If a default value for `RunProgress::default()` is needed, use `0`, not a clock read.
+- **No magic numbers outside `SimConfig`**: this task introduces no new numeric coefficients (the era budget already lives in `SimConfig::time`), so it doesn't touch `config.rs`.
+- **`sim`/`world`/`config` stay headless** (invariant 2): `EraCompleted` and `RunProgress` must not depend on `bevy::render`/`bevy_egui`.
+- **Don't anticipate later tasks**: don't implement the total-extinction check here, the consumption of `EraCompleted` for game over, or the main menu UI — those are tasks 040/041/044/045. This task stops at defining the types and emitting the event.
+- **Style**: follow `TECH_DESIGN.md` conventions and the existing event/resource pattern in the rest of the codebase.
 
 ---
 
 ## 🔗 Dependencies
 
-- **Depends on**: nessuno (primo task di Fase 3).
-- **Blocks**: 040 (objectives — legge `RunProgress`/può reagire a `EraCompleted`), 041 (failure conditions — consuma `GameState::Defeat`), 044 (main menu — inizializza `RunProgress.run_seed`), 045 (transizione di mondo — consuma `GameState::WorldCleared`/`Defeat` e aggiorna `RunProgress`).
+- **Depends on**: none (first task of Phase 3).
+- **Blocks**: 040 (objectives — reads `RunProgress`/can react to `EraCompleted`), 041 (failure conditions — consumes `GameState::Defeat`), 044 (main menu — initializes `RunProgress.run_seed`), 045 (world transition — consumes `GameState::WorldCleared`/`Defeat` and updates `RunProgress`).
 
 ---
 
 ## 🤖 How to delegate this task to Claude CLI
 
 ```bash
-claude "$(cat tasks/035-run-world-state-foundation.md)"$'\n\nEsegui questo task nel progetto corrente.'
+claude "$(cat tasks/035-run-world-state-foundation.md)"$'\n\nExecute this task in the current project.'
 ```

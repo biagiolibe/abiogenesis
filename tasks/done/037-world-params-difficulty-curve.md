@@ -5,35 +5,35 @@
 > **Priority**: 🔴 P1
 > **Estimate**: ~2h
 > **Assigned to**: unassigned
-> **Session**: 2026-08-04, Fase 3 planning session
+> **Session**: 2026-08-04, Phase 3 planning session
 
 ---
 
 ## 🎯 Objective
 
-GDD §9 descrive una curva di difficoltà: i primi mondi hanno 5 tag attivi e ambiente mite, salendo gradualmente fino a ~8 tag attivi, matrici più cattive, ambienti più estremi e budget di ere più corti. Il playthrough d'esempio (§16) mostra World 2 (secondo mondo) con **6** tag attivi — non un salto diretto da 5 a 8, quindi la curva è una rampa su più mondi, non due soli livelli "early"/"late".
+GDD §9 describes a difficulty curve: the first worlds have 5 active tags and a mild environment, gradually rising to ~8 active tags, nastier matrices, more extreme environments, and shorter era budgets. The example playthrough (§16) shows World 2 (second world) with **6** active tags — not a direct jump from 5 to 8, so the curve is a ramp across multiple worlds, not just two "early"/"late" levels.
 
-`SimConfig` ha già `active_tags_early/late` ed `era_budget_early/late`, ma nessun consumer li usa per interpolare — sono pensati come i due estremi di una curva mai scritta. Questo task introduce quella curva come funzione pura, testabile headless, che i task di worldgen (038, 039, 042) consumeranno.
+`SimConfig` already has `active_tags_early/late` and `era_budget_early/late`, but no consumer uses them to interpolate — they're meant as the two endpoints of a curve that was never written. This task introduces that curve as a pure, headless-testable function, which the worldgen tasks (038, 039, 042) will consume.
 
 ---
 
 ## 📋 Acceptance Criteria
 
-- [x] Nuovo modulo `src/worldgen.rs` con una funzione pura `pub fn world_params(world_index: u32, config: &SimConfig) -> WorldParams`.
-- [x] `WorldParams` include: `active_tag_count: u32`, `era_budget: u32`, `toxic_zone_width: u32`, `toxic_zone_height: u32`, `temperature_spread: f32`, `matrix_density: f32`, `objective_severity: f32`.
-- [x] Nuovo `DifficultyConfig` in `SimConfig` (campo `difficulty`) con `ramp_worlds`, `toxic_zone_width_late`, `toxic_zone_height_late`, `temperature_spread_late`, `matrix_density_late`, `objective_severity_early/late`. Nessun magic number fuori da `SimConfig`.
-- [x] **Criterio letterale dal GDD §16**: `world_params(1, &config).active_tag_count == 6` — verificato dal test `world_index_one_has_six_active_tags`.
-- [x] `world_params(0, &config)` produce esattamente i valori "early" attuali — verificato dal test `world_index_zero_matches_the_early_endpoints_exactly`.
-- [x] La rampa satura ai valori `*_late` dopo `ramp_worlds` mondi — verificato dal test `the_curve_saturates_at_the_late_endpoints_past_ramp_worlds` (anche 50 mondi oltre la rampa producono lo stesso risultato, nessun overflow).
-- [x] `world_params` è testabile senza costruire un `SimWorld`: dipende solo da `crate::config::SimConfig`.
-- [x] Test unitari: valore a `world_index=0`, valore a `world_index=1` (vincolo dei 6 tag), saturazione oltre `ramp_worlds`, più un test aggiuntivo di monotonicità decrescente del budget di ere lungo la rampa.
-- [x] `cargo clippy --all-targets -- -D warnings` pulito, `cargo test` verde (72 test totali, nessuna regressione).
+- [x] New `src/worldgen.rs` module with a pure function `pub fn world_params(world_index: u32, config: &SimConfig) -> WorldParams`.
+- [x] `WorldParams` includes: `active_tag_count: u32`, `era_budget: u32`, `toxic_zone_width: u32`, `toxic_zone_height: u32`, `temperature_spread: f32`, `matrix_density: f32`, `objective_severity: f32`.
+- [x] New `DifficultyConfig` in `SimConfig` (field `difficulty`) with `ramp_worlds`, `toxic_zone_width_late`, `toxic_zone_height_late`, `temperature_spread_late`, `matrix_density_late`, `objective_severity_early/late`. No magic numbers outside `SimConfig`.
+- [x] **Literal criterion from GDD §16**: `world_params(1, &config).active_tag_count == 6` — verified by the `world_index_one_has_six_active_tags` test.
+- [x] `world_params(0, &config)` produces exactly the current "early" values — verified by the `world_index_zero_matches_the_early_endpoints_exactly` test.
+- [x] The ramp saturates at the `*_late` values after `ramp_worlds` worlds — verified by the `the_curve_saturates_at_the_late_endpoints_past_ramp_worlds` test (even 50 worlds past the ramp produce the same result, no overflow).
+- [x] `world_params` is testable without constructing a `SimWorld`: it depends only on `crate::config::SimConfig`.
+- [x] Unit tests: value at `world_index=0`, value at `world_index=1` (the 6-tag constraint), saturation past `ramp_worlds`, plus an additional test for the decreasing monotonicity of the era budget along the ramp.
+- [x] `cargo clippy --all-targets -- -D warnings` clean, `cargo test` green (72 tests total, no regressions).
 
-## Riepilogo implementazione
+## Implementation summary
 
-- `src/config.rs`: nuovo `DifficultyConfig` (campo `SimConfig::difficulty`) con `ramp_worlds: u32 = 3` (valore minimo che riproduce esattamente il vincolo GDD §16 dei 6 tag a World 2) e gli endpoint `*_late` per zona tossica, ampiezza termica, densità matrice, severità obiettivo.
-- `src/worldgen.rs` (nuovo): `WorldParams` e `world_params()`, interpolazione lineare (`ramp_fraction`/`lerp_u32`/`lerp_f32`) da endpoint "early" (letti dai config esistenti `TagConfig`/`TimeConfig`/`EnvironmentConfig`) a endpoint "late" (nuovi campi in `DifficultyConfig`), saturata oltre `ramp_worlds`.
-- `src/lib.rs`: esportato `pub mod worldgen;`.
+- `src/config.rs`: new `DifficultyConfig` (field `SimConfig::difficulty`) with `ramp_worlds: u32 = 3` (the minimum value that exactly reproduces the GDD §16 constraint of 6 tags at World 2) and the `*_late` endpoints for toxic zone, thermal spread, matrix density, objective severity.
+- `src/worldgen.rs` (new): `WorldParams` and `world_params()`, linear interpolation (`ramp_fraction`/`lerp_u32`/`lerp_f32`) from the "early" endpoint (read from the existing `TagConfig`/`TimeConfig`/`EnvironmentConfig` configs) to the "late" endpoint (new fields in `DifficultyConfig`), saturated past `ramp_worlds`.
+- `src/lib.rs`: exported `pub mod worldgen;`.
 
 ---
 
@@ -41,15 +41,15 @@ GDD §9 descrive una curva di difficoltà: i primi mondi hanno 5 tag attivi e am
 
 | File | Role |
 |------|------|
-| `src/worldgen.rs` (nuovo) | `WorldParams`, `world_params()`, test unitari. |
-| `src/config.rs` | Nuovi campi endpoint per la curva ambientale, `difficulty_ramp_worlds`. |
-| `src/main.rs` | Registrazione del nuovo modulo (`mod worldgen;`) — nessun Plugin necessario per questo task, è solo una funzione pura. |
+| `src/worldgen.rs` (new) | `WorldParams`, `world_params()`, unit tests. |
+| `src/config.rs` | New endpoint fields for the environmental curve, `difficulty_ramp_worlds`. |
+| `src/main.rs` | Registration of the new module (`mod worldgen;`) — no Plugin needed for this task, it's just a pure function. |
 
 ---
 
 ## 🧩 Technical Context
 
-**`TimeConfig` attuale** (`src/config.rs`, righe ~84-111):
+**Current `TimeConfig`** (`src/config.rs`, lines ~84-111):
 ```rust
 pub struct TimeConfig {
     pub era_ticks: u32,               // 25
@@ -61,7 +61,7 @@ pub struct TimeConfig {
 }
 ```
 
-**`TagConfig` attuale** (`src/config.rs`, righe ~188-221):
+**Current `TagConfig`** (`src/config.rs`, lines ~188-221):
 ```rust
 pub struct TagConfig {
     pub global_tag_pool: u32,       // 10
@@ -74,43 +74,43 @@ pub struct TagConfig {
     pub matrix_density: f32,        // 0.4
 }
 ```
-Entrambi hanno endpoint `early`/`late` ma **nessun consumer** li interpola oggi — `SimWorld::new` usa solo `active_tags_early`, `advance_tick` non legge mai `era_budget_*`.
+Both have `early`/`late` endpoints but **no consumer** interpolates them today — `SimWorld::new` only uses `active_tags_early`, `advance_tick` never reads `era_budget_*`.
 
-`EnvironmentConfig` (non ancora letto in dettaglio in questo task — verificare in `config.rs`) ha oggi solo valori statici (dimensione/posizione zona tossica fissa, gradienti fissi), senza endpoint early/late: questo task li introduce.
+`EnvironmentConfig` (not yet read in detail for this task — verify in `config.rs`) currently only has static values (fixed toxic zone size/position, fixed gradients), with no early/late endpoints: this task introduces them.
 
-- **Comportamento attuale**: nessuna funzione converte "in che mondo siamo" in parametri concreti — il concetto stesso di "indice del mondo corrente" non esiste ancora nel codice prima di questo task (arriva con `RunProgress.world_index` dal task 035).
-- **Comportamento desiderato**: `world_params(world_index, config)` è la singola fonte di verità per "quanto è difficile il mondo N" — ogni asse di difficoltà (tag, budget, ambiente, densità matrice, severità obiettivo) passa da qui, invece di essere ricalcolato ad-hoc in punti diversi del worldgen.
+- **Current behavior**: no function converts "which world we're in" into concrete parameters — the very concept of "current world index" doesn't exist yet in the code before this task (it arrives with `RunProgress.world_index` from task 035).
+- **Desired behavior**: `world_params(world_index, config)` is the single source of truth for "how hard is world N" — every difficulty axis (tags, budget, environment, matrix density, objective severity) goes through here, instead of being recomputed ad hoc at different points of worldgen.
 
 ---
 
 ## 🔨 Suggested Implementation
 
-1. Leggere `EnvironmentConfig` in `config.rs` per capire i nomi esatti dei campi ambientali esistenti (zona tossica, gradiente termico) prima di aggiungere gli endpoint `*_late`.
-2. Definire `WorldParams` in `src/worldgen.rs` con i campi elencati sopra.
-3. Scrivere `world_params` come interpolazione lineare clampata: per ogni asse, `value(world_index) = early + (late - early) * min(world_index, ramp_worlds) / ramp_worlds`, arrotondata/troncata al tipo del campo (`u32` per conteggi/budget, `f32` per ampiezze).
-4. Verificare il vincolo letterale: con `active_tags_early=5`, `active_tags_late=8`, quale `difficulty_ramp_worlds` produce `active_tag_count(1) == 6`? Con una rampa lineare su 3 mondi (`ramp_worlds=3`), `world_index=1` → `5 + 3*1/3 = 6`. Impostare `difficulty_ramp_worlds` di default a un valore che soddisfi questo vincolo per l'asse dei tag, e riusarlo per gli altri assi (una sola costante di rampa, non una per asse, salvo necessità emersa in fase di implementazione).
-5. Aggiungere i test unitari elencati nei criteri di accettazione.
+1. Read `EnvironmentConfig` in `config.rs` to understand the exact names of the existing environmental fields (toxic zone, thermal gradient) before adding the `*_late` endpoints.
+2. Define `WorldParams` in `src/worldgen.rs` with the fields listed above.
+3. Write `world_params` as a clamped linear interpolation: for each axis, `value(world_index) = early + (late - early) * min(world_index, ramp_worlds) / ramp_worlds`, rounded/truncated to the field's type (`u32` for counts/budgets, `f32` for spreads).
+4. Verify the literal constraint: with `active_tags_early=5`, `active_tags_late=8`, which `difficulty_ramp_worlds` produces `active_tag_count(1) == 6`? With a linear ramp over 3 worlds (`ramp_worlds=3`), `world_index=1` → `5 + 3*1/3 = 6`. Set `difficulty_ramp_worlds`'s default to a value that satisfies this constraint for the tag axis, and reuse it for the other axes (a single ramp constant, not one per axis, unless a need emerges during implementation).
+5. Add the unit tests listed in the acceptance criteria.
 
 ---
 
 ## ⚠️ Constraints and Caveats
 
-- **Funzione pura**: `world_params` non deve leggere `SimWorld`, RNG, o stato mutabile — solo `world_index` e `config`. Questo la rende testabile senza bootstrap Bevy.
-- **Nessun magic number**: ogni endpoint/costante di rampa vive in `SimConfig`, non come letterale in `worldgen.rs`.
-- **Non generare ancora nulla di procedurale qui**: questo task produce solo *parametri*, non seleziona tag/ambiente/specie/obiettivi concreti — quello è compito dei task 038, 039, 042 che consumano `WorldParams`.
-- **Coerenza col modello endless-until-failure**: la curva deve restare sensata anche per `world_index` arbitrariamente alto (saturazione, non estrapolazione illimitata).
+- **Pure function**: `world_params` must not read `SimWorld`, RNG, or mutable state — only `world_index` and `config`. This makes it testable without a Bevy bootstrap.
+- **No magic numbers**: every endpoint/ramp constant lives in `SimConfig`, not as a literal in `worldgen.rs`.
+- **Don't generate anything procedural here yet**: this task only produces *parameters*, it doesn't select concrete tags/environment/species/objectives — that's the job of tasks 038, 039, 042, which consume `WorldParams`.
+- **Consistency with the endless-until-failure model**: the curve must remain sensible even for arbitrarily high `world_index` (saturation, not unbounded extrapolation).
 
 ---
 
 ## 🔗 Dependencies
 
-- **Depends on**: nessuno (parallelo al task 036).
-- **Blocks**: 038 (worldgen consuma `WorldParams` per tag/ambiente), 042 (consuma `objective_severity`).
+- **Depends on**: none (parallel to task 036).
+- **Blocks**: 038 (worldgen consumes `WorldParams` for tags/environment), 042 (consumes `objective_severity`).
 
 ---
 
 ## 🤖 How to delegate this task to Claude CLI
 
 ```bash
-claude "$(cat tasks/037-world-params-difficulty-curve.md)"$'\n\nEsegui questo task nel progetto corrente.'
+claude "$(cat tasks/037-world-params-difficulty-curve.md)"$'\n\nExecute this task in the current project.'
 ```

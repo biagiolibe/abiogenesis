@@ -5,25 +5,25 @@
 > **Priority**: 🟡 P2
 > **Estimate**: ~1-2h
 > **Assigned to**: unassigned
-> **Session**: 2026-08-04, Fase 3 planning session
+> **Session**: 2026-08-04, Phase 3 planning session
 
 ---
 
 ## 🎯 Objective
 
-GDD §11 elenca "current objective" tra i pannelli HUD sempre visibili. `ui.rs:243` ha già un commento placeholder letterale (`// Placeholder: objective arrives in Phase 3 (GDD §8).`) nel gruppo HUD popolazione/seed-palette, subito prima della riga dei tasti di aiuto — questo task lo riempie con un pannello obiettivo corrente + barra di progresso, leggendo `ObjectiveProgress` (task 040).
+GDD §11 lists "current objective" among the always-visible HUD panels. `ui.rs:243` already has a literal placeholder comment (`// Placeholder: objective arrives in Phase 3 (GDD §8).`) in the population/seed-palette HUD group, right before the help-keys line — this task fills it with a current-objective panel + progress bar, reading `ObjectiveProgress` (task 040).
 
 ---
 
 ## 📋 Acceptance Criteria
 
-- [ ] Il placeholder a `ui.rs:243` è sostituito da un pannello che mostra: il testo dell'obiettivo corrente, e una barra di progresso verso il suo soddisfacimento.
-- [ ] La barra di progresso riusa il pattern visivo già stabilito dalla barra `ActionBudget` (`ui.rs:171, 202-212`, task 030) — coerenza visiva con l'HUD esistente, non un widget nuovo.
-- [ ] Ogni stringa mostrata passa da `src/text.rs` (nuova sezione, es. `// --- Objective HUD (ui.rs::objective_panel) ---`), coerente col task 034 — nessuna stringa hardcoded in `ui.rs`.
-- [ ] Il pannello è sempre visibile durante `GameState::Playing` (coerente con GDD §11).
-- [ ] Il testo dell'obiettivo è generato a partire dai dati di `Objective`/`ObjectiveProgress` (task 040) — `text.rs` non accede a `SimWorld` direttamente (vincolo esistente del modulo, vedi header di `text.rs`), quindi la formattazione dei valori concreti (es. "3 specie coesistenti da 12 tick su 50") avviene in `ui.rs`, che poi chiama una funzione parametrizzata di `text.rs` per il template della frase.
-- [ ] `cargo clippy -- -D warnings` pulito.
-- [ ] Verifica manuale: avviare il gioco (con un obiettivo di test se il worldgen procedurale non è ancora integrato) e osservare che il pannello si aggiorna in tempo reale seguendo `ObjectiveProgress`.
+- [ ] The placeholder at `ui.rs:243` is replaced by a panel showing: the current objective's text, and a progress bar toward its satisfaction.
+- [ ] The progress bar reuses the visual pattern already established by the `ActionBudget` bar (`ui.rs:171, 202-212`, task 030) — visual consistency with the existing HUD, not a new widget.
+- [ ] Every displayed string goes through `src/text.rs` (new section, e.g. `// --- Objective HUD (ui.rs::objective_panel) ---`), consistent with task 034 — no hardcoded string in `ui.rs`.
+- [ ] The panel is always visible during `GameState::Playing` (consistent with GDD §11).
+- [ ] The objective's text is generated from `Objective`/`ObjectiveProgress` data (task 040) — `text.rs` doesn't access `SimWorld` directly (existing module constraint, see `text.rs`'s header), so formatting the concrete values (e.g. "3 coexisting species for 12 of 50 ticks") happens in `ui.rs`, which then calls a parametrized `text.rs` function for the sentence template.
+- [ ] `cargo clippy -- -D warnings` clean.
+- [ ] Manual verification: start the game (with a test objective if procedural worldgen isn't integrated yet) and observe that the panel updates in real time following `ObjectiveProgress`.
 
 ---
 
@@ -31,47 +31,47 @@ GDD §11 elenca "current objective" tra i pannelli HUD sempre visibili. `ui.rs:2
 
 | File | Role |
 |------|------|
-| `src/ui.rs` | Riga 243 (placeholder), pattern della barra `ActionBudget` (righe 171, 202-212) da imitare. |
-| `src/text.rs` | Nuova sezione per le stringhe/template dell'obiettivo. |
+| `src/ui.rs` | Line 243 (placeholder), the `ActionBudget` bar pattern (lines 171, 202-212) to imitate. |
+| `src/text.rs` | New section for the objective's strings/templates. |
 
 ---
 
 ## 🧩 Technical Context
 
-**`text.rs`** (153 righe, task 034): modulo di sole costanti/funzioni pure per testo player-facing, organizzato in blocchi `// --- Section (source_file::fn) ---`. Non accede mai a `SimWorld` direttamente — i dati derivati dallo stato vivono altrove, il modulo fornisce solo stringhe/template parametrizzati (es. `extinction_message(species_id)`, pattern da imitare per un ipotetico `objective_progress_line(current, target)`).
+**`text.rs`** (153 lines, task 034): module of pure constants/functions only for player-facing text, organized into `// --- Section (source_file::fn) ---` blocks. It never accesses `SimWorld` directly — data derived from state lives elsewhere, the module only provides parametrized strings/templates (e.g. `extinction_message(species_id)`, a pattern to imitate for a hypothetical `objective_progress_line(current, target)`).
 
-- **Comportamento attuale**: nessun pannello obiettivo esiste — il commento a `ui.rs:243` è l'unico segnale che questo lavoro è previsto.
-- **Comportamento desiderato**: il giocatore vede sempre, durante `Playing`, quale obiettivo deve soddisfare e quanto è vicino a soddisfarlo, con lo stesso linguaggio visivo delle altre barre HUD.
+- **Current behavior**: no objective panel exists — the comment at `ui.rs:243` is the only signal that this work is planned.
+- **Desired behavior**: the player always sees, during `Playing`, which objective must be satisfied and how close they are to satisfying it, with the same visual language as the other HUD bars.
 
 ---
 
 ## 🔨 Suggested Implementation
 
-1. Leggere `ui.rs` attorno alla riga 243 per capire esattamente il layout del gruppo HUD in cui va inserito il pannello.
-2. Leggere il pattern della barra `ActionBudget` (righe 171, 202-212) per riusarne la struttura (widget egui, colori, layout).
-3. Aggiungere in `text.rs` le funzioni/costanti necessarie per il testo dell'obiettivo (nome variante, descrizione parametrizzata, eventuale messaggio di "obiettivo soddisfatto").
-4. Implementare il pannello in `ui.rs`, leggendo `ObjectiveProgress` come resource.
-5. Verifica manuale con `cargo run`.
+1. Read `ui.rs` around line 243 to understand exactly the layout of the HUD group where the panel goes.
+2. Read the `ActionBudget` bar pattern (lines 171, 202-212) to reuse its structure (egui widget, colors, layout).
+3. Add to `text.rs` the functions/constants needed for the objective's text (variant name, parametrized description, possible "objective satisfied" message).
+4. Implement the panel in `ui.rs`, reading `ObjectiveProgress` as a resource.
+5. Manual verification with `cargo run`.
 
 ---
 
 ## ⚠️ Constraints and Caveats
 
-- **`sim`/`world`/`config` restano headless**: questo task tocca solo `ui.rs`/`text.rs`, non deve introdurre dipendenze da `bevy_egui` in `objectives.rs`.
-- **Coerenza con task 034**: nessuna stringa nuova hardcoded in `ui.rs` — tutto passa da `text.rs`.
-- **Non anticipare le schermate di vittoria/sconfitta**: quelle sono task 045, questo task riguarda solo l'HUD durante il gioco attivo.
+- **`sim`/`world`/`config` stay headless**: this task only touches `ui.rs`/`text.rs`, it must not introduce `bevy_egui` dependencies in `objectives.rs`.
+- **Consistency with task 034**: no new hardcoded string in `ui.rs` — everything goes through `text.rs`.
+- **Don't anticipate the victory/defeat screens**: those are task 045, this task only concerns the HUD during active play.
 
 ---
 
 ## 🔗 Dependencies
 
 - **Depends on**: 040 (`ObjectiveProgress`).
-- **Blocks**: nessuno (foglia del grafo, non blocca altri task).
+- **Blocks**: none (leaf of the graph, doesn't block other tasks).
 
 ---
 
 ## 🤖 How to delegate this task to Claude CLI
 
 ```bash
-claude "$(cat tasks/043-objective-hud.md)"$'\n\nEsegui questo task nel progetto corrente.'
+claude "$(cat tasks/043-objective-hud.md)"$'\n\nExecute this task in the current project.'
 ```

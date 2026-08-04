@@ -3,30 +3,30 @@
 > **ID**: `045`
 > **Category**: Feature / UI
 > **Priority**: 🔴 P1
-> **Estimate**: ~3h (task di convergenza — integra quasi tutti i task precedenti di Fase 3)
+> **Estimate**: ~3h (convergence task — integrates nearly all previous Phase 3 tasks)
 > **Assigned to**: unassigned
-> **Session**: 2026-08-04, Fase 3 planning session
+> **Session**: 2026-08-04, Phase 3 planning session
 
 ---
 
 ## 🎯 Objective
 
-Questo è il task di convergenza della Fase 3: collega worldgen (038/039/042), obiettivi/fallimento (040/041), stato/run (035) e main menu (044) in un ciclo completo. Introduce le schermate interstiziali `GameState::WorldCleared` (successo → mondo successivo, più tag, matrice più cattiva, ambiente più ostile — GDD §8) e `GameState::Defeat` (fine run, ritorno al main menu).
+This is Phase 3's convergence task: it connects worldgen (038/039/042), objectives/failure (040/041), state/run (035), and the main menu (044) into a complete loop. It introduces the interstitial screens `GameState::WorldCleared` (success → next world, more tags, nastier matrix, more hostile environment — GDD §8) and `GameState::Defeat` (end of run, return to the main menu).
 
-Il punto tecnico centrale è estrarre `reseed_world` (`src/input.rs`, righe ~107-147, il codice dietro il tasto `r`) in una funzione condivisa `start_world(&mut World, world_index, seed)` che resetta **tutto** ciò che il tasto `r` resetta oggi — `MatrixKnowledge`, `ObservationLog`, `ActionBudget`, `SelectedSpecies`, `SpliceDraft`, `PlayerPlacedCells` — **più** `ObjectiveProgress` (task 040) e `world.era = 0`, applicando `WorldParams`/l'obiettivo del nuovo mondo (038/042). Sia il tasto `r` sia la transizione `WorldCleared`/nuova run la chiamano: **un solo punto di verità per il reset**, niente logica duplicata tra i due percorsi.
+The central technical point is to extract `reseed_world` (`src/input.rs`, lines ~107-147, the code behind the `r` key) into a shared `start_world(&mut World, world_index, seed)` function that resets **everything** the `r` key resets today — `MatrixKnowledge`, `ObservationLog`, `ActionBudget`, `SelectedSpecies`, `SpliceDraft`, `PlayerPlacedCells` — **plus** `ObjectiveProgress` (task 040) and `world.era = 0`, applying the new world's `WorldParams`/objective (038/042). Both the `r` key and the `WorldCleared`/new-run transition call it: **a single source of truth for the reset**, no duplicated logic between the two paths.
 
 ---
 
 ## 📋 Acceptance Criteria
 
-- [ ] Funzione condivisa `start_world(...)` (nome indicativo, adattare allo stile del codice) che effettua il reset completo elencato sopra, riusata sia dal tasto `r` (`input.rs`) sia dalla transizione di mondo di questo task.
-- [ ] Interstiziale `GameState::WorldCleared`: mostrato quando `evaluate` (task 040) produce `Cleared`; incrementa `RunProgress.world_index` e `RunProgress.worlds_cleared`; genera il mondo successivo tramite `start_world` con i parametri di `WorldParams(world_index + 1)` (037/038); un'azione esplicita (o un timer/tasto) porta a `GameState::Playing` sul nuovo mondo.
-- [ ] Interstiziale `GameState::Defeat`: mostrato quando `evaluate`/le failure conditions (task 041) producono `Failed`; riporta a `GameState::MainMenu` (non a `Playing`) — la run è finita, una nuova run richiede di passare dal menu.
-- [ ] Entrambe le schermate hanno testo in `src/text.rs` (nuova sezione), coerente col task 034.
-- [ ] Nessuna duplicazione: il tasto `r` e la transizione di mondo chiamano la stessa funzione di reset — verificabile leggendo il diff, non due implementazioni parallele.
-- [ ] **Criterio end-to-end**: una run avviata con `run_seed` pinnato (task 044) riproduce la stessa sequenza di mondi (tag attivi, matrice, ambiente, obiettivo) su almeno 2 transizioni consecutive — verificabile con un test che avanza la run programmaticamente per due cicli mondo-superato.
-- [ ] `cargo clippy -- -D warnings` pulito, `cargo test` verde.
-- [ ] Verifica manuale: `cargo run`, avviare una run, superare un mondo (o forzarlo per il test manuale), osservare l'interstiziale, osservare il mondo successivo con parametri di difficoltà coerenti con `world_index=1`; far fallire un mondo, osservare la schermata di sconfitta, tornare al menu.
+- [ ] Shared function `start_world(...)` (indicative name, adapt to code style) that performs the full reset listed above, reused both by the `r` key (`input.rs`) and by this task's world transition.
+- [ ] `GameState::WorldCleared` interstitial: shown when `evaluate` (task 040) produces `Cleared`; increments `RunProgress.world_index` and `RunProgress.worlds_cleared`; generates the next world via `start_world` with `WorldParams(world_index + 1)`'s parameters (037/038); an explicit action (or a timer/key) leads to `GameState::Playing` on the new world.
+- [ ] `GameState::Defeat` interstitial: shown when `evaluate`/the failure conditions (task 041) produce `Failed`; returns to `GameState::MainMenu` (not to `Playing`) — the run is over, a new run requires going through the menu.
+- [ ] Both screens have text in `src/text.rs` (new section), consistent with task 034.
+- [ ] No duplication: the `r` key and the world transition call the same reset function — verifiable by reading the diff, not two parallel implementations.
+- [ ] **End-to-end criterion**: a run started with a pinned `run_seed` (task 044) reproduces the same sequence of worlds (active tags, matrix, environment, objective) over at least 2 consecutive transitions — verifiable with a test that advances the run programmatically for two world-cleared cycles.
+- [ ] `cargo clippy -- -D warnings` clean, `cargo test` green.
+- [ ] Manual verification: `cargo run`, start a run, clear a world (or force it for manual testing), observe the interstitial, observe the next world with difficulty parameters consistent with `world_index=1`; fail a world, observe the defeat screen, return to the menu.
 
 ---
 
@@ -34,53 +34,53 @@ Il punto tecnico centrale è estrarre `reseed_world` (`src/input.rs`, righe ~107
 
 | File | Role |
 |------|------|
-| `src/input.rs` | `reseed_world` (righe ~107-147) — estratta nella funzione condivisa `start_world`, il tasto `r` aggiornato per chiamarla. |
-| `src/state.rs` | Uso effettivo delle varianti `WorldCleared`/`Defeat` (già dichiarate dal task 035). |
-| `src/run.rs` / `src/menu.rs` (o nuovo modulo dedicato) | Logica di transizione mondo, UI delle due schermate. |
-| `src/text.rs` | Nuove sezioni per i testi delle due schermate. |
+| `src/input.rs` | `reseed_world` (lines ~107-147) — extracted into the shared `start_world` function, the `r` key updated to call it. |
+| `src/state.rs` | Actual use of the `WorldCleared`/`Defeat` variants (already declared by task 035). |
+| `src/run.rs` / `src/menu.rs` (or a new dedicated module) | World-transition logic, UI of the two screens. |
+| `src/text.rs` | New sections for the two screens' text. |
 
 ---
 
 ## 🧩 Technical Context
 
-**`reseed_world`** (`src/input.rs`, righe ~107-147, tasto `r`): ricostruisce `SimWorld` da un nuovo seed (preso da `world.next_seed()`, mai dall'orologio di sistema), poi resetta esplicitamente: `MatrixKnowledge`, `ObservationLog` (notebook), `ActionBudget`, `SelectedSpecies`, `SpliceDraft`, `PlayerPlacedCells`. Questo è il precedente concreto più vicino a "cosa deve fare `start_world`" — la funzione di questo task è una generalizzazione di questo codice, non una riscrittura da zero.
+**`reseed_world`** (`src/input.rs`, lines ~107-147, `r` key): rebuilds `SimWorld` from a new seed (taken from `world.next_seed()`, never from the system clock), then explicitly resets: `MatrixKnowledge`, `ObservationLog` (notebook), `ActionBudget`, `SelectedSpecies`, `SpliceDraft`, `PlayerPlacedCells`. This is the closest concrete precedent for "what `start_world` must do" — this task's function is a generalization of this code, not a rewrite from scratch.
 
-- **Comportamento attuale**: l'unico modo di ottenere un "nuovo mondo" è il tasto `r`, che riparte sempre dagli stessi parametri di difficoltà (non esiste un concetto di "mondo successivo in una run" prima di questo task).
-- **Comportamento desiderato**: superare l'obiettivo di un mondo porta automaticamente (dietro un'interazione esplicita del giocatore) al mondo successivo, più difficile; fallire riporta al main menu, chiudendo la run. Il tasto `r` continua a funzionare come "reseed manuale" ma tramite lo stesso meccanismo di reset, non una copia.
+- **Current behavior**: the only way to get a "new world" is the `r` key, which always restarts from the same difficulty parameters (the concept of "next world in a run" doesn't exist before this task).
+- **Desired behavior**: clearing a world's objective automatically leads (behind an explicit player interaction) to the next, harder world; failing returns to the main menu, ending the run. The `r` key keeps working as a "manual reseed" but through the same reset mechanism, not a copy.
 
-⚠️ **Bug latente scoperto durante il task 038, da risolvere qui**: `MatrixKnowledge::new(config.tags.active_tags_early as usize, ...)` è chiamata con la costante fissa `active_tags_early` (5) in due punti — `notebook.rs::NotebookPlugin::build` e `input.rs::reseed_world`. Da quando il task 038 ha reso `active_tag_count` variabile con `world_index` (mondi tardivi arrivano a 8 tag), una `MatrixKnowledge` dimensionata a 5 andrebbe fuori dai limiti (`record`/`evidence` calcolano `exerter.0 * size + receiver.0` in un vettore da `size*size` elementi) non appena un mondo con più di 5 tag attivi viene generato — panic garantito. Quando questo task introduce `start_world`, la chiamata a `MatrixKnowledge::new` al suo interno **deve** usare `world.active_tags.len()` (la dimensione reale del mondo appena generato), non la costante di config. Verificare anche `NotebookPlugin::build`: se il primo mondo può già avere più di 5 tag (dipende da come 044 inizializza `world_index`), va corretto anche lì.
+⚠️ **Latent bug discovered during task 038, to be resolved here**: `MatrixKnowledge::new(config.tags.active_tags_early as usize, ...)` is called with the fixed constant `active_tags_early` (5) in two places — `notebook.rs::NotebookPlugin::build` and `input.rs::reseed_world`. Since task 038 made `active_tag_count` variable with `world_index` (later worlds reach 8 tags), a `MatrixKnowledge` sized to 5 would go out of bounds (`record`/`evidence` compute `exerter.0 * size + receiver.0` into a `size*size`-element vector) as soon as a world with more than 5 active tags is generated — a guaranteed panic. When this task introduces `start_world`, the `MatrixKnowledge::new` call inside it **must** use `world.active_tags.len()` (the newly generated world's actual size), not the config constant. Also check `NotebookPlugin::build`: if the first world can already have more than 5 tags (depends on how 044 initializes `world_index`), it needs to be fixed there too.
 
 ---
 
 ## 🔨 Suggested Implementation
 
-1. Leggere per intero `reseed_world` in `input.rs` prima di estrarla.
-2. Definire `start_world(world: &mut SimWorld, ..., world_index: u32, seed: u64, config: &SimConfig)` (firma indicativa) che fa: ricostruzione `SimWorld` dal seed e da `WorldParams(world_index)` (038), reset delle resource elencate, applicazione dell'obiettivo generato (042), reset `world.era = 0`.
-3. Aggiornare il tasto `r` in `input.rs` per chiamare `start_world` con lo stesso `world_index` corrente (reseed dello stesso mondo, non avanzamento) — verificare che il comportamento visibile del tasto `r` resti quello atteso (rigenera il mondo corrente, non avanza la run).
-4. Implementare la transizione `WorldCleared`: sistema che osserva l'esito `Cleared` (da 040/041), incrementa `RunProgress`, chiama `start_world` con `world_index + 1`, transiziona lo stato.
-5. Implementare la transizione `Defeat`: sistema che osserva l'esito `Failed`, transiziona a `GameState::Defeat`, e da lì (su interazione) a `GameState::MainMenu`.
-6. Scrivere il test end-to-end di riproducibilità su 2 transizioni.
-7. Verifica manuale completa.
+1. Read `reseed_world` in `input.rs` in full before extracting it.
+2. Define `start_world(world: &mut SimWorld, ..., world_index: u32, seed: u64, config: &SimConfig)` (indicative signature) that: rebuilds `SimWorld` from the seed and `WorldParams(world_index)` (038), resets the listed resources, applies the generated objective (042), resets `world.era = 0`.
+3. Update the `r` key in `input.rs` to call `start_world` with the same current `world_index` (reseeding the same world, not advancing) — verify that the `r` key's visible behavior stays as expected (regenerates the current world, doesn't advance the run).
+4. Implement the `WorldCleared` transition: a system that observes the `Cleared` outcome (from 040/041), increments `RunProgress`, calls `start_world` with `world_index + 1`, transitions the state.
+5. Implement the `Defeat` transition: a system that observes the `Failed` outcome, transitions to `GameState::Defeat`, and from there (on interaction) to `GameState::MainMenu`.
+6. Write the end-to-end reproducibility test over 2 transitions.
+7. Full manual verification.
 
 ---
 
 ## ⚠️ Constraints and Caveats
 
-- **Nessuna duplicazione di reset**: è il vincolo centrale di questo task — se il tasto `r` e la transizione di mondo finiscono per avere due implementazioni simili ma distinte, il task non è completo.
-- **Determinismo end-to-end**: il criterio di accettazione sulla riproducibilità su 2 transizioni è il test più importante di tutta la Fase 3 — se fallisce, probabilmente c'è una fonte di non-determinismo introdotta in uno dei task precedenti (RNG esterno, iterazione `HashMap`, ecc.), da investigare prima di considerare questo task chiuso.
-- **`Defeat` non torna a `Playing`**: torna a `MainMenu` — la run è conclusa, non è un game over che si può "continuare".
+- **No duplicated reset**: this is the central constraint of this task — if the `r` key and the world transition end up with two similar but distinct implementations, the task isn't complete.
+- **End-to-end determinism**: the acceptance criterion on reproducibility over 2 transitions is the most important test of all of Phase 3 — if it fails, there's probably a source of non-determinism introduced in one of the earlier tasks (external RNG, `HashMap` iteration, etc.), to investigate before considering this task closed.
+- **`Defeat` doesn't return to `Playing`**: it returns to `MainMenu` — the run is concluded, it's not a game over you can "continue".
 
 ---
 
 ## 🔗 Dependencies
 
 - **Depends on**: 035, 038, 039, 040, 041, 042, 044.
-- **Blocks**: 046 (meta-progressione si aggancia alla transizione di run qui introdotta).
+- **Blocks**: 046 (meta-progression hooks into the run transition introduced here).
 
 ---
 
 ## 🤖 How to delegate this task to Claude CLI
 
 ```bash
-claude "$(cat tasks/045-world-transition-defeat-screens.md)"$'\n\nEsegui questo task nel progetto corrente.'
+claude "$(cat tasks/045-world-transition-defeat-screens.md)"$'\n\nExecute this task in the current project.'
 ```

@@ -5,28 +5,28 @@
 > **Priority**: 🔴 P1
 > **Estimate**: ~2h
 > **Assigned to**: unassigned
-> **Session**: 2026-08-04, Fase 3 planning session
+> **Session**: 2026-08-04, Phase 3 planning session
 
 ---
 
 ## 🎯 Objective
 
-GDD §8, failure conditions [DECIDED]: estinzione totale → fallimento immediato (il floor ovvio); budget di ere per mondo generoso ma finito (baseline: 40 ere nei mondi iniziali, verso 25 nei mondi tardivi) — un giocatore bloccato fallisce invece di macinare all'infinito, ed è questo che dà tensione roguelike.
+GDD §8, failure conditions [DECIDED]: total extinction → immediate failure (the obvious floor); a generous but finite per-world era budget (baseline: 40 eras in the initial worlds, moving toward 25 in later worlds) — a stuck player fails instead of grinding forever, and that's what gives roguelike tension.
 
-Oggi nessuno dei due controlli esiste: `SpeciesExtinct` (evento esistente, task 018) è emesso per-specie ma nessun sistema verifica se *tutte* le specie sono estinte simultaneamente; `TimeConfig::era_budget_early/late` è definito in `SimConfig` ma mai letto da `advance_tick`. Questo task collega entrambi al tipo `WorldOutcome` condiviso col task 040 e a `GameState::Defeat` (task 035).
+Today neither check exists: `SpeciesExtinct` (existing event, task 018) is emitted per-species but no system checks whether *all* species are extinct simultaneously; `TimeConfig::era_budget_early/late` is defined in `SimConfig` but never read by `advance_tick`. This task wires both into the `WorldOutcome` type shared with task 040 and into `GameState::Defeat` (task 035).
 
 ---
 
 ## 📋 Acceptance Criteria
 
-- [ ] Tipo condiviso con 040, es. `enum WorldOutcome { Ongoing, Cleared, Failed(FailureReason) }` (o forma equivalente) — se 040 non lo ha già introdotto, definirlo qui in `objectives.rs` o in un modulo condiviso.
-- [ ] Controllo di **estinzione totale**: se l'occupazione della griglia è 0 (nessun organismo vivo), l'esito diventa `Failed` nello stesso tick in cui accade — con una guardia esplicita contro il falso positivo del frame prima del seeding iniziale (il mondo parte vuoto per un istante prima che le specie di partenza vengano piazzate).
-- [ ] Controllo di **budget di ere esaurito**: `advance_tick` (o un sistema immediatamente successivo) confronta `world.era` con `WorldParams.era_budget` (task 037/038) — se il budget è esaurito senza che l'obiettivo sia stato soddisfatto, l'esito diventa `Failed`.
-- [ ] Quando l'esito è `Failed`, il gioco transiziona a `GameState::Defeat` (varianti introdotte nel task 035).
-- [ ] Test unitario: mondo hand-built che esaurisce il budget di ere senza soddisfare l'obiettivo → `Failed`.
-- [ ] Test unitario: mondo hand-built che raggiunge occupazione zero → `Failed` nello stesso tick, non un tick di ritardo.
-- [ ] Nessun falso positivo di estinzione totale nel tick di inizializzazione (prima che `seed_starting_palette`/il generatore del task 039 abbia piazzato le specie).
-- [ ] `cargo clippy -- -D warnings` pulito, `cargo test` verde.
+- [ ] Type shared with 040, e.g. `enum WorldOutcome { Ongoing, Cleared, Failed(FailureReason) }` (or an equivalent form) — if 040 hasn't already introduced it, define it here in `objectives.rs` or in a shared module.
+- [ ] **Total extinction** check: if grid occupancy is 0 (no living organism), the outcome becomes `Failed` in the same tick it happens — with an explicit guard against the false positive of the frame before initial seeding (the world starts empty for an instant before the starting species are placed).
+- [ ] **Era budget exhausted** check: `advance_tick` (or a system immediately after it) compares `world.era` against `WorldParams.era_budget` (task 037/038) — if the budget is exhausted without the objective having been satisfied, the outcome becomes `Failed`.
+- [ ] When the outcome is `Failed`, the game transitions to `GameState::Defeat` (variants introduced in task 035).
+- [ ] Unit test: hand-built world that exhausts the era budget without satisfying the objective → `Failed`.
+- [ ] Unit test: hand-built world that reaches zero occupancy → `Failed` in the same tick, not one tick late.
+- [ ] No false positive of total extinction in the initialization tick (before `seed_starting_palette`/task 039's generator has placed the species).
+- [ ] `cargo clippy -- -D warnings` clean, `cargo test` green.
 
 ---
 
@@ -34,14 +34,14 @@ Oggi nessuno dei due controlli esiste: `SpeciesExtinct` (evento esistente, task 
 
 | File | Role |
 |------|------|
-| `src/sim.rs` | `advance_tick` — punto dove aggiungere il controllo di budget di ere; eventuale hook per l'estinzione totale. |
-| `src/objectives.rs` | Tipo `WorldOutcome` condiviso, se non già presente dal task 040. |
+| `src/sim.rs` | `advance_tick` — point to add the era-budget check; possible hook for total extinction. |
+| `src/objectives.rs` | Shared `WorldOutcome` type, if not already present from task 040. |
 
 ---
 
 ## 🧩 Technical Context
 
-**`advance_tick` attuale** (`src/sim.rs`, righe ~427-450, vedi anche task 035 per l'estensione con `EraCompleted`):
+**Current `advance_tick`** (`src/sim.rs`, lines ~427-450, see also task 035 for the extension with `EraCompleted`):
 ```rust
 if progress.remaining() == 0 {
     world.era += 1;
@@ -49,43 +49,43 @@ if progress.remaining() == 0 {
     next_state.set(EraState::Observing);
 }
 ```
-Questo è il punto naturale per il controllo di budget: subito dopo `world.era += 1`, confrontare con `WorldParams.era_budget` del mondo corrente.
+This is the natural point for the budget check: right after `world.era += 1`, compare against the current world's `WorldParams.era_budget`.
 
-**`SpeciesExtinct`** (`src/sim.rs`, righe ~20-25): emesso per-specie quando l'ultima organism di quella specie muore (rilevato via diff di popolazione pre/post-tick, riga ~286). Non implica estinzione *totale* — serve un controllo separato sull'occupazione complessiva della griglia.
+**`SpeciesExtinct`** (`src/sim.rs`, lines ~20-25): emitted per-species when the last organism of that species dies (detected via a pre/post-tick population diff, line ~286). It does not imply *total* extinction — a separate check on overall grid occupancy is needed.
 
-- **Comportamento attuale**: un mondo può proseguire all'infinito anche con zero organismi vivi o ben oltre qualunque budget ragionevole di ere — non esiste alcun "game over".
-- **Comportamento desiderato**: il giocatore riceve un fallimento esplicito e tempestivo in entrambi i casi, coerente col design "roguelike tension" del GDD §8.
+- **Current behavior**: a world can proceed indefinitely even with zero living organisms or well past any reasonable era budget — there is no "game over" at all.
+- **Desired behavior**: the player receives an explicit, timely failure in both cases, consistent with the "roguelike tension" design of GDD §8.
 
 ---
 
 ## 🔨 Suggested Implementation
 
-1. Verificare/definire `WorldOutcome` in coordinamento con quanto prodotto dal task 040 (se eseguito prima, riusarne il tipo; se questo task viene eseguito per primo tra i due, definirlo qui e farlo riusare da 040 — decidere in base all'ordine di esecuzione reale).
-2. Aggiungere un sistema (o estendere quello del task 040) che, dopo `advance_tick`, controlla l'occupazione totale della griglia (`world.cells` — verificare il nome esatto del campo/metodo di conteggio occupazione in `world.rs`).
-3. Nello stesso branch `if progress.remaining() == 0` di `advance_tick`, aggiungere il confronto `world.era >= era_budget_corrente` (da `WorldParams`, disponibile solo dopo il task 038 — se questo task viene eseguito prima di 038/039 essere completati nel branch di sviluppo, usare `WorldParams` con un `world_index` fisso/di test finché l'integrazione reale non è disponibile, ma il codice di produzione deve leggere il valore reale).
-4. Collegare l'esito `Failed` alla transizione `next_state.set(GameState::Defeat)`.
-5. Scrivere i test con mondi hand-built (pattern esistente in `sim.rs`).
+1. Verify/define `WorldOutcome` in coordination with what task 040 produces (if executed first, reuse its type; if this task is executed first between the two, define it here and have 040 reuse it — decide based on the actual execution order).
+2. Add a system (or extend task 040's) that, after `advance_tick`, checks total grid occupancy (`world.cells` — verify the exact field/counting-method name in `world.rs`).
+3. In the same `if progress.remaining() == 0` branch of `advance_tick`, add the comparison `world.era >= era_budget_corrente` (from `WorldParams`, available only after task 038 — if this task is executed before 038/039 are completed on the development branch, use `WorldParams` with a fixed/test `world_index` until the real integration is available, but production code must read the real value).
+4. Wire the `Failed` outcome to the `next_state.set(GameState::Defeat)` transition.
+5. Write the tests with hand-built worlds (existing pattern in `sim.rs`).
 
 ---
 
 ## ⚠️ Constraints and Caveats
 
-- **Determinismo**: nessun controllo qui introduce RNG o stato esterno.
-- **Ordine di valutazione**: l'estinzione totale deve essere rilevabile anche a metà di un'era animata (`EraState::Advancing`), non solo al confine di era — altrimenti il giocatore vedrebbe una griglia vuota per fino a 25 tick prima del fallimento.
-- **Non duplicare la logica di reset**: questo task rileva il fallimento e transiziona lo stato; il *reset* effettivo (nuovo mondo, nuova run) è responsabilità del task 045 (`start_world`), non di questo task.
-- **Guardia anti-falso-positivo**: il tick immediatamente successivo alla creazione di `SimWorld`, prima che le specie di partenza siano piazzate, ha occupazione zero per costruzione — non deve essere interpretato come sconfitta.
+- **Determinism**: no check here introduces RNG or external state.
+- **Evaluation order**: total extinction must be detectable even mid-way through an animated era (`EraState::Advancing`), not only at the era boundary — otherwise the player would see an empty grid for up to 25 ticks before failure.
+- **Don't duplicate reset logic**: this task detects failure and transitions state; the actual *reset* (new world, new run) is task 045's responsibility (`start_world`), not this task's.
+- **Anti-false-positive guard**: the tick immediately following `SimWorld`'s creation, before the starting species are placed, has zero occupancy by construction — it must not be interpreted as defeat.
 
 ---
 
 ## 🔗 Dependencies
 
-- **Depends on**: 040 (tipo `WorldOutcome`/`Objective` condiviso).
-- **Blocks**: 045 (la transizione di mondo consuma `GameState::Defeat`).
+- **Depends on**: 040 (shared `WorldOutcome`/`Objective` type).
+- **Blocks**: 045 (world transition consumes `GameState::Defeat`).
 
 ---
 
 ## 🤖 How to delegate this task to Claude CLI
 
 ```bash
-claude "$(cat tasks/041-failure-conditions.md)"$'\n\nEsegui questo task nel progetto corrente.'
+claude "$(cat tasks/041-failure-conditions.md)"$'\n\nExecute this task in the current project.'
 ```

@@ -5,28 +5,28 @@
 > **Priority**: 🟡 P2
 > **Estimate**: ~2h
 > **Assigned to**: unassigned
-> **Session**: 2026-08-04, Fase 3 planning session
+> **Session**: 2026-08-04, Phase 3 planning session
 
 ---
 
 ## 🎯 Objective
 
-GDD §10 [DECIDED light / persistenza rimandata post-MVP]: progressione tra le run deliberatamente leggera — sbloccare più specie di partenza o strumenti (es. un'azione extra, o un tag noto). La matrice rimane sempre da decifrare da zero: non si sbloccano "risposte", si sbloccano *capacità*. Persistenza esplicitamente rimandata: l'MVP è **senza persistenza su disco** — tutto vive nella sessione di processo corrente, "banale da aggiungere dopo, non vincola l'architettura".
+GDD §10 [DECIDED light / persistence deferred post-MVP]: progression between runs deliberately light — unlock more starting species or tools (e.g. an extra action, or a known tag). The matrix always remains to be deciphered from scratch: you don't unlock "answers", you unlock *capabilities*. Persistence explicitly deferred: the MVP is **without on-disk persistence** — everything lives within the current process session, "trivial to add later, doesn't constrain the architecture".
 
-Questo task chiude la Fase 3: popola `RunProgress.unlocks` (campo introdotto vuoto dal task 035) con sblocchi reali che ampliano il pool di specie di partenza (task 039) e/o gli strumenti disponibili (es. azione extra, tag noto), persistenti tra run diverse **solo all'interno della stessa sessione di processo**.
+This task closes Phase 3: it populates `RunProgress.unlocks` (field introduced empty by task 035) with real unlocks that expand the starting species pool (task 039) and/or the available tools (e.g. extra action, known tag), persistent across different runs **only within the same process session**.
 
 ---
 
 ## 📋 Acceptance Criteria
 
-- [ ] `Unlocks` (in `src/run.rs`, oggi struct minimale/vuota dal task 035) popolata con almeno una categoria di sblocco reale: specie extra nel pool disponibile (039) e/o uno strumento aggiuntivo (es. un punto extra di `ActionBudget` per era, o un tag rivelato in anticipo).
-- [ ] Gli sblocchi si accumulano in base a un criterio semplice legato al progresso della run conclusa (es. `worlds_cleared` raggiunti prima del `Defeat`) — non serve un sistema di progressione elaborato, solo una regola chiara e testabile.
-- [ ] `Unlocks` **non è scritto su disco**: nessuna nuova dipendenza da API di filesystem (`std::fs`, crate di serializzazione verso file) introdotta in `run.rs`/`worldgen.rs`/`menu.rs` per questo scopo — verificabile a grep.
-- [ ] Gli sblocchi restano disponibili se il giocatore avvia una nuova run **nella stessa sessione di processo** (dopo un `Defeat` che riporta al main menu, task 045) — `RunProgress` (o una resource dedicata agli sblocchi accumulati, sopravvissuta al reset di `RunProgress` per la nuova run) mantiene lo stato tra run diverse finché il processo resta in esecuzione.
-- [ ] Un eventuale riepilogo sblocchi è mostrato al giocatore (es. nel main menu o nella schermata di sconfitta) — nuova sezione in `text.rs`.
-- [ ] Nessuno sblocco fornisce informazione sulla matrice biochimica nascosta (coerente con GDD §10: "the matrix always remains to be deciphered from scratch... you unlock capabilities, not answers" — un "tag noto" sblocca la conoscenza che quel tag *esiste/è attivo*, non il suo valore nella matrice).
-- [ ] `cargo clippy -- -D warnings` pulito, `cargo test` verde.
-- [ ] Verifica manuale: avviare due run consecutive nella stessa sessione (`cargo run` una sola volta), concludere la prima con almeno uno sblocco maturato, confermare che è visibile/attivo nella seconda.
+- [ ] `Unlocks` (in `src/run.rs`, today a minimal/empty struct from task 035) populated with at least one real unlock category: extra species in the available pool (039) and/or an additional tool (e.g. an extra `ActionBudget` point per era, or a tag revealed in advance).
+- [ ] Unlocks accumulate based on a simple criterion tied to the concluded run's progress (e.g. `worlds_cleared` reached before `Defeat`) — no need for an elaborate progression system, just a clear, testable rule.
+- [ ] `Unlocks` is **not written to disk**: no new dependency on filesystem APIs (`std::fs`, file-serialization crates) introduced in `run.rs`/`worldgen.rs`/`menu.rs` for this purpose — verifiable via grep.
+- [ ] Unlocks remain available if the player starts a new run **within the same process session** (after a `Defeat` that returns to the main menu, task 045) — `RunProgress` (or a resource dedicated to accumulated unlocks, surviving `RunProgress`'s reset for the new run) keeps state across different runs as long as the process keeps running.
+- [ ] A possible unlock summary is shown to the player (e.g. in the main menu or the defeat screen) — new section in `text.rs`.
+- [ ] No unlock provides information about the hidden biochemical matrix (consistent with GDD §10: "the matrix always remains to be deciphered from scratch... you unlock capabilities, not answers" — a "known tag" unlocks the knowledge that that tag *exists/is active*, not its value in the matrix).
+- [ ] `cargo clippy -- -D warnings` clean, `cargo test` green.
+- [ ] Manual verification: start two consecutive runs in the same session (`cargo run` once), conclude the first with at least one unlock earned, confirm it's visible/active in the second.
 
 ---
 
@@ -34,55 +34,55 @@ Questo task chiude la Fase 3: popola `RunProgress.unlocks` (campo introdotto vuo
 
 | File | Role |
 |------|------|
-| `src/run.rs` | `Unlocks` (popolata), resource che sopravvive al reset di `RunProgress` tra run diverse nella stessa sessione. |
-| `src/worldgen.rs` | Consumo degli sblocchi nel pool di specie disponibili (039). |
-| `src/menu.rs` | Eventuale schermata/riepilogo sblocchi. |
-| `src/text.rs` | Nuova sezione stringhe sblocchi. |
+| `src/run.rs` | `Unlocks` (populated), resource that survives `RunProgress`'s reset across different runs in the same session. |
+| `src/worldgen.rs` | Consumption of unlocks in the available species pool (039). |
+| `src/menu.rs` | Possible unlock summary screen. |
+| `src/text.rs` | New unlock strings section. |
 
 ---
 
 ## 🧩 Technical Context
 
-**GDD §10, testo completo**:
-> Progressione tra run, deliberatamente leggera: sbloccare più specie di partenza o strumenti (es. un'azione extra, o un tag noto). La matrice rimane sempre da decifrare da zero: non si sbloccano "risposte", si sbloccano capacità.
-> Persistenza: l'MVP è costruito senza persistenza (tutto dentro una singola run). Se salvare gli sblocchi si decide solo dopo aver verificato che il loop sia divertente. Banale da aggiungere dopo, non vincola l'architettura.
+**GDD §10, full text**:
+> Progression between runs, deliberately light: unlock more starting species or tools (e.g. an extra action, or a known tag). The matrix always remains to be deciphered from scratch: you don't unlock "answers", you unlock capabilities.
+> Persistence: the MVP is built without persistence (everything within a single run). Whether to save unlocks is decided only after verifying the loop is fun. Trivial to add later, doesn't constrain the architecture.
 
-Nota: "tutto dentro una singola run" nel GDD è la frase usata per dire "senza salvataggio su disco" — nella pianificazione di questo task si è interpretato che gli sblocchi vivano per la **sessione di processo** (sopravvivono a più run consecutive finché il gioco resta aperto), coerente con "trivial to add later" per la persistenza vera e propria: se dovessero *non* sopravvivere nemmeno tra run nella stessa sessione, la meta-progressione sarebbe priva di effetto osservabile per il giocatore, il che renderebbe il task privo di scopo. Se in fase di implementazione emerge un'interpretazione diversa più aderente al testo, verificarla col contesto di `PROJECT_PLAN.md`/GDD §14 prima di procedere.
+Note: "everything within a single run" in the GDD is the phrase used to mean "without on-disk saving" — in planning this task it was interpreted that unlocks live for the **process session** (they survive multiple consecutive runs as long as the game stays open), consistent with "trivial to add later" for actual persistence: if they were *not* to survive even across runs within the same session, meta-progression would have no observable effect for the player, which would make the task purposeless. If a different interpretation more faithful to the text emerges during implementation, verify it against `PROJECT_PLAN.md`/GDD §14 context before proceeding.
 
-- **Comportamento attuale**: `RunProgress.unlocks: Unlocks` esiste (task 035) come struct vuota/minimale, mai popolata né consumata.
-- **Comportamento desiderato**: concludere run successive nella stessa sessione amplia gradualmente le opzioni disponibili al giocatore (specie/strumenti), senza mai rivelare la biochimica nascosta, senza toccare il disco.
+- **Current behavior**: `RunProgress.unlocks: Unlocks` exists (task 035) as an empty/minimal struct, never populated nor consumed.
+- **Desired behavior**: concluding successive runs within the same session gradually expands the options available to the player (species/tools), never revealing the hidden biochemistry, never touching disk.
 
 ---
 
 ## 🔨 Suggested Implementation
 
-1. Definire `Unlocks` con campi concreti, es. `extra_species: Vec<SpeciesTemplate>`, `extra_action_points: u32`, `known_tags: Vec<TagId>` (adattare ai tipi esistenti).
-2. Decidere dove vive lo stato che sopravvive al reset di `RunProgress`: probabilmente una resource separata (es. `MetaProgress`, inizializzata una sola volta all'avvio del processo, non resettata da `start_world`/dal main menu) che accumula gli sblocchi maturati da ogni run conclusa.
-3. Al termine di una run (transizione a `Defeat`, task 045), calcolare gli sblocchi maturati da `worlds_cleared` e aggiungerli a `MetaProgress`.
-4. In `worldgen.rs` (task 039), il generatore del pool di specie disponibili consulta `MetaProgress` per ampliare il pool.
-5. Aggiungere un riepilogo minimo nella UI (main menu o schermata `Defeat`).
-6. Verifica manuale con due run consecutive nello stesso processo.
+1. Define `Unlocks` with concrete fields, e.g. `extra_species: Vec<SpeciesTemplate>`, `extra_action_points: u32`, `known_tags: Vec<TagId>` (adapt to existing types).
+2. Decide where the state that survives `RunProgress`'s reset lives: probably a separate resource (e.g. `MetaProgress`, initialized once at process startup, not reset by `start_world`/the main menu) that accumulates unlocks earned from each concluded run.
+3. At the end of a run (transition to `Defeat`, task 045), compute the unlocks earned from `worlds_cleared` and add them to `MetaProgress`.
+4. In `worldgen.rs` (task 039), the available-species-pool generator consults `MetaProgress` to expand the pool.
+5. Add a minimal summary to the UI (main menu or `Defeat` screen).
+6. Manual verification with two consecutive runs in the same process.
 
 ---
 
 ## ⚠️ Constraints and Caveats
 
-- **Nessuna persistenza su disco**: esplicitamente fuori scope per l'MVP (GDD §10) — non introdurre `serde`/file di salvataggio per questo task.
-- **Non rivelare la matrice**: uno sblocco può dire "conosci l'esistenza del tag X" ma mai "il tag X vale +2 verso il tag Y" — quella è informazione che il giocatore deve dedurre col notebook (GDD §7/§11).
-- **Non introdurre bonus objectives**: fuori scope MVP, come già notato nel task 042.
-- **Mantenere la semplicità**: un criterio di sblocco chiaro e testabile (es. lineare su `worlds_cleared`) è preferibile a un sistema di progressione elaborato — GDD §10 chiede esplicitamente "deliberately light".
+- **No on-disk persistence**: explicitly out of scope for the MVP (GDD §10) — don't introduce `serde`/save files for this task.
+- **Don't reveal the matrix**: an unlock can say "you know tag X exists" but never "tag X is worth +2 toward tag Y" — that's information the player must deduce with the notebook (GDD §7/§11).
+- **Don't introduce bonus objectives**: out of MVP scope, as already noted in task 042.
+- **Keep it simple**: a clear, testable unlock criterion (e.g. linear on `worlds_cleared`) is preferable to an elaborate progression system — GDD §10 explicitly asks for "deliberately light".
 
 ---
 
 ## 🔗 Dependencies
 
-- **Depends on**: 039 (pool di specie disponibili da ampliare), 045 (transizione di run/conclusione da cui calcolare gli sblocchi).
-- **Blocks**: nessuno — ultimo task della Fase 3.
+- **Depends on**: 039 (available species pool to expand), 045 (run transition/conclusion from which to compute unlocks).
+- **Blocks**: none — last task of Phase 3.
 
 ---
 
 ## 🤖 How to delegate this task to Claude CLI
 
 ```bash
-claude "$(cat tasks/046-minimal-meta-progression.md)"$'\n\nEsegui questo task nel progetto corrente.'
+claude "$(cat tasks/046-minimal-meta-progression.md)"$'\n\nExecute this task in the current project.'
 ```

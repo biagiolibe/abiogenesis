@@ -3,41 +3,41 @@
 > **ID**: `036`
 > **Category**: Refactor / Architecture
 > **Priority**: 🔴 P1
-> **Estimate**: ~3-4h (più corposo dello standard ~2h — confermato con l'utente in fase di pianificazione: non spezzabile senza lasciare la build rotta a metà)
+> **Estimate**: ~3-4h (heavier than the ~2h standard — confirmed with the user during planning: cannot be split without leaving the build broken halfway through)
 > **Assigned to**: unassigned
-> **Session**: 2026-08-04, Fase 3 planning session
+> **Session**: 2026-08-04, Phase 3 planning session
 
 ---
 
 ## 🎯 Objective
 
-`TagMatrix` e `MatrixKnowledge` sono oggi indicizzate direttamente per `TagId.0 as usize`, assumendo che i tag attivi di un mondo siano il range contiguo `TagId(0..n)` — comportamento del task 010, mai messo in discussione finora perché finora lo è sempre stato. Un commento esplicito in `world.rs:34-38` segnala il rischio: *"If Phase 3 world generation ever picks a non-contiguous subset of the global pool, this indexing needs to go through a tag→matrix-index lookup instead."*
+`TagMatrix` and `MatrixKnowledge` are currently indexed directly by `TagId.0 as usize`, assuming that a world's active tags are the contiguous range `TagId(0..n)` — a behavior from task 010, never questioned so far because it has always held. An explicit comment in `world.rs:34-38` flags the risk: *"If Phase 3 world generation ever picks a non-contiguous subset of the global pool, this indexing needs to go through a tag→matrix-index lookup instead."*
 
-Perché il worldgen (GDD §9) possa scegliere un sottoinsieme realmente vario dal pool globale di 10 tag (non solo i primi N), serve rompere questa assunzione. La soluzione scelta è introdurre `TagSlot(u8)` — la posizione di un tag nel sottoinsieme attivo del *mondo corrente* — come tipo distinto da `TagId(u8)` — l'identità del tag nel pool *globale*. `TagMatrix` e `MatrixKnowledge` vengono indicizzate per `TagSlot`; `SimWorld.active_tags: Vec<TagId>` resta l'unica mappa slot→identità globale, consultata solo da `text.rs`/`ui.rs` per risolvere nomi/colori/glifi.
+For worldgen (GDD §9) to be able to pick a genuinely varied subset from the global pool of 10 tags (not just the first N), this assumption needs to be broken. The chosen solution is to introduce `TagSlot(u8)` — the position of a tag within the *current world's* active subset — as a type distinct from `TagId(u8)` — the tag's identity in the *global* pool. `TagMatrix` and `MatrixKnowledge` are indexed by `TagSlot`; `SimWorld.active_tags: Vec<TagId>` remains the only slot→global-identity map, consulted only by `text.rs`/`ui.rs` to resolve names/colors/glyphs.
 
-Questo è un refactor puro: nessun comportamento di gioco cambia. Il worldgen che sfrutta effettivamente `TagSlot` per selezionare sottoinsiemi non contigui arriva nel task 038.
+This is a pure refactor: no gameplay behavior changes. The worldgen that actually exploits `TagSlot` to select non-contiguous subsets arrives in task 038.
 
 ---
 
 ## 📋 Acceptance Criteria
 
-- [x] Nuovo tipo `TagSlot(pub u8)` in `src/world.rs`, accanto a `TagId`, con derive coerenti (`Debug, Clone, Copy, PartialEq, Eq`).
-- [x] `TagMatrix::get` prende `TagSlot` invece di `TagId`: `fn get(&self, exerter: TagSlot, receiver: TagSlot) -> i8`.
-- [x] `Species.tags: Vec<TagSlot>` (era `Vec<TagId>`).
-- [x] `MatrixKnowledge` in `src/notebook.rs` (record/evidence/is_confirmed/revealed_value e l'indicizzazione interna) migrata alle stesse chiavi `TagSlot`.
-- [x] `SimWorld.active_tags: Vec<TagId>` resta come unica mappa slot→identità globale (l'indice nel `Vec` *è* lo slot); nessun altro punto del codice mantiene una mappatura parallela.
-- [x] Tutti i siti che oggi convertono un tag in indice di matrice/evidenza con `tag.0 as usize` sono stati aggiornati per usare `TagSlot` direttamente — nessuno rimasto (verificato a grep: le uniche occorrenze di `TagId` fuori da `world.rs` sono `tag_color`/`tag_glyph`/`node_tooltip_text` in `notebook.rs`, identità globale per la UI, e `active_tags` di test in `input.rs`).
-- [x] `text.rs`/`ui.rs`: i punti che devono mostrare nome/colore/glifo di un tag risolvono `TagSlot → TagId` tramite `world.active_tags[slot.0 as usize]` prima di chiamare le funzioni di `text.rs`/`tag_glyph`/`tag_color`.
-- [x] `cargo build`, `cargo clippy --all-targets -- -D warnings`, `cargo test` tutti verdi a fine task.
-- [x] Nessuna regressione: 68 test passano, invariati nei valori attesi (solo i tipi delle fixture sono cambiati da `TagId` a `TagSlot` dove operano su matrice/evidenza).
+- [x] New `TagSlot(pub u8)` type in `src/world.rs`, alongside `TagId`, with consistent derives (`Debug, Clone, Copy, PartialEq, Eq`).
+- [x] `TagMatrix::get` takes `TagSlot` instead of `TagId`: `fn get(&self, exerter: TagSlot, receiver: TagSlot) -> i8`.
+- [x] `Species.tags: Vec<TagSlot>` (was `Vec<TagId>`).
+- [x] `MatrixKnowledge` in `src/notebook.rs` (record/evidence/is_confirmed/revealed_value and its internal indexing) migrated to the same `TagSlot` keys.
+- [x] `SimWorld.active_tags: Vec<TagId>` remains the sole slot→global-identity map (the index in the `Vec` *is* the slot); no other part of the code maintains a parallel mapping.
+- [x] Every site that currently converts a tag into a matrix/evidence index with `tag.0 as usize` has been updated to use `TagSlot` directly — none remaining (verified via grep: the only occurrences of `TagId` outside `world.rs` are `tag_color`/`tag_glyph`/`node_tooltip_text` in `notebook.rs`, global identity for the UI, and `active_tags` in `input.rs` tests).
+- [x] `text.rs`/`ui.rs`: the points that must show a tag's name/color/glyph resolve `TagSlot → TagId` via `world.active_tags[slot.0 as usize]` before calling the `text.rs`/`tag_glyph`/`tag_color` functions.
+- [x] `cargo build`, `cargo clippy --all-targets -- -D warnings`, `cargo test` all green at end of task.
+- [x] No regressions: 68 tests pass, unchanged in expected values (only the fixture types changed from `TagId` to `TagSlot` where they operate on matrix/evidence).
 
-## Riepilogo implementazione
+## Implementation summary
 
-- `src/world.rs`: `TagSlot(pub u8)` introdotto accanto a `TagId`; `TagMatrix::get` e `Species.tags` migrati a `TagSlot`; `generate_matrix` non richiede più `active_tags: &[TagId]`, solo `slot_count: usize` (la selezione del ciclo negativo campiona slot `0..n`, non identità); `draw_species_tags` ritorna `Vec<TagSlot>`.
-- `src/sim.rs`: `AdjacencyObserved::{exerter_tag, receiver_tag}` e `neighbour_tags` migrati a `TagSlot` (l'intero file operava già in "slot space" tramite `species.tags`, quindi il cambio è stata una sostituzione diretta `TagId` → `TagSlot`).
-- `src/notebook.rs`: `MatrixKnowledge` migrata a chiavi `TagSlot`; `hypothesis_grid`/`node_tooltip_text` ora enumerano `world.active_tags` per ottenere coppie `(TagSlot, TagId)` — slot per le query a `MatrixKnowledge`, `TagId` per glyph/colore; `catalog_panel` risolve `TagSlot → TagId` via `world.active_tags[slot.0 as usize]` prima di colorare/glifare.
-- `src/ui.rs`: `SpliceEditChoice::{SwapTag, AddTag}` migrati a `TagSlot`; `splice_panel` enumera `world.active_tags` per costruire slot selezionabili, risolvendo l'identità solo per l'etichetta visuale.
-- `src/input.rs`: `apply_splice` invariata nel corpo (operava già su `species.tags` senza nominare il tipo); solo i test aggiornati a `TagSlot` dove costruiscono tag di specie/`SpliceEditChoice`, mantenendo `TagId` per `world.active_tags`.
+- `src/world.rs`: `TagSlot(pub u8)` introduced alongside `TagId`; `TagMatrix::get` and `Species.tags` migrated to `TagSlot`; `generate_matrix` no longer requires `active_tags: &[TagId]`, only `slot_count: usize` (the negative-cycle selection samples slots `0..n`, not identities); `draw_species_tags` returns `Vec<TagSlot>`.
+- `src/sim.rs`: `AdjacencyObserved::{exerter_tag, receiver_tag}` and `neighbour_tags` migrated to `TagSlot` (the whole file already operated in "slot space" via `species.tags`, so the change was a direct `TagId` → `TagSlot` substitution).
+- `src/notebook.rs`: `MatrixKnowledge` migrated to `TagSlot` keys; `hypothesis_grid`/`node_tooltip_text` now enumerate `world.active_tags` to get `(TagSlot, TagId)` pairs — slot for `MatrixKnowledge` queries, `TagId` for glyph/color; `catalog_panel` resolves `TagSlot → TagId` via `world.active_tags[slot.0 as usize]` before coloring/glyphing.
+- `src/ui.rs`: `SpliceEditChoice::{SwapTag, AddTag}` migrated to `TagSlot`; `splice_panel` enumerates `world.active_tags` to build selectable slots, resolving identity only for the visual label.
+- `src/input.rs`: `apply_splice` unchanged in its body (it already operated on `species.tags` without naming the type); only the tests updated to `TagSlot` where they construct species tags/`SpliceEditChoice`, keeping `TagId` for `world.active_tags`.
 
 ---
 
@@ -45,17 +45,17 @@ Questo è un refactor puro: nessun comportamento di gioco cambia. Il worldgen ch
 
 | File | Role |
 |------|------|
-| `src/world.rs` | Definizione `TagSlot`, `TagMatrix::get`, `Species.tags`, `SimWorld.active_tags` come unica sorgente slot→identità. |
-| `src/sim.rs` | `AdjacencyObserved` e ogni chiamata a `matrix.get(...)` nella tick logic; test hand-built che costruiscono matrici/specie. |
-| `src/notebook.rs` | `MatrixKnowledge` (record/evidence/is_confirmed/revealed_value) e la griglia/grafo di rendering che iterano `world.active_tags`. |
-| `src/ui.rs` | Ogni sito che itera i tag per nome/colore/glifo — deve risolvere `TagSlot → TagId` prima di chiamare `text.rs`. |
-| `src/input.rs` | Chiamata di reset `MatrixKnowledge::new` (tasto `r`) — aggiornare alla nuova firma se cambia. |
+| `src/world.rs` | Definition of `TagSlot`, `TagMatrix::get`, `Species.tags`, `SimWorld.active_tags` as the sole slot→identity source. |
+| `src/sim.rs` | `AdjacencyObserved` and every call to `matrix.get(...)` in the tick logic; hand-built tests that construct matrices/species. |
+| `src/notebook.rs` | `MatrixKnowledge` (record/evidence/is_confirmed/revealed_value) and the grid/graph rendering that iterates `world.active_tags`. |
+| `src/ui.rs` | Every site that iterates tags for name/color/glyph — must resolve `TagSlot → TagId` before calling `text.rs`. |
+| `src/input.rs` | `MatrixKnowledge::new` reset call (the `r` key) — update to the new signature if it changes. |
 
 ---
 
 ## 🧩 Technical Context
 
-**`TagMatrix` attuale** (`src/world.rs`, righe ~30-51):
+**Current `TagMatrix`** (`src/world.rs`, lines ~30-51):
 ```rust
 pub struct TagId(pub u8);
 
@@ -70,46 +70,46 @@ impl TagMatrix {
     }
 }
 ```
-Il commento alle righe 34-38 documenta esattamente il rischio che questo task risolve.
+The comment on lines 34-38 documents exactly the risk this task resolves.
 
-`MatrixKnowledge` in `notebook.rs` duplica lo stesso pattern di indicizzazione (`TagId.0 as usize * size + ...`) per tracciare evidenza pesata (`1/(1+n_confounders)`, GDD §7) — va migrata in sincrono, non in un task separato, perché cambiare la firma di `TagMatrix::get` rompe la build di `notebook.rs` nello stesso momento.
+`MatrixKnowledge` in `notebook.rs` duplicates the same indexing pattern (`TagId.0 as usize * size + ...`) to track weighted evidence (`1/(1+n_confounders)`, GDD §7) — it needs to be migrated in sync, not in a separate task, because changing `TagMatrix::get`'s signature breaks `notebook.rs`'s build at the same moment.
 
-- **Comportamento attuale**: `TagId` funge sia da identità globale nel pool sia da indice diretto in matrice/evidenza, perché finora i tag attivi sono sempre stati `TagId(0..active_tags_early)` — coincidenza che il worldgen (task 038) romperà.
-- **Comportamento desiderato**: `TagId` = identità nel pool globale di 10 tag (usata solo per nome/colore/glifo tramite `SimWorld.active_tags`); `TagSlot` = posizione nel sottoinsieme attivo del mondo corrente (usata per ogni indicizzazione di matrice/evidenza). La conversione slot→identità passa sempre da `SimWorld.active_tags[slot.0 as usize]`, mai da una mappa duplicata.
+- **Current behavior**: `TagId` serves both as the global identity in the pool and as a direct index into matrix/evidence, because so far the active tags have always been `TagId(0..active_tags_early)` — a coincidence that worldgen (task 038) will break.
+- **Desired behavior**: `TagId` = identity in the global pool of 10 tags (used only for name/color/glyph via `SimWorld.active_tags`); `TagSlot` = position within the current world's active subset (used for every matrix/evidence indexing). The slot→identity conversion always goes through `SimWorld.active_tags[slot.0 as usize]`, never through a duplicated map.
 
 ---
 
 ## 🔨 Suggested Implementation
 
-1. Aggiungere `TagSlot(pub u8)` in `src/world.rs`, vicino a `TagId`.
-2. Cambiare `TagMatrix::get` per accettare `TagSlot`. Lasciare `cargo build` fallire e usare gli errori del compilatore come checklist per propagare il cambio a `Species.tags`, `sim.rs`, `notebook.rs`, `ui.rs` — è il modo più affidabile per non perdere un call site (da qui la scelta di farne un task unico).
-3. In `sim.rs`, verificare `AdjacencyObserved` e ogni punto della tick logic che chiama `matrix.get`: deve ricevere `TagSlot`, non `TagId`. Se `AdjacencyObserved` (evento consumato dal notebook) porta oggi `TagId`, valutare se convertirlo a `TagSlot` a monte (nella tick logic, dove si ha già accesso a `SimWorld`) o lasciarlo `TagId` e convertire solo al consumo — preferire la prima opzione se semplifica `notebook.rs`, dato che `MatrixKnowledge` lavora già in termini di slot.
-4. In `notebook.rs`, aggiornare `MatrixKnowledge` (struct interna, `record`, `evidence`, `is_confirmed`, `revealed_value`) alla nuova chiave `TagSlot`. Aggiornare le funzioni di rendering griglia/grafo che oggi iterano `world.active_tags` per costruire nodi/etichette: continueranno a iterare `world.active_tags` (che resta `Vec<TagId>`), ma l'indice di iterazione *è* il `TagSlot` da passare a `MatrixKnowledge`.
-5. In `ui.rs`, per ogni sito che mostra nome/colore/glifo di un tag: assicurarsi che risolva `TagSlot → TagId` (`world.active_tags[slot.0 as usize]`) prima di chiamare le funzioni di `text.rs` — `text.rs` stesso non cambia (non conosce `SimWorld`, task 034).
-6. In `input.rs`, aggiornare la costruzione di `MatrixKnowledge::new` nel reset del tasto `r` se la firma cambia.
-7. Aggiornare i test hand-built in `world.rs`/`sim.rs`/`notebook.rs` che costruiscono `TagMatrix`/`Species` a mano: cambiano solo i tipi usati per costruire i dati di test, non la logica verificata.
-8. `cargo build && cargo clippy -- -D warnings && cargo test` — iterare finché tutto è verde.
+1. Add `TagSlot(pub u8)` in `src/world.rs`, near `TagId`.
+2. Change `TagMatrix::get` to accept `TagSlot`. Let `cargo build` fail and use the compiler errors as a checklist to propagate the change to `Species.tags`, `sim.rs`, `notebook.rs`, `ui.rs` — this is the most reliable way not to miss a call site (hence the choice to make this a single task).
+3. In `sim.rs`, check `AdjacencyObserved` and every point in the tick logic that calls `matrix.get`: it must receive `TagSlot`, not `TagId`. If `AdjacencyObserved` (event consumed by the notebook) currently carries `TagId`, assess whether to convert it to `TagSlot` upstream (in the tick logic, where `SimWorld` is already accessible) or leave it as `TagId` and convert only on consumption — prefer the first option if it simplifies `notebook.rs`, since `MatrixKnowledge` already works in terms of slots.
+4. In `notebook.rs`, update `MatrixKnowledge` (internal struct, `record`, `evidence`, `is_confirmed`, `revealed_value`) to the new `TagSlot` key. Update the grid/graph rendering functions that currently iterate `world.active_tags` to build nodes/labels: they will keep iterating `world.active_tags` (which stays `Vec<TagId>`), but the iteration index *is* the `TagSlot` to pass to `MatrixKnowledge`.
+5. In `ui.rs`, for every site that shows a tag's name/color/glyph: make sure it resolves `TagSlot → TagId` (`world.active_tags[slot.0 as usize]`) before calling `text.rs`'s functions — `text.rs` itself doesn't change (it doesn't know about `SimWorld`, task 034).
+6. In `input.rs`, update the construction of `MatrixKnowledge::new` in the `r`-key reset if the signature changes.
+7. Update the hand-built tests in `world.rs`/`sim.rs`/`notebook.rs` that construct `TagMatrix`/`Species` by hand: only the types used to build test data change, not the verified logic.
+8. `cargo build && cargo clippy -- -D warnings && cargo test` — iterate until everything is green.
 
 ---
 
 ## ⚠️ Constraints and Caveats
 
-- **Non introdurre un layer di lookup separato** (es. una `HashMap<TagId, TagSlot>`): l'indice nel `Vec<TagId>` di `SimWorld.active_tags` è già la mappa slot→identità; una mappa parallela sarebbe uno stato duplicato da tenere sincronizzato, contro il principio "niente astrazioni premature".
-- **Determinismo (invariante 1)**: nessuna `HashMap`/`HashSet` iterata nella tick logic — se serve una struttura di lookup, usare `Vec` indicizzato.
-- **Non toccare la logica di selezione dei tag attivi**: questo task non seleziona ancora sottoinsiemi non contigui (arriva nel task 038) — qui `active_tags` resta popolato esattamente come oggi (`0..active_tags_early`), cambia solo *come* viene indicizzata la matrice.
-- **Nessun comportamento di gioco deve cambiare**: è un refactor a comportamento invariato, verificabile con i test di determinismo/bilanciamento esistenti (task 009) che devono continuare a passare senza modifiche ai valori attesi.
+- **Don't introduce a separate lookup layer** (e.g. a `HashMap<TagId, TagSlot>`): the index in `SimWorld.active_tags`'s `Vec<TagId>` is already the slot→identity map; a parallel map would be duplicated state to keep in sync, against the "no premature abstractions" principle.
+- **Determinism (invariant 1)**: no `HashMap`/`HashSet` iterated in the tick logic — if a lookup structure is needed, use an indexed `Vec`.
+- **Don't touch the active-tag selection logic**: this task does not yet select non-contiguous subsets (that arrives in task 038) — here `active_tags` remains populated exactly as today (`0..active_tags_early`), only *how* the matrix is indexed changes.
+- **No gameplay behavior must change**: this is a behavior-preserving refactor, verifiable with the existing determinism/balance tests (task 009), which must keep passing with no changes to expected values.
 
 ---
 
 ## 🔗 Dependencies
 
-- **Depends on**: nessuno.
-- **Blocks**: 038 (worldgen non può selezionare sottoinsiemi non contigui finché `TagSlot` non esiste).
+- **Depends on**: none.
+- **Blocks**: 038 (worldgen cannot select non-contiguous subsets until `TagSlot` exists).
 
 ---
 
 ## 🤖 How to delegate this task to Claude CLI
 
 ```bash
-claude "$(cat tasks/036-tag-slot-newtype.md)"$'\n\nEsegui questo task nel progetto corrente.'
+claude "$(cat tasks/036-tag-slot-newtype.md)"$'\n\nExecute this task in the current project.'
 ```
