@@ -19,12 +19,12 @@ A 2026-08-03 playtest called the current hypothesis grid (task 021, `notebook.rs
 
 ## 📋 Acceptance Criteria
 
-- [ ] `world.active_tags` render as nodes arranged evenly around a circle (radius/center computed from the available `egui::Ui` space), each using the existing `tag_color`/tag-glyph treatment (task 029, if landed first — otherwise the current `TAG_GLYPH` dot) so this stays visually consistent with the catalog panel.
-- [ ] For every `(exerter, receiver)` pair `MatrixKnowledge::revealed_value` returns `Some` for, draw a directed edge from the exerter node to the receiver node, colored by sign (e.g. a warm color for positive, a cool color for negative — reuse whatever convention, if any, existing UI already implies; otherwise pick and document one). An arrowhead or other directional marker distinguishes `A → B` from `B → A` when both exist.
-- [ ] Unconfirmed pairs draw **no edge** — don't invent a "maybe" edge style; this must not leak information beyond what `is_confirmed` already reveals (same constraint task 021's original grid honored).
-- [ ] The diagonal (`exerter == receiver`, always 0 by construction) is never drawn as a self-loop or otherwise implied — there was never a real hypothesis there, same as the old grid's `·`.
-- [ ] Hovering a node shows the tag's identity (color/glyph) and, optionally, a list of its confirmed relationships as text (a fallback for players who prefer reading a list — don't remove all textual access to the same information, just make the primary view graphical).
-- [ ] `cargo clippy -- -D warnings` clean.
+- [x] `world.active_tags` render as nodes arranged evenly around a circle (radius/center computed from the available `egui::Ui` space), each using the existing `tag_color`/tag-glyph treatment (task 029, if landed first — otherwise the current `TAG_GLYPH` dot) so this stays visually consistent with the catalog panel.
+- [x] For every `(exerter, receiver)` pair `MatrixKnowledge::revealed_value` returns `Some` for, draw a directed edge from the exerter node to the receiver node, colored by sign (e.g. a warm color for positive, a cool color for negative — reuse whatever convention, if any, existing UI already implies; otherwise pick and document one). An arrowhead or other directional marker distinguishes `A → B` from `B → A` when both exist.
+- [x] Unconfirmed pairs draw **no edge** — don't invent a "maybe" edge style; this must not leak information beyond what `is_confirmed` already reveals (same constraint task 021's original grid honored).
+- [x] The diagonal (`exerter == receiver`, always 0 by construction) is never drawn as a self-loop or otherwise implied — there was never a real hypothesis there, same as the old grid's `·`.
+- [x] Hovering a node shows the tag's identity (color/glyph) and, optionally, a list of its confirmed relationships as text (a fallback for players who prefer reading a list — don't remove all textual access to the same information, just make the primary view graphical).
+- [x] `cargo clippy -- -D warnings` clean.
 
 ---
 

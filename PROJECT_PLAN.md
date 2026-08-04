@@ -96,9 +96,10 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 - `[ ]` 028 (🟢 P3, low priority — revisit later) — Distinguish "no evidence" from "unconfirmed evidence" in the hypothesis grid: a `?` cell today can mean either a truly zero matrix interaction or a real one with too little evidence yet, indistinguishable to the player
 - `[x]` 029 — Stable tag identifiers (opaque, e.g. Greek letters — GDD §11 still bars descriptive names) and readable species display names, replacing bare "species N"
 - `[x]` 030 — HUD reorganization: visual grouping, icon buttons for actions, a progress bar for the action budget, tooltips — presentation-only restructuring of `ui.rs`, no new information or mechanics
-- `[ ]` 031 — Hypothesis grid as a graph (tag nodes in a circle, confirmed relationships as colored directed edges) instead of the current `?`/`+!`/`-!` spreadsheet table — same `MatrixKnowledge` data, different rendering
+- `[x]` 031 — Hypothesis grid as a graph (tag nodes in a circle, confirmed relationships as colored directed edges) instead of the current `?`/`+!`/`-!` spreadsheet table — same `MatrixKnowledge` data, different rendering
 - `[ ]` 032 — Distinguish organisms by shape (metabolism), not just color — occupied cells are flat colored squares today, indistinguishable by metabolism without checking the HUD
 - `[ ]` 033 (bugfix-flavored) — Render the toxic zone visibly during normal play — `cell_color` never reads `toxicity` today; the only way to see it is the dev-only `F1` overlay
+- `[ ]` 034 — Centralize player-facing text (HUD, notebook, tooltips, event log) behind a single `src/text.rs` module — prep for eventual localization, no real i18n/loader yet
 
 ### 🏁 Phase 3 — The run
 
@@ -149,4 +150,4 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 
 ---
 
-*Last updated: 2026-08-03*
+*Last updated: 2026-08-04*

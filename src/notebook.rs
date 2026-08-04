@@ -265,47 +265,145 @@ fn notebook_window(
     Ok(())
 }
 
-/// The `active_tags x active_tags` evidence table (GDD §7, §5.9): row =
-/// exerting tag, column = receiving tag, matching `TagMatrix::get`'s own
-/// convention. Never renders an unconfirmed cell's real value — only
-/// `MatrixKnowledge::is_confirmed` gates a sign reveal.
+/// Node radius for the hypothesis graph (task 031), in points.
+const NODE_RADIUS: f32 = 14.0;
+
+/// Perpendicular offset applied to an edge so that `A → B` and `B → A`
+/// (when both are confirmed) render as two parallel lines instead of
+/// overlapping into one — the offset direction is derived from each edge's
+/// own travel direction, so the pair separates symmetrically without
+/// needing to special-case "is the reverse edge also present."
+const EDGE_OFFSET: f32 = 4.0;
+
+const ARROW_LENGTH: f32 = 8.0;
+const ARROW_WIDTH: f32 = 6.0;
+
+const EDGE_POSITIVE_COLOR: egui::Color32 = egui::Color32::from_rgb(96, 200, 120);
+const EDGE_NEGATIVE_COLOR: egui::Color32 = egui::Color32::from_rgb(220, 96, 96);
+
+/// The hypothesis graph (GDD §7, §5.9), replacing task 021's
+/// `active_tags x active_tags` spreadsheet table: `world.active_tags` as
+/// nodes arranged around a circle, a directed edge drawn only where
+/// `MatrixKnowledge::revealed_value` returns `Some` — an unconfirmed pair
+/// draws nothing at all, same information boundary the old table honored
+/// (never a hint beyond `is_confirmed`). The diagonal (`exerter ==
+/// receiver`, always 0 by construction) is skipped entirely rather than
+/// drawn as a self-loop — there was never a real hypothesis there.
 ///
 /// Player-authored conjectures (GDD §5.9's `±?` state — marking a guess
 /// before it's confirmed) aren't implemented: cut for this task, left as a
 /// follow-up rather than a half-built annotation feature.
 fn hypothesis_grid(ui: &mut egui::Ui, world: &SimWorld, knowledge: &MatrixKnowledge) {
-    egui::Grid::new("hypothesis_grid")
-        .striped(true)
-        .show(ui, |ui| {
-            ui.label(""); // corner cell
-            for &receiver in &world.active_tags {
-                ui.colored_label(
-                    tag_color(receiver),
-                    format!("{TAG_GLYPH} {}", tag_glyph(receiver)),
-                );
-            }
-            ui.end_row();
+    let tags = &world.active_tags;
+    let desired_size = egui::vec2(ui.available_width().clamp(200.0, 320.0), 240.0);
+    let (response, painter) = ui.allocate_painter(desired_size, egui::Sense::hover());
+    let rect = response.rect;
+    let center = rect.center();
+    let radius = (rect.width().min(rect.height()) / 2.0 - NODE_RADIUS - 6.0).max(10.0);
 
-            for &exerter in &world.active_tags {
-                ui.colored_label(
-                    tag_color(exerter),
-                    format!("{TAG_GLYPH} {}", tag_glyph(exerter)),
-                );
-                for &receiver in &world.active_tags {
-                    if exerter == receiver {
-                        // The diagonal is always 0 by construction
-                        // (`world.rs`'s matrix generation): not a real
-                        // hypothesis, so it's shown distinct from `?`.
-                        ui.weak("·");
-                    } else if let Some(value) = knowledge.revealed_value(exerter, receiver, world) {
-                        ui.label(if value > 0 { "+!" } else { "-!" });
-                    } else {
-                        ui.weak("?");
-                    }
-                }
-                ui.end_row();
+    let positions: Vec<egui::Pos2> = (0..tags.len())
+        .map(|i| {
+            let angle =
+                i as f32 / tags.len() as f32 * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
+            center + radius * egui::vec2(angle.cos(), angle.sin())
+        })
+        .collect();
+
+    for (ei, &exerter) in tags.iter().enumerate() {
+        for (ri, &receiver) in tags.iter().enumerate() {
+            if exerter == receiver {
+                continue;
             }
-        });
+            if let Some(value) = knowledge.revealed_value(exerter, receiver, world) {
+                let color = if value > 0 {
+                    EDGE_POSITIVE_COLOR
+                } else {
+                    EDGE_NEGATIVE_COLOR
+                };
+                draw_edge(&painter, positions[ei], positions[ri], color);
+            }
+        }
+    }
+
+    for (i, &tag) in tags.iter().enumerate() {
+        let pos = positions[i];
+        painter.circle_filled(pos, NODE_RADIUS, tag_color(tag));
+        painter.text(
+            pos,
+            egui::Align2::CENTER_CENTER,
+            tag_glyph(tag),
+            egui::FontId::proportional(13.0),
+            egui::Color32::BLACK,
+        );
+
+        let node_rect = egui::Rect::from_center_size(pos, egui::Vec2::splat(NODE_RADIUS * 2.0));
+        let node_id = response.id.with(("hypothesis_node", tag.0));
+        let node_response = ui.interact(node_rect, node_id, egui::Sense::hover());
+        node_response.on_hover_text(node_tooltip_text(tag, tags, world, knowledge));
+    }
+}
+
+/// Draws one directed edge as a line stopping short of both node
+/// boundaries, capped with a small triangular arrowhead at the receiver
+/// end. Offset perpendicular to its own travel direction by `EDGE_OFFSET`
+/// so a confirmed `A → B` and a confirmed `B → A` render as two distinct
+/// parallel lines rather than overlapping.
+fn draw_edge(painter: &egui::Painter, from: egui::Pos2, to: egui::Pos2, color: egui::Color32) {
+    let dir = (to - from).normalized();
+    let perp = egui::vec2(-dir.y, dir.x);
+    let offset = perp * EDGE_OFFSET;
+
+    let start = from + offset + dir * NODE_RADIUS;
+    let tip = to + offset - dir * NODE_RADIUS;
+    let base = tip - dir * ARROW_LENGTH;
+
+    painter.line_segment([start, base], egui::Stroke::new(2.0, color));
+    painter.add(egui::Shape::convex_polygon(
+        vec![
+            tip,
+            base + perp * ARROW_WIDTH * 0.5,
+            base - perp * ARROW_WIDTH * 0.5,
+        ],
+        color,
+        egui::Stroke::NONE,
+    ));
+}
+
+/// Hover fallback for a node (acceptance criterion: the graph must not be
+/// the *only* way to read this information): the tag's glyph plus every
+/// confirmed relationship it takes part in, as exerter or receiver.
+fn node_tooltip_text(
+    tag: TagId,
+    tags: &[TagId],
+    world: &SimWorld,
+    knowledge: &MatrixKnowledge,
+) -> String {
+    let mut lines = vec![format!("Tag {}", tag_glyph(tag))];
+    for &other in tags {
+        if other == tag {
+            continue;
+        }
+        if let Some(value) = knowledge.revealed_value(tag, other, world) {
+            let sign = if value > 0 { "+" } else { "-" };
+            lines.push(format!(
+                "{} → {} ({sign})",
+                tag_glyph(tag),
+                tag_glyph(other)
+            ));
+        }
+        if let Some(value) = knowledge.revealed_value(other, tag, world) {
+            let sign = if value > 0 { "+" } else { "-" };
+            lines.push(format!(
+                "{} → {} ({sign})",
+                tag_glyph(other),
+                tag_glyph(tag)
+            ));
+        }
+    }
+    if lines.len() == 1 {
+        lines.push("(no confirmed relationships yet)".to_string());
+    }
+    lines.join("\n")
 }
 
 /// Lists the active tag pool and every species' readable genome fields
