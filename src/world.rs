@@ -368,6 +368,13 @@ fn nonzero_intensity(config: &TagConfig, rng: &mut StdRng) -> i8 {
 /// composition stays deterministic given the same seed. Returns `TagSlot`s
 /// (task 036), since `Species.tags` is keyed by position in the world's
 /// active subset, not global pool identity.
+///
+/// Rejects a candidate whose tags net-drain each other (playtest finding:
+/// such a species dies as soon as it reproduces, because the child spawns
+/// adjacent to the parent carrying the identical tag set) and redraws, up
+/// to `max_self_conflict_draws` times, keeping the least-bad candidate seen
+/// if none clears zero — this only ever narrows the outcome space, so it
+/// stays deterministic for a given seed.
 pub fn draw_species_tags(world: &mut SimWorld, config: &SimConfig) -> Vec<TagSlot> {
     let n = world
         .rng
@@ -375,7 +382,36 @@ pub fn draw_species_tags(world: &mut SimWorld, config: &SimConfig) -> Vec<TagSlo
         as usize;
     let slot_count = world.active_tags.len() as u8;
     let slots: Vec<TagSlot> = (0..slot_count).map(TagSlot).collect();
-    slots.sample(&mut world.rng, n).copied().collect()
+
+    let mut best: Option<Vec<TagSlot>> = None;
+    let mut best_self_interaction = i32::MIN;
+    for _ in 0..config.tags.max_self_conflict_draws.max(1) {
+        let candidate: Vec<TagSlot> = slots.sample(&mut world.rng, n).copied().collect();
+        let self_interaction = net_self_interaction(&world.matrix, &candidate);
+        if self_interaction >= 0 {
+            return candidate;
+        }
+        if self_interaction > best_self_interaction {
+            best_self_interaction = self_interaction;
+            best = Some(candidate);
+        }
+    }
+    best.expect("the loop above runs at least once")
+}
+
+/// Sum of the matrix effect every tag in `tags` exerts on every other tag in
+/// `tags` — what a species feels from a same-species neighbour carrying an
+/// identical tag set, the case reproduction always produces.
+fn net_self_interaction(matrix: &TagMatrix, tags: &[TagSlot]) -> i32 {
+    let mut total = 0i32;
+    for &a in tags {
+        for &b in tags {
+            if a != b {
+                total += matrix.get(a, b) as i32;
+            }
+        }
+    }
+    total
 }
 
 /// Exact at `t = 0.0` and `t = 1.0` (unlike `from + (to - from) * t`), which
@@ -654,6 +690,61 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn draw_species_tags_avoids_a_self_destructive_pair_when_a_safe_one_exists() {
+        let mut config = test_config();
+        config.tags.active_tags_early = 3;
+        config.tags.tags_per_species_min = 2;
+        config.tags.tags_per_species_max = 2;
+
+        // Every pair touching tag 2 nets negative; only {0,1} is safe.
+        let matrix = TagMatrix {
+            size: 3,
+            #[rustfmt::skip]
+            values: vec![
+                0,  0, -2,
+                0,  0, -2,
+                -2, -2, 0,
+            ],
+        };
+
+        let mut successes = 0;
+        let trials = 30;
+        for seed in 0..trials {
+            let mut world = SimWorld::new(seed, &config);
+            world.matrix = matrix.clone();
+            let tags = draw_species_tags(&mut world, &config);
+            if net_self_interaction(&world.matrix, &tags) >= 0 {
+                successes += 1;
+            }
+        }
+        assert!(
+            successes >= trials * 9 / 10,
+            "expected the redraw to find the safe pair almost every time, got {successes}/{trials}"
+        );
+    }
+
+    #[test]
+    fn draw_species_tags_never_panics_when_every_combination_is_self_destructive() {
+        let mut config = test_config();
+        config.tags.active_tags_early = 2;
+        config.tags.tags_per_species_min = 2;
+        config.tags.tags_per_species_max = 2;
+        config.tags.max_self_conflict_draws = 5;
+
+        let matrix = TagMatrix {
+            size: 2,
+            values: vec![0, -2, -1, 0],
+        };
+
+        let mut world = SimWorld::new(7, &config);
+        world.matrix = matrix;
+        let tags = draw_species_tags(&mut world, &config);
+
+        assert_eq!(tags.len(), 2);
+        assert_eq!(net_self_interaction(&world.matrix, &tags), -3);
     }
 
     #[test]

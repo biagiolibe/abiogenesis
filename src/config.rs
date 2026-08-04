@@ -205,6 +205,12 @@ pub struct TagConfig {
     pub effect_intensity_max: i8,
     /// Fraction of tag-pair cells in the hidden matrix that are non-zero (~40%).
     pub matrix_density: f32,
+    /// How many times `draw_species_tags` redraws a candidate tag set that
+    /// nets a negative self-interaction (playtest finding: a species whose
+    /// own tags drain each other dies as soon as it reproduces, since a
+    /// child always spawns adjacent to a parent with the identical genome)
+    /// before giving up and accepting the least-bad draw seen.
+    pub max_self_conflict_draws: u32,
 }
 
 impl Default for TagConfig {
@@ -218,6 +224,7 @@ impl Default for TagConfig {
             effect_intensity_min: -2,
             effect_intensity_max: 2,
             matrix_density: 0.4,
+            max_self_conflict_draws: 20,
         }
     }
 }
