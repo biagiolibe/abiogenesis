@@ -261,23 +261,46 @@ fn group_frame<R>(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui) ->
         .inner
 }
 
-/// One glyph, label, and cost per `ActionMode`, in selector order.
-const ACTION_GLYPHS: [(ActionMode, &str, &str); 4] = [
-    (ActionMode::Seed, "🌱", "Seed"),
-    (ActionMode::Stress, "⚡", "Stress"),
-    (ActionMode::Cull, "💀", "Cull"),
-    (ActionMode::Splice, "🔬", "Splice"),
+/// One glyph, label, and description per `ActionMode`, in selector order.
+/// Descriptions state what the click actually does (`input.rs`'s
+/// `*_on_click` systems), not the more general "an area" wording of GDD §6 —
+/// every action here targets the single clicked cell.
+const ACTION_GLYPHS: [(ActionMode, &str, &str, &str); 4] = [
+    (
+        ActionMode::Seed,
+        "🌱",
+        "Seed",
+        "Place an organism of the selected species on an empty cell.",
+    ),
+    (
+        ActionMode::Stress,
+        "⚡",
+        "Stress",
+        "Raise the temperature of the clicked cell.",
+    ),
+    (
+        ActionMode::Cull,
+        "💀",
+        "Cull",
+        "Remove the organism on the clicked cell, if any.",
+    ),
+    (
+        ActionMode::Splice,
+        "🔬",
+        "Splice",
+        "Edit a species' genome: swap or add a tag, or shift its thermal optimum.",
+    ),
 ];
 
 /// The four `ActionMode` options as a row of icon buttons (task 030),
 /// replacing the vertical `ui.radio_value(..., "Seed")`-style text list.
 /// Still single-selection, immediate-mode — `selectable_label` plays the
 /// same role `ui.radio_value` did, just rendered as a compact glyph with a
-/// hover tooltip carrying the name and action-point cost instead of inline
-/// text.
+/// hover tooltip carrying the name, cost, and a one-line description
+/// instead of inline text.
 fn action_icon_row(ui: &mut egui::Ui, selected_action: &mut SelectedAction, config: &SimConfig) {
     ui.horizontal(|ui| {
-        for (mode, glyph, name) in ACTION_GLYPHS {
+        for (mode, glyph, name, description) in ACTION_GLYPHS {
             let cost = action_cost(mode, config);
             let response = ui.selectable_label(
                 selected_action.0 == mode,
@@ -286,7 +309,7 @@ fn action_icon_row(ui: &mut egui::Ui, selected_action: &mut SelectedAction, conf
             if response.clicked() {
                 selected_action.0 = mode;
             }
-            response.on_hover_text(format!("{name} · cost {cost}"));
+            response.on_hover_text(format!("{name} · cost {cost}\n{description}"));
         }
     });
 }
