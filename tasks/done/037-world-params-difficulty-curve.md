@@ -19,15 +19,21 @@ GDD §9 descrive una curva di difficoltà: i primi mondi hanno 5 tag attivi e am
 
 ## 📋 Acceptance Criteria
 
-- [ ] Nuovo modulo `src/worldgen.rs` con una funzione pura `pub fn world_params(world_index: u32, config: &SimConfig) -> WorldParams`.
-- [ ] `WorldParams` include almeno: `active_tag_count: u32`, `era_budget: u32`, `toxic_zone_width: u32`, `toxic_zone_height: u32`, `temperature_spread: f32` (o campo equivalente per l'ampiezza del gradiente termico), `matrix_density: f32`, `objective_severity: f32` (o tipo equivalente consumato dal task 042).
-- [ ] Nuovi campi endpoint in `SimConfig` per ogni asse che oggi non ne ha (l'ambiente non ha endpoint early/late oggi — solo tempo e tag): `toxic_zone_width_late`, `toxic_zone_height_late`, `temperature_spread_late` (o nomi equivalenti coerenti con `EnvironmentConfig` esistente), più `difficulty_ramp_worlds: u32` (numero di mondi su cui la rampa satura). Nessun magic number fuori da `SimConfig` (invariante CLAUDE.md).
-- [ ] **Criterio letterale dal GDD §16**: `world_params(1, &config).active_tag_count == 6` (World 2, indice 1, ha 6 tag attivi con i valori di default `active_tags_early=5`).
-- [ ] `world_params(0, &config)` produce esattamente i valori "early" attuali (5 tag attivi, budget 40 ere, ambiente mite) — nessuna regressione sul comportamento di Fase 0-2 quando si arriverà a usarla (task 038).
-- [ ] La rampa satura ai valori `*_late` dopo `difficulty_ramp_worlds` mondi (oltre quell'indice, `world_params` resta costante ai valori late — nessun overflow/valore assurdo per indici alti, coerente con una run "endless-until-failure").
-- [ ] `world_params` è testabile senza costruire un `SimWorld` (nessuna dipendenza da `bevy::render`/`bevy_egui`, invariante 2).
-- [ ] Test unitari: valore a `world_index=0`, valore a `world_index=1` (vincolo dei 6 tag), saturazione oltre `difficulty_ramp_worlds`.
-- [ ] `cargo clippy -- -D warnings` pulito, `cargo test` verde.
+- [x] Nuovo modulo `src/worldgen.rs` con una funzione pura `pub fn world_params(world_index: u32, config: &SimConfig) -> WorldParams`.
+- [x] `WorldParams` include: `active_tag_count: u32`, `era_budget: u32`, `toxic_zone_width: u32`, `toxic_zone_height: u32`, `temperature_spread: f32`, `matrix_density: f32`, `objective_severity: f32`.
+- [x] Nuovo `DifficultyConfig` in `SimConfig` (campo `difficulty`) con `ramp_worlds`, `toxic_zone_width_late`, `toxic_zone_height_late`, `temperature_spread_late`, `matrix_density_late`, `objective_severity_early/late`. Nessun magic number fuori da `SimConfig`.
+- [x] **Criterio letterale dal GDD §16**: `world_params(1, &config).active_tag_count == 6` — verificato dal test `world_index_one_has_six_active_tags`.
+- [x] `world_params(0, &config)` produce esattamente i valori "early" attuali — verificato dal test `world_index_zero_matches_the_early_endpoints_exactly`.
+- [x] La rampa satura ai valori `*_late` dopo `ramp_worlds` mondi — verificato dal test `the_curve_saturates_at_the_late_endpoints_past_ramp_worlds` (anche 50 mondi oltre la rampa producono lo stesso risultato, nessun overflow).
+- [x] `world_params` è testabile senza costruire un `SimWorld`: dipende solo da `crate::config::SimConfig`.
+- [x] Test unitari: valore a `world_index=0`, valore a `world_index=1` (vincolo dei 6 tag), saturazione oltre `ramp_worlds`, più un test aggiuntivo di monotonicità decrescente del budget di ere lungo la rampa.
+- [x] `cargo clippy --all-targets -- -D warnings` pulito, `cargo test` verde (72 test totali, nessuna regressione).
+
+## Riepilogo implementazione
+
+- `src/config.rs`: nuovo `DifficultyConfig` (campo `SimConfig::difficulty`) con `ramp_worlds: u32 = 3` (valore minimo che riproduce esattamente il vincolo GDD §16 dei 6 tag a World 2) e gli endpoint `*_late` per zona tossica, ampiezza termica, densità matrice, severità obiettivo.
+- `src/worldgen.rs` (nuovo): `WorldParams` e `world_params()`, interpolazione lineare (`ramp_fraction`/`lerp_u32`/`lerp_f32`) da endpoint "early" (letti dai config esistenti `TagConfig`/`TimeConfig`/`EnvironmentConfig`) a endpoint "late" (nuovi campi in `DifficultyConfig`), saturata oltre `ramp_worlds`.
+- `src/lib.rs`: esportato `pub mod worldgen;`.
 
 ---
 

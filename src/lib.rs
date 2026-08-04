@@ -8,3 +8,4 @@ pub mod run;
 pub mod sim;
 pub mod state;
 pub mod world;
+pub mod worldgen;

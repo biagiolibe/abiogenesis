@@ -123,7 +123,7 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 **Track A — worldgen** (036 and 037 in parallel; both feed 038 → 039):
 
 - `[x]` 036 — `TagSlot` newtype: compiler-driven fix for `TagMatrix`'s contiguous-`TagId` indexing assumption, prerequisite for non-contiguous tag-subset selection (GDD §9) → [036](tasks/done/036-tag-slot-newtype.md)
-- `[ ]` 037 — `WorldParams` and difficulty curve: pure `world_params(world_index, config)` function (GDD §9; literal acceptance criterion from §16: World 2 has 6 active tags) → [037](tasks/037-world-params-difficulty-curve.md)
+- `[x]` 037 — `WorldParams` and difficulty curve: pure `world_params(world_index, config)` function (GDD §9; literal acceptance criterion from §16: World 2 has 6 active tags) → [037](tasks/done/037-world-params-difficulty-curve.md)
 - `[ ]` 038 — Worldgen: matrix, tag subset, environmental hostility, replacing the hardcoded `(0..active_tags_early)` selection and static gradients → [038](tasks/038-worldgen-matrix-tags-environment.md)
 - `[ ]` 039 — Worldgen: starting species pool, replacing the explicit `seed_starting_palette` placeholder → [039](tasks/039-worldgen-starting-species-pool.md)
 

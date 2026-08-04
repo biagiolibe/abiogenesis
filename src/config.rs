@@ -14,6 +14,7 @@ pub struct SimConfig {
     pub energy: EnergyConfig,
     pub tags: TagConfig,
     pub notebook: NotebookConfig,
+    pub difficulty: DifficultyConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -233,6 +234,56 @@ impl Default for NotebookConfig {
         Self {
             confirmation_threshold: 3.0,
             observation_weight_numerator: 1.0,
+        }
+    }
+}
+
+/// The Phase 3 difficulty curve (task 037, GDD §9): every axis of "how hard
+/// is world N" ramps linearly from its early endpoint (read off the
+/// existing per-domain config: `TagConfig::active_tags_early`,
+/// `TimeConfig::era_budget_early`, `TagConfig::matrix_density`,
+/// `EnvironmentConfig`'s toxic-zone size and temperature gradient) to a late
+/// endpoint declared here, over `ramp_worlds` worlds, then holds steady —
+/// the run is endless-until-failure (GDD §8), so there is no "final" world
+/// to hit an exact late value at.
+#[derive(Debug, Clone)]
+pub struct DifficultyConfig {
+    /// Number of worlds over which every axis ramps from its early to its
+    /// late endpoint. `3` is the smallest value that reproduces GDD §16's
+    /// worked example exactly: World 2 (`world_index = 1`) has 6 active
+    /// tags, i.e. `active_tags_early(5) + (active_tags_late(8) -
+    /// active_tags_early(5)) * 1/3 = 6`.
+    pub ramp_worlds: u32,
+    /// Toxic zone width at the late endpoint (early end is
+    /// `EnvironmentConfig::toxic_zone_width`).
+    pub toxic_zone_width_late: u32,
+    /// Toxic zone height at the late endpoint (early end is
+    /// `EnvironmentConfig::toxic_zone_height`).
+    pub toxic_zone_height_late: u32,
+    /// Temperature gradient spread (`right - left`) at the late endpoint;
+    /// the early spread is derived from `EnvironmentConfig`'s existing
+    /// `temperature_gradient_left`/`temperature_gradient_right`.
+    pub temperature_spread_late: f32,
+    /// Matrix density at the late endpoint (early end is
+    /// `TagConfig::matrix_density`).
+    pub matrix_density_late: f32,
+    /// Objective severity multiplier at the run's start (task 042 scales
+    /// objective thresholds by this; task 037 only produces the number).
+    pub objective_severity_early: f32,
+    /// Objective severity multiplier at the late endpoint.
+    pub objective_severity_late: f32,
+}
+
+impl Default for DifficultyConfig {
+    fn default() -> Self {
+        Self {
+            ramp_worlds: 3,
+            toxic_zone_width_late: 16,
+            toxic_zone_height_late: 12,
+            temperature_spread_late: 1.0,
+            matrix_density_late: 0.6,
+            objective_severity_early: 1.0,
+            objective_severity_late: 2.0,
         }
     }
 }

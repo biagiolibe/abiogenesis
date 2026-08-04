@@ -36,7 +36,7 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 |-------|----|--------|------------|------|
 | `[x]` | 035 | Run/world state foundation | none | [035](done/035-run-world-state-foundation.md) |
 | `[x]` | 036 | `TagSlot` newtype: compiler-driven matrix indexing | none | [036](done/036-tag-slot-newtype.md) |
-| `[ ]` | 037 | `WorldParams` and difficulty curve | none | [037](037-world-params-difficulty-curve.md) |
+| `[x]` | 037 | `WorldParams` and difficulty curve | none | [037](done/037-world-params-difficulty-curve.md) |
 | `[ ]` | 038 | Worldgen: matrix, tag subset, environmental hostility | 036, 037 | [038](038-worldgen-matrix-tags-environment.md) |
 | `[ ]` | 039 | Worldgen: starting species pool | 038 | [039](039-worldgen-starting-species-pool.md) |
 | `[ ]` | 040 | Objectives: type + evaluation engine | none | [040](040-objectives-type-evaluation-engine.md) |
@@ -103,6 +103,7 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | `[x]` | 034 | Centralize player-facing text behind a single `text` module | Claude | [034](done/034-centralize-player-facing-text.md) |
 | `[x]` | 035 | Run/world state foundation (`GameState::{WorldCleared,Defeat}`, `RunProgress`, `EraCompleted`) | Claude | [035](done/035-run-world-state-foundation.md) |
 | `[x]` | 036 | `TagSlot` newtype: compiler-driven matrix indexing | Claude | [036](done/036-tag-slot-newtype.md) |
+| `[x]` | 037 | `WorldParams` and difficulty curve | Claude | [037](done/037-world-params-difficulty-curve.md) |
 
 ---
 
