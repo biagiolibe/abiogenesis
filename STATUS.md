@@ -34,6 +34,35 @@ Phase 2 is now complete — the deduction game (notebook + confirmation) and the
 
 ---
 
+## A plausible playthrough (grounded in the actual UI, not a design sketch)
+
+Unlike GDD §16's illustrated example (a stylized 10×6 grid with reader-friendly glyphs `◆ ○ ▲ ✦ ✚`), this walks through what a player literally sees today: generated species names (`render::species_label`, task 029), Greek-letter tag glyphs (`notebook::tag_glyph`), and the Notebook's hypothesis *graph* (task 031 replaced the old spreadsheet table).
+
+**World (seed 42)**: three starting species land on the palette — **Nyx** (Photolithic, cold-adapted, `temp_opt 0.20`, tags `●ε ●ι`), **Kael** (Photolithic, heat-loving, `temp_opt 0.80`, tags `●ι ●ε`), **Sable** (Predator, mid-range, `temp_opt 0.59`, tags `●ε ●β ●ι`). Five tags are active this run: `α β δ ε ι`.
+
+**Era 0.** The player spends 2 of the 3-point budget seeding a cluster of Nyx in the cold/bright corner and one Sable a few cells away, in `Seed` mode. Nothing in the Notebook yet — `(no observations yet)`.
+
+**Era 1.** Nyx blooms in its niche; Sable, sitting adjacent to some of it, starts predating — each predated Nyx is also an `AdjacencyObserved` event for the `(ι, ε)` and `(ε, ι)` tag pairs the two species carry. A couple of Nyx individuals die outright from the combined predation + upkeep. The Observation log picks up the *salient* ones (task 026: a death only logs if the player placed that exact organism via `Seed`):
+
+```
+Era 0: your Sable (species 2) organism at (47, 1) died
+Era 1: your Nyx (species 0) organism at (16, 23) died
+Era 1: your Nyx (species 0) organism at (18, 0) died
+Era 1: Sable (species 2) went extinct
+```
+
+(Reproduced offspring dying doesn't log — only a death traced back to a player-placed cell does, so the feed stays curated instead of flooding every tick.) The list scrolls with `stick_to_bottom` so the newest line is always the one in view, each prefixed by a small dot in that entry's `species_color` swatch.
+
+**Era 2–3.** The player opens the Notebook (`Tab`) to check the hypothesis graph. Two of the five tag-nodes (`ε`, `ι`) are joined by a thin gray dot — partial evidence (task 028), not yet a confirmed edge, because every observed adjacency so far had confounders (Sable carries three tags at once, so no single-tag-pair observation has been clean). The player switches to `Stress` for a turn, nudging temperature in an isolated pocket to try to force a cleaner Nyx–Kael contact away from any Sable, then reseeds a lone Kael right against a lone Nyx in that pocket.
+
+**Era 4.** The isolated pair interacts with zero confounders (weight 1.0 per observation) — three ticks of contact is enough to cross the confirmation threshold (`3.0`). The hypothesis graph now draws a real edge: a green arrow `ι → ε` (positive) with an arrowhead at `ε`'s node, confirming Kael's `ι` tag benefits organisms carrying `ε` — which is why Sable, also carrying `ε`, thrived next to Nyx early on. Hovering either node's tooltip spells this out in text (`ι → ε: confirmed positive`) as a fallback to the graph.
+
+**Era 5 onward.** With budget left, the player splices a Nyx variant that adds the `β` tag (`Splice`, 2 points) to test whether it changes how Sable treats it — a new, still-unconfirmed edge starts accumulating partial evidence the moment the spliced organism and a Sable end up adjacent. The catalog panel at the bottom of the Notebook keeps the full active tag pool and every species' tags visible throughout, so the player never has to hold the glyph-to-color mapping in their head.
+
+This is the loop Phase 2 delivers end to end: curated log → partial/confirmed graph → catalog for reference, all driven by real `MessageReader<AdjacencyObserved>`/`OrganismDied` events rather than the player inspecting the grid directly.
+
+---
+
 ## 1. Application shell
 
 **What**: a Bevy app with a real window, deterministic simulation, 2D rendering, an egui HUD, and keyboard/mouse input — structured as one `Plugin` per concern.
