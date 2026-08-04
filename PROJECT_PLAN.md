@@ -93,7 +93,7 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 
 - `[x]` 026 — Log salient organism deaths, not just extinctions: a player-`Seed`-ed organism dying leaves zero trace in the Notebook today, which a first playtest found disorienting (GDD §7, §11)
 - `[x]` 027 — Splice: add a real "Add tag" option, not just "Swap" — a species with room under GDD §5.3's 1-3 tag cap should be able to gain a tag without sacrificing an existing one
-- `[ ]` 028 (🟢 P3, low priority — revisit later) — Distinguish "no evidence" from "unconfirmed evidence" in the hypothesis grid: a `?` cell today can mean either a truly zero matrix interaction or a real one with too little evidence yet, indistinguishable to the player
+- `[x]` 028 (🟢 P3, low priority — revisit later) — Distinguish "no evidence" from "unconfirmed evidence" in the hypothesis grid: a `?` cell today can mean either a truly zero matrix interaction or a real one with too little evidence yet, indistinguishable to the player
 - `[x]` 029 — Stable tag identifiers (opaque, e.g. Greek letters — GDD §11 still bars descriptive names) and readable species display names, replacing bare "species N"
 - `[x]` 030 — HUD reorganization: visual grouping, icon buttons for actions, a progress bar for the action budget, tooltips — presentation-only restructuring of `ui.rs`, no new information or mechanics
 - `[x]` 031 — Hypothesis grid as a graph (tag nodes in a circle, confirmed relationships as colored directed edges) instead of the current `?`/`+!`/`-!` spreadsheet table — same `MatrixKnowledge` data, different rendering

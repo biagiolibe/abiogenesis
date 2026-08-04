@@ -281,14 +281,31 @@ const ARROW_WIDTH: f32 = 6.0;
 const EDGE_POSITIVE_COLOR: egui::Color32 = egui::Color32::from_rgb(96, 200, 120);
 const EDGE_NEGATIVE_COLOR: egui::Color32 = egui::Color32::from_rgb(220, 96, 96);
 
+/// Marker for a pair with `evidence > 0.0` but not yet confirmed (task 028):
+/// a small neutral-gray dot, never a line or arrowhead — visually distinct
+/// from a confirmed edge at a glance, so it can never be mistaken for one.
+/// Carries no sign/magnitude, only "something has been observed here."
+const PARTIAL_EVIDENCE_COLOR: egui::Color32 = egui::Color32::from_gray(130);
+const PARTIAL_MARKER_RADIUS: f32 = 3.0;
+/// Placed most of the way toward the receiver (rather than centered) so the
+/// marker still reads as "evidence exists in *this* direction," the same
+/// directionality the pre-031 spreadsheet table conveyed via row/column —
+/// without a sign or an arrowhead, so it can't be confused for confirmation.
+const PARTIAL_MARKER_T: f32 = 0.65;
+
 /// The hypothesis graph (GDD §7, §5.9), replacing task 021's
 /// `active_tags x active_tags` spreadsheet table: `world.active_tags` as
-/// nodes arranged around a circle, a directed edge drawn only where
-/// `MatrixKnowledge::revealed_value` returns `Some` — an unconfirmed pair
-/// draws nothing at all, same information boundary the old table honored
-/// (never a hint beyond `is_confirmed`). The diagonal (`exerter ==
-/// receiver`, always 0 by construction) is skipped entirely rather than
-/// drawn as a self-loop — there was never a real hypothesis there.
+/// nodes arranged around a circle, a directed edge drawn where
+/// `MatrixKnowledge::revealed_value` returns `Some`, or a small dot (task
+/// 028) where evidence has started accumulating but hasn't crossed the
+/// confirmation threshold yet — distinguishing "no interaction exists" from
+/// "an interaction exists but wasn't observed enough yet," which a plain
+/// absence of edge couldn't tell apart. A pair with zero evidence draws
+/// nothing at all, the same information boundary the old table honored
+/// (never a hint beyond `is_confirmed`, and the partial marker never reveals
+/// sign). The diagonal (`exerter == receiver`, always 0 by construction) is
+/// skipped entirely rather than drawn as a self-loop — there was never a
+/// real hypothesis there.
 ///
 /// Player-authored conjectures (GDD §5.9's `±?` state — marking a guess
 /// before it's confirmed) aren't implemented: cut for this task, left as a
@@ -321,6 +338,8 @@ fn hypothesis_grid(ui: &mut egui::Ui, world: &SimWorld, knowledge: &MatrixKnowle
                     EDGE_NEGATIVE_COLOR
                 };
                 draw_edge(&painter, positions[ei], positions[ri], color);
+            } else if knowledge.evidence(exerter, receiver) > 0.0 {
+                draw_partial_marker(&painter, positions[ei], positions[ri]);
             }
         }
     }
@@ -369,9 +388,19 @@ fn draw_edge(painter: &egui::Painter, from: egui::Pos2, to: egui::Pos2, color: e
     ));
 }
 
+/// A small, dim, lineless dot (task 028) marking a pair with `evidence >
+/// 0.0` but not yet confirmed — deliberately nothing like `draw_edge`'s
+/// line-plus-arrowhead, so it reads as a different kind of thing at a
+/// glance rather than a weaker version of a confirmed edge.
+fn draw_partial_marker(painter: &egui::Painter, from: egui::Pos2, to: egui::Pos2) {
+    let point = from.lerp(to, PARTIAL_MARKER_T);
+    painter.circle_filled(point, PARTIAL_MARKER_RADIUS, PARTIAL_EVIDENCE_COLOR);
+}
+
 /// Hover fallback for a node (acceptance criterion: the graph must not be
-/// the *only* way to read this information): the tag's glyph plus every
-/// confirmed relationship it takes part in, as exerter or receiver.
+/// the *only* way to read this information): the tag's glyph, every
+/// confirmed relationship it takes part in, and — without sign or magnitude
+/// (task 028) — which pairs have partial, unconfirmed evidence.
 fn node_tooltip_text(
     tag: TagId,
     tags: &[TagId],
@@ -390,6 +419,12 @@ fn node_tooltip_text(
                 tag_glyph(tag),
                 tag_glyph(other)
             ));
+        } else if knowledge.evidence(tag, other) > 0.0 {
+            lines.push(format!(
+                "{} → {} (some evidence)",
+                tag_glyph(tag),
+                tag_glyph(other)
+            ));
         }
         if let Some(value) = knowledge.revealed_value(other, tag, world) {
             let sign = if value > 0 { "+" } else { "-" };
@@ -398,10 +433,16 @@ fn node_tooltip_text(
                 tag_glyph(other),
                 tag_glyph(tag)
             ));
+        } else if knowledge.evidence(other, tag) > 0.0 {
+            lines.push(format!(
+                "{} → {} (some evidence)",
+                tag_glyph(other),
+                tag_glyph(tag)
+            ));
         }
     }
     if lines.len() == 1 {
-        lines.push("(no confirmed relationships yet)".to_string());
+        lines.push("(no observations yet)".to_string());
     }
     lines.join("\n")
 }

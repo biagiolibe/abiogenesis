@@ -21,10 +21,10 @@ A 2026-08-03 playtest ran into exactly this: two organisms with different tags w
 
 ## 📋 Acceptance Criteria
 
-- [ ] The hypothesis grid renders a third visual state for cells with `evidence > 0.0` but `< confirmation_threshold` — distinct from both `?` (zero evidence) and `+!`/`-!` (confirmed) — without revealing the sign (that would defeat the confirmation mechanic; only *that observations exist* is shown, not what they imply).
-- [ ] The exact evidence value (e.g. `1.0` vs `2.9`) is **not** shown as a raw number — GDD §11's "nameless glyphs/colors, learned empirically" ethos extends here; a coarse indicator (e.g. a partially-filled glyph, a distinct weak color) is enough, not a progress bar with digits.
-- [ ] `MatrixKnowledge` needs no logic changes — `evidence()` already exposes what's needed; this is a rendering-only change in `notebook.rs`'s `hypothesis_grid`.
-- [ ] `cargo clippy -- -D warnings` clean.
+- [x] The hypothesis grid renders a third visual state for cells with `evidence > 0.0` but `< confirmation_threshold` — distinct from both `?` (zero evidence) and `+!`/`-!` (confirmed) — without revealing the sign (that would defeat the confirmation mechanic; only *that observations exist* is shown, not what they imply). (Task 021's spreadsheet table was replaced by task 031's node-graph rendering before this task landed; adapted to that — a small neutral-gray dot near the receiver node, distinct from a confirmed edge's line+arrowhead.)
+- [x] The exact evidence value (e.g. `1.0` vs `2.9`) is **not** shown as a raw number — GDD §11's "nameless glyphs/colors, learned empirically" ethos extends here; a coarse indicator (e.g. a partially-filled glyph, a distinct weak color) is enough, not a progress bar with digits.
+- [x] `MatrixKnowledge` needs no logic changes — `evidence()` already exposes what's needed; this is a rendering-only change in `notebook.rs`'s `hypothesis_grid`.
+- [x] `cargo clippy -- -D warnings` clean.
 
 ---
 
