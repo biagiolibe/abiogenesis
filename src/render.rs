@@ -1,8 +1,11 @@
+use bevy::asset::RenderAssetUsages;
 use bevy::camera::ScalingMode;
+use bevy::image::Image;
 use bevy::prelude::*;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
 use abiogenesis::config::SimConfig;
-use abiogenesis::world::{SimWorld, SpeciesId};
+use abiogenesis::world::{Metabolism, SimWorld, SpeciesId};
 
 /// Pixel size of one grid cell on screen. Presentation-only, not a
 /// simulation coefficient, so it stays local instead of living in
@@ -52,7 +55,7 @@ pub struct GridRenderPlugin;
 
 impl Plugin for GridRenderPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (spawn_camera, spawn_grid))
+        app.add_systems(Startup, (spawn_camera, spawn_grid, spawn_metabolism_shapes))
             .add_systems(Update, sync_grid_colors);
         #[cfg(debug_assertions)]
         {
@@ -157,6 +160,96 @@ fn spawn_camera(mut commands: Commands, config: Res<SimConfig>) {
     ));
 }
 
+/// Side length, in texels, of a generated shape mask (task 032). Independent
+/// of `CELL_SIZE` — `Sprite::custom_size` stretches whatever texture
+/// resolution to the on-screen cell, so this only controls how smooth the
+/// shape's edge looks, not its footprint on the grid.
+const SHAPE_TEXTURE_SIZE: u32 = 20;
+
+/// One procedurally generated shape texture per `Metabolism` variant (task
+/// 032 — a second visual dimension beyond species hue/energy lightness, so a
+/// predator and a photolithic organism of similar hue stay distinguishable
+/// at a glance). Generated once at `Startup`; `sync_grid_colors` swaps which
+/// handle an occupied cell's `Sprite::image` points to every frame,
+/// alongside its existing `Sprite::color` tint.
+#[derive(Resource)]
+struct MetabolismShapes {
+    photolithic: Handle<Image>,
+    predator: Handle<Image>,
+    decomposer: Handle<Image>,
+}
+
+impl MetabolismShapes {
+    fn handle_for(&self, metabolism: Metabolism) -> Handle<Image> {
+        match metabolism {
+            Metabolism::Photolithic => self.photolithic.clone(),
+            Metabolism::Predator => self.predator.clone(),
+            Metabolism::Decomposer => self.decomposer.clone(),
+        }
+    }
+}
+
+/// Builds a square RGBA texture from a coverage predicate evaluated over
+/// normalized coordinates `[-1, 1]` (center of the texture at the origin):
+/// opaque white where `inside` returns `true`, fully transparent elsewhere.
+/// `Sprite::color`'s existing species/energy tint multiplies this alpha
+/// mask, so the shape carries no color information of its own.
+fn shape_mask_image(inside: impl Fn(f32, f32) -> bool) -> Image {
+    let size = SHAPE_TEXTURE_SIZE;
+    let mut data = Vec::with_capacity((size * size * 4) as usize);
+    for row in 0..size {
+        for col in 0..size {
+            let nx = (col as f32 + 0.5) / size as f32 * 2.0 - 1.0;
+            let ny = (row as f32 + 0.5) / size as f32 * 2.0 - 1.0;
+            let alpha = if inside(nx, ny) { 255 } else { 0 };
+            data.extend_from_slice(&[255, 255, 255, alpha]);
+        }
+    }
+    Image::new(
+        Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        data,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
+    )
+}
+
+/// A filled circle — `Photolithic` (GDD §5.4's primary producer, the
+/// "default" metabolism players see most).
+fn circle_mask(nx: f32, ny: f32) -> bool {
+    nx * nx + ny * ny <= 0.8 * 0.8
+}
+
+/// An upward-pointing triangle — `Predator`, evoking a fang/claw shape.
+fn triangle_mask(nx: f32, ny: f32) -> bool {
+    let apex_y = -0.9;
+    let base_y = 0.8;
+    let half_width = 0.85;
+    if ny < apex_y || ny > base_y {
+        return false;
+    }
+    let t = (ny - apex_y) / (base_y - apex_y);
+    let bound = half_width * t;
+    nx >= -bound && nx <= bound
+}
+
+/// A diamond (rotated square, Manhattan-norm disc) — `Decomposer`.
+fn diamond_mask(nx: f32, ny: f32) -> bool {
+    nx.abs() + ny.abs() <= 0.9
+}
+
+fn spawn_metabolism_shapes(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+    commands.insert_resource(MetabolismShapes {
+        photolithic: images.add(shape_mask_image(circle_mask)),
+        predator: images.add(shape_mask_image(triangle_mask)),
+        decomposer: images.add(shape_mask_image(diamond_mask)),
+    });
+}
+
 fn spawn_grid(mut commands: Commands, config: Res<SimConfig>) {
     let width = config.grid.width as usize;
     let height = config.grid.height as usize;
@@ -171,16 +264,33 @@ fn spawn_grid(mut commands: Commands, config: Res<SimConfig>) {
     }
 }
 
-/// Sprites are spawned once (`Startup`); every tick only updates `Sprite::color`,
+/// Sprites are spawned once (`Startup`); every tick only updates
+/// `Sprite::color` and `Sprite::image` (task 032 — shape by metabolism),
 /// read-only against `SimWorld` (never `ResMut` here — rendering must not
 /// mutate simulation state).
 fn sync_grid_colors(
     world: Res<SimWorld>,
     config: Res<SimConfig>,
+    shapes: Res<MetabolismShapes>,
     mut cells: Query<(&GridCell, &mut Sprite)>,
 ) {
     for (cell, mut sprite) in &mut cells {
         sprite.color = cell_color(&world, &config, cell.x, cell.y);
+        sprite.image = cell_shape(&world, &shapes, cell.x, cell.y);
+    }
+}
+
+/// The shape texture for cell `(x, y)` (task 032): a metabolism-specific
+/// mask for an occupied cell, or `Handle::default()` — the same implicit
+/// solid-square fallback `Sprite::from_color` itself uses — for empty and
+/// residue-only cells, which this task leaves visually unaffected.
+fn cell_shape(world: &SimWorld, shapes: &MetabolismShapes, x: usize, y: usize) -> Handle<Image> {
+    match world.get(x, y).organism {
+        Some(organism) => {
+            let metabolism = world.species[organism.species.0 as usize].metabolism;
+            shapes.handle_for(metabolism)
+        }
+        None => Handle::default(),
     }
 }
 

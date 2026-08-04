@@ -33,7 +33,6 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 | Status | ID | Title | Priority | Depends on | Agent | Task File |
 |-------|----|--------|----------|------------|--------|-----------|
 | `[ ]` | 028 | Distinguish "no evidence" from "unconfirmed evidence" in the hypothesis grid | 🟢 P3 | 020, 021 | unassigned | [028](028-partial-evidence-visibility.md) |
-| `[ ]` | 032 | Distinguish organisms by shape (metabolism), not just color | 🟡 P2 | 006, 010-012 | unassigned | [032](032-organism-shape-legibility.md) |
 | `[ ]` | 033 | Render the toxic zone visibly during normal play | 🟡 P2 | 004, 010 | unassigned | [033](033-visible-toxicity.md) |
 | `[ ]` | 034 | Centralize player-facing text behind a single `text` module | 🟢 P3 | 030 | unassigned | [034](034-centralize-player-facing-text.md) |
 
@@ -87,6 +86,7 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | `[x]` | 029 | Stable tag identifiers and readable species names | Claude | [029](done/029-tag-identifiers-species-names.md) |
 | `[x]` | 030 | HUD reorganization: grouping, icons, tooltips, bars | Claude | [030](done/030-hud-reorganization.md) |
 | `[x]` | 031 | Hypothesis grid as a graph, not a spreadsheet table | Claude | [031](done/031-hypothesis-grid-as-graph.md) |
+| `[x]` | 032 | Distinguish organisms by shape (metabolism), not just color | Claude | [032](done/032-organism-shape-legibility.md) |
 
 ---
 

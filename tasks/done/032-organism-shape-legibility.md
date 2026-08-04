@@ -17,10 +17,10 @@ A 2026-08-03 playtest found the world grid "anonymous": every cell renders as a 
 
 ## 📋 Acceptance Criteria
 
-- [ ] Occupied cells render with a distinct shape per `Metabolism` variant (e.g. circle for `Photolithic`, triangle for `Predator`, diamond/square for `Decomposer`) — species hue and energy-based lightness (task 006/existing `cell_color` logic) still apply, shape is an additional dimension, not a replacement.
-- [ ] Empty and residue-only cells are visually unaffected — this only changes how *occupied* cells render.
-- [ ] Shape updates correctly as organisms move/die/spawn across cells (a cell that held a predator and now holds a photolithic organism must show the new shape next frame, not a stale one) — verify this holds given `sync_grid_colors` already re-evaluates every cell every frame.
-- [ ] `cargo clippy -- -D warnings` clean.
+- [x] Occupied cells render with a distinct shape per `Metabolism` variant (e.g. circle for `Photolithic`, triangle for `Predator`, diamond/square for `Decomposer`) — species hue and energy-based lightness (task 006/existing `cell_color` logic) still apply, shape is an additional dimension, not a replacement.
+- [x] Empty and residue-only cells are visually unaffected — this only changes how *occupied* cells render.
+- [x] Shape updates correctly as organisms move/die/spawn across cells (a cell that held a predator and now holds a photolithic organism must show the new shape next frame, not a stale one) — verify this holds given `sync_grid_colors` already re-evaluates every cell every frame.
+- [x] `cargo clippy -- -D warnings` clean.
 
 ---
 
