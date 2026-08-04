@@ -1,5 +1,6 @@
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::ScalingMode;
+use bevy::color::Mix;
 use bevy::image::Image;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
@@ -321,23 +322,41 @@ pub fn world_to_cell(world_pos: Vec2, width: usize, height: usize) -> Option<(us
 
 /// The single place that decides a cell's color (GDD §11): occupied cells by
 /// species hue and energy, cells with leftover residue by a neutral hue
-/// scaled by how much is left, empty cells by a faint shading of `light`.
+/// scaled by how much is left, empty cells by a faint shading of `light`,
+/// then a toxicity tint (task 033) composited on top of whichever of the
+/// three applies.
 fn cell_color(world: &SimWorld, config: &SimConfig, x: usize, y: usize) -> Color {
     let cell = world.get(x, y);
 
-    if let Some(organism) = cell.organism {
+    let base = if let Some(organism) = cell.organism {
         let hue = (organism.species.0 as f32 * SPECIES_HUE_STEP) % 360.0;
         // Energy can exceed repro_threshold right before reproduction; clamp.
         let fill = (organism.energy / config.energy.repro_threshold).clamp(0.0, 1.0);
-        return Color::hsl(hue, 0.75, 0.15 + fill * 0.35);
-    }
-
-    if cell.residue > 0.0 {
+        Color::hsl(hue, 0.75, 0.15 + fill * 0.35)
+    } else if cell.residue > 0.0 {
         let intensity = (cell.residue / config.energy.residue_on_death).clamp(0.0, 1.0);
-        return Color::hsl(30.0, 0.2, 0.08 + intensity * 0.22);
-    }
+        Color::hsl(30.0, 0.2, 0.08 + intensity * 0.22)
+    } else {
+        Color::hsl(0.0, 0.0, 0.03 + cell.light * 0.12)
+    };
 
-    Color::hsl(0.0, 0.0, 0.03 + cell.light * 0.12)
+    toxicity_tint(base, cell.toxicity)
+}
+
+/// A warning-magenta hue to blend toward as `toxicity` rises (GDD §5.2's
+/// toxic zone). Composited over the organism/residue/empty base color
+/// rather than replacing it, so a toxic cell holding an organism still
+/// reads as that organism, just visibly tainted — capped at a 45% blend
+/// even at `toxicity = 1.0` so it stays a tint, not a wash.
+///
+/// Purely a legibility fix (task 033 — the toxic zone was previously
+/// invisible outside the dev-only `F1` overlay): `toxicity` has no effect on
+/// `sim::step`'s tick arithmetic today (task 023's finding), and whether it
+/// ever should is a separate balance decision this doesn't make. The visual
+/// and the (currently absent) mechanical effect are not the same thing.
+fn toxicity_tint(base: Color, toxicity: f32) -> Color {
+    let warning = Color::hsl(320.0, 0.9, 0.35);
+    base.mix(&warning, toxicity.clamp(0.0, 1.0) * 0.45)
 }
 
 #[cfg(test)]
@@ -377,6 +396,21 @@ mod tests {
         };
         assert_eq!(empty.saturation, 0.0);
         assert!(empty.lightness < residue.lightness);
+    }
+
+    #[test]
+    fn toxic_cells_render_differently_than_clean_ones() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        let (x, y) = (0, 0);
+        let idx = world.index(x, y);
+        world.cells[idx].toxicity = 0.0;
+        let clean = cell_color(&world, &config, x, y);
+
+        world.cells[idx].toxicity = 1.0;
+        let toxic = cell_color(&world, &config, x, y);
+
+        assert_ne!(clean, toxic);
     }
 
     #[test]

@@ -98,7 +98,7 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 - `[x]` 030 — HUD reorganization: visual grouping, icon buttons for actions, a progress bar for the action budget, tooltips — presentation-only restructuring of `ui.rs`, no new information or mechanics
 - `[x]` 031 — Hypothesis grid as a graph (tag nodes in a circle, confirmed relationships as colored directed edges) instead of the current `?`/`+!`/`-!` spreadsheet table — same `MatrixKnowledge` data, different rendering
 - `[x]` 032 — Distinguish organisms by shape (metabolism), not just color — occupied cells are flat colored squares today, indistinguishable by metabolism without checking the HUD
-- `[ ]` 033 (bugfix-flavored) — Render the toxic zone visibly during normal play — `cell_color` never reads `toxicity` today; the only way to see it is the dev-only `F1` overlay
+- `[x]` 033 (bugfix-flavored) — Render the toxic zone visibly during normal play — `cell_color` never reads `toxicity` today; the only way to see it is the dev-only `F1` overlay
 - `[ ]` 034 — Centralize player-facing text (HUD, notebook, tooltips, event log) behind a single `src/text.rs` module — prep for eventual localization, no real i18n/loader yet
 
 ### 🏁 Phase 3 — The run

@@ -19,10 +19,10 @@ This is a readability bug more than a feature request: a real gameplay-relevant 
 
 ## 📋 Acceptance Criteria
 
-- [ ] `cell_color` (or an addition alongside it) factors `cell.toxicity` into what's rendered — e.g. a tint/overlay whose intensity scales with `toxicity`, composited with the existing organism/residue/light rendering rather than replacing it (a toxic cell holding an organism should still show the organism's species color, just visibly "tainted").
-- [ ] The toxic zone (and any cell whose toxicity changes via `Stress`) is visually identifiable without the `F1` debug overlay.
-- [ ] Existing render tests (`render::tests::occupied_cells_are_saturated_and_residue_desaturated`) still pass, or are updated if the new toxicity tint changes their saturation/lightness assumptions — don't let this silently break coverage that currently locks down the empty/residue/occupied color relationships.
-- [ ] `cargo clippy -- -D warnings` clean.
+- [x] `cell_color` (or an addition alongside it) factors `cell.toxicity` into what's rendered — e.g. a tint/overlay whose intensity scales with `toxicity`, composited with the existing organism/residue/light rendering rather than replacing it (a toxic cell holding an organism should still show the organism's species color, just visibly "tainted").
+- [x] The toxic zone (and any cell whose toxicity changes via `Stress`) is visually identifiable without the `F1` debug overlay.
+- [x] Existing render tests (`render::tests::occupied_cells_are_saturated_and_residue_desaturated`) still pass, or are updated if the new toxicity tint changes their saturation/lightness assumptions — don't let this silently break coverage that currently locks down the empty/residue/occupied color relationships.
+- [x] `cargo clippy -- -D warnings` clean.
 
 ---
 
