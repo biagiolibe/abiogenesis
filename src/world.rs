@@ -9,6 +9,7 @@ use rand::RngExt;
 use rand::SeedableRng;
 
 use crate::config::{SimConfig, TagConfig};
+use crate::worldgen::{world_params, WorldParams};
 
 /// How a species derives energy (GDD §5.4). Only `Photolithic` is active in
 /// Phase 0; the other variants exist now to avoid a refactor in Phase 1.
@@ -108,10 +109,10 @@ pub struct SimWorld {
     pub era: u32,
     pub seed: u64,
     /// The world's active tag subset (GDD §5.5): `active_tags[slot.0 as usize]`
-    /// is the `TagId` a given `TagSlot` refers to in this world. Fixed to
-    /// `TagId(0..active_tags_early)` in Phase 1 — per-world procedural
-    /// selection from the global pool is Phase 3 world generation
-    /// (`PROJECT_PLAN.md`), not reimplemented here.
+    /// is the `TagId` a given `TagSlot` refers to in this world. Drawn
+    /// procedurally from the global pool at construction (task 038,
+    /// `select_active_tags`) — not necessarily a contiguous range of
+    /// `TagId`s, unlike Phase 1's fixed `TagId(0..active_tags_early)`.
     pub active_tags: Vec<TagId>,
     /// The world's secret matrix (GDD §5.5), generated once at construction.
     pub matrix: TagMatrix,
@@ -122,15 +123,33 @@ pub struct SimWorld {
 }
 
 impl SimWorld {
+    /// Builds the first world of a run (`world_index = 0`) — a convenience
+    /// so call sites that don't yet think in terms of run progress (most
+    /// tests, the `r`-key reseed, `spawn_world`) don't have to. Behaves
+    /// exactly like `new_for_world(seed, 0, config)`, which per task 037's
+    /// `world_params(0, ..)` guarantee reproduces Phase 0-2's "early"
+    /// generation parameters exactly.
     pub fn new(seed: u64, config: &SimConfig) -> Self {
+        Self::new_for_world(seed, 0, config)
+    }
+
+    /// Builds one world of a run at `world_index` (GDD §9): the active tag
+    /// subset, matrix, and environment all scale with the difficulty curve
+    /// (`worldgen::world_params`, task 037) instead of always using Phase
+    /// 1's fixed "early" values.
+    pub fn new_for_world(seed: u64, world_index: u32, config: &SimConfig) -> Self {
         let width = config.grid.width as usize;
         let height = config.grid.height as usize;
         let cells = vec![Cell::default(); width * height];
         let mut rng = StdRng::seed_from_u64(seed);
-        let active_tags: Vec<TagId> = (0..config.tags.active_tags_early as u8)
-            .map(TagId)
-            .collect();
-        let matrix = generate_matrix(active_tags.len(), &config.tags, &mut rng);
+        let params = world_params(world_index, config);
+        let active_tags = select_active_tags(&params, &config.tags, &mut rng);
+        let matrix = generate_matrix(
+            active_tags.len(),
+            params.matrix_density,
+            &config.tags,
+            &mut rng,
+        );
         let mut world = Self {
             width,
             height,
@@ -144,29 +163,32 @@ impl SimWorld {
             matrix,
             rng,
         };
-        world.apply_gradients(config);
+        world.apply_gradients(config, &params);
         world
     }
 
-    /// Static Phase 0 gradients: light falls top→bottom, temperature rises
-    /// left→right. The two axes differ on purpose: their crossing is what
-    /// creates 2D niches (GDD §5.2). Doesn't touch the RNG, so it's
-    /// deterministic independently of the seed.
-    fn apply_gradients(&mut self, config: &SimConfig) {
+    /// Light falls top→bottom, temperature rises left→right (the two axes
+    /// differ on purpose: their crossing is what creates 2D niches, GDD
+    /// §5.2); the toxic zone's size and the temperature gradient's spread
+    /// come from `params` (task 038), so later, harder worlds get more
+    /// extreme environments (GDD §9) without changing the gradient shape
+    /// itself. Doesn't touch the RNG, so it's deterministic independently
+    /// of the seed, given the same `params`.
+    fn apply_gradients(&mut self, config: &SimConfig, params: &WorldParams) {
         let env = &config.environment;
-        let zone_x0 = self.width.saturating_sub(env.toxic_zone_width as usize);
-        let zone_y0 = self.height.saturating_sub(env.toxic_zone_height as usize);
+        let zone_x0 = self.width.saturating_sub(params.toxic_zone_width as usize);
+        let zone_y0 = self
+            .height
+            .saturating_sub(params.toxic_zone_height as usize);
+        let temperature_left = env.temperature_gradient_left;
+        let temperature_right = (temperature_left + params.temperature_spread).min(1.0);
 
         for y in 0..self.height {
             let ty = y as f32 / (self.height - 1).max(1) as f32;
             let light = lerp(env.light_gradient_high, env.light_gradient_low, ty);
             for x in 0..self.width {
                 let tx = x as f32 / (self.width - 1).max(1) as f32;
-                let temperature = lerp(
-                    env.temperature_gradient_left,
-                    env.temperature_gradient_right,
-                    tx,
-                );
+                let temperature = lerp(temperature_left, temperature_right, tx);
                 let toxicity = if x >= zone_x0 && y >= zone_y0 {
                     env.toxic_zone_value
                 } else {
@@ -269,19 +291,37 @@ fn spawn_world(mut commands: Commands, config: Res<SimConfig>) {
     commands.insert_resource(world);
 }
 
+/// Draws `params.active_tag_count` distinct tags from the global pool
+/// (`TagConfig::global_tag_pool`) using the world's own RNG (task 038, GDD
+/// §9) — not necessarily a contiguous range, unlike Phase 1's fixed
+/// `TagId(0..active_tags_early)`. The draw order becomes each tag's
+/// `TagSlot` in this world (position in the returned `Vec`).
+fn select_active_tags(params: &WorldParams, config: &TagConfig, rng: &mut StdRng) -> Vec<TagId> {
+    let pool: Vec<TagId> = (0..config.global_tag_pool as u8).map(TagId).collect();
+    let count = (params.active_tag_count as usize).min(pool.len());
+    pool.sample(rng, count).copied().collect()
+}
+
 /// Generates the world's secret tag matrix (GDD §5.5, §5.8), sized to
 /// `slot_count` — the number of tags this world has active, regardless of
 /// which `TagId`s from the global pool they are (task 036: the matrix is
 /// indexed by `TagSlot`, so it only ever needs to know how many slots exist).
 /// Each off-diagonal cell independently becomes non-zero with probability
-/// `matrix_density`; the diagonal always stays `0`. Afterwards, a negative
-/// 3-cycle is forced among 3 distinct slots (overwriting whatever the random
-/// pass produced there) to guarantee at least one coexistence-sustaining RPS
+/// `matrix_density` (task 038: taken from `WorldParams`, so it scales with
+/// the difficulty curve instead of always reading `TagConfig::matrix_density`
+/// directly); the diagonal always stays `0`. Afterwards, a negative 3-cycle
+/// is forced among 3 distinct slots (overwriting whatever the random pass
+/// produced there) to guarantee at least one coexistence-sustaining RPS
 /// relationship exists (GDD §5.8, the worked example in §16.1) — there's no
 /// closed-form way to sample a sparse asymmetric matrix that's guaranteed to
 /// contain one, so forcing it after the fact is simpler than rejection
 /// sampling and always terminates.
-fn generate_matrix(slot_count: usize, config: &TagConfig, rng: &mut StdRng) -> TagMatrix {
+fn generate_matrix(
+    slot_count: usize,
+    matrix_density: f32,
+    config: &TagConfig,
+    rng: &mut StdRng,
+) -> TagMatrix {
     let n = slot_count;
     let mut values = vec![0i8; n * n];
 
@@ -290,7 +330,7 @@ fn generate_matrix(slot_count: usize, config: &TagConfig, rng: &mut StdRng) -> T
             if exerter == receiver {
                 continue;
             }
-            if rng.random_bool(config.matrix_density as f64) {
+            if rng.random_bool(matrix_density as f64) {
                 values[exerter * n + receiver] = nonzero_intensity(config, rng);
             }
         }
@@ -591,8 +631,37 @@ mod tests {
             world.active_tags.len(),
             config.tags.active_tags_early as usize
         );
+        // Task 038: the subset is drawn from the whole global pool, not
+        // necessarily contiguous — every tag must be a valid pool member
+        // and no tag may repeat.
         for (i, tag) in world.active_tags.iter().enumerate() {
-            assert_eq!(tag.0, i as u8);
+            assert!(
+                (tag.0 as usize) < config.tags.global_tag_pool as usize,
+                "tag {tag:?} is outside the global pool"
+            );
+            assert!(
+                !world.active_tags[..i].contains(tag),
+                "active tags must be unique, got a repeat of {tag:?}"
+            );
+        }
+    }
+
+    /// Task 037/038 link: the number of active tags a generated world gets
+    /// must follow `worldgen::world_params`'s curve, not a fixed constant —
+    /// this is a wiring test, not a game-logic one (the curve's own
+    /// behavior is tested in `worldgen::tests`).
+    #[test]
+    fn active_tag_count_follows_the_difficulty_curve() {
+        let config = test_config();
+
+        for world_index in [0, 1, config.difficulty.ramp_worlds, 10] {
+            let world = SimWorld::new_for_world(42, world_index, &config);
+            let expected = crate::worldgen::world_params(world_index, &config).active_tag_count;
+            assert_eq!(
+                world.active_tags.len(),
+                expected as usize,
+                "world_index {world_index}: expected {expected} active tags"
+            );
         }
     }
 

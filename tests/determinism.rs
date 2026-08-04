@@ -35,18 +35,28 @@ fn same_seed_yields_identical_history() {
 
 #[test]
 fn different_seeds_diverge() {
+    // Checks divergence at any point during the run, not just the final
+    // state (task 038 made active-tag selection procedural, so it's a real,
+    // if rare, possibility that two arbitrary seeds both run their
+    // population to total extinction and their grids re-converge once every
+    // organism is gone and residue has fully decayed — that coincidence
+    // would say nothing about whether `step` actually used the RNG).
     let config = SimConfig::default();
     let mut a = seeded_world(42, &config);
     let mut b = seeded_world(43, &config);
 
+    let mut ever_diverged = false;
     for _ in 0..RUN_TICKS {
         step(&mut a, &config);
         step(&mut b, &config);
+        if a.cells != b.cells {
+            ever_diverged = true;
+        }
     }
 
-    assert_ne!(
-        a.cells, b.cells,
-        "different seeds must not converge to the same grid state \
+    assert!(
+        ever_diverged,
+        "different seeds must diverge at some point during the run \
          (a `step` that never draws from the RNG would pass the determinism \
          test above for the wrong reason)"
     );

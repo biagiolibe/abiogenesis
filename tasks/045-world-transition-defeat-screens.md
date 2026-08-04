@@ -48,6 +48,8 @@ Il punto tecnico centrale è estrarre `reseed_world` (`src/input.rs`, righe ~107
 - **Comportamento attuale**: l'unico modo di ottenere un "nuovo mondo" è il tasto `r`, che riparte sempre dagli stessi parametri di difficoltà (non esiste un concetto di "mondo successivo in una run" prima di questo task).
 - **Comportamento desiderato**: superare l'obiettivo di un mondo porta automaticamente (dietro un'interazione esplicita del giocatore) al mondo successivo, più difficile; fallire riporta al main menu, chiudendo la run. Il tasto `r` continua a funzionare come "reseed manuale" ma tramite lo stesso meccanismo di reset, non una copia.
 
+⚠️ **Bug latente scoperto durante il task 038, da risolvere qui**: `MatrixKnowledge::new(config.tags.active_tags_early as usize, ...)` è chiamata con la costante fissa `active_tags_early` (5) in due punti — `notebook.rs::NotebookPlugin::build` e `input.rs::reseed_world`. Da quando il task 038 ha reso `active_tag_count` variabile con `world_index` (mondi tardivi arrivano a 8 tag), una `MatrixKnowledge` dimensionata a 5 andrebbe fuori dai limiti (`record`/`evidence` calcolano `exerter.0 * size + receiver.0` in un vettore da `size*size` elementi) non appena un mondo con più di 5 tag attivi viene generato — panic garantito. Quando questo task introduce `start_world`, la chiamata a `MatrixKnowledge::new` al suo interno **deve** usare `world.active_tags.len()` (la dimensione reale del mondo appena generato), non la costante di config. Verificare anche `NotebookPlugin::build`: se il primo mondo può già avere più di 5 tag (dipende da come 044 inizializza `world_index`), va corretto anche lì.
+
 ---
 
 ## 🔨 Suggested Implementation
