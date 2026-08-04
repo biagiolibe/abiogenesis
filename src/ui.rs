@@ -6,7 +6,7 @@ use bevy_egui::{
 };
 
 use crate::notebook::tag_glyph;
-use crate::render::{species_label, GridCamera};
+use crate::render::{species_color, species_label, GridCamera};
 use crate::text;
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::ActionBudget;
@@ -87,6 +87,12 @@ const HUD_WIDTH: f32 = 260.0;
 /// assigned to it, so this camera draws nothing of the scene, only the
 /// egui overlay (TECH_DESIGN.md §6 "HUD camera").
 const HUD_CAMERA_LAYER: usize = 1;
+
+/// Color-swatch glyph preceding a species' name in Population/Seed Palette
+/// (playtest finding, task 041 session), matching `species_color`'s hue to
+/// the same organism's on-grid dot — same technique `notebook.rs::TAG_GLYPH`
+/// uses for tags.
+const SPECIES_GLYPH: &str = "●";
 
 pub struct UiPlugin;
 
@@ -224,11 +230,14 @@ fn hud_panel(
                     ui.weak(text::NO_POPULATION);
                 }
                 for (species, population, avg_energy) in &stats {
-                    ui.label(text::population_line(
-                        &species_label(*species),
-                        *population,
-                        *avg_energy,
-                    ));
+                    ui.horizontal(|ui| {
+                        ui.colored_label(species_color(*species), SPECIES_GLYPH);
+                        ui.label(text::population_line(
+                            &species_label(*species),
+                            *population,
+                            *avg_energy,
+                        ));
+                    });
                 }
             });
 
@@ -237,7 +246,11 @@ fn hud_panel(
                 ui.strong(text::HEADING_SEED_PALETTE)
                     .on_hover_text(text::SEED_PALETTE_HOVER);
                 for i in 0..world.species.len() as u8 {
-                    ui.radio_value(&mut selected.0, SpeciesId(i), species_label(SpeciesId(i)));
+                    let species = SpeciesId(i);
+                    ui.horizontal(|ui| {
+                        ui.colored_label(species_color(species), SPECIES_GLYPH);
+                        ui.radio_value(&mut selected.0, species, species_label(species));
+                    });
                 }
             });
             // Placeholder: objective arrives in Phase 3 (GDD §8).

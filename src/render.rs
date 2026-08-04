@@ -4,6 +4,7 @@ use bevy::color::Mix;
 use bevy::image::Image;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy_egui::egui;
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::world::{Metabolism, SimWorld, SpeciesId};
@@ -34,6 +35,23 @@ const SPECIES_NAMES: [&str; 16] = [
 pub fn species_label(id: SpeciesId) -> String {
     let name = SPECIES_NAMES[id.0 as usize % SPECIES_NAMES.len()];
     format!("{name} (species {})", id.0)
+}
+
+/// Hue for a species' identity color, shared by `cell_color`'s grid
+/// rendering and `species_color`'s egui swatch, so the two always agree.
+fn species_hue(id: SpeciesId) -> f32 {
+    (id.0 as f32 * SPECIES_HUE_STEP) % 360.0
+}
+
+/// A species' identity color as an egui swatch (playtest finding, task 041
+/// session: the HUD's Seed Palette/Population panels listed species by name
+/// only, with no way to connect a name to its on-grid dot color). Same hue
+/// as `cell_color`'s organism base color; fixed saturation/value rather
+/// than energy-scaled, so it reads as a stable identity marker, not an
+/// energy readout.
+pub fn species_color(id: SpeciesId) -> egui::Color32 {
+    let hue = species_hue(id) / 360.0;
+    egui::ecolor::Hsva::new(hue, 0.75, 0.9, 1.0).into()
 }
 
 /// Links a rendered sprite back to its cell in `SimWorld`. The sprite is a
@@ -329,7 +347,7 @@ fn cell_color(world: &SimWorld, config: &SimConfig, x: usize, y: usize) -> Color
     let cell = world.get(x, y);
 
     let base = if let Some(organism) = cell.organism {
-        let hue = (organism.species.0 as f32 * SPECIES_HUE_STEP) % 360.0;
+        let hue = species_hue(organism.species);
         // Energy can exceed repro_threshold right before reproduction; clamp.
         let fill = (organism.energy / config.energy.repro_threshold).clamp(0.0, 1.0);
         Color::hsl(hue, 0.75, 0.15 + fill * 0.35)
