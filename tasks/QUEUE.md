@@ -33,7 +33,6 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 | Status | ID | Title | Priority | Depends on | Agent | Task File |
 |-------|----|--------|----------|------------|--------|-----------|
 | `[ ]` | 028 | Distinguish "no evidence" from "unconfirmed evidence" in the hypothesis grid | 🟢 P3 | 020, 021 | unassigned | [028](028-partial-evidence-visibility.md) |
-| `[ ]` | 030 | HUD reorganization: grouping, icons, tooltips, bars | 🟡 P2 | 022, 023, 025 | unassigned | [030](030-hud-reorganization.md) |
 | `[ ]` | 031 | Hypothesis grid as a graph, not a spreadsheet table | 🟡 P2 | 020, 021 | unassigned | [031](031-hypothesis-grid-as-graph.md) |
 | `[ ]` | 032 | Distinguish organisms by shape (metabolism), not just color | 🟡 P2 | 006, 010-012 | unassigned | [032](032-organism-shape-legibility.md) |
 | `[ ]` | 033 | Render the toxic zone visibly during normal play | 🟡 P2 | 004, 010 | unassigned | [033](033-visible-toxicity.md) |
@@ -86,7 +85,8 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | `[x]` | 026 | Log salient organism deaths, not just extinctions | Claude | [026](done/026-salient-death-logging.md) |
 | `[x]` | 027 | Splice: add a real "Add tag" option, not just "Swap" | Claude | [027](done/027-splice-add-tag.md) |
 | `[x]` | 029 | Stable tag identifiers and readable species names | Claude | [029](done/029-tag-identifiers-species-names.md) |
+| `[x]` | 030 | HUD reorganization: grouping, icons, tooltips, bars | Claude | [030](done/030-hud-reorganization.md) |
 
 ---
 
-*Last updated: 2026-08-03*
+*Last updated: 2026-08-04*

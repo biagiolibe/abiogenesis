@@ -186,51 +186,60 @@ fn hud_panel(
         .resizable(false)
         .show(&mut viewport_ui, |ui| {
             ui.heading("Abiogenesis");
-            ui.label(format!("Era {}  ·  tick {}", world.era, world.tick));
-            ui.label(format!("Seed {}", world.seed));
-            ui.label(format!("State: {:?}", era_state.get()));
 
-            ui.separator();
-            ui.label("Population");
-            if stats.is_empty() {
-                ui.weak("  (none)");
-            }
-            for (species, population, avg_energy) in &stats {
-                ui.label(format!(
-                    "  {}: {} · avg energy {:.2}",
-                    species_label(*species),
-                    population,
-                    avg_energy
-                ));
-            }
+            group_frame(ui, |ui| {
+                ui.label(format!("Era {}  ·  tick {}", world.era, world.tick));
+                ui.label(format!("Seed {}", world.seed));
+                ui.label(format!("State: {:?}", era_state.get()));
+            });
 
-            ui.separator();
-            ui.label("Action");
-            ui.radio_value(&mut selected_action.0, ActionMode::Seed, "Seed");
-            ui.radio_value(&mut selected_action.0, ActionMode::Stress, "Stress");
-            ui.radio_value(&mut selected_action.0, ActionMode::Cull, "Cull");
-            ui.radio_value(
-                &mut selected_action.0,
-                ActionMode::Splice,
-                "Splice (cost 2)",
-            );
+            ui.add_space(6.0);
+            group_frame(ui, |ui| {
+                ui.strong("Action");
+                action_icon_row(ui, &mut selected_action, &config);
 
-            ui.separator();
-            ui.label("Seed species (click an empty cell)");
-            for i in 0..world.species.len() as u8 {
-                ui.radio_value(&mut selected.0, SpeciesId(i), species_label(SpeciesId(i)));
-            }
+                let total = config.time.point_budget_per_era;
+                let fraction = if total == 0 {
+                    0.0
+                } else {
+                    budget.points_remaining as f32 / total as f32
+                };
+                ui.add(
+                    egui::ProgressBar::new(fraction)
+                        .text(format!("{} / {}", budget.points_remaining, total)),
+                )
+                .on_hover_text("Action points remaining this era");
 
-            if selected_action.0 == ActionMode::Splice {
-                ui.separator();
-                splice_panel(ui, &world, &mut splice_draft);
-            }
+                if selected_action.0 == ActionMode::Splice {
+                    ui.separator();
+                    splice_panel(ui, &world, &mut splice_draft);
+                }
+            });
 
-            ui.separator();
-            ui.label(format!(
-                "Actions: {} / {}",
-                budget.points_remaining, config.time.point_budget_per_era
-            ));
+            ui.add_space(6.0);
+            group_frame(ui, |ui| {
+                ui.strong("Population");
+                if stats.is_empty() {
+                    ui.weak("  (none)");
+                }
+                for (species, population, avg_energy) in &stats {
+                    ui.label(format!(
+                        "  {}: {} · avg energy {:.2}",
+                        species_label(*species),
+                        population,
+                        avg_energy
+                    ));
+                }
+            });
+
+            ui.add_space(6.0);
+            group_frame(ui, |ui| {
+                ui.strong("Seed palette")
+                    .on_hover_text("Click an empty cell to place the selected species");
+                for i in 0..world.species.len() as u8 {
+                    ui.radio_value(&mut selected.0, SpeciesId(i), species_label(SpeciesId(i)));
+                }
+            });
             // Placeholder: objective arrives in Phase 3 (GDD §8).
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
@@ -239,6 +248,59 @@ fn hud_panel(
         });
 
     Ok(())
+}
+
+/// Visually separates one HUD zone from the next (task 030): a bordered,
+/// rounded `egui::Frame` instead of the flat `ui.separator()` list this
+/// replaced, so World state / Action / Population / Seed palette read as
+/// distinct groups rather than one undifferentiated stack.
+fn group_frame<R>(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    egui::Frame::group(ui.style())
+        .inner_margin(6.0)
+        .show(ui, |ui| add_contents(ui))
+        .inner
+}
+
+/// One glyph, label, and cost per `ActionMode`, in selector order.
+const ACTION_GLYPHS: [(ActionMode, &str, &str); 4] = [
+    (ActionMode::Seed, "🌱", "Seed"),
+    (ActionMode::Stress, "⚡", "Stress"),
+    (ActionMode::Cull, "💀", "Cull"),
+    (ActionMode::Splice, "🔬", "Splice"),
+];
+
+/// The four `ActionMode` options as a row of icon buttons (task 030),
+/// replacing the vertical `ui.radio_value(..., "Seed")`-style text list.
+/// Still single-selection, immediate-mode — `selectable_label` plays the
+/// same role `ui.radio_value` did, just rendered as a compact glyph with a
+/// hover tooltip carrying the name and action-point cost instead of inline
+/// text.
+fn action_icon_row(ui: &mut egui::Ui, selected_action: &mut SelectedAction, config: &SimConfig) {
+    ui.horizontal(|ui| {
+        for (mode, glyph, name) in ACTION_GLYPHS {
+            let cost = action_cost(mode, config);
+            let response = ui.selectable_label(
+                selected_action.0 == mode,
+                egui::RichText::new(glyph).size(20.0),
+            );
+            if response.clicked() {
+                selected_action.0 = mode;
+            }
+            response.on_hover_text(format!("{name} · cost {cost}"));
+        }
+    });
+}
+
+/// Action-point cost for one `ActionMode`, read from `SimConfig` so the
+/// icon tooltips (task 030) never hardcode a number that could drift from
+/// `ActionCosts` (GDD §5.9).
+fn action_cost(mode: ActionMode, config: &SimConfig) -> u32 {
+    match mode {
+        ActionMode::Seed => config.time.action_costs.seed,
+        ActionMode::Stress => config.time.action_costs.stress,
+        ActionMode::Cull => config.time.action_costs.cull,
+        ActionMode::Splice => config.time.action_costs.splice,
+    }
 }
 
 /// The `Splice` editor (task 025, GDD §6 — "the most powerful and most

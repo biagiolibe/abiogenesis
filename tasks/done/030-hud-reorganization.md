@@ -19,11 +19,11 @@ This is a **presentation-layer restructuring**, not a redesign of what informati
 
 ## 📋 Acceptance Criteria
 
-- [ ] The HUD groups its content into clearly visually-separated zones, each internally coherent: **World state** (era/tick/seed/state), **Action** (mode selector + budget + the active action's editor, e.g. Splice's panel), **Population** (per-species stats), **Seed palette** (species selector) — exact grouping/order at implementer's discretion, but "everything in one flat list" is what must change.
-- [ ] The four `ActionMode` options render as compact icon buttons (unicode symbols, e.g. a seed/sprout glyph, a lightning/heat glyph, a skull/X glyph, a DNA/splice glyph — pick whichever renders reliably in egui's default font; no new asset/font loading pipeline) instead of a vertical list of `ui.radio_value(..., "Seed")`-style text rows. Keep `ui.radio_value`'s semantics (single selection, immediate-mode) — this is a visual change, not a new selection widget.
-- [ ] The action budget (`"Actions: N / 3"`) renders via `egui::ProgressBar` (or equivalent visual bar), with the numeric readout kept as the bar's text/tooltip, not removed — a player should still be able to see the exact number, just not have it be the *only* representation.
-- [ ] Add `egui::Response::on_hover_text` (or equivalent) tooltips at minimum to: each action icon (what it does, its cost), the keyboard-shortcut hint at the bottom (already present as inline text — a tooltip isn't required to replace it, but check it isn't redundant with what tooltips now cover).
-- [ ] `cargo clippy -- -D warnings` clean.
+- [x] The HUD groups its content into clearly visually-separated zones, each internally coherent: **World state** (era/tick/seed/state), **Action** (mode selector + budget + the active action's editor, e.g. Splice's panel), **Population** (per-species stats), **Seed palette** (species selector) — exact grouping/order at implementer's discretion, but "everything in one flat list" is what must change.
+- [x] The four `ActionMode` options render as compact icon buttons (unicode symbols, e.g. a seed/sprout glyph, a lightning/heat glyph, a skull/X glyph, a DNA/splice glyph — pick whichever renders reliably in egui's default font; no new asset/font loading pipeline) instead of a vertical list of `ui.radio_value(..., "Seed")`-style text rows. Keep `ui.radio_value`'s semantics (single selection, immediate-mode) — this is a visual change, not a new selection widget.
+- [x] The action budget (`"Actions: N / 3"`) renders via `egui::ProgressBar` (or equivalent visual bar), with the numeric readout kept as the bar's text/tooltip, not removed — a player should still be able to see the exact number, just not have it be the *only* representation.
+- [x] Add `egui::Response::on_hover_text` (or equivalent) tooltips at minimum to: each action icon (what it does, its cost), the keyboard-shortcut hint at the bottom (already present as inline text — a tooltip isn't required to replace it, but check it isn't redundant with what tooltips now cover).
+- [x] `cargo clippy -- -D warnings` clean.
 
 ---
 
