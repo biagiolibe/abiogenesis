@@ -28,11 +28,7 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 ## 🏃 Active Queue
 
-**Phase 2 — Deduction.** Milestone: the *deduction game* is born, not just the simulation (GDD §13). Core scope (018–025, both tracks) and all playtest-driven follow-ups (026–028, 030–033) are **complete**; one architecture-prep task is queued below.
-
-| Status | ID | Title | Priority | Depends on | Agent | Task File |
-|-------|----|--------|----------|------------|--------|-----------|
-| `[ ]` | 034 | Centralize player-facing text behind a single `text` module | 🟢 P3 | 030 | unassigned | [034](034-centralize-player-facing-text.md) |
+**Phase 2 — Deduction** is fully **complete**: core scope (018–025, both tracks), every playtest-driven follow-up (026–028, 030–033), and the localization-prep task (034). Nothing queued right now — the next task file comes from a new playtest/planning pass or from Phase 3.
 
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
@@ -87,6 +83,7 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | `[x]` | 032 | Distinguish organisms by shape (metabolism), not just color | Claude | [032](done/032-organism-shape-legibility.md) |
 | `[x]` | 033 | Render the toxic zone visibly during normal play | Claude | [033](done/033-visible-toxicity.md) |
 | `[x]` | 028 | Distinguish "no evidence" from "unconfirmed evidence" in the hypothesis grid | Claude | [028](done/028-partial-evidence-visibility.md) |
+| `[x]` | 034 | Centralize player-facing text behind a single `text` module | Claude | [034](done/034-centralize-player-facing-text.md) |
 
 ---
 

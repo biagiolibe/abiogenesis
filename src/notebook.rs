@@ -13,6 +13,7 @@ use abiogenesis::sim::{AdjacencyObserved, OrganismDied, SpeciesExtinct};
 use abiogenesis::world::{SimWorld, SpeciesId, TagId};
 
 use crate::render::species_label;
+use crate::text;
 
 /// One curated log line, tagged with the era it happened in. `text`
 /// describes the event only; the window prepends the era.
@@ -175,7 +176,7 @@ fn record_events(
     for event in extinctions.read() {
         log.entries.push(LogEntry {
             era: world.era,
-            text: format!("species {} went extinct", event.species.0),
+            text: text::extinction_message(event.species.0),
         });
     }
 
@@ -184,10 +185,7 @@ fn record_events(
             let (x, y) = (event.cell % world.width, event.cell / world.width);
             log.entries.push(LogEntry {
                 era: world.era,
-                text: format!(
-                    "your species {} organism at ({x}, {y}) died",
-                    event.species.0
-                ),
+                text: text::player_organism_death_message(event.species.0, x, y),
             });
         }
     }
@@ -241,25 +239,25 @@ fn notebook_window(
     egui::Window::new("Notebook")
         .open(&mut open.0)
         .show(ctx, |ui| {
-            ui.heading("Observation log");
+            ui.heading(text::HEADING_OBSERVATION_LOG);
             egui::ScrollArea::vertical()
                 .id_salt("observation_log")
                 .max_height(150.0)
                 .show(ui, |ui| {
                     if log.entries.is_empty() {
-                        ui.weak("(no observations yet)");
+                        ui.weak(text::NO_OBSERVATIONS_YET);
                     }
                     for entry in &log.entries {
-                        ui.label(format!("Era {}: {}", entry.era, entry.text));
+                        ui.label(text::log_entry_line(entry.era, &entry.text));
                     }
                 });
 
             ui.separator();
-            ui.heading("Hypothesis grid");
+            ui.heading(text::HEADING_HYPOTHESIS_GRID);
             hypothesis_grid(ui, &world, &knowledge);
 
             ui.separator();
-            ui.heading("Catalog");
+            ui.heading(text::HEADING_CATALOG);
             catalog_panel(ui, &world);
         });
     Ok(())
@@ -407,42 +405,38 @@ fn node_tooltip_text(
     world: &SimWorld,
     knowledge: &MatrixKnowledge,
 ) -> String {
-    let mut lines = vec![format!("Tag {}", tag_glyph(tag))];
+    let mut lines = vec![text::node_tag_line(tag_glyph(tag))];
     for &other in tags {
         if other == tag {
             continue;
         }
         if let Some(value) = knowledge.revealed_value(tag, other, world) {
-            let sign = if value > 0 { "+" } else { "-" };
-            lines.push(format!(
-                "{} → {} ({sign})",
+            lines.push(text::confirmed_relation_line(
                 tag_glyph(tag),
-                tag_glyph(other)
+                tag_glyph(other),
+                value > 0,
             ));
         } else if knowledge.evidence(tag, other) > 0.0 {
-            lines.push(format!(
-                "{} → {} (some evidence)",
+            lines.push(text::partial_relation_line(
                 tag_glyph(tag),
-                tag_glyph(other)
+                tag_glyph(other),
             ));
         }
         if let Some(value) = knowledge.revealed_value(other, tag, world) {
-            let sign = if value > 0 { "+" } else { "-" };
-            lines.push(format!(
-                "{} → {} ({sign})",
+            lines.push(text::confirmed_relation_line(
                 tag_glyph(other),
-                tag_glyph(tag)
+                tag_glyph(tag),
+                value > 0,
             ));
         } else if knowledge.evidence(other, tag) > 0.0 {
-            lines.push(format!(
-                "{} → {} (some evidence)",
+            lines.push(text::partial_relation_line(
                 tag_glyph(other),
-                tag_glyph(tag)
+                tag_glyph(tag),
             ));
         }
     }
     if lines.len() == 1 {
-        lines.push("(no observations yet)".to_string());
+        lines.push(text::NO_OBSERVATIONS_YET.to_string());
     }
     lines.join("\n")
 }
@@ -452,7 +446,7 @@ fn node_tooltip_text(
 /// visible from the seed selector already, so per-encounter tag discovery
 /// isn't modeled here — that's a Phase 3 worldgen concern.
 fn catalog_panel(ui: &mut egui::Ui, world: &SimWorld) {
-    ui.label("Active tags");
+    ui.label(text::ACTIVE_TAGS_LABEL);
     ui.horizontal(|ui| {
         for &tag in &world.active_tags {
             ui.colored_label(tag_color(tag), format!("{TAG_GLYPH} {}", tag_glyph(tag)));
@@ -460,15 +454,14 @@ fn catalog_panel(ui: &mut egui::Ui, world: &SimWorld) {
     });
 
     ui.add_space(4.0);
-    ui.label("Species");
+    ui.label(text::SPECIES_HEADING);
     for (id, species) in world.species.iter().enumerate() {
         ui.horizontal(|ui| {
-            ui.label(format!(
-                "{}: {:?} · temp {:.2}±{:.2}",
-                species_label(SpeciesId(id as u8)),
+            ui.label(text::species_catalog_line(
+                &species_label(SpeciesId(id as u8)),
                 species.metabolism,
                 species.temp_optimum,
-                species.temp_tolerance
+                species.temp_tolerance,
             ));
             for &tag in &species.tags {
                 ui.colored_label(tag_color(tag), format!("{TAG_GLYPH} {}", tag_glyph(tag)));

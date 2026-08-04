@@ -7,6 +7,7 @@ use bevy_egui::{
 
 use crate::notebook::tag_glyph;
 use crate::render::{species_label, GridCamera};
+use crate::text;
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::ActionBudget;
 use abiogenesis::state::EraState;
@@ -185,17 +186,17 @@ fn hud_panel(
         .exact_size(HUD_WIDTH)
         .resizable(false)
         .show(&mut viewport_ui, |ui| {
-            ui.heading("Abiogenesis");
+            ui.heading(text::HEADING_TITLE);
 
             group_frame(ui, |ui| {
-                ui.label(format!("Era {}  ·  tick {}", world.era, world.tick));
-                ui.label(format!("Seed {}", world.seed));
-                ui.label(format!("State: {:?}", era_state.get()));
+                ui.label(text::era_tick_line(world.era, world.tick));
+                ui.label(text::seed_line(world.seed));
+                ui.label(text::state_line(era_state.get()));
             });
 
             ui.add_space(6.0);
             group_frame(ui, |ui| {
-                ui.strong("Action");
+                ui.strong(text::HEADING_ACTION);
                 action_icon_row(ui, &mut selected_action, &config);
 
                 let total = config.time.point_budget_per_era;
@@ -206,9 +207,9 @@ fn hud_panel(
                 };
                 ui.add(
                     egui::ProgressBar::new(fraction)
-                        .text(format!("{} / {}", budget.points_remaining, total)),
+                        .text(text::budget_bar_text(budget.points_remaining, total)),
                 )
-                .on_hover_text("Action points remaining this era");
+                .on_hover_text(text::BUDGET_HOVER);
 
                 if selected_action.0 == ActionMode::Splice {
                     ui.separator();
@@ -218,24 +219,23 @@ fn hud_panel(
 
             ui.add_space(6.0);
             group_frame(ui, |ui| {
-                ui.strong("Population");
+                ui.strong(text::HEADING_POPULATION);
                 if stats.is_empty() {
-                    ui.weak("  (none)");
+                    ui.weak(text::NO_POPULATION);
                 }
                 for (species, population, avg_energy) in &stats {
-                    ui.label(format!(
-                        "  {}: {} · avg energy {:.2}",
-                        species_label(*species),
-                        population,
-                        avg_energy
+                    ui.label(text::population_line(
+                        &species_label(*species),
+                        *population,
+                        *avg_energy,
                     ));
                 }
             });
 
             ui.add_space(6.0);
             group_frame(ui, |ui| {
-                ui.strong("Seed palette")
-                    .on_hover_text("Click an empty cell to place the selected species");
+                ui.strong(text::HEADING_SEED_PALETTE)
+                    .on_hover_text(text::SEED_PALETTE_HOVER);
                 for i in 0..world.species.len() as u8 {
                     ui.radio_value(&mut selected.0, SpeciesId(i), species_label(SpeciesId(i)));
                 }
@@ -243,7 +243,7 @@ fn hud_panel(
             // Placeholder: objective arrives in Phase 3 (GDD §8).
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                ui.weak("space era · s tick · r reseed · Esc quit");
+                ui.weak(text::KEYBOARD_HINT);
             });
         });
 
@@ -261,35 +261,14 @@ fn group_frame<R>(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui) ->
         .inner
 }
 
-/// One glyph, label, and description per `ActionMode`, in selector order.
-/// Descriptions state what the click actually does (`input.rs`'s
-/// `*_on_click` systems), not the more general "an area" wording of GDD §6 —
-/// every action here targets the single clicked cell.
-const ACTION_GLYPHS: [(ActionMode, &str, &str, &str); 4] = [
-    (
-        ActionMode::Seed,
-        "🌱",
-        "Seed",
-        "Place an organism of the selected species on an empty cell.",
-    ),
-    (
-        ActionMode::Stress,
-        "⚡",
-        "Stress",
-        "Raise the temperature of the clicked cell.",
-    ),
-    (
-        ActionMode::Cull,
-        "💀",
-        "Cull",
-        "Remove the organism on the clicked cell, if any.",
-    ),
-    (
-        ActionMode::Splice,
-        "🔬",
-        "Splice",
-        "Edit a species' genome: swap or add a tag, or shift its thermal optimum.",
-    ),
+/// One glyph per `ActionMode`, in selector order. Names/descriptions/costs
+/// live in `text::action_name`/`action_description`/`action_cost` — only
+/// the glyph (not player-facing copy, task 034) stays here.
+const ACTION_GLYPHS: [(ActionMode, &str); 4] = [
+    (ActionMode::Seed, "🌱"),
+    (ActionMode::Stress, "⚡"),
+    (ActionMode::Cull, "💀"),
+    (ActionMode::Splice, "🔬"),
 ];
 
 /// The four `ActionMode` options as a row of icon buttons (task 030),
@@ -300,7 +279,7 @@ const ACTION_GLYPHS: [(ActionMode, &str, &str, &str); 4] = [
 /// instead of inline text.
 fn action_icon_row(ui: &mut egui::Ui, selected_action: &mut SelectedAction, config: &SimConfig) {
     ui.horizontal(|ui| {
-        for (mode, glyph, name, description) in ACTION_GLYPHS {
+        for (mode, glyph) in ACTION_GLYPHS {
             let cost = action_cost(mode, config);
             let response = ui.selectable_label(
                 selected_action.0 == mode,
@@ -309,7 +288,7 @@ fn action_icon_row(ui: &mut egui::Ui, selected_action: &mut SelectedAction, conf
             if response.clicked() {
                 selected_action.0 = mode;
             }
-            response.on_hover_text(format!("{name} · cost {cost}\n{description}"));
+            response.on_hover_text(text::action_tooltip(mode, cost));
         }
     });
 }
@@ -332,7 +311,7 @@ fn action_cost(mode: ActionMode, config: &SimConfig) -> u32 {
 /// `SimWorld`, same as `hud_panel` — the actual mutation happens in
 /// `input.rs`'s `apply_splice`, reading `apply_requested` as an intent.
 fn splice_panel(ui: &mut egui::Ui, world: &SimWorld, draft: &mut SpliceDraft) {
-    ui.label("Splice: source species");
+    ui.label(text::SPLICE_SOURCE_LABEL);
     for i in 0..world.species.len() as u8 {
         ui.radio_value(
             &mut draft.source,
@@ -348,25 +327,25 @@ fn splice_panel(ui: &mut egui::Ui, world: &SimWorld, draft: &mut SpliceDraft) {
         .and_then(|source| world.species.get(source.0 as usize))
         .is_some_and(|species| species.tags.len() < 3);
 
-    ui.label("Edit");
+    ui.label(text::EDIT_LABEL);
     let is_swap = matches!(draft.edit, SpliceEditChoice::SwapTag { .. });
     let is_add = matches!(draft.edit, SpliceEditChoice::AddTag { .. });
-    if ui.radio(is_swap, "Swap a tag").clicked() {
+    if ui.radio(is_swap, text::SWAP_TAG_OPTION).clicked() {
         draft.edit = SpliceEditChoice::SwapTag {
             old: None,
             new: None,
         };
     }
     ui.add_enabled_ui(has_room, |ui| {
-        if ui.radio(is_add, "Add a tag").clicked() {
+        if ui.radio(is_add, text::ADD_TAG_OPTION).clicked() {
             draft.edit = SpliceEditChoice::AddTag { tag: None };
         }
     });
     if !has_room {
-        ui.weak("  (source already has 3 tags)");
+        ui.weak(text::TAG_CAP_HINT);
     }
     if ui
-        .radio(!is_swap && !is_add, "Shift temperature optimum")
+        .radio(!is_swap && !is_add, text::SHIFT_TEMP_OPTION)
         .clicked()
     {
         draft.edit = SpliceEditChoice::ShiftTempOptimum { warmer: true };
@@ -376,22 +355,22 @@ fn splice_panel(ui: &mut egui::Ui, world: &SimWorld, draft: &mut SpliceDraft) {
         SpliceEditChoice::SwapTag { old, new } => {
             if let Some(source) = draft.source {
                 let species = &world.species[source.0 as usize];
-                ui.label("Remove tag:");
+                ui.label(text::REMOVE_TAG_LABEL);
                 for &tag in &species.tags {
-                    ui.radio_value(old, Some(tag), format!("tag {}", tag_glyph(tag)));
+                    ui.radio_value(old, Some(tag), text::tag_option_label(tag_glyph(tag)));
                 }
-                ui.label("Add tag:");
+                ui.label(text::ADD_TAG_LABEL);
                 for &tag in &world.active_tags {
-                    ui.radio_value(new, Some(tag), format!("tag {}", tag_glyph(tag)));
+                    ui.radio_value(new, Some(tag), text::tag_option_label(tag_glyph(tag)));
                 }
             } else {
-                ui.weak("  (pick a source species first)");
+                ui.weak(text::PICK_SOURCE_HINT);
             }
         }
         SpliceEditChoice::AddTag { tag } => {
             if let Some(source) = draft.source {
                 let species = &world.species[source.0 as usize];
-                ui.label("Add tag:");
+                ui.label(text::ADD_TAG_LABEL);
                 for &candidate in &world.active_tags {
                     if species.tags.contains(&candidate) {
                         continue;
@@ -399,20 +378,20 @@ fn splice_panel(ui: &mut egui::Ui, world: &SimWorld, draft: &mut SpliceDraft) {
                     ui.radio_value(
                         tag,
                         Some(candidate),
-                        format!("tag {}", tag_glyph(candidate)),
+                        text::tag_option_label(tag_glyph(candidate)),
                     );
                 }
             } else {
-                ui.weak("  (pick a source species first)");
+                ui.weak(text::PICK_SOURCE_HINT);
             }
         }
         SpliceEditChoice::ShiftTempOptimum { warmer } => {
-            ui.radio_value(warmer, true, "warmer");
-            ui.radio_value(warmer, false, "colder");
+            ui.radio_value(warmer, true, text::WARMER_OPTION);
+            ui.radio_value(warmer, false, text::COLDER_OPTION);
         }
     }
 
-    if ui.button("Apply splice").clicked() {
+    if ui.button(text::APPLY_SPLICE_BUTTON).clicked() {
         draft.apply_requested = true;
     }
 }

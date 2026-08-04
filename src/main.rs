@@ -1,6 +1,7 @@
 mod input;
 mod notebook;
 mod render;
+mod text;
 mod ui;
 
 use abiogenesis::config::ConfigPlugin;

@@ -19,12 +19,12 @@ This is prep work, not a real i18n system: no language switching, no resource fi
 
 ## 📋 Acceptance Criteria
 
-- [ ] A new `src/text.rs` module exists, exposing functions (not raw `const`s, wherever the string is parameterized — e.g. `era_tick_label(era: u32, tick: u32) -> String`) for every player-facing string currently inline in `ui.rs` and `notebook.rs`.
-- [ ] `ui.rs`'s HUD strings are centralized: headings ("Action", "Population", "Seed palette", etc.), the action-icon tooltips (name + cost + description per `ActionMode`), the budget-bar tooltip, the Splice panel's labels ("Swap a tag", "Add a tag", "Shift temperature optimum", the "(source already has 3 tags)"/"(pick a source species first)" hints), the bottom keyboard-shortcut hint.
-- [ ] `notebook.rs`'s player-facing strings are centralized: the observation-log heading/empty-state, event sentences (e.g. `"species {} went extinct"` and the salient-death message from task 026), the hypothesis-grid/catalog headings and cell labels.
-- [ ] Strings that are actually **data**, not UI copy, stay where they are: `species_label`/`tag_glyph` (task 029) already generate per-entity display names/glyphs from `SimWorld` state — those aren't static player-facing copy and are out of scope here. Boundary judgment call: if it's a fixed sentence/label independent of which species/tag it's about, centralize it; if it's derived from world data, leave it.
-- [ ] `cargo clippy -- -D warnings` and `cargo fmt --check` clean.
-- [ ] `cargo test` still passes (no behavior change — this is a pure refactor).
+- [x] A new `src/text.rs` module exists, exposing functions (not raw `const`s, wherever the string is parameterized — e.g. `era_tick_label(era: u32, tick: u32) -> String`) for every player-facing string currently inline in `ui.rs` and `notebook.rs`.
+- [x] `ui.rs`'s HUD strings are centralized: headings ("Action", "Population", "Seed palette", etc.), the action-icon tooltips (name + cost + description per `ActionMode`), the budget-bar tooltip, the Splice panel's labels ("Swap a tag", "Add a tag", "Shift temperature optimum", the "(source already has 3 tags)"/"(pick a source species first)" hints), the bottom keyboard-shortcut hint.
+- [x] `notebook.rs`'s player-facing strings are centralized: the observation-log heading/empty-state, event sentences (e.g. `"species {} went extinct"` and the salient-death message from task 026), the hypothesis-grid/catalog headings and cell labels.
+- [x] Strings that are actually **data**, not UI copy, stay where they are: `species_label`/`tag_glyph` (task 029) already generate per-entity display names/glyphs from `SimWorld` state — those aren't static player-facing copy and are out of scope here. Boundary judgment call: if it's a fixed sentence/label independent of which species/tag it's about, centralize it; if it's derived from world data, leave it.
+- [x] `cargo clippy -- -D warnings` and `cargo fmt --check` clean.
+- [x] `cargo test` still passes (no behavior change — this is a pure refactor).
 
 ---
 
