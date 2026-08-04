@@ -96,6 +96,16 @@ const SPECIES_GLYPH: &str = "●";
 
 pub struct UiPlugin;
 
+/// DejaVu Sans (Bitstream Vera License, see `assets/fonts/DejaVu-LICENSE.txt`)
+/// covers Greek script and the `●` bullet that egui's built-in default font
+/// lacks — those glyphs were rendering as tofu boxes (playtest finding,
+/// task 041 session): `notebook.rs::TAG_LETTERS`/`TAG_GLYPH` and this
+/// module's `SPECIES_GLYPH`. It does not add color-emoji support: egui has
+/// no COLR/bitmap glyph rendering path at all, so `ACTION_GLYPHS`' 🌱💀🔬
+/// stay unresolved regardless of font (⚡ happens to have a monochrome
+/// dingbat glyph and already renders).
+const DEJAVU_SANS: &[u8] = include_bytes!("../assets/fonts/DejaVuSans.ttf");
+
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         // bevy_egui otherwise auto-attaches the primary egui context to the
@@ -113,8 +123,31 @@ impl Plugin for UiPlugin {
             .init_resource::<SpliceDraft>()
             .add_systems(Startup, spawn_hud_camera)
             .add_systems(Update, reserve_hud_viewport)
-            .add_systems(EguiPrimaryContextPass, hud_panel);
+            .add_systems(EguiPrimaryContextPass, (configure_fonts, hud_panel).chain());
     }
+}
+
+/// Registers `DEJAVU_SANS` as a lowest-priority fallback for the
+/// proportional font family: egui's own default font is tried first for
+/// every glyph, DejaVu Sans only fills the gaps (Greek letters, `●`). The
+/// egui context doesn't exist until the first `EguiPrimaryContextPass` run
+/// (it's attached to the camera spawned in `spawn_hud_camera`), so this
+/// can't run at `Startup`; `done` makes it a one-shot within that schedule.
+fn configure_fonts(mut contexts: EguiContexts, mut done: Local<bool>) -> Result {
+    if *done {
+        return Ok(());
+    }
+    let ctx = contexts.ctx_mut()?;
+    ctx.add_font(egui::epaint::text::FontInsert::new(
+        "DejaVuSans",
+        egui::FontData::from_static(DEJAVU_SANS),
+        vec![egui::epaint::text::InsertFontFamily {
+            family: egui::FontFamily::Proportional,
+            priority: egui::epaint::text::FontPriority::Lowest,
+        }],
+    ));
+    *done = true;
+    Ok(())
 }
 
 /// Full-viewport camera dedicated to egui (TECH_DESIGN.md §6 "HUD camera").
