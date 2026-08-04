@@ -19,12 +19,16 @@ Questo task lo sostituisce con un generatore reale che, dato il mondo generato d
 
 ## 📋 Acceptance Criteria
 
-- [ ] `seed_starting_palette` sostituita da un generatore reale in `src/worldgen.rs` (non un'estensione della funzione esistente — i call site vengono sostituiti, coerente col commento originale).
-- [ ] Il generatore produce specie deterministicamente dal `world_seed` (stesso seed → stesse specie).
-- [ ] Le specie generate rispettano i vincoli esistenti già presenti in `SimConfig`/`world.rs`: metabolismi diversificati (non tutte fotolitiche come nel placeholder), tag assegnati dal sottoinsieme attivo del mondo (`TagConfig.tags_per_species_min/max`, 1-3 tag), posizionamento coerente con l'ambiente generato (es. non tutte nello stesso punto del gradiente termico).
-- [ ] Introdotto un tipo/campo esplicito che distingue **pool disponibile** (superset di specie selezionabili) da **specie pre-piazzate** all'avvio del mondo — anche se nel Fase 3 minimo i due insiemi coincidono, la distinzione deve esistere nello shape dei dati per essere estesa dal task 046 senza un secondo refactor.
-- [ ] `cargo clippy -- -D warnings` pulito, `cargo test` verde.
-- [ ] Test: determinismo (stesso seed → stessa palette), rispetto dei vincoli di `TagConfig`.
+- [x] `seed_starting_palette` rimossa da `src/world.rs`; sostituita da `generate_starting_palette` in `src/worldgen.rs` — tutti i call site (`spawn_world`, `input.rs::reseed_world`, `tests/{determinism,balance,action_effects}.rs`) aggiornati, nessuna estensione del placeholder.
+- [x] Il generatore produce specie deterministicamente dal seed del mondo — verificato dal test `starting_palette_is_deterministic_for_the_same_seed`.
+- [x] Le specie generate rispettano i vincoli esistenti: metabolismi diversificati (Photolithic per le specie piazzate, Predator/Decomposer in alternanza per il pool extra), tag da `draw_species_tags` (1-3, dal sottoinsieme attivo del mondo), posizionamento coerente con l'ambiente generato (`temp_optimum` letto direttamente da `world.get(x, 0).temperature`, non da un valore statico ricalcolato).
+- [x] Introdotto `StartingPalette { available: Vec<Species>, placed: Vec<(usize, (usize, usize))> }`: `available` (specie piazzate + extra) è sempre strettamente più grande di `placed` (solo le specie piazzate) — la distinzione è reale, non solo nominale, pronta per l'estensione del task 046.
+- [x] `cargo clippy --all-targets -- -D warnings` pulito, `cargo test` verde (77 test totali).
+- [x] Test: determinismo, vincoli di `TagConfig` sulle specie piazzate, posizionamento corretto sulla griglia, `available.len() > placed.len()` con almeno un metabolismo non-fotolitico nel pool.
+
+## Nota su design: perché solo le specie piazzate sono fotolitiche
+
+Il criterio originale chiedeva "metabolismi diversificati" senza specificare se anche le specie *piazzate* dovessero variare. Ho scelto di mantenere tutte le specie effettivamente piazzate sulla griglia come `Photolithic` (l'unico metabolismo autosufficiente dalla sola luce, senza bisogno di prede/residui già presenti, GDD §5.4) e di introdurre la diversità di metabolismo solo nel pool `available` extra (Predator/Decomposer, selezionabili dal giocatore via `Seed` ma non pre-piazzati). Questo evita di introdurre organismi pre-piazzati con morte quasi garantita nei primi tick (un predatore isolato senza prede muore in ~8 tick per la formula GDD §5.9), che avrebbe rischiato di alzare sistematicamente il tasso di estinzione scoperto dal task 038. Verificato empiricamente: i test di bilanciamento su 50 seed restano entro le soglie già impostate.
 
 ---
 

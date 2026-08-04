@@ -5,7 +5,8 @@
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::step;
-use abiogenesis::world::{seed_starting_palette, SimWorld};
+use abiogenesis::world::SimWorld;
+use abiogenesis::worldgen::generate_starting_palette;
 
 /// Mean energy across all living organisms of species 0, or `None` if none
 /// survived.
@@ -27,7 +28,7 @@ fn stress_action_measurably_hurts_the_stressed_organism() {
 
     // Baseline: nominal starting palette, one era untouched.
     let mut baseline = SimWorld::new(42, &config);
-    seed_starting_palette(&mut baseline, &config);
+    generate_starting_palette(&mut baseline, &config);
     for _ in 0..config.time.era_ticks {
         step(&mut baseline, &config);
     }
@@ -41,7 +42,7 @@ fn stress_action_measurably_hurts_the_stressed_organism() {
     // applies, spent to the full action budget (task 022: 3 points at cost
     // 1 each) before the era runs.
     let mut stressed = SimWorld::new(42, &config);
-    seed_starting_palette(&mut stressed, &config);
+    generate_starting_palette(&mut stressed, &config);
     let idx = stressed.index(0, 0);
     let uses = config.time.point_budget_per_era / config.time.action_costs.stress;
     for _ in 0..uses {

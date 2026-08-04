@@ -287,7 +287,7 @@ fn spawn_world(mut commands: Commands, config: Res<SimConfig>) {
     // Initial seed is intentionally fixed for reproducible runs; only the
     // `r` key (task 007) advances it from there.
     let mut world = SimWorld::new(42, &config);
-    seed_starting_palette(&mut world, &config);
+    crate::worldgen::generate_starting_palette(&mut world, &config);
     commands.insert_resource(world);
 }
 
@@ -376,39 +376,6 @@ pub fn draw_species_tags(world: &mut SimWorld, config: &SimConfig) -> Vec<TagSlo
     let slot_count = world.active_tags.len() as u8;
     let slots: Vec<TagSlot> = (0..slot_count).map(TagSlot).collect();
     slots.sample(&mut world.rng, n).copied().collect()
-}
-
-/// Phase 1 placeholder: seeds a small starting palette of 2 photolithic
-/// species at opposite ends of the temperature gradient — cold/left and
-/// hot/right — at the top row where light is highest, mirroring the P/Q
-/// setup in GDD §16.1-16.2 closely enough that the matrix's adjacency
-/// effect (task 012) has more than one species to act on. Phase 3's
-/// procedural world generation replaces this with a real generator — do not
-/// extend this function, replace its call sites.
-pub fn seed_starting_palette(world: &mut SimWorld, config: &SimConfig) {
-    let placements = [
-        (config.environment.temperature_gradient_left, 0),
-        (
-            config.environment.temperature_gradient_right,
-            world.width - 1,
-        ),
-    ];
-    for (temp_optimum, x) in placements {
-        let tags = draw_species_tags(world, config);
-        let species_id = SpeciesId(world.species.len() as u8);
-        world.species.push(Species {
-            metabolism: Metabolism::Photolithic,
-            temp_optimum,
-            temp_tolerance: config.energy.default_temp_tolerance,
-            repro_threshold: config.energy.repro_threshold,
-            tags,
-        });
-        let idx = world.index(x, 0);
-        world.cells[idx].organism = Some(Organism {
-            species: species_id,
-            energy: config.energy.seed_energy,
-        });
-    }
 }
 
 /// Exact at `t = 0.0` and `t = 1.0` (unlike `from + (to - from) * t`), which

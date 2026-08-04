@@ -10,7 +10,8 @@ use abiogenesis::sim::{
     step, ActionBudget, AdjacencyObserved, EraProgress, OrganismDied, SpeciesExtinct,
 };
 use abiogenesis::state::EraState;
-use abiogenesis::world::{seed_starting_palette, Organism, SimWorld, SpeciesId};
+use abiogenesis::world::{Organism, SimWorld, SpeciesId};
+use abiogenesis::worldgen::generate_starting_palette;
 
 use crate::notebook::{MatrixKnowledge, ObservationLog, PlayerPlacedCells};
 use crate::render::{world_to_cell, GridCamera};
@@ -120,7 +121,7 @@ fn reseed_world(
     if keys.just_pressed(KeyCode::KeyR) {
         let new_seed = world.next_seed();
         *world = SimWorld::new(new_seed, &config);
-        seed_starting_palette(&mut world, &config);
+        generate_starting_palette(&mut world, &config);
         progress.cancel();
         next_state.set(EraState::Observing);
         // A new seed means a new hidden matrix (task 011): stale confirmed
@@ -590,12 +591,14 @@ mod tests {
     fn reseed_resets_a_selected_species_left_pointing_past_the_fresh_worlds_registry() {
         // Simulates having spliced past the starting-palette species count
         // (task 025) and left the seed selector pointing at the spliced-in
-        // species, then pressing `r`. The fresh world only ever starts with
-        // 2 species (`seed_starting_palette`), so `SelectedSpecies` must be
-        // pulled back in range or the next seed click indexes out of bounds.
+        // species, then pressing `r`. A fresh world always starts with
+        // `starting_species_count + extra_available_species_count` species
+        // (task 039's `generate_starting_palette`, 2 + 1 by default), so
+        // `SelectedSpecies` must be pulled back in range or the next seed
+        // click indexes out of bounds.
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
-        seed_starting_palette(&mut world, &config);
+        generate_starting_palette(&mut world, &config);
         world.species.push(world.species[0].clone()); // pretend a splice happened
 
         let mut keys = ButtonInput::<KeyCode>::default();
@@ -610,9 +613,9 @@ mod tests {
         app.insert_resource(MatrixKnowledge::new(5, 3.0));
         app.insert_resource(ObservationLog::default());
         app.insert_resource(ActionBudget::default());
-        app.insert_resource(SelectedSpecies(SpeciesId(2)));
+        app.insert_resource(SelectedSpecies(SpeciesId(5)));
         app.insert_resource(SpliceDraft {
-            source: Some(SpeciesId(2)),
+            source: Some(SpeciesId(5)),
             ..SpliceDraft::default()
         });
         app.insert_resource(PlayerPlacedCells(std::collections::HashSet::from([1, 5])));
@@ -622,7 +625,7 @@ mod tests {
         let world = app.world().resource::<SimWorld>();
         assert_eq!(
             world.species.len(),
-            2,
+            3,
             "a fresh world starts with the starting palette's species count"
         );
         let selected = app.world().resource::<SelectedSpecies>();

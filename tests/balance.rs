@@ -19,7 +19,8 @@
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::step;
-use abiogenesis::world::{seed_starting_palette, SimWorld};
+use abiogenesis::world::SimWorld;
+use abiogenesis::worldgen::generate_starting_palette;
 
 /// Long enough for a bloom to grow, saturate, and settle (suggested
 /// implementation: 300-500 ticks).
@@ -49,13 +50,13 @@ fn population(world: &SimWorld) -> usize {
     world.cells.iter().filter(|c| c.organism.is_some()).count()
 }
 
-/// Runs the nominal scenario (two photolithic species seeded at opposite
-/// ends of the temperature gradient, `seed_starting_palette`) for `ticks`,
-/// returning the final world and the population sampled after every tick.
+/// Runs the nominal scenario (a procedurally generated starting palette,
+/// `generate_starting_palette`, task 039) for `ticks`, returning the final
+/// world and the population sampled after every tick.
 fn run_nominal_scenario(seed: u64, ticks: usize) -> (SimWorld, Vec<usize>) {
     let config = SimConfig::default();
     let mut world = SimWorld::new(seed, &config);
-    seed_starting_palette(&mut world, &config);
+    generate_starting_palette(&mut world, &config);
 
     let mut history = Vec::with_capacity(ticks);
     for _ in 0..ticks {

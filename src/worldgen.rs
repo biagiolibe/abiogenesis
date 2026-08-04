@@ -5,7 +5,10 @@
 // instead of reading `SimConfig`'s early/late endpoints directly, so the
 // curve has exactly one source of truth.
 
+use rand::RngExt;
+
 use crate::config::SimConfig;
+use crate::world::{draw_species_tags, Metabolism, Organism, SimWorld, Species, SpeciesId};
 
 /// Concrete generation parameters for one world, derived from its position
 /// in the run (`world_index`, 0-based: the first world is `0`). Every field
@@ -85,6 +88,96 @@ fn lerp_u32(early: u32, late: u32, t: f32) -> u32 {
 
 fn lerp_f32(early: f32, late: f32, t: f32) -> f32 {
     early + (late - early) * t
+}
+
+/// A world's starting species (task 039, GDD §9/§10): every species the
+/// player could choose to `Seed` in this world, plus which of them are
+/// already on the grid when the world starts. `available` is the superset
+/// task 046's meta-progression unlocks will extend; `placed` never grows on
+/// its own — only pre-seeded organisms count.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StartingPalette {
+    /// Every generated species, indexable by the positions in `placed`.
+    pub available: Vec<Species>,
+    /// `(index into available, grid position)` for organisms present on the
+    /// grid at world start.
+    pub placed: Vec<(usize, (usize, usize))>,
+}
+
+/// Replaces Phase 1's `seed_starting_palette` placeholder (task 013, always
+/// exactly 2 fixed photolithic species) with a real generator (task 038's
+/// world already has its own tag subset/matrix/environment by the time this
+/// runs — see `SimWorld::new_for_world`):
+///
+/// - `WorldgenConfig::starting_species_count` species are placed on the
+///   grid, evenly spread along row `y = 0` (the highest-light row). Always
+///   `Metabolism::Photolithic`, the only metabolism that's self-sustaining
+///   from light alone with no prey or residue already present (GDD §5.4) —
+///   `temp_optimum` is read directly from the generated environment at each
+///   placement site, so it's always a good fit for where it's placed,
+///   whatever this world's temperature spread (task 038) turned out to be.
+/// - `WorldgenConfig::extra_available_species_count` further species are
+///   added to `available` only, with `Metabolism::Predator`/`Decomposer` in
+///   alternation — giving the player metabolism variety to seed
+///   deliberately (GDD §6 `Seed`) without every starting organism needing
+///   prey/residue to survive its first ticks.
+///
+/// Every species draws its tags from the world's own active subset
+/// (`draw_species_tags`, task 010/036) and its RNG from `world`'s own seeded
+/// stream (never an external RNG), so the whole palette stays deterministic
+/// given the same world seed.
+pub fn generate_starting_palette(world: &mut SimWorld, config: &SimConfig) -> StartingPalette {
+    let placed_count = config.worldgen.starting_species_count as usize;
+    let mut placed = Vec::with_capacity(placed_count);
+
+    for i in 0..placed_count {
+        let x = if placed_count <= 1 {
+            world.width / 2
+        } else {
+            i * (world.width - 1) / (placed_count - 1)
+        };
+        let temp_optimum = world.get(x, 0).temperature;
+        let tags = draw_species_tags(world, config);
+        let species_index = world.species.len();
+        world.species.push(Species {
+            metabolism: Metabolism::Photolithic,
+            temp_optimum,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags,
+        });
+        let idx = world.index(x, 0);
+        world.cells[idx].organism = Some(Organism {
+            species: SpeciesId(species_index as u8),
+            energy: config.energy.seed_energy,
+        });
+        placed.push((species_index, (x, 0)));
+    }
+
+    let cold = world.get(0, 0).temperature;
+    let hot = world.get(world.width - 1, 0).temperature;
+    for i in 0..config.worldgen.extra_available_species_count as usize {
+        let metabolism = if i % 2 == 0 {
+            Metabolism::Predator
+        } else {
+            Metabolism::Decomposer
+        };
+        let weight: f32 = world.rng_mut().random_range(0.0..=1.0);
+        let temp_optimum = cold + (hot - cold) * weight;
+        let tags = draw_species_tags(world, config);
+        world.species.push(Species {
+            metabolism,
+            temp_optimum,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags,
+        });
+    }
+
+    StartingPalette {
+        available: world.species.clone(),
+        placed,
+    }
 }
 
 #[cfg(test)]
@@ -169,5 +262,82 @@ mod tests {
             );
             previous = current;
         }
+    }
+
+    #[test]
+    fn starting_palette_is_deterministic_for_the_same_seed() {
+        let config = SimConfig::default();
+        let mut a = SimWorld::new(42, &config);
+        let mut b = SimWorld::new(42, &config);
+
+        let palette_a = generate_starting_palette(&mut a, &config);
+        let palette_b = generate_starting_palette(&mut b, &config);
+
+        assert_eq!(palette_a, palette_b);
+    }
+
+    #[test]
+    fn placed_species_are_photolithic_and_carry_valid_tags() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        let palette = generate_starting_palette(&mut world, &config);
+
+        assert_eq!(
+            palette.placed.len(),
+            config.worldgen.starting_species_count as usize
+        );
+        for &(index, _) in &palette.placed {
+            let species = &palette.available[index];
+            assert_eq!(species.metabolism, Metabolism::Photolithic);
+            assert!(
+                (config.tags.tags_per_species_min as usize
+                    ..=config.tags.tags_per_species_max as usize)
+                    .contains(&species.tags.len()),
+                "expected 1..=3 tags, got {}",
+                species.tags.len()
+            );
+            for tag in &species.tags {
+                assert!(
+                    (tag.0 as usize) < world.active_tags.len(),
+                    "tag slot {tag:?} out of bounds for this world's active tags"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn placed_organisms_land_on_the_grid_at_their_recorded_position() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        let palette = generate_starting_palette(&mut world, &config);
+
+        for &(index, (x, y)) in &palette.placed {
+            let organism = world.get(x, y).organism.expect("an organism was placed");
+            assert_eq!(organism.species, SpeciesId(index as u8));
+        }
+    }
+
+    #[test]
+    fn available_pool_is_larger_than_placed_and_adds_other_metabolisms() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        let palette = generate_starting_palette(&mut world, &config);
+
+        assert_eq!(
+            palette.available.len(),
+            (config.worldgen.starting_species_count + config.worldgen.extra_available_species_count)
+                as usize
+        );
+        assert!(
+            palette.available.len() > palette.placed.len(),
+            "the available pool must offer more than what's pre-placed (task 046 hook)"
+        );
+        assert!(
+            palette
+                .available
+                .iter()
+                .any(|species| species.metabolism != Metabolism::Photolithic),
+            "the available pool should include non-photolithic metabolisms for variety"
+        );
     }
 }

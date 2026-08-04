@@ -15,6 +15,7 @@ pub struct SimConfig {
     pub tags: TagConfig,
     pub notebook: NotebookConfig,
     pub difficulty: DifficultyConfig,
+    pub worldgen: WorldgenConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -284,6 +285,35 @@ impl Default for DifficultyConfig {
             matrix_density_late: 0.6,
             objective_severity_early: 1.0,
             objective_severity_late: 2.0,
+        }
+    }
+}
+
+/// Starting-species-pool generation (task 039, GDD §9 "available starting
+/// species"). Kept separate from `TagConfig`/`EnergyConfig` since it governs
+/// *how many* species `worldgen::generate_starting_palette` creates, not a
+/// per-species genome coefficient.
+#[derive(Debug, Clone)]
+pub struct WorldgenConfig {
+    /// Species pre-placed on the grid when a world starts. Always generated
+    /// as `Metabolism::Photolithic` — the only metabolism that's
+    /// self-sustaining from light alone, with no prey or residue required
+    /// to already exist (GDD §5.4). Matches Phase 1's `seed_starting_palette`
+    /// placeholder count.
+    pub starting_species_count: u32,
+    /// Extra species added to the "available" pool (selectable via `Seed`,
+    /// GDD §6) but not pre-placed on the grid — gives the player
+    /// non-photolithic metabolism variety to seed deliberately, without
+    /// every starting organism needing prey/residue to survive its first
+    /// ticks.
+    pub extra_available_species_count: u32,
+}
+
+impl Default for WorldgenConfig {
+    fn default() -> Self {
+        Self {
+            starting_species_count: 2,
+            extra_available_species_count: 1,
         }
     }
 }

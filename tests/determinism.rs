@@ -5,13 +5,14 @@
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::step;
-use abiogenesis::world::{seed_starting_palette, SimWorld};
+use abiogenesis::world::SimWorld;
+use abiogenesis::worldgen::generate_starting_palette;
 
 const RUN_TICKS: usize = 200;
 
 fn seeded_world(seed: u64, config: &SimConfig) -> SimWorld {
     let mut world = SimWorld::new(seed, config);
-    seed_starting_palette(&mut world, config);
+    generate_starting_palette(&mut world, config);
     world
 }
 
