@@ -15,7 +15,7 @@ use crate::text;
 use crate::ui::{SelectedSpecies, SpliceDraft};
 use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::{CurrentObjective, CurrentWorldOutcome, ObjectiveProgress};
-use abiogenesis::run::RunProgress;
+use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::ActionBudget;
 use abiogenesis::state::GameState;
 use abiogenesis::world::SpeciesId;
@@ -47,6 +47,7 @@ fn main_menu_ui(
     mut seed_input: ResMut<SeedInput>,
     mut commands: Commands,
     config: Res<SimConfig>,
+    meta: Res<MetaProgress>,
     mut next_state: ResMut<NextState<GameState>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
@@ -71,9 +72,11 @@ fn main_menu_ui(
             ui.add_space(12.0);
             if ui.button(text::MENU_NEW_RUN_BUTTON).clicked() {
                 let run_seed = parse_or_generate_seed(&seed_input.0);
-                start_run(&mut commands, &config, run_seed);
+                start_run(&mut commands, &config, &meta, run_seed);
                 next_state.set(GameState::Playing);
             }
+            ui.add_space(16.0);
+            ui.label(text::unlocks_summary(meta.bonus_available_species));
         });
     });
     Ok(())
@@ -97,9 +100,14 @@ fn parse_or_generate_seed(input: &str) -> u64 {
 /// world's actual `active_tags.len()` — the `Startup`-time one `notebook.rs`
 /// inserts is sized from a fixed config constant that worldgen (task 038)
 /// no longer guarantees matches world 0.
-fn start_run(commands: &mut Commands, config: &SimConfig, run_seed: u64) {
-    let run_progress = RunProgress::start(run_seed);
-    let (world, objective) = build_world(run_progress.world_seed, run_progress.world_index, config);
+fn start_run(commands: &mut Commands, config: &SimConfig, meta: &MetaProgress, run_seed: u64) {
+    let run_progress = RunProgress::start(run_seed, meta);
+    let (world, objective) = build_world(
+        run_progress.world_seed,
+        run_progress.world_index,
+        config,
+        run_progress.unlocks.bonus_available_species,
+    );
     commands.insert_resource(MatrixKnowledge::new(
         world.active_tags.len(),
         config.notebook.confirmation_threshold,

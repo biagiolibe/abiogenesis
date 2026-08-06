@@ -8,7 +8,7 @@
 use bevy::prelude::*;
 
 use crate::config::SimConfig;
-use crate::run::RunProgress;
+use crate::run::{MetaProgress, RunProgress};
 use crate::sim::SimSet;
 use crate::state::{EraState, GameState};
 use crate::world::{SimWorld, SpeciesId};
@@ -279,12 +279,14 @@ impl Plugin for ObjectivesPlugin {
 /// for the era boundary). Runs even while no objective has been assigned
 /// yet (`CurrentObjective(None)`, before task 042's worldgen wires one in):
 /// `evaluate_world` still checks failure conditions in that case.
+#[allow(clippy::too_many_arguments)]
 fn evaluate_current_objective(
     world: Res<SimWorld>,
     objective: Res<CurrentObjective>,
     mut progress: ResMut<ObjectiveProgress>,
     mut outcome: ResMut<CurrentWorldOutcome>,
     run_progress: Res<RunProgress>,
+    mut meta: ResMut<MetaProgress>,
     config: Res<SimConfig>,
     mut next_game_state: ResMut<NextState<GameState>>,
 ) {
@@ -292,7 +294,15 @@ fn evaluate_current_objective(
     let new_outcome = evaluate_world(objective.0.as_ref(), &world, &mut progress, era_budget);
     outcome.0 = new_outcome;
     match new_outcome {
-        WorldOutcome::Failed(_) => next_game_state.set(GameState::Defeat),
+        // Runs exactly once: `evaluate_world` doesn't short-circuit
+        // `Failed`, but this system stops running the moment `GameState`
+        // leaves `Playing` (gated on `EraState::Advancing`, a substate of
+        // `Playing`) right after `next_game_state.set(Defeat)` takes effect
+        // — so meta-progression (task 046) is credited exactly once per run.
+        WorldOutcome::Failed(_) => {
+            meta.absorb(run_progress.worlds_cleared);
+            next_game_state.set(GameState::Defeat);
+        }
         // `outcome.0` was already `Cleared` on a prior tick too (`evaluate`
         // short-circuits once `satisfied`) — `NextState::set` is idempotent,
         // and this system stops running the moment `GameState` actually

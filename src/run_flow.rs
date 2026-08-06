@@ -31,6 +31,7 @@ pub fn start_world(
     world_index: u32,
     seed: u64,
     config: &SimConfig,
+    bonus_available_species: u32,
     era_progress: &mut EraProgress,
     era_next_state: &mut NextState<EraState>,
     knowledge: &mut MatrixKnowledge,
@@ -43,7 +44,8 @@ pub fn start_world(
     objective_progress: &mut ObjectiveProgress,
     outcome: &mut CurrentWorldOutcome,
 ) {
-    let (new_world, new_objective) = build_world(seed, world_index, config);
+    let (new_world, new_objective) =
+        build_world(seed, world_index, config, bonus_available_species);
     *world = new_world;
 
     era_progress.cancel();

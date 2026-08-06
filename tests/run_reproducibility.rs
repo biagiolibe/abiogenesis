@@ -30,7 +30,7 @@ fn play_run(run_seed: u64, config: &SimConfig) -> Vec<WorldSnapshot> {
     let mut seed = run_seed;
 
     for world_index in 0..WORLDS_TO_PLAY {
-        let (mut world, objective) = build_world(seed, world_index, config);
+        let (mut world, objective) = build_world(seed, world_index, config, 0);
         for _ in 0..TICKS_PER_WORLD {
             step(&mut world, config);
         }

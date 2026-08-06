@@ -135,6 +135,7 @@ fn reseed_world(
             run_progress.world_index,
             new_seed,
             &config,
+            run_progress.unlocks.bonus_available_species,
             &mut progress,
             &mut next_state,
             &mut knowledge,

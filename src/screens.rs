@@ -10,7 +10,7 @@ use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::{CurrentObjective, CurrentWorldOutcome, ObjectiveProgress};
-use abiogenesis::run::RunProgress;
+use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::{ActionBudget, EraProgress};
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::SimWorld;
@@ -69,6 +69,7 @@ fn world_cleared_screen_ui(
                 next_world_index,
                 next_seed,
                 &config,
+                run_progress.unlocks.bonus_available_species,
                 &mut era_progress,
                 &mut era_next_state,
                 &mut knowledge,
@@ -95,12 +96,17 @@ fn world_cleared_screen_ui(
 fn defeat_screen_ui(
     mut contexts: EguiContexts,
     run_progress: Res<RunProgress>,
+    meta: Res<MetaProgress>,
     mut next_state: ResMut<NextState<GameState>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     interstitial(ctx, "defeat-viewport", |ui| {
         ui.heading(text::DEFEAT_TITLE);
         ui.label(text::defeat_body(run_progress.worlds_cleared));
+        // `MetaProgress::absorb` (task 046) already ran for this run's
+        // result by the time this screen shows — the totals here already
+        // include whatever this run just earned.
+        ui.label(text::unlocks_summary(meta.bonus_available_species));
         if ui.button(text::RETURN_TO_MENU_BUTTON).clicked() {
             next_state.set(GameState::MainMenu);
         }

@@ -34,6 +34,18 @@ pub fn defeat_body(worlds_cleared: u32) -> String {
     format!("This run cleared {worlds_cleared} world(s) before ending.")
 }
 
+// --- Meta-progression summary (`menu.rs::main_menu_ui`) ---
+
+pub const NO_UNLOCKS_YET: &str = "No unlocks yet — clear worlds to earn more starting species.";
+
+pub fn unlocks_summary(bonus_available_species: u32) -> String {
+    if bonus_available_species == 0 {
+        NO_UNLOCKS_YET.to_string()
+    } else {
+        format!("Unlocked: {bonus_available_species} extra species available at the start of a run")
+    }
+}
+
 // --- HUD — world state (`ui.rs::hud_panel`) ---
 
 pub const HEADING_TITLE: &str = "Abiogenesis";

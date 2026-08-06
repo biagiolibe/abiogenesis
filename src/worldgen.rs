@@ -155,9 +155,25 @@ pub fn generate_starting_palette(world: &mut SimWorld, config: &SimConfig) -> St
         placed.push((species_index, (x, 0)));
     }
 
+    add_bonus_species(world, config, config.worldgen.extra_available_species_count);
+
+    StartingPalette {
+        available: world.species.clone(),
+        placed,
+    }
+}
+
+/// Adds `count` species to `world.species`, available for `Seed` but not
+/// placed on the grid — the same generation rule `generate_starting_palette`
+/// uses for its own `extra_available_species_count` (alternating `Predator`/
+/// `Decomposer`, temperature optimum spread across the world's actual
+/// range), factored out so `build_world` can reuse it to apply
+/// `MetaProgress::bonus_available_species` (task 046) on top: more species
+/// to *choose from*, never anything about the hidden matrix.
+pub fn add_bonus_species(world: &mut SimWorld, config: &SimConfig, count: u32) {
     let cold = world.get(0, 0).temperature;
     let hot = world.get(world.width - 1, 0).temperature;
-    for i in 0..config.worldgen.extra_available_species_count as usize {
+    for i in 0..count as usize {
         let metabolism = if i % 2 == 0 {
             Metabolism::Predator
         } else {
@@ -173,11 +189,6 @@ pub fn generate_starting_palette(world: &mut SimWorld, config: &SimConfig) -> St
             repro_threshold: config.energy.repro_threshold,
             tags,
         });
-    }
-
-    StartingPalette {
-        available: world.species.clone(),
-        placed,
     }
 }
 
@@ -201,14 +212,23 @@ fn scale_severity(base: u32, severity: f32) -> u32 {
 
 /// Builds one full world of a run — grid, species, matrix, environment
 /// (`SimWorld::new_for_world`), starting palette (`generate_starting_palette`),
-/// and its `Objective` (`generate_objective`) — in the one order each step
-/// requires (objective generation reads the species the palette placed).
-/// The single entry point task 044's main menu (first world) and task 045's
-/// world transition (every later world) both call, so "how a world comes
-/// into being" has exactly one definition.
-pub fn build_world(seed: u64, world_index: u32, config: &SimConfig) -> (SimWorld, Objective) {
+/// `bonus_available_species` extra species earned via meta-progression
+/// (`add_bonus_species`, task 046), and its `Objective` (`generate_objective`)
+/// — in the one order each step requires (bonus species join the pool
+/// `Objective` generation can pick from; objective generation itself reads
+/// whatever species the world ended up with). The single entry point task
+/// 044's main menu (first world) and task 045's world transition (every
+/// later world) both call, so "how a world comes into being" has exactly
+/// one definition.
+pub fn build_world(
+    seed: u64,
+    world_index: u32,
+    config: &SimConfig,
+    bonus_available_species: u32,
+) -> (SimWorld, Objective) {
     let mut world = SimWorld::new_for_world(seed, world_index, config);
     generate_starting_palette(&mut world, config);
+    add_bonus_species(&mut world, config, bonus_available_species);
     let params = world_params(world_index, config);
     let objective = generate_objective(&mut world, &params, config);
     (world, objective)
@@ -360,6 +380,18 @@ mod tests {
         let palette_b = generate_starting_palette(&mut b, &config);
 
         assert_eq!(palette_a, palette_b);
+    }
+
+    #[test]
+    fn add_bonus_species_extends_the_available_pool_without_placing_any() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        generate_starting_palette(&mut world, &config);
+        let species_before = world.species.len();
+
+        add_bonus_species(&mut world, &config, 3);
+
+        assert_eq!(world.species.len(), species_before + 3);
     }
 
     #[test]
