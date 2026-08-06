@@ -142,6 +142,13 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 
 > **💡 Design idea (2026-08-03 playtest, not yet scoped into a task):** a mechanism that progressively "reveals" some tag semantics over the course of a run — surfaced during discussion of task 029's naming, but this is a bigger design question than a display fix. Overlaps partly with what the Hypothesis grid already does (confirming a matrix cell *is* a form of progressive reveal, just of behavior, not meaning) — needs more definition before it becomes a task: what would actually be revealed, when, and does it risk collapsing the deduction pillar the same way named tags would (GDD §11). Revisit once Phase 3's difficulty curve is being designed.
 
+### 🐛 Post-Phase-3 playtest fixes (2026-08-06)
+
+Two bugs surfaced by playing a full run end to end, both scoped into task files:
+
+- `[ ]` 047 — Fix `SurviveIn`'s toxic-zone membership check: `cell_in_zone` checks the live (diffused) `toxicity` scalar instead of the zone's original geometry, so the objective becomes satisfiable by an organism that was never in the zone once diffusion has spread trace toxicity across the grid → [047](tasks/047-fix-toxic-zone-membership-check.md)
+- `[ ]` 048 — Contain runaway population/energy growth from some generated matrices: confirmed not seed-magnitude-dependent (2/5 sampled seeds saturate the grid, including one far smaller than a normal-behaving one) — corroborates the 2026-08-04 finding below, now with a second independent repro → [048](tasks/048-contain-runaway-matrix-growth.md)
+
 ### 🎚️ Final tuning — *the real art*
 
 **Goal:** *interesting and readable* emergence, avoiding "everything dies" and "one dominates" (GDD §13, §14).
@@ -180,4 +187,4 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 
 ---
 
-*Last updated: 2026-08-04*
+*Last updated: 2026-08-06*
