@@ -311,7 +311,17 @@ fn evaluate_current_objective(
         return;
     }
     match new_outcome {
-        WorldOutcome::Failed(_) => {
+        // Total extinction ends this world, not the run (task 051): a
+        // player who loses their only organisms early shouldn't have the
+        // whole run end over it — `WorldFailed` offers a retry of the exact
+        // same world instead. `worlds_cleared` is untouched, so `meta`
+        // doesn't absorb anything here; the run isn't over.
+        WorldOutcome::Failed(FailureReason::TotalExtinction) => {
+            next_game_state.set(GameState::WorldFailed);
+        }
+        // Running out the era budget without meeting the objective is a
+        // real, skill-based run-ending failure — unchanged from before 051.
+        WorldOutcome::Failed(FailureReason::EraBudgetExhausted) => {
             meta.absorb(run_progress.worlds_cleared);
             next_game_state.set(GameState::Defeat);
         }

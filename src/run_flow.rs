@@ -11,6 +11,8 @@
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::{CurrentObjective, CurrentWorldOutcome, ObjectiveProgress};
+#[cfg(test)]
+use abiogenesis::objectives::{FailureReason, WorldOutcome};
 use abiogenesis::run::RunProgress;
 use abiogenesis::sim::{ActionBudget, EraProgress};
 use abiogenesis::state::EraState;
@@ -118,6 +120,50 @@ pub fn advance_to_next_world(
     run_progress.world_index = next_world_index;
     run_progress.world_seed = next_seed;
     run_progress.worlds_cleared += 1;
+}
+
+/// The concrete effect of "World failed → Retry" (task 051,
+/// `FailureReason::TotalExtinction` only — see `objectives.rs`): rebuilds
+/// the *same* `world_index` from the *same* `run_progress.world_seed`
+/// through `start_world`, an exact do-over of the world just lost rather
+/// than a new one. Unlike `advance_to_next_world`, `run_progress` itself
+/// isn't mutated — `world_index`/`world_seed`/`worlds_cleared` all stay
+/// put, since nothing about the run's progress actually changed.
+#[allow(clippy::too_many_arguments)]
+pub fn retry_world(
+    world: &mut SimWorld,
+    run_progress: &RunProgress,
+    config: &SimConfig,
+    era_progress: &mut EraProgress,
+    era_next_state: &mut NextState<EraState>,
+    knowledge: &mut MatrixKnowledge,
+    log: &mut ObservationLog,
+    budget: &mut ActionBudget,
+    selected: &mut SelectedSpecies,
+    splice_draft: &mut SpliceDraft,
+    placed: &mut PlayerPlacedCells,
+    objective: &mut CurrentObjective,
+    objective_progress: &mut ObjectiveProgress,
+    outcome: &mut CurrentWorldOutcome,
+) {
+    start_world(
+        world,
+        run_progress.world_index,
+        run_progress.world_seed,
+        config,
+        run_progress.unlocks.bonus_available_species,
+        era_progress,
+        era_next_state,
+        knowledge,
+        log,
+        budget,
+        selected,
+        splice_draft,
+        placed,
+        objective,
+        objective_progress,
+        outcome,
+    );
 }
 
 #[cfg(test)]
@@ -300,5 +346,66 @@ mod tests {
             abiogenesis::world::TagSlot((expected_tags - 1) as u8),
             1.0,
         );
+    }
+
+    /// Task 051's own acceptance criterion: `retry_world` reproduces the
+    /// *exact same* world (active tags, matrix, objective) the player just
+    /// lost — same `world_index`, same seed — and leaves `run_progress`
+    /// untouched, unlike `advance_to_next_world`.
+    #[test]
+    fn retry_world_rebuilds_the_identical_world_and_leaves_run_progress_untouched() {
+        let config = SimConfig::default();
+        let (mut world, objective) = build_world(99, 1, &config, 0);
+        let run_progress = RunProgress {
+            run_seed: 42,
+            world_index: 1,
+            world_seed: 99,
+            worlds_cleared: 3,
+            unlocks: Default::default(),
+        };
+        let (
+            mut era_progress,
+            mut era_next_state,
+            mut knowledge,
+            mut log,
+            mut budget,
+            mut selected,
+            mut splice_draft,
+            mut placed,
+        ) = fresh_resources();
+        let mut current_objective = CurrentObjective(Some(objective));
+        let mut objective_progress = ObjectiveProgress {
+            consecutive_ticks: 7,
+            satisfied: false,
+        };
+        let mut outcome = CurrentWorldOutcome(WorldOutcome::Failed(FailureReason::TotalExtinction));
+
+        let (expected_world, expected_objective) = build_world(99, 1, &config, 0);
+
+        retry_world(
+            &mut world,
+            &run_progress,
+            &config,
+            &mut era_progress,
+            &mut era_next_state,
+            &mut knowledge,
+            &mut log,
+            &mut budget,
+            &mut selected,
+            &mut splice_draft,
+            &mut placed,
+            &mut current_objective,
+            &mut objective_progress,
+            &mut outcome,
+        );
+
+        assert_eq!(run_progress.world_index, 1);
+        assert_eq!(run_progress.world_seed, 99);
+        assert_eq!(run_progress.worlds_cleared, 3);
+        assert_eq!(world.active_tags, expected_world.active_tags);
+        assert_eq!(world.matrix, expected_world.matrix);
+        assert_eq!(current_objective.0, Some(expected_objective));
+        assert_eq!(objective_progress.consecutive_ticks, 0);
+        assert_eq!(outcome.0, WorldOutcome::Ongoing);
     }
 }

@@ -1,9 +1,11 @@
-// World-cleared/defeat interstitials (task 045): where a run's per-world
-// loop closes. `GameState::WorldCleared` (objective satisfied) leads to the
-// next, harder world via `start_world`; `GameState::Defeat` (a failure
-// condition tripped, task 041) ends the run and returns to the main menu —
-// not back to `Playing`, since a run that ended requires going through the
-// menu again (`menu.rs`) to start a new one.
+// World-cleared/failed/defeat interstitials (tasks 045, 051): where a run's
+// per-world loop closes. `GameState::WorldCleared` (objective satisfied)
+// leads to the next, harder world via `start_world`; `GameState::WorldFailed`
+// (total extinction, task 051) retries the *same* world via `retry_world`,
+// the run continues; `GameState::Defeat` (era budget exhausted, task 041)
+// ends the run and returns to the main menu — not back to `Playing`, since a
+// run that ended requires going through the menu again (`menu.rs`) to start
+// a new one.
 
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
@@ -16,7 +18,7 @@ use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::SimWorld;
 
 use crate::notebook::{MatrixKnowledge, ObservationLog, PlayerPlacedCells};
-use crate::run_flow::advance_to_next_world;
+use crate::run_flow::{advance_to_next_world, retry_world};
 use crate::text;
 use crate::ui::{SelectedSpecies, SpliceDraft};
 
@@ -28,6 +30,7 @@ impl Plugin for ScreensPlugin {
             EguiPrimaryContextPass,
             (
                 world_cleared_screen_ui.run_if(in_state(GameState::WorldCleared)),
+                world_failed_screen_ui.run_if(in_state(GameState::WorldFailed)),
                 defeat_screen_ui.run_if(in_state(GameState::Defeat)),
             ),
         );
@@ -65,6 +68,56 @@ fn world_cleared_screen_ui(
             advance_to_next_world(
                 &mut world,
                 &mut run_progress,
+                &config,
+                &mut era_progress,
+                &mut era_next_state,
+                &mut knowledge,
+                &mut log,
+                &mut budget,
+                &mut selected,
+                &mut splice_draft,
+                &mut placed,
+                &mut objective,
+                &mut objective_progress,
+                &mut outcome,
+            );
+            next_state.set(GameState::Playing);
+        }
+    });
+    Ok(())
+}
+
+/// "World failed" interstitial (task 051): total extinction only — the run
+/// isn't over, so `run_progress` isn't touched here, unlike
+/// `world_cleared_screen_ui`. `retry_world` rebuilds the exact same
+/// `world_index`/seed the player just lost.
+#[allow(clippy::too_many_arguments)]
+fn world_failed_screen_ui(
+    mut contexts: EguiContexts,
+    mut world: ResMut<SimWorld>,
+    config: Res<SimConfig>,
+    run_progress: Res<RunProgress>,
+    mut era_progress: ResMut<EraProgress>,
+    mut era_next_state: ResMut<NextState<EraState>>,
+    mut knowledge: ResMut<MatrixKnowledge>,
+    mut log: ResMut<ObservationLog>,
+    mut budget: ResMut<ActionBudget>,
+    mut selected: ResMut<SelectedSpecies>,
+    mut splice_draft: ResMut<SpliceDraft>,
+    mut placed: ResMut<PlayerPlacedCells>,
+    mut objective: ResMut<CurrentObjective>,
+    mut objective_progress: ResMut<ObjectiveProgress>,
+    mut outcome: ResMut<CurrentWorldOutcome>,
+    mut next_state: ResMut<NextState<GameState>>,
+) -> Result {
+    let ctx = contexts.ctx_mut()?;
+    interstitial(ctx, "world-failed-viewport", |ui| {
+        ui.heading(text::WORLD_FAILED_TITLE);
+        ui.label(text::WORLD_FAILED_BODY);
+        if ui.button(text::RETRY_BUTTON).clicked() {
+            retry_world(
+                &mut world,
+                &run_progress,
                 &config,
                 &mut era_progress,
                 &mut era_next_state,

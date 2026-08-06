@@ -23,12 +23,18 @@ pub const MENU_NEW_RUN_BUTTON: &str = "New run";
 
 pub const WORLD_CLEARED_TITLE: &str = "World cleared!";
 pub const CONTINUE_BUTTON: &str = "Continue";
+pub const WORLD_FAILED_TITLE: &str = "World failed";
+pub const RETRY_BUTTON: &str = "Retry";
 pub const DEFEAT_TITLE: &str = "Run ended";
 pub const RETURN_TO_MENU_BUTTON: &str = "Return to menu";
 
 pub fn world_cleared_body(world_index: u32) -> String {
     format!("World {world_index}'s objective is met. The next world will be harder.")
 }
+
+/// Task 051: total extinction ends the world, not the run — the player
+/// retries the exact same world (same seed), the run itself is unaffected.
+pub const WORLD_FAILED_BODY: &str = "Every organism on this world has died out. Retry this world.";
 
 pub fn defeat_body(worlds_cleared: u32) -> String {
     format!("This run cleared {worlds_cleared} world(s) before ending.")

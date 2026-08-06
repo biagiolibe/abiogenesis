@@ -16,6 +16,12 @@ use bevy::prelude::*;
 /// ended" (GDD §8) — the run itself is endless-until-failure, there is no
 /// terminal "Victory" state. Both are unreachable until task 041 (failure
 /// conditions) and task 045 (world transition) wire them up.
+///
+/// `WorldFailed` (task 051) is a third, narrower interstitial: only
+/// `FailureReason::TotalExtinction` lands here, not `EraBudgetExhausted`.
+/// Losing every organism doesn't end the run — the player retries the exact
+/// same world (same seed) — while running out the era budget still does,
+/// via `Defeat`. See `objectives.rs::evaluate_current_objective`.
 #[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum GameState {
     #[default]
@@ -23,6 +29,7 @@ pub enum GameState {
     MainMenu,
     Playing,
     WorldCleared,
+    WorldFailed,
     Defeat,
 }
 

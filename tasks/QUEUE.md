@@ -55,6 +55,7 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 | `[x]` | 048 | Contain runaway population/energy growth from some generated matrices | none | [048](done/048-contain-runaway-matrix-growth.md) |
 | `[x]` | 049 | Retune sustained objectives to era scale, show eras not ticks in the HUD | none | [049](done/049-objectives-in-eras-not-ticks.md) |
 | `[x]` | 050 | Remove auto-placed starting organisms; the player seeds the first world | none | [050](done/050-no-auto-placed-starting-organisms.md) |
+| `[x]` | 051 | Total extinction retries the world, not the whole run | 050 | [051](done/051-total-extinction-retries-world-not-run.md) |
 
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
@@ -128,4 +129,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-06 (post-Phase-3 playtest fixes)*
+*Last updated: 2026-08-07 (task 051, a design gap surfaced by task 050's own review)*
