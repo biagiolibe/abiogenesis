@@ -475,6 +475,27 @@ mod tests {
         assert_eq!(objective_a, objective_b);
     }
 
+    /// Task 049: the HUD displays sustained-objective progress in whole
+    /// eras (`ui.rs::eras_progress`), so the base tick counts at severity
+    /// 1.0 must land exactly on an era boundary — otherwise the very first
+    /// world a player sees would show an odd fractional-looking requirement
+    /// (e.g. "3.2 eras") that isn't a rounding artifact of severity scaling,
+    /// but baked into the defaults themselves.
+    #[test]
+    fn objective_tick_bases_are_exact_era_multiples_at_base_severity() {
+        let config = SimConfig::default();
+        assert_eq!(
+            config.objectives.coexistence_ticks_base % config.time.era_ticks,
+            0,
+            "coexistence_ticks_base should be an exact multiple of era_ticks"
+        );
+        assert_eq!(
+            config.objectives.survive_in_ticks_base % config.time.era_ticks,
+            0,
+            "survive_in_ticks_base should be an exact multiple of era_ticks"
+        );
+    }
+
     #[test]
     fn objective_thresholds_grow_with_world_severity() {
         let config = SimConfig::default();

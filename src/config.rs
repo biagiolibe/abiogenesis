@@ -329,18 +329,29 @@ impl Default for WorldgenConfig {
 /// Base parameters for the three `Objective` variants (task 040, GDD §8),
 /// at `WorldParams::objective_severity == 1.0` (the run's early worlds,
 /// task 037) — `worldgen::generate_objective` (task 042) scales these by
-/// the current world's severity, never reads them unscaled. Values chosen
-/// to match GDD §8's own worked example exactly at severity 1.0:
+/// the current world's severity, never reads them unscaled.
 /// `WorldgenConfig`'s default species count (2 + 1 = 3) makes
-/// `coexistence_min_species_base` achievable, matching "≥3 coexisting
-/// species for 50 ticks" verbatim.
+/// `coexistence_min_species_base` achievable.
+///
+/// `coexistence_ticks_base`/`survive_in_ticks_base` (task 049, 2026-08-06
+/// playtest): GDD §8's original worked example read "50 ticks" literally,
+/// but the player's actual unit of interaction is the era (`space` advances
+/// one `TimeConfig::era_ticks`, `25` by default) — 50 ticks cleared in 2
+/// era-presses or less, with no real decision space in between. Both bases
+/// are now exact multiples of `era_ticks` (`100` = 4 eras, `75` = 3 eras) —
+/// intentionally exact, not a coincidence, so the HUD's era-formatted
+/// progress (`ui.rs::eras_progress`) never shows an odd fractional-looking
+/// requirement at `objective_severity == 1.0`. Scaling by severity (up to
+/// `2.0`, see `DifficultyConfig`) can still land on a non-exact era count
+/// for intermediate severities — expected, `eras_progress` ceils the
+/// requirement rather than truncating it.
 #[derive(Debug, Clone)]
 pub struct ObjectiveConfig {
     /// `Objective::Coexistence`'s `min_species` at severity 1.0.
     pub coexistence_min_species_base: u32,
-    /// `Objective::Coexistence`'s `ticks` at severity 1.0.
+    /// `Objective::Coexistence`'s `ticks` at severity 1.0 — 4 eras.
     pub coexistence_ticks_base: u32,
-    /// `Objective::SurviveIn`'s `ticks` at severity 1.0.
+    /// `Objective::SurviveIn`'s `ticks` at severity 1.0 — 3 eras.
     pub survive_in_ticks_base: u32,
     /// `Objective::TriggerBloom`'s `population_threshold` at severity 1.0.
     pub trigger_bloom_population_threshold_base: u32,
@@ -350,8 +361,8 @@ impl Default for ObjectiveConfig {
     fn default() -> Self {
         Self {
             coexistence_min_species_base: 3,
-            coexistence_ticks_base: 50,
-            survive_in_ticks_base: 20,
+            coexistence_ticks_base: 100,
+            survive_in_ticks_base: 75,
             trigger_bloom_population_threshold_base: 8,
         }
     }

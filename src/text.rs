@@ -144,8 +144,11 @@ pub fn trigger_bloom_objective_line(species_label: &str, population_threshold: u
     format!("{species_label} population reaches {population_threshold}")
 }
 
-pub fn sustained_progress_bar_text(consecutive_ticks: u32, required_ticks: u32) -> String {
-    format!("{consecutive_ticks} / {required_ticks} ticks")
+/// `eras_held`/`eras_required` (task 049) — whole eras, not raw ticks: the
+/// player's own unit (GDD §11), converted by `ui.rs::eras_progress` before
+/// this ever gets called.
+pub fn sustained_progress_bar_text(eras_held: u32, eras_required: u32) -> String {
+    format!("{eras_held} / {eras_required} eras")
 }
 
 // --- HUD — Splice editor (`ui.rs::splice_panel`) ---

@@ -299,7 +299,12 @@ fn hud_panel(
             ui.add_space(6.0);
             group_frame(ui, |ui| {
                 ui.strong(text::HEADING_OBJECTIVE);
-                objective_panel(ui, objective.0.as_ref(), &objective_progress);
+                objective_panel(
+                    ui,
+                    objective.0.as_ref(),
+                    &objective_progress,
+                    config.time.era_ticks,
+                );
             });
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
@@ -313,10 +318,21 @@ fn hud_panel(
 /// Current-objective panel (task 043, GDD §11): the objective's sentence
 /// plus a progress bar, reusing the `ActionBudget` bar's visual pattern
 /// (`egui::ProgressBar` with an overlaid text). Formats the concrete
-/// numbers/labels here (species name, tick counts) and hands them to
+/// numbers/labels here (species name, era counts) and hands them to
 /// `text.rs`'s parametrized templates, since `text.rs` never reaches into
 /// `Objective`/`SimWorld`-derived data on its own (task 034's constraint).
-fn objective_panel(ui: &mut egui::Ui, objective: Option<&Objective>, progress: &ObjectiveProgress) {
+///
+/// The bar's *fill* stays tick-precise (`fraction`, straight from
+/// `consecutive_ticks`/`ticks`) for smooth per-tick animation; only the
+/// *label* overlaid on it is reformatted in eras (task 049, GDD §11: ticks
+/// aren't a unit the player should need to think in — `era_ticks` is the
+/// player's own "advance era" button).
+fn objective_panel(
+    ui: &mut egui::Ui,
+    objective: Option<&Objective>,
+    progress: &ObjectiveProgress,
+    era_ticks: u32,
+) {
     let Some(objective) = objective else {
         ui.weak(text::NO_OBJECTIVE);
         return;
@@ -329,10 +345,12 @@ fn objective_panel(ui: &mut egui::Ui, objective: Option<&Objective>, progress: &
             } else {
                 progress.consecutive_ticks as f32 / ticks as f32
             };
+            let (eras_held, eras_required) =
+                eras_progress(progress.consecutive_ticks, ticks, era_ticks);
             (
                 text::coexistence_objective_line(min_species),
                 fraction,
-                text::sustained_progress_bar_text(progress.consecutive_ticks, ticks),
+                text::sustained_progress_bar_text(eras_held, eras_required),
             )
         }
         Objective::SurviveIn {
@@ -345,10 +363,12 @@ fn objective_panel(ui: &mut egui::Ui, objective: Option<&Objective>, progress: &
             } else {
                 progress.consecutive_ticks as f32 / ticks as f32
             };
+            let (eras_held, eras_required) =
+                eras_progress(progress.consecutive_ticks, ticks, era_ticks);
             (
                 text::survive_in_objective_line(&species_label(species), text::zone_label(zone)),
                 fraction,
-                text::sustained_progress_bar_text(progress.consecutive_ticks, ticks),
+                text::sustained_progress_bar_text(eras_held, eras_required),
             )
         }
         Objective::TriggerBloom {
@@ -376,6 +396,22 @@ fn objective_panel(ui: &mut egui::Ui, objective: Option<&Objective>, progress: &
         bar_text
     };
     ui.add(egui::ProgressBar::new(fraction.clamp(0.0, 1.0)).text(bar_text));
+}
+
+/// Converts a sustained objective's tick counts to whole eras for display
+/// (task 049): `eras_held` floors (an era in progress doesn't count until
+/// complete), `eras_required` ceils (a requirement of, say, 70 ticks with a
+/// 25-tick era still genuinely needs 3 full eras, not 2) — chosen so the
+/// displayed fraction never claims "done" before `progress.satisfied`
+/// actually flips.
+fn eras_progress(consecutive_ticks: u32, required_ticks: u32, era_ticks: u32) -> (u32, u32) {
+    if era_ticks == 0 {
+        return (0, 0);
+    }
+    (
+        consecutive_ticks / era_ticks,
+        required_ticks.div_ceil(era_ticks),
+    )
 }
 
 /// Visually separates one HUD zone from the next (task 030): a bordered,
@@ -551,4 +587,23 @@ fn species_stats(world: &SimWorld) -> Vec<(SpeciesId, usize, f32)> {
             )
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn eras_progress_floors_held_and_ceils_required() {
+        // 25-tick eras: 60 ticks held is 2 full eras (the 3rd is
+        // incomplete), 75 ticks required is exactly 3, 70 would still need
+        // a 3rd era despite not being an exact multiple.
+        assert_eq!(eras_progress(60, 75, 25), (2, 3));
+        assert_eq!(eras_progress(0, 70, 25), (0, 3));
+    }
+
+    #[test]
+    fn eras_progress_handles_a_zero_era_length_without_dividing_by_zero() {
+        assert_eq!(eras_progress(10, 50, 0), (0, 0));
+    }
 }

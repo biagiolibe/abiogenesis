@@ -262,7 +262,7 @@ This is the heart of progression (§ pillar 2) and turns observation into a *ded
 
 Each world poses one or more **explicit requirements**. Examples of the kind of objective:
 
-- "Achieve a biosphere with **≥3 coexisting species** for **50 ticks**."
+- "Achieve a biosphere with **≥3 coexisting species** for **4 eras**." *(2026-08-06 playtest: the requirement is tuned and displayed in eras, the player's own unit of interaction — not raw ticks, which the player never consciously operates in.)*
 - "Grow a species that **survives in the toxic zone**."
 - "**Trigger a bloom** of a specific type."
 
@@ -543,7 +543,7 @@ Now the ring closes: **D fertilizes P** (`✚→◆ = +2`), and P starts growing
  r5  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·
 ```
 
-**World objective: "≥3 coexisting species for 50 ticks" → met** (P, R, D in a cycle + Q in the corner). **Victory → World 2**, which adds a 6th active tag and a meaner matrix.
+**World objective: "≥3 coexisting species for 4 eras" → met** (P, R, D in a cycle + Q in the corner). **Victory → World 2**, which adds a 6th active tag and a meaner matrix.
 
 ### 16.3 The patterns the player decoded
 
