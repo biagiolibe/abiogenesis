@@ -16,6 +16,7 @@ pub struct SimConfig {
     pub notebook: NotebookConfig,
     pub difficulty: DifficultyConfig,
     pub worldgen: WorldgenConfig,
+    pub objectives: ObjectiveConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -321,6 +322,37 @@ impl Default for WorldgenConfig {
         Self {
             starting_species_count: 2,
             extra_available_species_count: 1,
+        }
+    }
+}
+
+/// Base parameters for the three `Objective` variants (task 040, GDD §8),
+/// at `WorldParams::objective_severity == 1.0` (the run's early worlds,
+/// task 037) — `worldgen::generate_objective` (task 042) scales these by
+/// the current world's severity, never reads them unscaled. Values chosen
+/// to match GDD §8's own worked example exactly at severity 1.0:
+/// `WorldgenConfig`'s default species count (2 + 1 = 3) makes
+/// `coexistence_min_species_base` achievable, matching "≥3 coexisting
+/// species for 50 ticks" verbatim.
+#[derive(Debug, Clone)]
+pub struct ObjectiveConfig {
+    /// `Objective::Coexistence`'s `min_species` at severity 1.0.
+    pub coexistence_min_species_base: u32,
+    /// `Objective::Coexistence`'s `ticks` at severity 1.0.
+    pub coexistence_ticks_base: u32,
+    /// `Objective::SurviveIn`'s `ticks` at severity 1.0.
+    pub survive_in_ticks_base: u32,
+    /// `Objective::TriggerBloom`'s `population_threshold` at severity 1.0.
+    pub trigger_bloom_population_threshold_base: u32,
+}
+
+impl Default for ObjectiveConfig {
+    fn default() -> Self {
+        Self {
+            coexistence_min_species_base: 3,
+            coexistence_ticks_base: 50,
+            survive_in_ticks_base: 20,
+            trigger_bloom_population_threshold_base: 8,
         }
     }
 }

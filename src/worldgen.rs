@@ -8,6 +8,7 @@
 use rand::RngExt;
 
 use crate::config::SimConfig;
+use crate::objectives::{Objective, ZoneKind};
 use crate::world::{draw_species_tags, Metabolism, Organism, SimWorld, Species, SpeciesId};
 
 /// Concrete generation parameters for one world, derived from its position
@@ -180,6 +181,76 @@ pub fn generate_starting_palette(world: &mut SimWorld, config: &SimConfig) -> St
     }
 }
 
+/// Which `Objective` variant a candidate draw picked — kept separate from
+/// `Objective` itself since the candidate is chosen before its parameters
+/// are known (task 042).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ObjectiveKind {
+    Coexistence,
+    SurviveIn,
+    TriggerBloom,
+}
+
+/// Scales an `ObjectiveConfig` base value by this world's severity (task
+/// 037's `WorldParams::objective_severity`), rounding to the nearest whole
+/// unit and never below `1` — a `0`-tick or `0`-population objective would
+/// be satisfied instantly, which isn't a requirement at all.
+fn scale_severity(base: u32, severity: f32) -> u32 {
+    ((base as f32 * severity).round() as u32).max(1)
+}
+
+/// Chooses and parametrizes this world's `Objective` (task 040, GDD §8/§9),
+/// deterministic from the world's own seeded RNG — same seed, same
+/// objective. Must run after `generate_starting_palette` (task 039):
+/// `Coexistence`'s `min_species` cap and `SurviveIn`/`TriggerBloom`'s
+/// `species` pick both read the species this world actually ended up with.
+///
+/// Coherence (task 042's acceptance criteria) is enforced by construction,
+/// not by rejecting a bad draw after the fact: `SurviveIn`'s toxic zone is
+/// only ever a candidate when `params` says this world actually has one,
+/// and `Coexistence`'s `min_species` is only ever a candidate — then
+/// clamped — against the species pool this exact world generated, so it can
+/// never ask for more coexisting species than exist to place.
+pub fn generate_objective(
+    world: &mut SimWorld,
+    params: &WorldParams,
+    config: &SimConfig,
+) -> Objective {
+    let severity = params.objective_severity;
+    let species_count = world.species.len() as u32;
+    let has_toxic_zone = params.toxic_zone_width > 0 && params.toxic_zone_height > 0;
+
+    let mut candidates = vec![ObjectiveKind::TriggerBloom];
+    if species_count >= 2 {
+        candidates.push(ObjectiveKind::Coexistence);
+    }
+    if has_toxic_zone {
+        candidates.push(ObjectiveKind::SurviveIn);
+    }
+
+    let pick = candidates[world.rng_mut().random_range(0..candidates.len())];
+    let obj = &config.objectives;
+    match pick {
+        ObjectiveKind::Coexistence => Objective::Coexistence {
+            min_species: scale_severity(obj.coexistence_min_species_base, severity)
+                .clamp(2, species_count),
+            ticks: scale_severity(obj.coexistence_ticks_base, severity),
+        },
+        ObjectiveKind::SurviveIn => Objective::SurviveIn {
+            species: SpeciesId(world.rng_mut().random_range(0..species_count) as u8),
+            zone: ZoneKind::Toxic,
+            ticks: scale_severity(obj.survive_in_ticks_base, severity),
+        },
+        ObjectiveKind::TriggerBloom => Objective::TriggerBloom {
+            species: SpeciesId(world.rng_mut().random_range(0..species_count) as u8),
+            population_threshold: scale_severity(
+                obj.trigger_bloom_population_threshold_base,
+                severity,
+            ),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,5 +410,127 @@ mod tests {
                 .any(|species| species.metabolism != Metabolism::Photolithic),
             "the available pool should include non-photolithic metabolisms for variety"
         );
+    }
+
+    #[test]
+    fn objective_generation_is_deterministic_for_the_same_seed() {
+        let config = SimConfig::default();
+        let params = world_params(0, &config);
+
+        let mut a = SimWorld::new(42, &config);
+        generate_starting_palette(&mut a, &config);
+        let objective_a = generate_objective(&mut a, &params, &config);
+
+        let mut b = SimWorld::new(42, &config);
+        generate_starting_palette(&mut b, &config);
+        let objective_b = generate_objective(&mut b, &params, &config);
+
+        assert_eq!(objective_a, objective_b);
+    }
+
+    #[test]
+    fn objective_thresholds_grow_with_world_severity() {
+        let config = SimConfig::default();
+
+        // A single species and no toxic zone leaves `TriggerBloom` as the
+        // only possible candidate, so the comparison below isn't confounded
+        // by which variant the RNG happened to draw.
+        let build = |severity: f32| {
+            let mut world = SimWorld::new(42, &config);
+            world.species.push(Species {
+                metabolism: Metabolism::Photolithic,
+                temp_optimum: 0.5,
+                temp_tolerance: config.energy.default_temp_tolerance,
+                repro_threshold: config.energy.repro_threshold,
+                tags: Vec::new(),
+            });
+            let mut params = world_params(0, &config);
+            params.toxic_zone_width = 0;
+            params.toxic_zone_height = 0;
+            params.objective_severity = severity;
+            generate_objective(&mut world, &params, &config)
+        };
+
+        let early = build(config.difficulty.objective_severity_early);
+        let late = build(config.difficulty.objective_severity_late);
+
+        let Objective::TriggerBloom {
+            population_threshold: early_threshold,
+            ..
+        } = early
+        else {
+            panic!("expected TriggerBloom (the only coherent candidate), got {early:?}");
+        };
+        let Objective::TriggerBloom {
+            population_threshold: late_threshold,
+            ..
+        } = late
+        else {
+            panic!("expected TriggerBloom (the only coherent candidate), got {late:?}");
+        };
+        assert!(
+            late_threshold > early_threshold,
+            "higher severity should raise the threshold: {early_threshold} -> {late_threshold}"
+        );
+    }
+
+    #[test]
+    fn coexistence_min_species_never_exceeds_the_available_species_pool() {
+        let config = SimConfig::default();
+        for seed in 0..30u64 {
+            let mut world = SimWorld::new(seed, &config);
+            let palette = generate_starting_palette(&mut world, &config);
+            let params = world_params(0, &config);
+            let species_count = palette.available.len() as u32;
+
+            if let Objective::Coexistence { min_species, .. } =
+                generate_objective(&mut world, &params, &config)
+            {
+                assert!(
+                    min_species <= species_count,
+                    "seed {seed}: min_species {min_species} exceeds the pool of {species_count}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn survive_in_toxic_zone_is_never_chosen_without_a_toxic_zone() {
+        let config = SimConfig::default();
+        for seed in 0..30u64 {
+            let mut world = SimWorld::new(seed, &config);
+            generate_starting_palette(&mut world, &config);
+            let mut params = world_params(0, &config);
+            params.toxic_zone_width = 0;
+            params.toxic_zone_height = 0;
+
+            let objective = generate_objective(&mut world, &params, &config);
+            assert!(
+                !matches!(objective, Objective::SurviveIn { .. }),
+                "seed {seed}: SurviveIn picked despite no toxic zone: {objective:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn objective_species_reference_is_always_within_the_generated_pool() {
+        let config = SimConfig::default();
+        for seed in 0..30u64 {
+            let mut world = SimWorld::new(seed, &config);
+            let palette = generate_starting_palette(&mut world, &config);
+            let params = world_params(0, &config);
+            let species_count = palette.available.len() as u32;
+
+            let objective = generate_objective(&mut world, &params, &config);
+            match objective {
+                Objective::SurviveIn { species, .. } | Objective::TriggerBloom { species, .. } => {
+                    assert!(
+                        (species.0 as u32) < species_count,
+                        "seed {seed}: species {species:?} out of bounds for pool of {species_count}"
+                    );
+                }
+                Objective::Coexistence { .. } => {}
+            }
+        }
     }
 }
