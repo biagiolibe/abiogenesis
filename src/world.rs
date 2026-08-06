@@ -275,20 +275,15 @@ impl SimWorld {
     }
 }
 
+/// No longer spawns a `SimWorld` at `Startup` (task 044): the first world
+/// now comes into being when the player presses "New run" at the main menu
+/// (`menu.rs::start_run`), so `Res<SimWorld>` genuinely doesn't exist until
+/// `GameState::Playing` is entered — every system that reads it must be
+/// gated to that state (or a substate of it, like `EraState`).
 pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_world);
-    }
-}
-
-fn spawn_world(mut commands: Commands, config: Res<SimConfig>) {
-    // Initial seed is intentionally fixed for reproducible runs; only the
-    // `r` key (task 007) advances it from there.
-    let mut world = SimWorld::new(42, &config);
-    crate::worldgen::generate_starting_palette(&mut world, &config);
-    commands.insert_resource(world);
+    fn build(&self, _app: &mut App) {}
 }
 
 /// Draws `params.active_tag_count` distinct tags from the global pool

@@ -12,6 +12,13 @@
 use crate::ui::ActionMode;
 use abiogenesis::objectives::ZoneKind;
 
+// --- Main menu (`menu.rs::main_menu_ui`) ---
+
+pub const MENU_TITLE: &str = "Abiogenesis";
+pub const MENU_SEED_LABEL: &str = "Run seed (leave blank to generate one)";
+pub const MENU_SEED_HINT: &str = "e.g. 42";
+pub const MENU_NEW_RUN_BUTTON: &str = "New run";
+
 // --- HUD — world state (`ui.rs::hud_panel`) ---
 
 pub const HEADING_TITLE: &str = "Abiogenesis";

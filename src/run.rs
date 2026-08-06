@@ -20,6 +20,27 @@ pub struct RunProgress {
     pub unlocks: Unlocks,
 }
 
+impl RunProgress {
+    /// Starts a fresh run at `run_seed` (task 044, chosen or generated at the
+    /// main menu). Seed scheme: `world_index == 0`'s `world_seed` is
+    /// `run_seed` itself, with no derivation step — typing a shared seed at
+    /// the menu reproduces exactly the world that seed names, matching the
+    /// existing `SimWorld::new(seed, ..)` behavior a fixed seed already had
+    /// pre-menu. Every later world's seed (task 045) instead comes from the
+    /// *previous* world's own RNG (`SimWorld::next_seed`, the same source the
+    /// `r`-key reseed already draws from) — `run_seed` is read once, here,
+    /// and never again.
+    pub fn start(run_seed: u64) -> Self {
+        Self {
+            run_seed,
+            world_index: 0,
+            world_seed: run_seed,
+            worlds_cleared: 0,
+            unlocks: Unlocks,
+        }
+    }
+}
+
 /// Meta-progression unlocks accumulated across runs within the same process
 /// session (GDD §10: capabilities, never matrix answers; no disk
 /// persistence for the MVP). Empty placeholder — populated by task 046.

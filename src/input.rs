@@ -9,7 +9,7 @@ use abiogenesis::config::SimConfig;
 use abiogenesis::sim::{
     step, ActionBudget, AdjacencyObserved, EraProgress, OrganismDied, SpeciesExtinct,
 };
-use abiogenesis::state::EraState;
+use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{Organism, SimWorld, SpeciesId};
 use abiogenesis::worldgen::generate_starting_palette;
 
@@ -27,13 +27,14 @@ impl Plugin for InputPlugin {
                 start_era,
                 single_tick,
                 reseed_world,
-                quit,
                 seed_organism_on_click,
                 stress_on_click,
                 cull_on_click,
                 apply_splice,
-            ),
-        );
+            )
+                .run_if(in_state(GameState::Playing)),
+        )
+        .add_systems(Update, quit);
     }
 }
 

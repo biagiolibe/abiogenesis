@@ -11,7 +11,7 @@ use crate::text;
 use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::{CurrentObjective, Objective, ObjectiveProgress};
 use abiogenesis::sim::ActionBudget;
-use abiogenesis::state::EraState;
+use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{SimWorld, SpeciesId, TagSlot};
 
 /// The species the seed action (task 017) places on click. A UI intent, not
@@ -123,8 +123,15 @@ impl Plugin for UiPlugin {
             .insert_resource(SelectedAction(ActionMode::Seed))
             .init_resource::<SpliceDraft>()
             .add_systems(Startup, spawn_hud_camera)
-            .add_systems(Update, reserve_hud_viewport)
-            .add_systems(EguiPrimaryContextPass, (configure_fonts, hud_panel).chain());
+            .add_systems(
+                Update,
+                reserve_hud_viewport.run_if(in_state(GameState::Playing)),
+            )
+            .add_systems(EguiPrimaryContextPass, configure_fonts)
+            .add_systems(
+                EguiPrimaryContextPass,
+                hud_panel.run_if(in_state(GameState::Playing)),
+            );
     }
 }
 

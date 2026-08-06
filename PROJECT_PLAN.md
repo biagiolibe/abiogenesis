@@ -136,7 +136,7 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 
 **Track C — shell and convergence:**
 
-- `[ ]` 044 — Main menu: wires `GameState::MainMenu`, generates `run_seed`, the one legitimate point outside the sim where run variety originates → [044](tasks/044-main-menu.md)
+- `[x]` 044 — Main menu: wires `GameState::MainMenu`, generates `run_seed`, the one legitimate point outside the sim where run variety originates → [044](tasks/done/044-main-menu.md)
 - `[ ]` 045 — World-cleared/defeat screens + world transition: shared `start_world` reset function (replaces the ad-hoc `r`-key reset in `input.rs`) → [045](tasks/045-world-transition-defeat-screens.md)
 - `[ ]` 046 — Minimal meta-progression: in-session unlocks (no disk persistence), GDD §10 → [046](tasks/046-minimal-meta-progression.md)
 

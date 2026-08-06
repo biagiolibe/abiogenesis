@@ -9,6 +9,7 @@ use bevy_egui::egui;
 use bevy_egui::EguiPrimaryContextPass;
 
 use abiogenesis::config::SimConfig;
+use abiogenesis::state::GameState;
 use abiogenesis::world::{Metabolism, SimWorld, SpeciesId};
 
 /// Pixel size of one grid cell on screen. Presentation-only, not a
@@ -76,8 +77,16 @@ pub struct GridRenderPlugin;
 
 impl Plugin for GridRenderPlugin {
     fn build(&self, app: &mut App) {
+        // `spawn_camera`/`spawn_grid`/`spawn_metabolism_shapes` only need
+        // `SimConfig` (grid size), so they stay at `Startup` unconditionally
+        // — the sprites just sit uncolored (`Sprite::from_color(BLACK, ..)`)
+        // until `sync_grid_colors` starts running once `Playing` begins
+        // (task 044: `SimWorld` doesn't exist before then).
         app.add_systems(Startup, (spawn_camera, spawn_grid, spawn_metabolism_shapes))
-            .add_systems(Update, sync_grid_colors);
+            .add_systems(
+                Update,
+                sync_grid_colors.run_if(in_state(GameState::Playing)),
+            );
         #[cfg(debug_assertions)]
         {
             app.init_resource::<debug_view::DebugView>()
@@ -86,11 +95,16 @@ impl Plugin for GridRenderPlugin {
                     Update,
                     (
                         debug_view::toggle_debug_view,
-                        debug_view::apply_debug_view.after(sync_grid_colors),
+                        debug_view::apply_debug_view
+                            .after(sync_grid_colors)
+                            .run_if(in_state(GameState::Playing)),
                         energy_overlay::toggle_energy_overlay,
                     ),
                 )
-                .add_systems(EguiPrimaryContextPass, energy_overlay::draw_energy_overlay);
+                .add_systems(
+                    EguiPrimaryContextPass,
+                    energy_overlay::draw_energy_overlay.run_if(in_state(GameState::Playing)),
+                );
         }
     }
 }

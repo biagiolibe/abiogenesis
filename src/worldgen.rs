@@ -199,6 +199,21 @@ fn scale_severity(base: u32, severity: f32) -> u32 {
     ((base as f32 * severity).round() as u32).max(1)
 }
 
+/// Builds one full world of a run — grid, species, matrix, environment
+/// (`SimWorld::new_for_world`), starting palette (`generate_starting_palette`),
+/// and its `Objective` (`generate_objective`) — in the one order each step
+/// requires (objective generation reads the species the palette placed).
+/// The single entry point task 044's main menu (first world) and task 045's
+/// world transition (every later world) both call, so "how a world comes
+/// into being" has exactly one definition.
+pub fn build_world(seed: u64, world_index: u32, config: &SimConfig) -> (SimWorld, Objective) {
+    let mut world = SimWorld::new_for_world(seed, world_index, config);
+    generate_starting_palette(&mut world, config);
+    let params = world_params(world_index, config);
+    let objective = generate_objective(&mut world, &params, config);
+    (world, objective)
+}
+
 /// Chooses and parametrizes this world's `Objective` (task 040, GDD §8/§9),
 /// deterministic from the world's own seeded RNG — same seed, same
 /// objective. Must run after `generate_starting_palette` (task 039):

@@ -10,6 +10,7 @@ use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::{AdjacencyObserved, OrganismDied, SpeciesExtinct};
+use abiogenesis::state::GameState;
 use abiogenesis::world::{SimWorld, SpeciesId, TagId, TagSlot};
 
 use crate::render::{species_color, species_label};
@@ -135,9 +136,13 @@ impl Plugin for NotebookPlugin {
             .init_resource::<PlayerPlacedCells>()
             .add_systems(
                 Update,
-                (toggle_notebook, record_events, accumulate_evidence),
+                (toggle_notebook, record_events, accumulate_evidence)
+                    .run_if(in_state(GameState::Playing)),
             )
-            .add_systems(EguiPrimaryContextPass, notebook_window);
+            .add_systems(
+                EguiPrimaryContextPass,
+                notebook_window.run_if(in_state(GameState::Playing)),
+            );
     }
 }
 

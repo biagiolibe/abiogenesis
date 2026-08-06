@@ -1,4 +1,5 @@
 mod input;
+mod menu;
 mod notebook;
 mod render;
 mod text;
@@ -13,6 +14,7 @@ use abiogenesis::world::WorldPlugin;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use input::InputPlugin;
+use menu::MenuPlugin;
 use notebook::NotebookPlugin;
 use render::GridRenderPlugin;
 use ui::UiPlugin;
@@ -37,15 +39,17 @@ fn main() {
             UiPlugin,
             NotebookPlugin,
             InputPlugin,
+            MenuPlugin,
         ))
         .init_state::<GameState>()
         .add_sub_state::<EraState>()
-        .add_systems(OnEnter(GameState::Loading), enter_playing)
+        .add_systems(OnEnter(GameState::Loading), enter_main_menu)
         .run();
 }
 
-/// Phase 0: `Loading` transitions straight to `Playing`; `MainMenu` becomes
-/// real in Phase 3 (TECH_DESIGN.md §2).
-fn enter_playing(mut next_state: ResMut<NextState<GameState>>) {
-    next_state.set(GameState::Playing);
+/// `Loading` transitions to `MainMenu` (task 044) — the player explicitly
+/// starts a run from there (`menu.rs::start_run`) instead of the game
+/// booting straight into a world.
+fn enter_main_menu(mut next_state: ResMut<NextState<GameState>>) {
+    next_state.set(GameState::MainMenu);
 }

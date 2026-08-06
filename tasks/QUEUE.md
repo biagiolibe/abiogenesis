@@ -43,7 +43,7 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 | `[x]` | 041 | Failure conditions | 040 | [041](done/041-failure-conditions.md) |
 | `[x]` | 042 | Worldgen: per-world objective generation | 038, 040 | [042](done/042-worldgen-objective-generation.md) |
 | `[x]` | 043 | Objective HUD | 040 | [043](done/043-objective-hud.md) |
-| `[ ]` | 044 | Main menu | 035 | [044](044-main-menu.md) |
+| `[x]` | 044 | Main menu | 035 | [044](done/044-main-menu.md) |
 | `[ ]` | 045 | World-cleared/defeat screens + world transition | 035, 038, 039, 040, 041, 042, 044 | [045](045-world-transition-defeat-screens.md) |
 | `[ ]` | 046 | Minimal meta-progression | 039, 045 | [046](046-minimal-meta-progression.md) |
 
@@ -113,6 +113,7 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | `[x]` | 041 | Failure conditions | Claude | [041](done/041-failure-conditions.md) |
 | `[x]` | 042 | Worldgen: per-world objective generation | Claude | [042](done/042-worldgen-objective-generation.md) |
 | `[x]` | 043 | Objective HUD | Claude | [043](done/043-objective-hud.md) |
+| `[x]` | 044 | Main menu | Claude | [044](done/044-main-menu.md) |
 
 ---
 
