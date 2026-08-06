@@ -229,18 +229,23 @@ fn count_coexisting_species(world: &SimWorld) -> u32 {
 }
 
 /// Whether any living organism of `species` currently occupies a cell in
-/// `zone`.
+/// `zone`. Checked against the zone's fixed geometry (`SimWorld::toxic_zone`,
+/// task 047), not `Cell::toxicity` — that scalar diffuses toward neighbours
+/// every tick (`SimWorld::diffuse_environment`) and, given enough ticks,
+/// stops meaning "is in the zone" at all.
 fn species_present_in_zone(world: &SimWorld, species: SpeciesId, zone: ZoneKind) -> bool {
-    world.cells.iter().any(|cell| {
+    world.cells.iter().enumerate().any(|(idx, cell)| {
+        let x = idx % world.width;
+        let y = idx / world.width;
         cell.organism
             .is_some_and(|organism| organism.species == species)
-            && cell_in_zone(cell, zone)
+            && cell_in_zone(world, x, y, zone)
     })
 }
 
-fn cell_in_zone(cell: &crate::world::Cell, zone: ZoneKind) -> bool {
+fn cell_in_zone(world: &SimWorld, x: usize, y: usize, zone: ZoneKind) -> bool {
     match zone {
-        ZoneKind::Toxic => cell.toxicity > 0.0,
+        ZoneKind::Toxic => world.toxic_zone.contains(x, y),
     }
 }
 
@@ -319,7 +324,7 @@ fn evaluate_current_objective(
 mod tests {
     use super::*;
     use crate::config::SimConfig;
-    use crate::world::{Cell, Metabolism, Organism, Species};
+    use crate::world::{Cell, Metabolism, Organism, Species, ToxicZoneBounds};
 
     fn world_with_species(count: usize) -> SimWorld {
         let config = SimConfig::default();
@@ -424,8 +429,7 @@ mod tests {
     #[test]
     fn survive_in_toxic_zone_requires_sustained_presence() {
         let mut world = world_with_species(1);
-        let idx = world.index(0, 0);
-        world.cells[idx].toxicity = 0.7;
+        world.toxic_zone = ToxicZoneBounds { x0: 0, y0: 0 };
         place(&mut world, 0, 0, SpeciesId(0));
 
         let objective = Objective::SurviveIn {
@@ -452,7 +456,12 @@ mod tests {
     #[test]
     fn survive_in_toxic_zone_is_not_satisfied_by_a_clean_cell() {
         let mut world = world_with_species(1);
-        // toxicity stays at its default 0.0.
+        // The zone is the bottom-right corner; the organism sits at (0, 0),
+        // outside it.
+        world.toxic_zone = ToxicZoneBounds {
+            x0: world.width - 1,
+            y0: world.height - 1,
+        };
         place(&mut world, 0, 0, SpeciesId(0));
 
         let objective = Objective::SurviveIn {
@@ -465,6 +474,62 @@ mod tests {
         assert_eq!(
             evaluate(&objective, &world, &mut progress),
             WorldOutcome::Ongoing
+        );
+    }
+
+    /// Task 047's regression: `diffuse_environment` blends `toxicity`
+    /// toward neighbours every tick with no floor pinning cells outside the
+    /// zone back to `0.0` — given enough ticks it leaks well past the
+    /// zone's actual bounds. `SurviveIn` must still not be satisfiable by an
+    /// organism that only ever sat in the (now slightly toxic) clean corner,
+    /// far from where the zone actually is.
+    #[test]
+    fn diffused_toxicity_outside_the_zone_does_not_satisfy_survive_in() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.species.push(Species {
+            metabolism: Metabolism::Photolithic,
+            temp_optimum: 0.5,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: Vec::new(),
+        });
+        place(&mut world, 0, 0, SpeciesId(0));
+
+        // Diffusion only, not a full `sim::step` — this isolates the effect
+        // under test (toxicity leaking via diffusion) from organism
+        // dynamics (growth/reproduction) that would otherwise risk
+        // legitimately placing a species-0 organism inside the real zone
+        // and confounding the assertion below.
+        for _ in 0..500 {
+            world.scratch.copy_from_slice(&world.cells);
+            world.diffuse_environment(&config);
+            std::mem::swap(&mut world.cells, &mut world.scratch);
+        }
+
+        let idx = world.index(0, 0);
+        assert!(
+            world.cells[idx].toxicity > 0.0,
+            "diffusion should have leaked some toxicity to (0, 0) after 500 ticks — \
+             otherwise this test isn't actually exercising the bug it's meant to catch"
+        );
+        assert!(
+            !world.toxic_zone.contains(0, 0),
+            "(0, 0) must still be outside the zone's real geometry"
+        );
+
+        let objective = Objective::SurviveIn {
+            species: SpeciesId(0),
+            zone: ZoneKind::Toxic,
+            ticks: 1,
+        };
+        let mut progress = ObjectiveProgress::default();
+
+        assert_eq!(
+            evaluate(&objective, &world, &mut progress),
+            WorldOutcome::Ongoing,
+            "an organism that never entered the zone's real bounds must not satisfy SurviveIn, \
+             even though diffusion has raised its cell's toxicity above 0.0"
         );
     }
 

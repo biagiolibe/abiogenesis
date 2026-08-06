@@ -51,7 +51,7 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 047 | Fix `SurviveIn`'s toxic-zone membership check (diffusion leaks the zone check to the whole grid) | none | [047](047-fix-toxic-zone-membership-check.md) |
+| `[x]` | 047 | Fix `SurviveIn`'s toxic-zone membership check (diffusion leaks the zone check to the whole grid) | none | [047](done/047-fix-toxic-zone-membership-check.md) |
 | `[ ]` | 048 | Contain runaway population/energy growth from some generated matrices | none | [048](048-contain-runaway-matrix-growth.md) |
 | `[ ]` | 049 | Retune sustained objectives to era scale, show eras not ticks in the HUD | none | [049](049-objectives-in-eras-not-ticks.md) |
 | `[ ]` | 050 | Remove auto-placed starting organisms; the player seeds the first world | none | [050](050-no-auto-placed-starting-organisms.md) |

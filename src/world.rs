@@ -83,6 +83,26 @@ pub struct Organism {
     pub energy: f32,
 }
 
+/// The toxic zone's fixed geometry (GDD §5.2): every cell with `x >= x0 &&
+/// y >= y0` is in the zone. Set once at world construction from
+/// `WorldParams` and never touched again — unlike the per-cell `toxicity`
+/// scalar, which `diffuse_environment` blends toward neighbours every tick
+/// and so drifts away from the zone's actual shape over time (task 047:
+/// `objectives.rs`'s `SurviveIn` zone check reads this, not `toxicity`,
+/// precisely because the scalar isn't a reliable proxy for "in the zone"
+/// once diffusion has run for a while).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ToxicZoneBounds {
+    pub x0: usize,
+    pub y0: usize,
+}
+
+impl ToxicZoneBounds {
+    pub fn contains(&self, x: usize, y: usize) -> bool {
+        x >= self.x0 && y >= self.y0
+    }
+}
+
 /// One grid cell. Single occupancy (GDD §5.1): `organism` is never a collection.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Cell {
@@ -116,6 +136,10 @@ pub struct SimWorld {
     pub active_tags: Vec<TagId>,
     /// The world's secret matrix (GDD §5.5), generated once at construction.
     pub matrix: TagMatrix,
+    /// The toxic zone's fixed bounds (task 047) — see `ToxicZoneBounds`'s
+    /// own docs for why this exists separately from the diffusing
+    /// `Cell::toxicity` scalar.
+    pub toxic_zone: ToxicZoneBounds,
     rng: StdRng,
     /// Write-side double buffer for the tick (TECH_DESIGN.md §6). `pub(crate)`
     /// so `sim::step` can read/write it directly without a cell-by-cell API.
@@ -161,6 +185,7 @@ impl SimWorld {
             seed,
             active_tags,
             matrix,
+            toxic_zone: ToxicZoneBounds::default(),
             rng,
         };
         world.apply_gradients(config, &params);
@@ -180,6 +205,10 @@ impl SimWorld {
         let zone_y0 = self
             .height
             .saturating_sub(params.toxic_zone_height as usize);
+        self.toxic_zone = ToxicZoneBounds {
+            x0: zone_x0,
+            y0: zone_y0,
+        };
         let temperature_left = env.temperature_gradient_left;
         let temperature_right = (temperature_left + params.temperature_spread).min(1.0);
 
