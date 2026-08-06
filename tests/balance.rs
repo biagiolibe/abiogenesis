@@ -1,7 +1,12 @@
-// Anti-degeneration properties of the nominal two-species scenario (GDD
-// §5.8): a photolithic bloom must usually grow then stabilise instead of
-// exploding or going extinct, and the light gradient must carve out a real
-// niche. Together with task 007 this was Phase 0's exit gate (GDD §13).
+// Anti-degeneration properties of the nominal starting scenario (GDD §5.8):
+// a photolithic bloom must usually grow then stabilise instead of exploding
+// or going extinct, and the light gradient must carve out a real niche.
+// Together with task 007 this was Phase 0's exit gate (GDD §13). Since task
+// 050 nothing is auto-placed in real play — `place_starting_organisms` below
+// synthesizes the same "first `starting_species_count` species, spread along
+// y = 0" placement a player would perform, purely so these seed-swept
+// statistical properties keep measuring real population dynamics under a
+// fixed, comparable starting condition.
 //
 // Task 038 made active-tag selection procedural (`select_active_tags`
 // samples the RNG instead of always taking `TagId(0..5)`), so a fixed seed

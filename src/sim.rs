@@ -597,6 +597,14 @@ mod tests {
         assert_eq!(world.tick, 1);
     }
 
+    #[test]
+    fn step_marks_the_world_as_ever_populated_once_an_organism_exists() {
+        let (mut world, config) = world_with_one_organism(0.7, 0.5, 5.0);
+        assert!(!world.ever_populated);
+        step(&mut world, &config);
+        assert!(world.ever_populated);
+    }
+
     /// Drives `advance_tick` on `Update` (rather than `FixedUpdate`) so the
     /// count doesn't depend on wall-clock accumulation — this isolates the
     /// counting/guard logic from schedule timing, which task 007 requires to
