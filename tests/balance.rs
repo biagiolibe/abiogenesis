@@ -19,7 +19,7 @@
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::step;
-use abiogenesis::world::SimWorld;
+use abiogenesis::world::{Organism, SimWorld, SpeciesId};
 use abiogenesis::worldgen::generate_starting_palette;
 
 /// Long enough for a bloom to grow, saturate, and settle (suggested
@@ -56,6 +56,27 @@ fn population(world: &SimWorld) -> usize {
     world.cells.iter().filter(|c| c.organism.is_some()).count()
 }
 
+/// Worlds no longer auto-place organisms (task 050) — the player seeds them
+/// via `Seed`. Mirrors the old auto-placement exactly (the first
+/// `starting_species_count` generated species, evenly spread along `y = 0`)
+/// so these seed-swept statistical properties keep measuring real
+/// population dynamics, the same nominal scenario they measured before.
+fn place_starting_organisms(world: &mut SimWorld, config: &SimConfig) {
+    let count = config.worldgen.starting_species_count as usize;
+    for i in 0..count {
+        let x = if count <= 1 {
+            world.width / 2
+        } else {
+            i * (world.width - 1) / (count - 1)
+        };
+        let idx = world.index(x, 0);
+        world.cells[idx].organism = Some(Organism {
+            species: SpeciesId(i as u8),
+            energy: config.energy.seed_energy,
+        });
+    }
+}
+
 /// Runs the nominal scenario (a procedurally generated starting palette,
 /// `generate_starting_palette`, task 039) for `ticks`, returning the final
 /// world and the population sampled after every tick.
@@ -63,6 +84,7 @@ fn run_nominal_scenario(seed: u64, ticks: usize) -> (SimWorld, Vec<usize>) {
     let config = SimConfig::default();
     let mut world = SimWorld::new(seed, &config);
     generate_starting_palette(&mut world, &config);
+    place_starting_organisms(&mut world, &config);
 
     let mut history = Vec::with_capacity(ticks);
     for _ in 0..ticks {

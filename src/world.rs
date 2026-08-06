@@ -140,6 +140,13 @@ pub struct SimWorld {
     /// own docs for why this exists separately from the diffusing
     /// `Cell::toxicity` scalar.
     pub toxic_zone: ToxicZoneBounds,
+    /// Whether any organism has ever occupied a cell in this world (task
+    /// 050): set by `sim::step` the first time its population scan finds
+    /// one. Worlds start with nothing placed (the player seeds them via
+    /// `Seed`, GDD §6) — `objectives::is_total_extinction` reads this so a
+    /// world that hasn't been seeded yet doesn't fail on its very first
+    /// evaluated tick.
+    pub ever_populated: bool,
     rng: StdRng,
     /// Write-side double buffer for the tick (TECH_DESIGN.md §6). `pub(crate)`
     /// so `sim::step` can read/write it directly without a cell-by-cell API.
@@ -186,6 +193,7 @@ impl SimWorld {
             active_tags,
             matrix,
             toxic_zone: ToxicZoneBounds::default(),
+            ever_populated: false,
             rng,
         };
         world.apply_gradients(config, &params);

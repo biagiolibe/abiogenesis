@@ -5,8 +5,28 @@
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::step;
-use abiogenesis::world::SimWorld;
+use abiogenesis::world::{Organism, SimWorld, SpeciesId};
 use abiogenesis::worldgen::generate_starting_palette;
+
+/// Worlds no longer auto-place organisms (task 050) — the player seeds them
+/// via `Seed`. Mirrors the old auto-placement exactly (the first
+/// `starting_species_count` generated species, evenly spread along `y = 0`)
+/// so species 0 lands at `(0, 0)` as this test's comments below assume.
+fn place_starting_organisms(world: &mut SimWorld, config: &SimConfig) {
+    let count = config.worldgen.starting_species_count as usize;
+    for i in 0..count {
+        let x = if count <= 1 {
+            world.width / 2
+        } else {
+            i * (world.width - 1) / (count - 1)
+        };
+        let idx = world.index(x, 0);
+        world.cells[idx].organism = Some(Organism {
+            species: SpeciesId(i as u8),
+            energy: config.energy.seed_energy,
+        });
+    }
+}
 
 /// Mean energy across all living organisms of species 0, or `None` if none
 /// survived.
@@ -29,6 +49,7 @@ fn stress_action_measurably_hurts_the_stressed_organism() {
     // Baseline: nominal starting palette, one era untouched.
     let mut baseline = SimWorld::new(42, &config);
     generate_starting_palette(&mut baseline, &config);
+    place_starting_organisms(&mut baseline, &config);
     for _ in 0..config.time.era_ticks {
         step(&mut baseline, &config);
     }
@@ -43,6 +64,7 @@ fn stress_action_measurably_hurts_the_stressed_organism() {
     // 1 each) before the era runs.
     let mut stressed = SimWorld::new(42, &config);
     generate_starting_palette(&mut stressed, &config);
+    place_starting_organisms(&mut stressed, &config);
     let idx = stressed.index(0, 0);
     let uses = config.time.point_budget_per_era / config.time.action_costs.stress;
     for _ in 0..uses {

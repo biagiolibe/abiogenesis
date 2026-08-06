@@ -9,7 +9,7 @@ use rand::RngExt;
 
 use crate::config::SimConfig;
 use crate::objectives::{Objective, ZoneKind};
-use crate::world::{draw_species_tags, Metabolism, Organism, SimWorld, Species, SpeciesId};
+use crate::world::{draw_species_tags, Metabolism, SimWorld, Species, SpeciesId};
 
 /// Concrete generation parameters for one world, derived from its position
 /// in the run (`world_index`, 0-based: the first world is `0`). Every field
@@ -92,54 +92,42 @@ fn lerp_f32(early: f32, late: f32, t: f32) -> f32 {
 }
 
 /// A world's starting species (task 039, GDD §9/§10): every species the
-/// player could choose to `Seed` in this world, plus which of them are
-/// already on the grid when the world starts. `available` is the superset
-/// task 046's meta-progression unlocks will extend; `placed` never grows on
-/// its own — only pre-seeded organisms count.
-#[derive(Debug, Clone, PartialEq)]
-pub struct StartingPalette {
-    /// Every generated species, indexable by the positions in `placed`.
-    pub available: Vec<Species>,
-    /// `(index into available, grid position)` for organisms present on the
-    /// grid at world start.
-    pub placed: Vec<(usize, (usize, usize))>,
-}
-
 /// Replaces Phase 1's `seed_starting_palette` placeholder (task 013, always
 /// exactly 2 fixed photolithic species) with a real generator (task 038's
 /// world already has its own tag subset/matrix/environment by the time this
-/// runs — see `SimWorld::new_for_world`):
+/// runs — see `SimWorld::new_for_world`).
 ///
-/// - `WorldgenConfig::starting_species_count` species are placed on the
-///   grid, evenly spread along row `y = 0` (the highest-light row). Always
-///   `Metabolism::Photolithic`, the only metabolism that's self-sustaining
-///   from light alone with no prey or residue already present (GDD §5.4) —
-///   `temp_optimum` is read directly from the generated environment at each
-///   placement site, so it's always a good fit for where it's placed,
-///   whatever this world's temperature spread (task 038) turned out to be.
-/// - `WorldgenConfig::extra_available_species_count` further species are
-///   added to `available` only, with `Metabolism::Predator`/`Decomposer` in
-///   alternation — giving the player metabolism variety to seed
-///   deliberately (GDD §6 `Seed`) without every starting organism needing
-///   prey/residue to survive its first ticks.
+/// **No organism is placed on the grid** (task 050, 2026-08-06 playtest):
+/// every world starts empty, and the player seeds it themselves via `Seed`
+/// (GDD §6) — closer to the game's own premise than the world arriving
+/// pre-populated. `WorldgenConfig::starting_species_count` species are
+/// still generated as `Metabolism::Photolithic` (the only metabolism
+/// self-sustaining from light alone with no prey/residue already present,
+/// GDD §5.4 — a reasonable "first thing to seed"), with `temp_optimum`
+/// spread across the world's actual temperature range the same way
+/// `add_bonus_species`'s extras already are, since there's no placement
+/// site left to read a real temperature from.
+/// `WorldgenConfig::extra_available_species_count` further species are
+/// added the same way `add_bonus_species` always worked — giving the
+/// player metabolism variety to seed deliberately.
 ///
 /// Every species draws its tags from the world's own active subset
 /// (`draw_species_tags`, task 010/036) and its RNG from `world`'s own seeded
 /// stream (never an external RNG), so the whole palette stays deterministic
 /// given the same world seed.
-pub fn generate_starting_palette(world: &mut SimWorld, config: &SimConfig) -> StartingPalette {
-    let placed_count = config.worldgen.starting_species_count as usize;
-    let mut placed = Vec::with_capacity(placed_count);
+pub fn generate_starting_palette(world: &mut SimWorld, config: &SimConfig) {
+    let cold = world.get(0, 0).temperature;
+    let hot = world.get(world.width - 1, 0).temperature;
+    let starting_count = config.worldgen.starting_species_count as usize;
 
-    for i in 0..placed_count {
-        let x = if placed_count <= 1 {
-            world.width / 2
+    for i in 0..starting_count {
+        let weight = if starting_count <= 1 {
+            0.5
         } else {
-            i * (world.width - 1) / (placed_count - 1)
+            i as f32 / (starting_count - 1) as f32
         };
-        let temp_optimum = world.get(x, 0).temperature;
+        let temp_optimum = cold + (hot - cold) * weight;
         let tags = draw_species_tags(world, config);
-        let species_index = world.species.len();
         world.species.push(Species {
             metabolism: Metabolism::Photolithic,
             temp_optimum,
@@ -147,20 +135,9 @@ pub fn generate_starting_palette(world: &mut SimWorld, config: &SimConfig) -> St
             repro_threshold: config.energy.repro_threshold,
             tags,
         });
-        let idx = world.index(x, 0);
-        world.cells[idx].organism = Some(Organism {
-            species: SpeciesId(species_index as u8),
-            energy: config.energy.seed_energy,
-        });
-        placed.push((species_index, (x, 0)));
     }
 
     add_bonus_species(world, config, config.worldgen.extra_available_species_count);
-
-    StartingPalette {
-        available: world.species.clone(),
-        placed,
-    }
 }
 
 /// Adds `count` species to `world.species`, available for `Seed` but not
@@ -376,10 +353,28 @@ mod tests {
         let mut a = SimWorld::new(42, &config);
         let mut b = SimWorld::new(42, &config);
 
-        let palette_a = generate_starting_palette(&mut a, &config);
-        let palette_b = generate_starting_palette(&mut b, &config);
+        generate_starting_palette(&mut a, &config);
+        generate_starting_palette(&mut b, &config);
 
-        assert_eq!(palette_a, palette_b);
+        assert_eq!(a.species, b.species);
+    }
+
+    /// Task 050: no world starts with an organism already on the grid — the
+    /// player seeds it themselves via `Seed`.
+    #[test]
+    fn generate_starting_palette_places_no_organisms() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        generate_starting_palette(&mut world, &config);
+
+        assert!(
+            world.cells.iter().all(|cell| cell.organism.is_none()),
+            "a freshly generated world must start with an empty grid"
+        );
+        assert!(
+            !world.species.is_empty(),
+            "species must still be generated, just not placed"
+        );
     }
 
     #[test]
@@ -395,17 +390,13 @@ mod tests {
     }
 
     #[test]
-    fn placed_species_are_photolithic_and_carry_valid_tags() {
+    fn starting_species_are_photolithic_and_carry_valid_tags() {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
-        let palette = generate_starting_palette(&mut world, &config);
+        generate_starting_palette(&mut world, &config);
 
-        assert_eq!(
-            palette.placed.len(),
-            config.worldgen.starting_species_count as usize
-        );
-        for &(index, _) in &palette.placed {
-            let species = &palette.available[index];
+        let starting_count = config.worldgen.starting_species_count as usize;
+        for species in &world.species[..starting_count] {
             assert_eq!(species.metabolism, Metabolism::Photolithic);
             assert!(
                 (config.tags.tags_per_species_min as usize
@@ -424,35 +415,19 @@ mod tests {
     }
 
     #[test]
-    fn placed_organisms_land_on_the_grid_at_their_recorded_position() {
+    fn available_pool_size_and_metabolism_variety() {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
-        let palette = generate_starting_palette(&mut world, &config);
-
-        for &(index, (x, y)) in &palette.placed {
-            let organism = world.get(x, y).organism.expect("an organism was placed");
-            assert_eq!(organism.species, SpeciesId(index as u8));
-        }
-    }
-
-    #[test]
-    fn available_pool_is_larger_than_placed_and_adds_other_metabolisms() {
-        let config = SimConfig::default();
-        let mut world = SimWorld::new(42, &config);
-        let palette = generate_starting_palette(&mut world, &config);
+        generate_starting_palette(&mut world, &config);
 
         assert_eq!(
-            palette.available.len(),
+            world.species.len(),
             (config.worldgen.starting_species_count + config.worldgen.extra_available_species_count)
                 as usize
         );
         assert!(
-            palette.available.len() > palette.placed.len(),
-            "the available pool must offer more than what's pre-placed (task 046 hook)"
-        );
-        assert!(
-            palette
-                .available
+            world
+                .species
                 .iter()
                 .any(|species| species.metabolism != Metabolism::Photolithic),
             "the available pool should include non-photolithic metabolisms for variety"
@@ -547,9 +522,9 @@ mod tests {
         let config = SimConfig::default();
         for seed in 0..30u64 {
             let mut world = SimWorld::new(seed, &config);
-            let palette = generate_starting_palette(&mut world, &config);
+            generate_starting_palette(&mut world, &config);
             let params = world_params(0, &config);
-            let species_count = palette.available.len() as u32;
+            let species_count = world.species.len() as u32;
 
             if let Objective::Coexistence { min_species, .. } =
                 generate_objective(&mut world, &params, &config)
@@ -585,9 +560,9 @@ mod tests {
         let config = SimConfig::default();
         for seed in 0..30u64 {
             let mut world = SimWorld::new(seed, &config);
-            let palette = generate_starting_palette(&mut world, &config);
+            generate_starting_palette(&mut world, &config);
             let params = world_params(0, &config);
-            let species_count = palette.available.len() as u32;
+            let species_count = world.species.len() as u32;
 
             let objective = generate_objective(&mut world, &params, &config);
             match objective {

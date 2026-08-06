@@ -102,6 +102,13 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
             population[organism.species.0 as usize] += 1;
         }
     }
+    // Task 050: worlds start with nothing placed, so `ever_populated` only
+    // flips once the player's first `Seed` actually lands on the grid —
+    // `objectives::is_total_extinction` reads it to avoid failing a world
+    // that simply hasn't been seeded yet.
+    if !world.ever_populated && population.iter().any(|&count| count > 0) {
+        world.ever_populated = true;
+    }
 
     // Start the write side as a copy of the snapshot; every field below
     // (environment scalars, residue, organism) gets overwritten in place.

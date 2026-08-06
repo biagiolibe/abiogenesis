@@ -177,15 +177,15 @@ pub fn evaluate_world(
     outcome
 }
 
-/// True once every living organism on the grid has died. Guarded against
-/// the false positive of the instant right after `SimWorld` construction,
-/// before the starting species have been placed: `world.species` is empty
-/// only in that window (in practice, seeding the starting palette pushes
-/// species and places their organisms in the same synchronous call, so no
-/// real tick ever observes "species exist, none are placed yet") — treating
-/// an empty registry as extinction would fail a world before it began.
+/// True once every living organism on the grid has died. Guarded by
+/// `SimWorld::ever_populated` (task 050): worlds start with nothing placed
+/// — the player seeds them via `Seed` — so an empty grid on its own doesn't
+/// mean extinction, only an empty grid *after* life has actually existed
+/// here does. A player who never seeds anything doesn't dodge failure
+/// forever this way — the world still fails once `WorldParams::era_budget`
+/// runs out (`is_era_budget_exhausted`), just via that condition instead.
 fn is_total_extinction(world: &SimWorld) -> bool {
-    !world.species.is_empty() && world.cells.iter().all(|cell| cell.organism.is_none())
+    world.ever_populated && world.cells.iter().all(|cell| cell.organism.is_none())
 }
 
 /// Whether `world`'s era count has reached its per-world budget
@@ -350,6 +350,10 @@ mod tests {
             }),
             ..world.cells[idx]
         };
+        // Mirrors what a real placement (`Seed`, reproduction) does to
+        // `SimWorld::ever_populated` in `sim::step` — hand-built test worlds
+        // don't go through `step`, so this test helper sets it directly.
+        world.ever_populated = true;
     }
 
     #[test]
@@ -684,6 +688,45 @@ mod tests {
             evaluate_world(None, &world, &mut progress, 40),
             WorldOutcome::Ongoing,
             "an empty grid before any species exists must not read as total extinction"
+        );
+    }
+
+    /// Task 050's regression: species can be generated (`world.species`
+    /// non-empty, e.g. right after `worldgen::generate_starting_palette`)
+    /// without anything ever being placed on the grid — worlds no longer
+    /// auto-place organisms, the player seeds them via `Seed`. The old
+    /// guard (`!world.species.is_empty()`) would have failed the world
+    /// instantly here; `ever_populated` must stay `false` until an organism
+    /// actually lands.
+    #[test]
+    fn an_unseeded_world_with_species_defined_is_not_treated_as_extinction() {
+        let world = world_with_species(2);
+        assert!(
+            !world.ever_populated,
+            "precondition: nothing has been placed yet"
+        );
+        let mut progress = ObjectiveProgress::default();
+
+        assert_eq!(
+            evaluate_world(None, &world, &mut progress, 40),
+            WorldOutcome::Ongoing,
+            "species existing without any having ever been placed must not read as total extinction"
+        );
+    }
+
+    /// Once `ever_populated` is `true` (life has actually existed), an
+    /// empty grid goes back to failing the world normally — the guard only
+    /// covers "hasn't started yet," not "started and then died out."
+    #[test]
+    fn a_world_that_was_populated_and_then_emptied_still_fails() {
+        let mut world = world_with_species(1);
+        world.ever_populated = true;
+        let mut progress = ObjectiveProgress::default();
+
+        assert_eq!(
+            evaluate_world(None, &world, &mut progress, 40),
+            WorldOutcome::Failed(FailureReason::TotalExtinction),
+            "an empty grid after life has existed must still fail the world"
         );
     }
 

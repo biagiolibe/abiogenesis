@@ -79,10 +79,15 @@ fn a_different_run_seed_diverges_the_world_sequence() {
     let a = play_run(123, &config);
     let b = play_run(124, &config);
 
-    let ever_diverged = a
-        .iter()
-        .zip(b.iter())
-        .any(|(world_a, world_b)| world_a.cells != world_b.cells);
+    // Not `cells`: worlds start with nothing placed (task 050), and
+    // `apply_gradients`' environment scalars are a deterministic function of
+    // `WorldParams` (world_index + config), not the seed — two different
+    // seeds at the same world_index produce identical `cells` when nothing
+    // is ever seeded onto the grid. `active_tags`/`matrix` are the actual
+    // seed-derived artifacts, so they're what should diverge.
+    let ever_diverged = a.iter().zip(b.iter()).any(|(world_a, world_b)| {
+        world_a.active_tags != world_b.active_tags || world_a.matrix != world_b.matrix
+    });
 
     assert!(
         ever_diverged,

@@ -5,14 +5,36 @@
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::step;
-use abiogenesis::world::SimWorld;
+use abiogenesis::world::{Organism, SimWorld, SpeciesId};
 use abiogenesis::worldgen::generate_starting_palette;
 
 const RUN_TICKS: usize = 200;
 
+/// Worlds no longer auto-place organisms (task 050) — the player seeds them
+/// via `Seed`. This mirrors the old auto-placement exactly (the first
+/// `starting_species_count` generated species, evenly spread along `y = 0`)
+/// so these determinism tests keep exercising real population dynamics
+/// instead of 200 ticks of an empty grid.
+fn place_starting_organisms(world: &mut SimWorld, config: &SimConfig) {
+    let count = config.worldgen.starting_species_count as usize;
+    for i in 0..count {
+        let x = if count <= 1 {
+            world.width / 2
+        } else {
+            i * (world.width - 1) / (count - 1)
+        };
+        let idx = world.index(x, 0);
+        world.cells[idx].organism = Some(Organism {
+            species: SpeciesId(i as u8),
+            energy: config.energy.seed_energy,
+        });
+    }
+}
+
 fn seeded_world(seed: u64, config: &SimConfig) -> SimWorld {
     let mut world = SimWorld::new(seed, config);
     generate_starting_palette(&mut world, config);
+    place_starting_organisms(&mut world, config);
     world
 }
 
