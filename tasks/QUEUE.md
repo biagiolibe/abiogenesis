@@ -61,6 +61,8 @@ Tasks that take < 15 min and don't need a detailed briefing.
 |-------|-------------|----------|
 | `[x]` | Dev-only `F1` heatmap overlay for raw environment scalars (temperature/toxicity/light), `#[cfg(debug_assertions)]`-gated so it never ships in release — surfaced by task 023's discovery that toxicity has no in-tick effect and isn't otherwise visible | 🟢 P3 |
 | `[x]` | Observation log legibility: `LogEntry` carries its `SpeciesId` so each line gets a `species_color` swatch (matching the Population/Seed Palette pattern), messages use `species_label` instead of raw `species N`, and the scroll area sticks to the newest entry (`stick_to_bottom`) instead of leaving new events off-screen — raised directly by the player as "poco leggibile" | 🟢 P3 |
+| `[x]` | Dev-only `F2` per-cell energy-number overlay, `#[cfg(debug_assertions)]`-gated, mirroring the F1 heatmap's toggle pattern — requested to debug unexpected deaths without a hidden-matrix cause | 🟢 P3 |
+| `[x]` | Death log lines for player-placed organisms include the energy-update breakdown (gain/matrix/upkeep/crowding/predation) so a death's cause is legible without re-deriving it from the tick code — same motivation as above | 🟢 P3 |
 
 ---
 

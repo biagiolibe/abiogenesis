@@ -197,7 +197,16 @@ fn record_events(
             log.entries.push(LogEntry {
                 era: world.era,
                 species: event.species,
-                text: text::player_organism_death_message(&species_label(event.species), x, y),
+                text: text::player_organism_death_message(
+                    &species_label(event.species),
+                    x,
+                    y,
+                    event.gain,
+                    event.interaction_delta,
+                    event.upkeep,
+                    event.crowding_penalty,
+                    event.predation_loss,
+                ),
             });
         }
     }
@@ -544,6 +553,12 @@ mod tests {
             .write(OrganismDied {
                 cell: 137,
                 species: SpeciesId(0),
+                gain: 0.4,
+                interaction_delta: 0.0,
+                upkeep: 0.5,
+                crowding_penalty: 0.15,
+                predation_loss: 0.0,
+                energy_before: 0.1,
             });
         app.update();
 
@@ -553,6 +568,11 @@ mod tests {
         assert!(
             log.entries[0].text.contains("species 0"),
             "got: {}",
+            log.entries[0].text
+        );
+        assert!(
+            log.entries[0].text.contains("gain") && log.entries[0].text.contains("upkeep"),
+            "the death message should carry the energy breakdown: {}",
             log.entries[0].text
         );
         let placed = app.world().resource::<PlayerPlacedCells>();
@@ -576,6 +596,12 @@ mod tests {
             .write(OrganismDied {
                 cell: 42,
                 species: SpeciesId(0),
+                gain: 0.0,
+                interaction_delta: 0.0,
+                upkeep: 0.5,
+                crowding_penalty: 0.0,
+                predation_loss: 0.0,
+                energy_before: 0.1,
             });
         app.update();
 
@@ -611,6 +637,12 @@ mod tests {
             .write(OrganismDied {
                 cell: 9,
                 species: SpeciesId(1),
+                gain: 0.0,
+                interaction_delta: 0.0,
+                upkeep: 0.7,
+                crowding_penalty: 0.0,
+                predation_loss: 0.0,
+                energy_before: 0.1,
             });
         app.update();
 

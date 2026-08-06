@@ -5,6 +5,8 @@ use bevy::image::Image;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy_egui::egui;
+#[cfg(debug_assertions)]
+use bevy_egui::EguiPrimaryContextPass;
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::world::{Metabolism, SimWorld, SpeciesId};
@@ -78,13 +80,17 @@ impl Plugin for GridRenderPlugin {
             .add_systems(Update, sync_grid_colors);
         #[cfg(debug_assertions)]
         {
-            app.init_resource::<debug_view::DebugView>().add_systems(
-                Update,
-                (
-                    debug_view::toggle_debug_view,
-                    debug_view::apply_debug_view.after(sync_grid_colors),
-                ),
-            );
+            app.init_resource::<debug_view::DebugView>()
+                .init_resource::<energy_overlay::EnergyOverlay>()
+                .add_systems(
+                    Update,
+                    (
+                        debug_view::toggle_debug_view,
+                        debug_view::apply_debug_view.after(sync_grid_colors),
+                        energy_overlay::toggle_energy_overlay,
+                    ),
+                )
+                .add_systems(EguiPrimaryContextPass, energy_overlay::draw_energy_overlay);
         }
     }
 }
@@ -158,6 +164,94 @@ mod debug_view {
     fn heat_color(value: f32) -> Color {
         let hue = 240.0 * (1.0 - value.clamp(0.0, 1.0));
         Color::hsl(hue, 0.85, 0.5)
+    }
+}
+
+/// A dev-only overlay printing each occupied cell's current energy as a
+/// number over the grid (playtest finding: a predator seeded next to
+/// tag-neutral neighbours still died, and nothing on screen explained why —
+/// this makes the raw energy trajectory visible without re-deriving it from
+/// `sim.rs`). Never compiled into a release build, same rationale as
+/// `debug_view`.
+#[cfg(debug_assertions)]
+mod energy_overlay {
+    use super::{cell_position, GridCamera};
+    use abiogenesis::world::SimWorld;
+    use bevy::prelude::*;
+    use bevy_egui::{egui, EguiContexts};
+
+    /// Font size for the overlay's energy numbers. Small enough that the
+    /// worst case — a 4-character label like `10.2` (energies range 0 to
+    /// `repro_threshold`, typically 10.0) — fits inside one grid cell
+    /// (`CELL_SIZE = 16.0` world units, ~17 logical points at the default
+    /// 48x32 grid's `AutoMin` scale ≈ 1.0), so adjacent occupied cells —
+    /// the normal case once reproduction clusters form — don't overlap.
+    /// Presentation-only, same category as `CELL_SIZE`/`SPECIES_HUE_STEP` —
+    /// not a `SimConfig` coefficient.
+    const ENERGY_OVERLAY_FONT_SIZE: f32 = 6.0;
+
+    /// Whether the `F2` overlay is shown. Kept separate from `DebugView`
+    /// (not folded into its cycle): the two are orthogonal — this can be on
+    /// alongside any `DebugView` variant, unlike `DebugView`'s own
+    /// mutually-exclusive recolorings.
+    #[derive(Resource, Default)]
+    pub struct EnergyOverlay(pub bool);
+
+    pub fn toggle_energy_overlay(
+        keys: Res<ButtonInput<KeyCode>>,
+        mut overlay: ResMut<EnergyOverlay>,
+    ) {
+        if keys.just_pressed(KeyCode::F2) {
+            overlay.0 = !overlay.0;
+        }
+    }
+
+    /// Draws every occupied cell's current energy as text over the grid, via
+    /// a background-layer egui painter — the first thing in the codebase to
+    /// need a world-to-screen projection (the reverse, `world_to_cell`, is
+    /// used for click handling).
+    pub fn draw_energy_overlay(
+        overlay: Res<EnergyOverlay>,
+        world: Res<SimWorld>,
+        cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
+        mut contexts: EguiContexts,
+    ) -> Result {
+        if !overlay.0 {
+            return Ok(());
+        }
+        let Ok((camera, camera_transform)) = cameras.single() else {
+            return Ok(());
+        };
+        let ctx = contexts.ctx_mut()?;
+        let painter = ctx.layer_painter(egui::LayerId::background());
+
+        // `Camera::world_to_viewport` already returns logical (window-point)
+        // coordinates — the same space `Window::cursor_position()` uses, per
+        // `input.rs`'s reverse conversion (`viewport_to_world_2d`). Dividing
+        // by `window.scale_factor()` again here double-applies the HiDPI
+        // scale and compresses every position toward the origin (this was
+        // caught by an in-game screenshot on a Retina display: numbers
+        // clustered in the top-left instead of sitting on their cells).
+        for y in 0..world.height {
+            for x in 0..world.width {
+                let Some(organism) = world.get(x, y).organism else {
+                    continue;
+                };
+                let world_pos = cell_position(x, y, world.width, world.height);
+                let Ok(viewport_pos) = camera.world_to_viewport(camera_transform, world_pos) else {
+                    continue;
+                };
+                let pos = egui::pos2(viewport_pos.x, viewport_pos.y);
+                painter.text(
+                    pos,
+                    egui::Align2::CENTER_CENTER,
+                    format!("{:.1}", organism.energy),
+                    egui::FontId::monospace(ENERGY_OVERLAY_FONT_SIZE),
+                    egui::Color32::WHITE,
+                );
+            }
+        }
+        Ok(())
     }
 }
 

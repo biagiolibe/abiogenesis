@@ -115,8 +115,30 @@ pub fn extinction_message(species_label: &str) -> String {
     format!("{species_label} went extinct")
 }
 
-pub fn player_organism_death_message(species_label: &str, x: usize, y: usize) -> String {
-    format!("your {species_label} organism at ({x}, {y}) died")
+/// Breaks a death down into the energy-update terms that caused it (GDD
+/// §5.6 step 5), so the log answers "why" instead of only "what": each term
+/// is shown as its actual net contribution (costs negated), not the raw
+/// magnitude stored on `OrganismDied`.
+#[allow(clippy::too_many_arguments)]
+pub fn player_organism_death_message(
+    species_label: &str,
+    x: usize,
+    y: usize,
+    gain: f32,
+    interaction_delta: f32,
+    upkeep: f32,
+    crowding_penalty: f32,
+    predation_loss: f32,
+) -> String {
+    // `+ 0.0` folds away IEEE-754 negative zero (e.g. `-upkeep` when
+    // `upkeep == 0.0`) so the message never reads "predation -0.00".
+    format!(
+        "your {species_label} organism at ({x}, {y}) died: gain {gain:+.2}, \
+         matrix {interaction_delta:+.2}, upkeep {:+.2}, crowding {:+.2}, predation {:+.2}",
+        -upkeep + 0.0,
+        -crowding_penalty + 0.0,
+        -predation_loss + 0.0,
+    )
 }
 
 // --- Notebook — hypothesis graph (`notebook.rs::hypothesis_grid`) ---
@@ -149,4 +171,31 @@ pub fn species_catalog_line(
     temp_tolerance: f32,
 ) -> String {
     format!("{species_label}: {metabolism:?} · temp {temp_optimum:.2}±{temp_tolerance:.2}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn death_message_shows_costs_as_negative_net_contributions() {
+        let message =
+            player_organism_death_message("Nyx (species 0)", 3, 4, 0.40, 0.0, 0.70, 0.15, 0.0);
+        assert!(
+            message.contains("gain +0.40"),
+            "gain should show its raw positive contribution: {message}"
+        );
+        assert!(
+            message.contains("upkeep -0.70"),
+            "upkeep is a cost, must show as negative: {message}"
+        );
+        assert!(
+            message.contains("crowding -0.15"),
+            "crowding is a cost, must show as negative: {message}"
+        );
+        assert!(
+            message.contains("predation +0.00"),
+            "zero predation loss must not print as negative zero: {message}"
+        );
+    }
 }

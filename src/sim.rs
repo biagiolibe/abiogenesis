@@ -8,11 +8,26 @@ use crate::config::SimConfig;
 use crate::state::EraState;
 use crate::world::{Metabolism, Organism, SimWorld, SpeciesId, TagSlot};
 
-/// One organism's energy reached zero and it was removed this tick.
+/// One organism's energy reached zero and it was removed this tick, with
+/// the exact terms of the energy update (GDD §5.6 step 5) that led there —
+/// consumed by `notebook.rs` to explain a salient death instead of leaving
+/// the player to re-derive it from the tick code.
 #[derive(Debug, Clone, Copy, Message)]
 pub struct OrganismDied {
     pub cell: usize,
     pub species: SpeciesId,
+    /// Metabolic gain (step 1-2, `Metabolism`-dependent).
+    pub gain: f32,
+    /// Net hidden-matrix effect summed over Moore neighbours (step 3).
+    pub interaction_delta: f32,
+    /// Base/predator/decomposer upkeep (step 4).
+    pub upkeep: f32,
+    /// `crowd_factor * occupied_neighbours` (step 4).
+    pub crowding_penalty: f32,
+    /// Loss to a predating neighbour, if any (`0.0` otherwise).
+    pub predation_loss: f32,
+    /// Energy at the start of this tick, before any of the above applied.
+    pub energy_before: f32,
 }
 
 /// A species' population went from `> 0` at the start of the tick to `0` at
@@ -289,6 +304,12 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
             events.deaths.push(OrganismDied {
                 cell: idx,
                 species: organism.species,
+                gain,
+                interaction_delta,
+                upkeep,
+                crowding_penalty,
+                predation_loss: predation_loss[idx],
+                energy_before: organism.energy,
             });
             let species_idx = organism.species.0 as usize;
             population[species_idx] -= 1;
@@ -1125,11 +1146,42 @@ mod tests {
         assert_eq!(events.deaths.len(), 1);
         assert_eq!(events.deaths[0].cell, dying_idx);
         assert_eq!(events.deaths[0].species, SpeciesId(0));
+        // Isolated, dark cell: no light means no gain, no neighbours means
+        // no matrix effect, no crowding, and no predation — the only cost
+        // is the flat photolithic upkeep.
+        assert_eq!(events.deaths[0].energy_before, 0.05);
+        assert_eq!(events.deaths[0].gain, 0.0);
+        assert_eq!(events.deaths[0].interaction_delta, 0.0);
+        assert_eq!(events.deaths[0].upkeep, config.energy.base_upkeep);
+        assert_eq!(events.deaths[0].crowding_penalty, 0.0);
+        assert_eq!(events.deaths[0].predation_loss, 0.0);
         assert!(
             events.extinctions.is_empty(),
             "species still has a survivor, should not be extinct"
         );
         assert!(world.get(1, 1).organism.is_none());
+    }
+
+    #[test]
+    fn death_event_carries_an_internally_consistent_energy_breakdown() {
+        // Regression guard for "why did it die" confusion: whatever the
+        // fixture, the reported terms must actually explain the death —
+        // applying them to `energy_before` must reproduce a value at or
+        // below zero.
+        let (mut world, config) = world_with_one_organism(0.0, 0.5, 0.05);
+
+        let events = step(&mut world, &config);
+
+        assert_eq!(events.deaths.len(), 1);
+        let death = events.deaths[0];
+        let reconstructed = death.energy_before + death.gain + death.interaction_delta
+            - death.upkeep
+            - death.crowding_penalty
+            - death.predation_loss;
+        assert!(
+            reconstructed <= 0.0,
+            "breakdown terms must explain the death: reconstructed energy was {reconstructed}"
+        );
     }
 
     #[test]
