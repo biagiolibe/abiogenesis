@@ -19,6 +19,21 @@ pub const MENU_SEED_LABEL: &str = "Run seed (leave blank to generate one)";
 pub const MENU_SEED_HINT: &str = "e.g. 42";
 pub const MENU_NEW_RUN_BUTTON: &str = "New run";
 
+// --- World-cleared / defeat screens (`screens.rs`) ---
+
+pub const WORLD_CLEARED_TITLE: &str = "World cleared!";
+pub const CONTINUE_BUTTON: &str = "Continue";
+pub const DEFEAT_TITLE: &str = "Run ended";
+pub const RETURN_TO_MENU_BUTTON: &str = "Return to menu";
+
+pub fn world_cleared_body(world_index: u32) -> String {
+    format!("World {world_index}'s objective is met. The next world will be harder.")
+}
+
+pub fn defeat_body(worlds_cleared: u32) -> String {
+    format!("This run cleared {worlds_cleared} world(s) before ending.")
+}
+
 // --- HUD — world state (`ui.rs::hud_panel`) ---
 
 pub const HEADING_TITLE: &str = "Abiogenesis";

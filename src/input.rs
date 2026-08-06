@@ -6,15 +6,17 @@ use bevy::camera::Camera;
 use bevy::prelude::*;
 
 use abiogenesis::config::SimConfig;
+use abiogenesis::objectives::{CurrentObjective, CurrentWorldOutcome, ObjectiveProgress};
+use abiogenesis::run::RunProgress;
 use abiogenesis::sim::{
     step, ActionBudget, AdjacencyObserved, EraProgress, OrganismDied, SpeciesExtinct,
 };
 use abiogenesis::state::{EraState, GameState};
-use abiogenesis::world::{Organism, SimWorld, SpeciesId};
-use abiogenesis::worldgen::generate_starting_palette;
+use abiogenesis::world::{Organism, SimWorld};
 
 use crate::notebook::{MatrixKnowledge, ObservationLog, PlayerPlacedCells};
 use crate::render::{world_to_cell, GridCamera};
+use crate::run_flow::start_world;
 use crate::ui::{ActionMode, SelectedAction, SelectedSpecies, SpliceDraft, SpliceEditChoice};
 
 pub struct InputPlugin;
@@ -101,8 +103,11 @@ fn single_tick(
     }
 }
 
-/// `r`: reseeds the world deterministically from the current RNG (never the
-/// system clock, invariant 1), cancelling any era in progress. Allowed even
+/// `r`: reseeds the *current* world (same `world_index`, so the same
+/// difficulty parameters — this doesn't advance the run) deterministically
+/// from its own RNG (never the system clock, invariant 1), through the same
+/// `start_world` (task 045) the world-cleared transition uses — one reset
+/// implementation, not two that can drift apart. Allowed even
 /// mid-`Advancing`: a full world reset legitimately invalidates whatever
 /// animation was playing.
 #[allow(clippy::too_many_arguments)]
@@ -110,6 +115,7 @@ fn reseed_world(
     keys: Res<ButtonInput<KeyCode>>,
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
+    mut run_progress: ResMut<RunProgress>,
     mut progress: ResMut<EraProgress>,
     mut next_state: ResMut<NextState<EraState>>,
     mut knowledge: ResMut<MatrixKnowledge>,
@@ -118,33 +124,30 @@ fn reseed_world(
     mut selected: ResMut<SelectedSpecies>,
     mut splice_draft: ResMut<SpliceDraft>,
     mut placed: ResMut<PlayerPlacedCells>,
+    mut objective: ResMut<CurrentObjective>,
+    mut objective_progress: ResMut<ObjectiveProgress>,
+    mut outcome: ResMut<CurrentWorldOutcome>,
 ) {
     if keys.just_pressed(KeyCode::KeyR) {
         let new_seed = world.next_seed();
-        *world = SimWorld::new(new_seed, &config);
-        generate_starting_palette(&mut world, &config);
-        progress.cancel();
-        next_state.set(EraState::Observing);
-        // A new seed means a new hidden matrix (task 011): stale confirmed
-        // evidence from the previous run must not carry over.
-        *knowledge = MatrixKnowledge::new(
-            config.tags.active_tags_early as usize,
-            config.notebook.confirmation_threshold,
+        start_world(
+            &mut world,
+            run_progress.world_index,
+            new_seed,
+            &config,
+            &mut progress,
+            &mut next_state,
+            &mut knowledge,
+            &mut log,
+            &mut budget,
+            &mut selected,
+            &mut splice_draft,
+            &mut placed,
+            &mut objective,
+            &mut objective_progress,
+            &mut outcome,
         );
-        // `world.era` resets to 0 above; stale entries would otherwise show
-        // era numbers higher than the fresh run's current era.
-        log.entries.clear();
-        budget.refill(config.time.point_budget_per_era);
-        // `Splice` (task 025) can grow `world.species` past the fresh
-        // world's starting count; a `SelectedSpecies` left pointing at an
-        // index that no longer exists would panic the next time anything
-        // indexes `world.species` by it (e.g. `ui.rs::species_stats`).
-        selected.0 = SpeciesId(0);
-        *splice_draft = SpliceDraft::default();
-        // Cell indices from the previous world mean nothing in the fresh
-        // one — a stale entry could wrongly mark whatever ends up in that
-        // cell next as "player-placed".
-        placed.0.clear();
+        run_progress.world_seed = new_seed;
     }
 }
 
@@ -372,6 +375,7 @@ fn quit(keys: Res<ButtonInput<KeyCode>>, mut exit: MessageWriter<AppExit>) {
 mod tests {
     use super::*;
     use abiogenesis::world::{Species, SpeciesId, TagId, TagSlot};
+    use abiogenesis::worldgen::generate_starting_palette;
     use bevy::state::state::State;
 
     /// A world with two active tags and one species carrying only tag 0,
@@ -620,6 +624,10 @@ mod tests {
             ..SpliceDraft::default()
         });
         app.insert_resource(PlayerPlacedCells(std::collections::HashSet::from([1, 5])));
+        app.insert_resource(RunProgress::default());
+        app.insert_resource(CurrentObjective::default());
+        app.insert_resource(ObjectiveProgress::default());
+        app.insert_resource(CurrentWorldOutcome::default());
         app.add_systems(Update, reseed_world);
         app.update();
 

@@ -2,6 +2,8 @@ mod input;
 mod menu;
 mod notebook;
 mod render;
+mod run_flow;
+mod screens;
 mod text;
 mod ui;
 
@@ -17,6 +19,7 @@ use input::InputPlugin;
 use menu::MenuPlugin;
 use notebook::NotebookPlugin;
 use render::GridRenderPlugin;
+use screens::ScreensPlugin;
 use ui::UiPlugin;
 
 fn main() {
@@ -40,6 +43,7 @@ fn main() {
             NotebookPlugin,
             InputPlugin,
             MenuPlugin,
+            ScreensPlugin,
         ))
         .init_state::<GameState>()
         .add_sub_state::<EraState>()

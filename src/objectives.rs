@@ -291,8 +291,15 @@ fn evaluate_current_objective(
     let era_budget = world_params(run_progress.world_index, &config).era_budget;
     let new_outcome = evaluate_world(objective.0.as_ref(), &world, &mut progress, era_budget);
     outcome.0 = new_outcome;
-    if matches!(new_outcome, WorldOutcome::Failed(_)) {
-        next_game_state.set(GameState::Defeat);
+    match new_outcome {
+        WorldOutcome::Failed(_) => next_game_state.set(GameState::Defeat),
+        // `outcome.0` was already `Cleared` on a prior tick too (`evaluate`
+        // short-circuits once `satisfied`) — `NextState::set` is idempotent,
+        // and this system stops running the moment `GameState` actually
+        // leaves `Playing` (it's gated on `EraState::Advancing`, a substate
+        // of `Playing`), so this only ever *takes effect* once.
+        WorldOutcome::Cleared => next_game_state.set(GameState::WorldCleared),
+        WorldOutcome::Ongoing => {}
     }
 }
 

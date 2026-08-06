@@ -10,11 +10,15 @@
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
+use crate::notebook::{MatrixKnowledge, ObservationLog, PlayerPlacedCells};
 use crate::text;
+use crate::ui::{SelectedSpecies, SpliceDraft};
 use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::{CurrentObjective, CurrentWorldOutcome, ObjectiveProgress};
 use abiogenesis::run::RunProgress;
+use abiogenesis::sim::ActionBudget;
 use abiogenesis::state::GameState;
+use abiogenesis::world::SpeciesId;
 use abiogenesis::worldgen::build_world;
 
 /// The seed text field's contents, kept across frames while the menu is
@@ -85,13 +89,30 @@ fn parse_or_generate_seed(input: &str) -> u64 {
 /// Builds the run's first world and installs every resource
 /// `GameState::Playing`'s systems expect to already exist — the equivalent
 /// of the old `Startup`-time `spawn_world`, now triggered by the player
-/// instead of the process booting. Task 045's world transition extends this
-/// same shape for worlds after the first.
+/// instead of the process booting. Unlike `run_flow::start_world` (task
+/// 045, used for every *later* world), this doesn't touch `EraProgress`/
+/// `EraState`: those are substates of `Playing`, which hasn't been entered
+/// yet, so they're already at their fresh `Default` the moment it is.
+/// `MatrixKnowledge` still needs an explicit fresh instance sized to this
+/// world's actual `active_tags.len()` — the `Startup`-time one `notebook.rs`
+/// inserts is sized from a fixed config constant that worldgen (task 038)
+/// no longer guarantees matches world 0.
 fn start_run(commands: &mut Commands, config: &SimConfig, run_seed: u64) {
     let run_progress = RunProgress::start(run_seed);
     let (world, objective) = build_world(run_progress.world_seed, run_progress.world_index, config);
+    commands.insert_resource(MatrixKnowledge::new(
+        world.active_tags.len(),
+        config.notebook.confirmation_threshold,
+    ));
     commands.insert_resource(world);
     commands.insert_resource(run_progress);
+    commands.insert_resource(ObservationLog::default());
+    commands.insert_resource(PlayerPlacedCells::default());
+    commands.insert_resource(ActionBudget {
+        points_remaining: config.time.point_budget_per_era,
+    });
+    commands.insert_resource(SelectedSpecies(SpeciesId(0)));
+    commands.insert_resource(SpliceDraft::default());
     commands.insert_resource(CurrentObjective(Some(objective)));
     commands.insert_resource(ObjectiveProgress::default());
     commands.insert_resource(CurrentWorldOutcome::default());

@@ -44,7 +44,7 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 | `[x]` | 042 | Worldgen: per-world objective generation | 038, 040 | [042](done/042-worldgen-objective-generation.md) |
 | `[x]` | 043 | Objective HUD | 040 | [043](done/043-objective-hud.md) |
 | `[x]` | 044 | Main menu | 035 | [044](done/044-main-menu.md) |
-| `[ ]` | 045 | World-cleared/defeat screens + world transition | 035, 038, 039, 040, 041, 042, 044 | [045](045-world-transition-defeat-screens.md) |
+| `[x]` | 045 | World-cleared/defeat screens + world transition | 035, 038, 039, 040, 041, 042, 044 | [045](done/045-world-transition-defeat-screens.md) |
 | `[ ]` | 046 | Minimal meta-progression | 039, 045 | [046](046-minimal-meta-progression.md) |
 
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
@@ -114,6 +114,7 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | `[x]` | 042 | Worldgen: per-world objective generation | Claude | [042](done/042-worldgen-objective-generation.md) |
 | `[x]` | 043 | Objective HUD | Claude | [043](done/043-objective-hud.md) |
 | `[x]` | 044 | Main menu | Claude | [044](done/044-main-menu.md) |
+| `[x]` | 045 | World-cleared/defeat screens + world transition | Claude | [045](done/045-world-transition-defeat-screens.md) |
 
 ---
 
