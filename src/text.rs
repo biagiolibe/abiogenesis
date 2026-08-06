@@ -10,6 +10,7 @@
 // this module never reaches into `SimWorld` itself.
 
 use crate::ui::ActionMode;
+use abiogenesis::objectives::ZoneKind;
 
 // --- HUD — world state (`ui.rs::hud_panel`) ---
 
@@ -82,6 +83,36 @@ pub fn population_line(species_label: &str, population: usize, avg_energy: f32) 
 pub const HEADING_SEED_PALETTE: &str = "Seed palette";
 pub const SEED_PALETTE_HOVER: &str = "Click an empty cell to place the selected species";
 pub const KEYBOARD_HINT: &str = "space era · s tick · r reseed · Esc quit";
+
+// --- HUD — objective panel (`ui.rs::objective_panel`) ---
+
+pub const HEADING_OBJECTIVE: &str = "Objective";
+pub const NO_OBJECTIVE: &str = "(no objective assigned yet)";
+pub const OBJECTIVE_CLEARED: &str = "Cleared!";
+pub const BLOOM_NOT_TRIGGERED: &str = "not yet triggered";
+pub const BLOOM_TRIGGERED: &str = "triggered!";
+
+pub fn zone_label(zone: ZoneKind) -> &'static str {
+    match zone {
+        ZoneKind::Toxic => "toxic zone",
+    }
+}
+
+pub fn coexistence_objective_line(min_species: u32) -> String {
+    format!("Sustain {min_species} coexisting species")
+}
+
+pub fn survive_in_objective_line(species_label: &str, zone_label: &str) -> String {
+    format!("{species_label} survives in the {zone_label}")
+}
+
+pub fn trigger_bloom_objective_line(species_label: &str, population_threshold: u32) -> String {
+    format!("{species_label} population reaches {population_threshold}")
+}
+
+pub fn sustained_progress_bar_text(consecutive_ticks: u32, required_ticks: u32) -> String {
+    format!("{consecutive_ticks} / {required_ticks} ticks")
+}
 
 // --- HUD — Splice editor (`ui.rs::splice_panel`) ---
 

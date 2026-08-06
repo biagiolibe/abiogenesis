@@ -132,7 +132,7 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 - `[x]` 040 — Objectives: `Objective` type + evaluation engine (GDD §8 examples: coexistence, toxic-zone survival, bloom trigger) → [040](tasks/done/040-objectives-type-evaluation-engine.md)
 - `[x]` 041 — Failure conditions: total extinction + era-budget-per-world exhaustion (GDD §8) → [041](tasks/done/041-failure-conditions.md)
 - `[x]` 042 — Worldgen: per-world objective generation and severity scaling → [042](tasks/done/042-worldgen-objective-generation.md)
-- `[ ]` 043 — Objective HUD, filling the `ui.rs:243` placeholder (GDD §11) → [043](tasks/043-objective-hud.md)
+- `[x]` 043 — Objective HUD, filling the `ui.rs:243` placeholder (GDD §11) → [043](tasks/done/043-objective-hud.md)
 
 **Track C — shell and convergence:**
 

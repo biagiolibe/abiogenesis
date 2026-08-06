@@ -9,6 +9,7 @@ use crate::notebook::tag_glyph;
 use crate::render::{species_color, species_label, GridCamera};
 use crate::text;
 use abiogenesis::config::SimConfig;
+use abiogenesis::objectives::{CurrentObjective, Objective, ObjectiveProgress};
 use abiogenesis::sim::ActionBudget;
 use abiogenesis::state::EraState;
 use abiogenesis::world::{SimWorld, SpeciesId, TagSlot};
@@ -209,6 +210,8 @@ fn hud_panel(
     mut splice_draft: ResMut<SpliceDraft>,
     budget: Res<ActionBudget>,
     config: Res<SimConfig>,
+    objective: Res<CurrentObjective>,
+    objective_progress: Res<ObjectiveProgress>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     let mut viewport_ui = egui::Ui::new(
@@ -286,7 +289,11 @@ fn hud_panel(
                     });
                 }
             });
-            // Placeholder: objective arrives in Phase 3 (GDD §8).
+            ui.add_space(6.0);
+            group_frame(ui, |ui| {
+                ui.strong(text::HEADING_OBJECTIVE);
+                objective_panel(ui, objective.0.as_ref(), &objective_progress);
+            });
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                 ui.weak(text::KEYBOARD_HINT);
@@ -294,6 +301,74 @@ fn hud_panel(
         });
 
     Ok(())
+}
+
+/// Current-objective panel (task 043, GDD §11): the objective's sentence
+/// plus a progress bar, reusing the `ActionBudget` bar's visual pattern
+/// (`egui::ProgressBar` with an overlaid text). Formats the concrete
+/// numbers/labels here (species name, tick counts) and hands them to
+/// `text.rs`'s parametrized templates, since `text.rs` never reaches into
+/// `Objective`/`SimWorld`-derived data on its own (task 034's constraint).
+fn objective_panel(ui: &mut egui::Ui, objective: Option<&Objective>, progress: &ObjectiveProgress) {
+    let Some(objective) = objective else {
+        ui.weak(text::NO_OBJECTIVE);
+        return;
+    };
+
+    let (description, fraction, bar_text) = match *objective {
+        Objective::Coexistence { min_species, ticks } => {
+            let fraction = if ticks == 0 {
+                1.0
+            } else {
+                progress.consecutive_ticks as f32 / ticks as f32
+            };
+            (
+                text::coexistence_objective_line(min_species),
+                fraction,
+                text::sustained_progress_bar_text(progress.consecutive_ticks, ticks),
+            )
+        }
+        Objective::SurviveIn {
+            species,
+            zone,
+            ticks,
+        } => {
+            let fraction = if ticks == 0 {
+                1.0
+            } else {
+                progress.consecutive_ticks as f32 / ticks as f32
+            };
+            (
+                text::survive_in_objective_line(&species_label(species), text::zone_label(zone)),
+                fraction,
+                text::sustained_progress_bar_text(progress.consecutive_ticks, ticks),
+            )
+        }
+        Objective::TriggerBloom {
+            species,
+            population_threshold,
+        } => {
+            let fraction = if progress.satisfied { 1.0 } else { 0.0 };
+            let bar_text = if progress.satisfied {
+                text::BLOOM_TRIGGERED
+            } else {
+                text::BLOOM_NOT_TRIGGERED
+            };
+            (
+                text::trigger_bloom_objective_line(&species_label(species), population_threshold),
+                fraction,
+                bar_text.to_string(),
+            )
+        }
+    };
+
+    ui.label(description);
+    let bar_text = if progress.satisfied {
+        text::OBJECTIVE_CLEARED.to_string()
+    } else {
+        bar_text
+    };
+    ui.add(egui::ProgressBar::new(fraction.clamp(0.0, 1.0)).text(bar_text));
 }
 
 /// Visually separates one HUD zone from the next (task 030): a bordered,
