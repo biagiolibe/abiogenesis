@@ -47,12 +47,14 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 | `[x]` | 045 | World-cleared/defeat screens + world transition | 035, 038, 039, 040, 041, 042, 044 | [045](done/045-world-transition-defeat-screens.md) |
 | `[x]` | 046 | Minimal meta-progression | 039, 045 | [046](done/046-minimal-meta-progression.md) |
 
-**Post-Phase-3 playtest fixes** (2026-08-06 session): two bugs surfaced by playing a full run.
+**Post-Phase-3 playtest fixes** (2026-08-06 session): two bugs and two balance/design changes surfaced by playing a full run.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
 | `[ ]` | 047 | Fix `SurviveIn`'s toxic-zone membership check (diffusion leaks the zone check to the whole grid) | none | [047](047-fix-toxic-zone-membership-check.md) |
 | `[ ]` | 048 | Contain runaway population/energy growth from some generated matrices | none | [048](048-contain-runaway-matrix-growth.md) |
+| `[ ]` | 049 | Retune sustained objectives to era scale, show eras not ticks in the HUD | none | [049](049-objectives-in-eras-not-ticks.md) |
+| `[ ]` | 050 | Remove auto-placed starting organisms; the player seeds the first world | none | [050](050-no-auto-placed-starting-organisms.md) |
 
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
