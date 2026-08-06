@@ -45,6 +45,12 @@ const SURVEY_SEED_COUNT: u64 = SURVEY_SEEDS.end - SURVEY_SEEDS.start;
 /// seeds failing), not to chase every individual unlucky draw.
 const MAX_EXTINCTION_RATE: f32 = 0.3;
 const MAX_UNSTABLE_RATE: f32 = 0.3;
+/// Generous margin above the empirical ~10% observed rate (task 048, after
+/// `draw_species_tags` was fixed to reject net-*positive* self-interaction,
+/// not just net-negative — see the module doc on `population_never_
+/// saturates_the_grid_across_seeds` for why a residual minority is expected
+/// rather than eliminated outright).
+const MAX_SATURATION_RATE: f32 = 0.3;
 
 fn population(world: &SimWorld) -> usize {
     world.cells.iter().filter(|c| c.organism.is_some()).count()
@@ -95,6 +101,51 @@ fn population_rarely_reaches_total_extinction_across_seeds() {
         "expected at most {:.0}% of seeds to hit total extinction, got {}/{} ({:.0}%)",
         MAX_EXTINCTION_RATE * 100.0,
         extinctions,
+        SURVEY_SEED_COUNT,
+        rate * 100.0
+    );
+}
+
+/// Opposite-direction companion to `population_rarely_reaches_total_
+/// extinction_across_seeds` (task 048, GDD §5.8's "one dominates" failure
+/// mode): the grid saturating completely (every cell occupied) means growth
+/// never found a ceiling at all, the same generator-imbalance concern as
+/// total extinction, just at the other extreme.
+///
+/// Root cause (2026-08-06 playtest): `world::draw_species_tags` rejected a
+/// candidate tag set with net-*negative* self-interaction (a species that
+/// drains itself into extinction the moment it reproduces next to itself)
+/// but not net-*positive* self-interaction — and `sim::step`'s
+/// `crowding_penalty` (`crowd_factor` per occupied neighbour, `0.15`) is
+/// dwarfed by a single matrix entry (`±effect_intensity_max`, up to `±2`),
+/// so any species whose own tags reinforced each other turned clustering
+/// into unbounded growth. Fixed by requiring `net_self_interaction == 0`
+/// (checked directly in `world.rs`'s own unit tests) rather than merely
+/// `>= 0`.
+///
+/// That fix doesn't reach *cross*-species reinforcement (species A and B
+/// whose tags mutually boost each other without either being
+/// self-destructive) — tuning `crowd_factor` to also cover that case was
+/// tried and rejected: strong enough to matter for the worst-case draws, it
+/// also crushed normal populations toward extinction (measured during the
+/// investigation), a worse trade than a documented residual minority.
+/// `MAX_SATURATION_RATE` budgets for that minority the same way
+/// `MAX_EXTINCTION_RATE` already budgets for the opposite extreme.
+#[test]
+fn population_never_saturates_the_grid_across_seeds() {
+    let saturated = SURVEY_SEEDS
+        .filter(|&seed| {
+            let (world, _) = run_nominal_scenario(seed, RUN_TICKS);
+            population(&world) == world.cells.len()
+        })
+        .count();
+    let rate = saturated as f32 / SURVEY_SEED_COUNT as f32;
+
+    assert!(
+        rate <= MAX_SATURATION_RATE,
+        "expected at most {:.0}% of seeds to saturate the whole grid, got {}/{} ({:.0}%)",
+        MAX_SATURATION_RATE * 100.0,
+        saturated,
         SURVEY_SEED_COUNT,
         rate * 100.0
     );

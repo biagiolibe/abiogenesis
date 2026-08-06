@@ -393,12 +393,26 @@ fn nonzero_intensity(config: &TagConfig, rng: &mut StdRng) -> i8 {
 /// (task 036), since `Species.tags` is keyed by position in the world's
 /// active subset, not global pool identity.
 ///
-/// Rejects a candidate whose tags net-drain each other (playtest finding:
-/// such a species dies as soon as it reproduces, because the child spawns
-/// adjacent to the parent carrying the identical tag set) and redraws, up
-/// to `max_self_conflict_draws` times, keeping the least-bad candidate seen
-/// if none clears zero — this only ever narrows the outcome space, so it
-/// stays deterministic for a given seed.
+/// Rejects a candidate whose tags net-drain *or* net-reinforce each other
+/// and redraws, up to `max_self_conflict_draws` times, keeping the
+/// closest-to-zero candidate seen if none lands exactly on it — this only
+/// ever narrows the outcome space, so it stays deterministic for a given
+/// seed.
+///
+/// Net-negative self-interaction was the original playtest finding: such a
+/// species dies as soon as it reproduces, because the child spawns adjacent
+/// to the parent carrying the identical tag set. Net-*positive*
+/// self-interaction (task 048, a later playtest) is the same mechanism in
+/// the other direction and considerably more damaging: `sim::step`'s
+/// `crowding_penalty` is a fixed `crowd_factor` (0.15) per occupied
+/// neighbour, dwarfed by a matrix entry (`±effect_intensity_max`, up to
+/// `±2`) — so *any* species whose own tags reinforce each other even
+/// slightly turns clustering into unbounded growth the moment it
+/// reproduces next to itself, the exact scenario that saturated the whole
+/// grid before this fix. Landing on exactly `0` is what keeps a same-species
+/// neighbour perfectly neutral, leaving the crowding penalty as the only
+/// thing that caps local density — the assumption every carrying-capacity
+/// test already relies on.
 pub fn draw_species_tags(world: &mut SimWorld, config: &SimConfig) -> Vec<TagSlot> {
     let n = world
         .rng
@@ -408,15 +422,15 @@ pub fn draw_species_tags(world: &mut SimWorld, config: &SimConfig) -> Vec<TagSlo
     let slots: Vec<TagSlot> = (0..slot_count).map(TagSlot).collect();
 
     let mut best: Option<Vec<TagSlot>> = None;
-    let mut best_self_interaction = i32::MIN;
+    let mut best_abs_self_interaction = i32::MAX;
     for _ in 0..config.tags.max_self_conflict_draws.max(1) {
         let candidate: Vec<TagSlot> = slots.sample(&mut world.rng, n).copied().collect();
         let self_interaction = net_self_interaction(&world.matrix, &candidate);
-        if self_interaction >= 0 {
+        if self_interaction == 0 {
             return candidate;
         }
-        if self_interaction > best_self_interaction {
-            best_self_interaction = self_interaction;
+        if self_interaction.abs() < best_abs_self_interaction {
+            best_abs_self_interaction = self_interaction.abs();
             best = Some(candidate);
         }
     }
@@ -747,6 +761,46 @@ mod tests {
         assert!(
             successes >= trials * 9 / 10,
             "expected the redraw to find the safe pair almost every time, got {successes}/{trials}"
+        );
+    }
+
+    /// Task 048's regression: a candidate whose tags net-*reinforce* each
+    /// other must be rejected too, not just a net-draining one — that's the
+    /// exact mechanism that let same-species clustering turn into unbounded
+    /// growth (`sim::step`'s `crowding_penalty` is far smaller than a
+    /// single matrix entry, so any positive self-interaction overwhelms it).
+    #[test]
+    fn draw_species_tags_avoids_a_self_reinforcing_pair_when_a_safe_one_exists() {
+        let mut config = test_config();
+        config.tags.active_tags_early = 3;
+        config.tags.tags_per_species_min = 2;
+        config.tags.tags_per_species_max = 2;
+
+        // Every pair touching tag 2 nets strongly positive; only {0,1} is
+        // neutral.
+        let matrix = TagMatrix {
+            size: 3,
+            #[rustfmt::skip]
+            values: vec![
+                0, 0, 2,
+                0, 0, 2,
+                2, 2, 0,
+            ],
+        };
+
+        let mut successes = 0;
+        let trials = 30;
+        for seed in 0..trials {
+            let mut world = SimWorld::new(seed, &config);
+            world.matrix = matrix.clone();
+            let tags = draw_species_tags(&mut world, &config);
+            if net_self_interaction(&world.matrix, &tags) == 0 {
+                successes += 1;
+            }
+        }
+        assert!(
+            successes >= trials * 9 / 10,
+            "expected the redraw to find the neutral pair almost every time, got {successes}/{trials}"
         );
     }
 
