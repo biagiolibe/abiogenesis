@@ -19,14 +19,14 @@ Today neither check exists: `SpeciesExtinct` (existing event, task 018) is emitt
 
 ## 📋 Acceptance Criteria
 
-- [ ] Type shared with 040, e.g. `enum WorldOutcome { Ongoing, Cleared, Failed(FailureReason) }` (or an equivalent form) — if 040 hasn't already introduced it, define it here in `objectives.rs` or in a shared module.
-- [ ] **Total extinction** check: if grid occupancy is 0 (no living organism), the outcome becomes `Failed` in the same tick it happens — with an explicit guard against the false positive of the frame before initial seeding (the world starts empty for an instant before the starting species are placed).
-- [ ] **Era budget exhausted** check: `advance_tick` (or a system immediately after it) compares `world.era` against `WorldParams.era_budget` (task 037/038) — if the budget is exhausted without the objective having been satisfied, the outcome becomes `Failed`.
-- [ ] When the outcome is `Failed`, the game transitions to `GameState::Defeat` (variants introduced in task 035).
-- [ ] Unit test: hand-built world that exhausts the era budget without satisfying the objective → `Failed`.
-- [ ] Unit test: hand-built world that reaches zero occupancy → `Failed` in the same tick, not one tick late.
-- [ ] No false positive of total extinction in the initialization tick (before `seed_starting_palette`/task 039's generator has placed the species).
-- [ ] `cargo clippy -- -D warnings` clean, `cargo test` green.
+- [x] Type shared with 040, e.g. `enum WorldOutcome { Ongoing, Cleared, Failed(FailureReason) }` (or an equivalent form) — if 040 hasn't already introduced it, define it here in `objectives.rs` or in a shared module.
+- [x] **Total extinction** check: if grid occupancy is 0 (no living organism), the outcome becomes `Failed` in the same tick it happens — with an explicit guard against the false positive of the frame before initial seeding (the world starts empty for an instant before the starting species are placed).
+- [x] **Era budget exhausted** check: `advance_tick` (or a system immediately after it) compares `world.era` against `WorldParams.era_budget` (task 037/038) — if the budget is exhausted without the objective having been satisfied, the outcome becomes `Failed`.
+- [x] When the outcome is `Failed`, the game transitions to `GameState::Defeat` (variants introduced in task 035).
+- [x] Unit test: hand-built world that exhausts the era budget without satisfying the objective → `Failed`.
+- [x] Unit test: hand-built world that reaches zero occupancy → `Failed` in the same tick, not one tick late.
+- [x] No false positive of total extinction in the initialization tick (before `seed_starting_palette`/task 039's generator has placed the species).
+- [x] `cargo clippy -- -D warnings` clean, `cargo test` green.
 
 ---
 

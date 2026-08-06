@@ -21,6 +21,7 @@ cargo fmt
 
 ## Conventions
 
+- **Talk to the user in Italian in chat.** Everything written to disk — code, comments, documents, commit messages — stays in English regardless of the chat language.
 - **Code, comments, and documents in English.**
 - **One module = one Bevy `Plugin`.**
 - **The grid is a `Resource`, not ECS entities.** Bevy entities exist only for rendering.

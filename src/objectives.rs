@@ -7,9 +7,12 @@
 
 use bevy::prelude::*;
 
+use crate::config::SimConfig;
+use crate::run::RunProgress;
 use crate::sim::SimSet;
-use crate::state::EraState;
+use crate::state::{EraState, GameState};
 use crate::world::{SimWorld, SpeciesId};
+use crate::worldgen::world_params;
 
 /// A region of the grid an objective can reference. Currently only the
 /// toxic zone (GDD §8's "survives in the toxic zone" example) — extend here
@@ -47,15 +50,26 @@ pub enum Objective {
     },
 }
 
-/// Where a world currently stands relative to its objective (and, once task
-/// 041 wires failure conditions in, its failure conditions too — this is
-/// the type task 041's acceptance criteria call out as shared).
+/// Why a world's outcome became `WorldOutcome::Failed` (GDD §8): the two
+/// failure conditions are independent, but only one can be the *first* to
+/// trigger — `evaluate_world` reports whichever it detects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailureReason {
+    /// No living organism remains on the grid (GDD §8's "obvious floor").
+    TotalExtinction,
+    /// `world.era` reached the world's `WorldParams::era_budget` without the
+    /// objective having been satisfied (GDD §8's "generous but finite" clock).
+    EraBudgetExhausted,
+}
+
+/// Where a world currently stands relative to its objective and failure
+/// conditions (task 041, GDD §8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WorldOutcome {
     #[default]
     Ongoing,
     Cleared,
-    Failed,
+    Failed(FailureReason),
 }
 
 /// Tracks progress toward the current `Objective`. `consecutive_ticks`
@@ -123,6 +137,62 @@ pub fn evaluate(
             }
         }
     }
+}
+
+/// Checks `objective` (if any has been assigned yet) and both failure
+/// conditions against `world`'s current state, and returns whichever
+/// `WorldOutcome` applies. Pure function (no RNG, no `SimWorld` mutation, no
+/// Bevy dependency), like `evaluate`, so it's unit-testable against
+/// hand-built worlds independent of worldgen and the running `App`.
+///
+/// Total extinction is checked unconditionally, every call — the caller
+/// (task 041's driving system) runs this once per simulated tick, not just
+/// at era boundaries, so a mid-era wipeout fails the world in the same tick
+/// it happens rather than up to `era_ticks` ticks later. The era-budget
+/// check only matters once the objective hasn't already cleared it, since
+/// clearing on the exact tick the budget would otherwise expire is still a
+/// win, not a loss.
+pub fn evaluate_world(
+    objective: Option<&Objective>,
+    world: &SimWorld,
+    progress: &mut ObjectiveProgress,
+    era_budget: u32,
+) -> WorldOutcome {
+    if is_total_extinction(world) {
+        return WorldOutcome::Failed(FailureReason::TotalExtinction);
+    }
+
+    let outcome = match objective {
+        Some(objective) => evaluate(objective, world, progress),
+        None => WorldOutcome::Ongoing,
+    };
+    if outcome == WorldOutcome::Cleared {
+        return outcome;
+    }
+
+    if is_era_budget_exhausted(world, era_budget) {
+        return WorldOutcome::Failed(FailureReason::EraBudgetExhausted);
+    }
+
+    outcome
+}
+
+/// True once every living organism on the grid has died. Guarded against
+/// the false positive of the instant right after `SimWorld` construction,
+/// before the starting species have been placed: `world.species` is empty
+/// only in that window (in practice, seeding the starting palette pushes
+/// species and places their organisms in the same synchronous call, so no
+/// real tick ever observes "species exist, none are placed yet") — treating
+/// an empty registry as extinction would fail a world before it began.
+fn is_total_extinction(world: &SimWorld) -> bool {
+    !world.species.is_empty() && world.cells.iter().all(|cell| cell.organism.is_none())
+}
+
+/// Whether `world`'s era count has reached its per-world budget
+/// (`WorldParams::era_budget`, task 037) without the objective having been
+/// satisfied yet.
+fn is_era_budget_exhausted(world: &SimWorld, era_budget: u32) -> bool {
+    world.era >= era_budget
 }
 
 /// Shared "condition must hold for `required_ticks` in a row" logic behind
@@ -202,20 +272,28 @@ impl Plugin for ObjectivesPlugin {
     }
 }
 
-/// Drives `evaluate` once per simulated tick (same `FixedUpdate` cadence as
-/// `sim::advance_tick`, right after it — GDD §8's "N ticks" objectives need
-/// tick-granularity, not era-granularity). A no-op while no objective has
-/// been assigned yet.
+/// Drives `evaluate_world` once per simulated tick (same `FixedUpdate`
+/// cadence as `sim::advance_tick`, right after it — GDD §8's "N ticks"
+/// objectives need tick-granularity, not era-granularity; task 041's
+/// total-extinction check needs it too, so a mid-era wipeout doesn't wait
+/// for the era boundary). Runs even while no objective has been assigned
+/// yet (`CurrentObjective(None)`, before task 042's worldgen wires one in):
+/// `evaluate_world` still checks failure conditions in that case.
 fn evaluate_current_objective(
     world: Res<SimWorld>,
     objective: Res<CurrentObjective>,
     mut progress: ResMut<ObjectiveProgress>,
     mut outcome: ResMut<CurrentWorldOutcome>,
+    run_progress: Res<RunProgress>,
+    config: Res<SimConfig>,
+    mut next_game_state: ResMut<NextState<GameState>>,
 ) {
-    let Some(objective) = objective.0 else {
-        return;
-    };
-    outcome.0 = evaluate(&objective, &world, &mut progress);
+    let era_budget = world_params(run_progress.world_index, &config).era_budget;
+    let new_outcome = evaluate_world(objective.0.as_ref(), &world, &mut progress, era_budget);
+    outcome.0 = new_outcome;
+    if matches!(new_outcome, WorldOutcome::Failed(_)) {
+        next_game_state.set(GameState::Defeat);
+    }
 }
 
 #[cfg(test)]
@@ -422,6 +500,120 @@ mod tests {
         assert_eq!(
             evaluate(&objective, &world, &mut progress),
             WorldOutcome::Cleared
+        );
+    }
+
+    #[test]
+    fn era_budget_exhausted_fails_the_world_when_the_objective_is_unmet() {
+        let mut world = world_with_species(1);
+        place(&mut world, 0, 0, SpeciesId(0));
+        world.era = 40;
+
+        let objective = Objective::Coexistence {
+            min_species: 2, // never satisfied: only 1 species is placed.
+            ticks: 1,
+        };
+        let mut progress = ObjectiveProgress::default();
+
+        assert_eq!(
+            evaluate_world(Some(&objective), &world, &mut progress, 40),
+            WorldOutcome::Failed(FailureReason::EraBudgetExhausted)
+        );
+    }
+
+    #[test]
+    fn era_budget_not_yet_exhausted_stays_ongoing() {
+        let mut world = world_with_species(1);
+        place(&mut world, 0, 0, SpeciesId(0));
+        world.era = 39;
+
+        let objective = Objective::Coexistence {
+            min_species: 2,
+            ticks: 1,
+        };
+        let mut progress = ObjectiveProgress::default();
+
+        assert_eq!(
+            evaluate_world(Some(&objective), &world, &mut progress, 40),
+            WorldOutcome::Ongoing
+        );
+    }
+
+    #[test]
+    fn clearing_the_objective_on_the_exhausting_tick_still_counts_as_cleared() {
+        let mut world = world_with_species(2);
+        place(&mut world, 0, 0, SpeciesId(0));
+        place(&mut world, 1, 0, SpeciesId(1));
+        world.era = 40;
+
+        let objective = Objective::Coexistence {
+            min_species: 2,
+            ticks: 1,
+        };
+        let mut progress = ObjectiveProgress::default();
+
+        assert_eq!(
+            evaluate_world(Some(&objective), &world, &mut progress, 40),
+            WorldOutcome::Cleared,
+            "the objective clears on this very tick, so the world should not fail instead"
+        );
+    }
+
+    #[test]
+    fn total_extinction_fails_the_world_in_the_same_tick_it_happens() {
+        let mut world = world_with_species(1);
+        place(&mut world, 0, 0, SpeciesId(0));
+        let objective = Objective::Coexistence {
+            min_species: 1,
+            ticks: 1,
+        };
+        let mut progress = ObjectiveProgress::default();
+
+        // Still alive: ongoing (and would clear next call if it stayed alive).
+        assert_eq!(
+            evaluate_world(Some(&objective), &world, &mut progress, 40),
+            WorldOutcome::Cleared
+        );
+
+        // The lone organism dies mid-era: must fail on this very call, not
+        // one tick later.
+        let idx = world.index(0, 0);
+        world.cells[idx].organism = None;
+        assert_eq!(
+            evaluate_world(Some(&objective), &world, &mut progress, 40),
+            WorldOutcome::Failed(FailureReason::TotalExtinction),
+            "total extinction must override an already-cleared outcome, not be masked by it"
+        );
+    }
+
+    #[test]
+    fn empty_species_registry_before_seeding_is_not_treated_as_extinction() {
+        let config = SimConfig::default();
+        let world = SimWorld::new(42, &config);
+        assert!(
+            world.species.is_empty(),
+            "precondition: no starting palette has been placed yet"
+        );
+        let mut progress = ObjectiveProgress::default();
+
+        assert_eq!(
+            evaluate_world(None, &world, &mut progress, 40),
+            WorldOutcome::Ongoing,
+            "an empty grid before any species exists must not read as total extinction"
+        );
+    }
+
+    #[test]
+    fn no_objective_assigned_yet_still_checks_failure_conditions() {
+        let mut world = world_with_species(1);
+        place(&mut world, 0, 0, SpeciesId(0));
+        world.era = 40;
+        let mut progress = ObjectiveProgress::default();
+
+        assert_eq!(
+            evaluate_world(None, &world, &mut progress, 40),
+            WorldOutcome::Failed(FailureReason::EraBudgetExhausted),
+            "failure conditions apply even while task 042's worldgen hasn't assigned an objective"
         );
     }
 }

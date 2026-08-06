@@ -40,7 +40,7 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 | `[x]` | 038 | Worldgen: matrix, tag subset, environmental hostility | 036, 037 | [038](done/038-worldgen-matrix-tags-environment.md) |
 | `[x]` | 039 | Worldgen: starting species pool | 038 | [039](done/039-worldgen-starting-species-pool.md) |
 | `[x]` | 040 | Objectives: type + evaluation engine | none | [040](done/040-objectives-type-evaluation-engine.md) |
-| `[ ]` | 041 | Failure conditions | 040 | [041](041-failure-conditions.md) |
+| `[x]` | 041 | Failure conditions | 040 | [041](done/041-failure-conditions.md) |
 | `[ ]` | 042 | Worldgen: per-world objective generation | 038, 040 | [042](042-worldgen-objective-generation.md) |
 | `[ ]` | 043 | Objective HUD | 040 | [043](043-objective-hud.md) |
 | `[ ]` | 044 | Main menu | 035 | [044](044-main-menu.md) |
@@ -108,6 +108,7 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | `[x]` | 038 | Worldgen: matrix, tag subset, environmental hostility | Claude | [038](done/038-worldgen-matrix-tags-environment.md) |
 | `[x]` | 039 | Worldgen: starting species pool | Claude | [039](done/039-worldgen-starting-species-pool.md) |
 | `[x]` | 040 | Objectives: type + evaluation engine | Claude | [040](done/040-objectives-type-evaluation-engine.md) |
+| `[x]` | 041 | Failure conditions | Claude | [041](done/041-failure-conditions.md) |
 
 ---
 
