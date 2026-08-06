@@ -291,23 +291,25 @@ fn evaluate_current_objective(
     mut next_game_state: ResMut<NextState<GameState>>,
 ) {
     let era_budget = world_params(run_progress.world_index, &config).era_budget;
+    let previous_outcome = outcome.0;
     let new_outcome = evaluate_world(objective.0.as_ref(), &world, &mut progress, era_budget);
     outcome.0 = new_outcome;
+
+    // Only act on the `Ongoing -> {Failed, Cleared}` edge, not every tick
+    // the world spends already concluded. `FixedUpdate` can run this system
+    // more than once in a single frame (timestep catch-up after a hitch);
+    // without this guard, a frame that both crosses the `Failed` threshold
+    // *and* catches up an extra tick would call `meta.absorb` twice for the
+    // same run (`evaluate_world` doesn't short-circuit `Failed` the way it
+    // does `Cleared`, so this can't rely on that alone).
+    if previous_outcome != WorldOutcome::Ongoing {
+        return;
+    }
     match new_outcome {
-        // Runs exactly once: `evaluate_world` doesn't short-circuit
-        // `Failed`, but this system stops running the moment `GameState`
-        // leaves `Playing` (gated on `EraState::Advancing`, a substate of
-        // `Playing`) right after `next_game_state.set(Defeat)` takes effect
-        // — so meta-progression (task 046) is credited exactly once per run.
         WorldOutcome::Failed(_) => {
             meta.absorb(run_progress.worlds_cleared);
             next_game_state.set(GameState::Defeat);
         }
-        // `outcome.0` was already `Cleared` on a prior tick too (`evaluate`
-        // short-circuits once `satisfied`) — `NextState::set` is idempotent,
-        // and this system stops running the moment `GameState` actually
-        // leaves `Playing` (it's gated on `EraState::Advancing`, a substate
-        // of `Playing`), so this only ever *takes effect* once.
         WorldOutcome::Cleared => next_game_state.set(GameState::WorldCleared),
         WorldOutcome::Ongoing => {}
     }

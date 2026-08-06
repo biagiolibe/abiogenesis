@@ -23,17 +23,24 @@ This document describes the technical architecture and implementation choices of
 ## 2. Game States (`GameState`)
 
 ```
-Loading  →  MainMenu  →  Playing
-                            │
-                            └── EraState (sub-state)
-                                Planning → Advancing → Observing ─┐
-                                    ▲                             │
-                                    └─────────────────────────────┘
+Loading → MainMenu → Playing → WorldCleared → Playing → ... → Defeat → MainMenu
+                        ▲                                                  │
+                        └──────────────────────────────────────────────────┘
+                            Playing
+                              │
+                              └── EraState (sub-state)
+                                  Planning → Advancing → Observing ─┐
+                                      ▲                             │
+                                      └─────────────────────────────┘
 ```
 
-- `Loading`: resource initialization and world generation.
-- `MainMenu`: seed selection and run start. *(Stub in Phase 0, real in Phase 3.)*
+- `Loading`: resource initialization.
+- `MainMenu`: seed selection and "New run" (`menu.rs::start_run`, task 044) — the only point outside the simulation where `run_seed` originates.
 - `Playing`: main game loop.
+- `WorldCleared` (task 045): interstitial shown when the current world's `Objective` is satisfied; "Continue" (`run_flow::advance_to_next_world`) builds world `world_index + 1` and returns to `Playing`.
+- `Defeat` (task 045): interstitial shown when a failure condition trips (GDD §8); returns to `MainMenu` — a run that ended requires going through the menu again, never straight back to `Playing`.
+
+**`SimWorld` (and every resource that depends on it — `MatrixKnowledge`, `ObservationLog`, `ActionBudget`, `CurrentObjective`, etc.) only exists from the first `Playing` entry onward** (task 044 removed the old `Startup`-time `spawn_world`). Every system that reads any of them must be gated with `.run_if(in_state(GameState::Playing))` (or a substate of it, like `EraState` — substates only exist while their source state is active, so gating on `EraState::Advancing` already implies `Playing`). An ungated system panics or silently no-ops the moment the app is sitting at `MainMenu`, `WorldCleared`, or `Defeat`.
 
 The **`EraState`** sub-state maps 1:1 onto the cycle described in GDD §16.4 — and it's this correspondence that makes it the backbone of scheduling:
 
@@ -68,13 +75,20 @@ Each module has its own `Plugin` to encapsulate its systems.
 | Plugin | Module | Responsibility |
 |---|---|---|
 | `ConfigPlugin` | `config` | `SimConfig` resource: all GDD §5.9 coefficients in one place |
-| `WorldPlugin` | `world` | `SimWorld` resource: grid, species registry, seeded RNG, tick/era counters; world generation |
+| `WorldPlugin` | `world` | `SimWorld` type and its generation logic; no longer spawns a world itself (task 044) — see `MenuPlugin` |
+| `RunPlugin` | `run` | `RunProgress` (per-run state) and `MetaProgress` (task 046, cross-run meta-progression, never reset) |
 | `SimPlugin` | `sim` | Tick advancement; invokes the pure `sim::step` logic |
+| `ObjectivesPlugin` | `objectives` | `Objective`/`ObjectiveProgress` evaluation each tick (task 040/041); drives the `Playing → WorldCleared/Defeat` transitions |
 | `GridRenderPlugin` | `render` | Grid sprites, 2D camera, state → color synchronization |
-| `UiPlugin` | `ui` | `bevy_egui` panels (HUD, Phase 2 notebook) and their dedicated camera (§6 "HUD camera") |
-| `InputPlugin` | `input` | Keyboard/mouse → game intents |
+| `UiPlugin` | `ui` | `bevy_egui` HUD panels and their dedicated camera (§6 "HUD camera") |
+| `NotebookPlugin` | `notebook` | Observation log, hypothesis grid, matrix-knowledge accumulation |
+| `InputPlugin` | `input` | Keyboard/mouse → game intents; also the `r`-key reseed (`run_flow::start_world`) |
+| `MenuPlugin` | `menu` | `GameState::MainMenu` UI; `start_run` builds the run's *first* world (task 044) |
+| `ScreensPlugin` | `screens` | `WorldCleared`/`Defeat` interstitial UI (task 045) |
 
-Modules planned for later phases: `notebook` (Phase 2), `actions` (Phase 2), `worldgen` (Phase 3).
+`run_flow` (binary crate) is a deliberate exception to "one module = one `Plugin`" — same rationale as `state.rs`: it holds `start_world`/`advance_to_next_world`, the shared "how a world (re)starts" logic called from both `input.rs` (the `r` key) and `screens.rs` (the world-cleared transition), with no systems or `Plugin` of its own.
+
+`worldgen` (Phase 3) generates a world's content — matrix, tags, environment, starting species, `Objective` — behind a single `worldgen::build_world` entry point; it has no `Plugin` either, since it's pure functions called by `WorldPlugin`-adjacent code (`menu.rs`, `run_flow.rs`) rather than a system-driven module.
 
 ### 3.3 System Ordering (`SystemSets`)
 

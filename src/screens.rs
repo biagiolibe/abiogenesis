@@ -16,7 +16,7 @@ use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::SimWorld;
 
 use crate::notebook::{MatrixKnowledge, ObservationLog, PlayerPlacedCells};
-use crate::run_flow::start_world;
+use crate::run_flow::advance_to_next_world;
 use crate::text;
 use crate::ui::{SelectedSpecies, SpliceDraft};
 
@@ -62,14 +62,10 @@ fn world_cleared_screen_ui(
         ui.heading(text::WORLD_CLEARED_TITLE);
         ui.label(text::world_cleared_body(run_progress.world_index));
         if ui.button(text::CONTINUE_BUTTON).clicked() {
-            let next_world_index = run_progress.world_index + 1;
-            let next_seed = world.next_seed();
-            start_world(
+            advance_to_next_world(
                 &mut world,
-                next_world_index,
-                next_seed,
+                &mut run_progress,
                 &config,
-                run_progress.unlocks.bonus_available_species,
                 &mut era_progress,
                 &mut era_next_state,
                 &mut knowledge,
@@ -82,9 +78,6 @@ fn world_cleared_screen_ui(
                 &mut objective_progress,
                 &mut outcome,
             );
-            run_progress.world_index = next_world_index;
-            run_progress.world_seed = next_seed;
-            run_progress.worlds_cleared += 1;
             next_state.set(GameState::Playing);
         }
     });
