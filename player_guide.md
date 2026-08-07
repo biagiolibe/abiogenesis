@@ -42,11 +42,11 @@ The heart of it is the small loop inside the big one: **hypothesis → experimen
 Every species has a readable side and a hidden side.
 
 **Readable** (shown in the HUD, no guesswork needed):
-- **Metabolism** — how it gets energy:
-  - *Photolithic* draws energy from light.
+- **Metabolism** — where its raw energy comes from:
+  - *Photolithic* draws energy from local light.
   - *Predator* draws energy from neighboring organisms.
-  - *Decomposer* draws energy from the residue left by dead organisms.
-- **Preferred temperature** — each species has a comfort zone; being far outside it costs energy.
+  - *Decomposer* draws energy from residue in its own cell or a neighboring one — it needs to actually be adjacent to leftover residue, not just anywhere.
+- **Preferred temperature** — every metabolism's gain above is *multiplied* by how close the cell's temperature is to the species' comfort zone, not added to as a separate cost. This applies equally to all three: a Decomposer sitting right next to abundant residue can still starve to death if that cell's temperature is far from its optimum — the residue being there isn't enough on its own. If an organism keeps dying despite its metabolism's fuel being visibly present (residue, light, prey), suspect a bad temperature fit before suspecting a hidden matrix effect.
 - **Reproduction threshold** — once an organism has enough energy, it reproduces into an empty neighboring cell. The threshold is the same for every species and shown right in the Population panel (`avg energy X.XX / threshold`).
 
 **Hidden:**
@@ -119,6 +119,7 @@ Progress between runs is deliberately light: clearing worlds unlocks a few extra
 - Don't crowd your first few placements. A lone organism (or an isolated pair) gives you the cleanest possible read on what's actually happening.
 - Watch for deaths in the observation log, not just population totals — a death tells you *something* interacted badly, even before you know what.
 - If a species is thriving in a spot with the wrong metabolism story (e.g. a photolithic organism doing fine in the dark), suspect a matrix effect, not the environment.
+- The opposite case: if a species keeps *dying* despite its fuel visibly being there (a Decomposer next to residue, a Photolithic in bright light, a Predator with prey nearby), check the death log's gain breakdown before suspecting the matrix — a poor temperature fit silently shrinks that gain toward zero.
 - Budget is tight on purpose. One well-chosen experiment beats three scattered ones.
 
 ---

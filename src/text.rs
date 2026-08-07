@@ -54,6 +54,15 @@ pub const HOW_TO_PLAY_SECTIONS: &[(&str, &str)] = &[
          your budget testing it, repeat until the world's objective is met.",
     ),
     (
+        "Metabolism and temperature",
+        "Photolithic draws energy from light, Predator from neighboring organisms, \
+         Decomposer from residue in its own or a neighboring cell. Every one of these gains \
+         is then multiplied by how close that cell's temperature is to the species' comfort \
+         zone — not added as a separate cost. An organism can die right next to its fuel \
+         (residue, light, prey) if the temperature fit is poor; check the death log's gain \
+         number before suspecting a hidden matrix effect.",
+    ),
+    (
         "Actions and budget",
         "Each era gives a small budget of points: Seed and Stress and Cull cost 1, Splice \
          (editing a species' genome) costs 2. You can't do everything — bet on your best \
