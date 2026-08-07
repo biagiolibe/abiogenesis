@@ -43,3 +43,4 @@ One task at a time. On task completion:
 - Thorough in reasoning, concise in output.
 - Skip files over 100KB unless required.
 - No sycophantic openers or closing fluff.
+- Tool calls (Read/Edit) consume context/tokens like any other message. Don't re-read a file just edited to "confirm" it — the tool already errors if the edit failed. Read narrow ranges, not whole files, when only a section is needed. Keep prose between tool calls minimal: state results and decisions, not a running commentary.

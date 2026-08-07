@@ -14,6 +14,19 @@ use abiogenesis::sim::ActionBudget;
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{SimWorld, SpeciesId, TagSlot};
 
+/// Task 055's guided first-isolation hint: the message to show (isolated vs.
+/// clustered first placement) and the `SimWorld::tick` it was set at, so
+/// `viewport_hint` can self-dismiss it after `ISOLATION_HINT_DURATION_TICKS`
+/// — the tick counter the HUD's own "Era X · tick Y" readout already
+/// exposes, not a wall-clock timer. Written once, by `input.rs`'s
+/// `seed_organism_on_click` at the player's first-ever placement of their
+/// first-ever run (gated on `MetaProgress::seen_isolation_hint`); read here.
+#[derive(Resource, Default)]
+pub struct IsolationHint {
+    pub text: Option<&'static str>,
+    pub shown_at_tick: u64,
+}
+
 /// The species the seed action (task 017) places on click. A UI intent, not
 /// simulation state: owned here, read by `input.rs`'s click-to-place system,
 /// same rationale as `EraProgress` living in `sim.rs` but written by
@@ -100,6 +113,12 @@ const SPECIES_GLYPH: &str = "●";
 /// gets its own constant rather than reusing one of those.
 const NOTEBOOK_BADGE_COLOR: egui::Color32 = egui::Color32::from_rgb(230, 190, 60);
 
+/// How many ticks the guided first-isolation hint (task 055) stays on
+/// screen before self-dismissing — long enough to read over a few ticks of
+/// the freshly-placed organism's energy, short enough not to linger once
+/// the moment it refers to has passed.
+const ISOLATION_HINT_DURATION_TICKS: u64 = 30;
+
 pub struct UiPlugin;
 
 /// DejaVu Sans (Bitstream Vera License, see `assets/fonts/DejaVu-LICENSE.txt`)
@@ -127,6 +146,7 @@ impl Plugin for UiPlugin {
         app.insert_resource(SelectedSpecies(SpeciesId(0)))
             .insert_resource(SelectedAction(ActionMode::Seed))
             .init_resource::<SpliceDraft>()
+            .init_resource::<IsolationHint>()
             .add_systems(Startup, spawn_hud_camera)
             .add_systems(
                 Update,
@@ -347,17 +367,43 @@ fn hint_text(ever_seeded: bool, notebook_ever_opened: bool) -> Option<&'static s
     }
 }
 
+/// Whether task 055's guided first-isolation hint, shown at `shown_at_tick`,
+/// is still within its `ISOLATION_HINT_DURATION_TICKS` display window — pure
+/// so the self-dismiss timing is unit-testable without a `World`.
+fn isolation_hint_active(shown_at_tick: u64, current_tick: u64) -> bool {
+    current_tick.saturating_sub(shown_at_tick) < ISOLATION_HINT_DURATION_TICKS
+}
+
 /// Non-interactive onboarding hint over the grid viewport (task 053),
 /// guiding a fresh player through their first two actions: placing an
 /// organism, then opening the notebook. Purely state-driven — no dismiss
 /// affordance — and anchored above the grid area (excluding `HUD_WIDTH`) so
 /// it never overlaps the cells the player needs to click.
+///
+/// Task 055's guided first-isolation hint takes priority over the two
+/// task-053 hints while it's active: it's a short-lived, more specific
+/// message set by `input.rs::seed_organism_on_click` at the player's
+/// first-ever placement, self-dismissed here by clearing `IsolationHint`
+/// once `ISOLATION_HINT_DURATION_TICKS` have passed, after which the
+/// task-053 flow (e.g. "open the notebook") resumes underneath it.
 fn viewport_hint(
     mut contexts: EguiContexts,
     ever_seeded: Res<EverSeeded>,
     notebook_ever_opened: Res<NotebookEverOpened>,
+    mut isolation_hint: ResMut<IsolationHint>,
+    world: Res<SimWorld>,
 ) -> Result {
-    let Some(hint) = hint_text(ever_seeded.0, notebook_ever_opened.0) else {
+    if isolation_hint.text.is_some()
+        && !isolation_hint_active(isolation_hint.shown_at_tick, world.tick)
+    {
+        isolation_hint.text = None;
+    }
+
+    let hint = if let Some(text) = isolation_hint.text {
+        text
+    } else if let Some(text) = hint_text(ever_seeded.0, notebook_ever_opened.0) {
+        text
+    } else {
         return Ok(());
     };
 
@@ -694,5 +740,27 @@ mod tests {
     #[test]
     fn hint_text_is_none_once_both_milestones_are_reached() {
         assert_eq!(hint_text(true, true), None);
+    }
+
+    #[test]
+    fn isolation_hint_active_within_and_at_the_edge_of_its_window() {
+        assert!(isolation_hint_active(100, 100));
+        assert!(isolation_hint_active(
+            100,
+            100 + ISOLATION_HINT_DURATION_TICKS - 1
+        ));
+        assert!(!isolation_hint_active(
+            100,
+            100 + ISOLATION_HINT_DURATION_TICKS
+        ));
+    }
+
+    #[test]
+    fn isolation_hint_active_never_underflows_if_current_tick_precedes_shown_at() {
+        // Shouldn't happen in practice (`world.tick` only increases), but
+        // `saturating_sub` must not panic if it ever does — elapsed
+        // saturates to 0, so the hint reads as freshly active rather than
+        // crashing.
+        assert!(isolation_hint_active(100, 0));
     }
 }

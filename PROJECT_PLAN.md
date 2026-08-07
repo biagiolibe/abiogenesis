@@ -159,6 +159,7 @@ With the MVP complete, a fresh install still hands the player a silent HUD and a
 - `[x]` 052 — Intro screen for the first run: one-time interstitial (new `GameState::Intro`, reuses `screens.rs::interstitial()`) framing the double mystery (emergent ecosystem + hidden matrix) before the first `Playing` state ever, gated by a new `MetaProgress.seen_intro` flag → [052](tasks/done/052-intro-screen-first-run.md)
 - `[x]` 053 — In-viewport contextual hints: self-dismissing hints drawn over the grid (not buried in HUD tooltips) guiding the player to place their first organism, then to open the notebook, driven by a new `EverSeeded` flag (not `PlayerPlacedCells`, which empties back out on death) plus a "notebook ever opened" flag → [053](tasks/done/053-in-viewport-contextual-hints.md)
 - `[x]` 054 — Celebrate the first confirmed hypothesis-grid cell: `MatrixKnowledge::record` now reports the unconfirmed→confirmed transition, driving a `★` observation-log entry and a HUD badge on the notebook affordance (cleared per-world, on notebook open) → [054](tasks/done/054-celebrate-first-confirmed-hypothesis.md)
+- `[x]` 055 — Guided first-isolation hint: on the player's first-ever placement of their first-ever run (`MetaProgress.seen_isolation_hint`), checks isolation via `SimWorld::moore_neighbours` and shows a self-dismissing (30-tick) hint pointing at the confounder-weight formula's reward for isolated experiments — informational only, never a placement gate → [055](tasks/done/055-guided-first-isolation-hint.md)
 
 ### 🎚️ Final tuning — *the real art*
 

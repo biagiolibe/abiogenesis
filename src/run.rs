@@ -74,6 +74,12 @@ pub struct MetaProgress {
     /// `MetaProgress`: `false` again on every fresh launch, not just once
     /// ever — there's no save file yet to make "once per install" literal.
     pub seen_intro: bool,
+    /// Whether the guided first-isolation hint (task 055) has already shown
+    /// this process session — same one-shot, non-persisted pattern as
+    /// `seen_intro`. Gated here rather than on world/era state so it never
+    /// reappears on a later world within the same run, or a later run in
+    /// the same session.
+    pub seen_isolation_hint: bool,
 }
 
 impl MetaProgress {

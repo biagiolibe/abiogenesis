@@ -24,7 +24,7 @@ use bevy::prelude::*;
 use crate::notebook::{
     MatrixKnowledge, NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells,
 };
-use crate::ui::{SelectedSpecies, SpliceDraft};
+use crate::ui::{IsolationHint, SelectedSpecies, SpliceDraft};
 
 /// Every piece of per-world state a world (re)start resets, bundled into one
 /// `SystemParam` (task 054) — `start_world`'s individual `&mut` arguments
@@ -42,6 +42,7 @@ pub struct WorldResetParams<'w> {
     pub splice_draft: ResMut<'w, SpliceDraft>,
     pub placed: ResMut<'w, PlayerPlacedCells>,
     pub unseen_confirmation: ResMut<'w, NotebookHasUnseenConfirmation>,
+    pub isolation_hint: ResMut<'w, IsolationHint>,
     pub objective: ResMut<'w, CurrentObjective>,
     pub objective_progress: ResMut<'w, ObjectiveProgress>,
     pub outcome: ResMut<'w, CurrentWorldOutcome>,
@@ -84,6 +85,12 @@ pub fn start_world(
     *reset.splice_draft = SpliceDraft::default();
     reset.placed.0.clear();
     reset.unseen_confirmation.0 = false;
+    // `world.tick` resets to 0 with the new world below `*world = new_world`
+    // already having run above; without this, a stale `IsolationHint` whose
+    // `shown_at_tick` predates the reset would read as freshly-shown again
+    // (task 055) — `current_tick.saturating_sub(shown_at_tick)` saturates to
+    // 0 elapsed, not a large "already expired" value.
+    reset.isolation_hint.text = None;
 
     *reset.objective = CurrentObjective(Some(new_objective));
     *reset.objective_progress = ObjectiveProgress::default();
@@ -175,6 +182,7 @@ mod tests {
         ecs_world.insert_resource(SpliceDraft::default());
         ecs_world.insert_resource(PlayerPlacedCells::default());
         ecs_world.insert_resource(NotebookHasUnseenConfirmation::default());
+        ecs_world.insert_resource(IsolationHint::default());
         ecs_world.insert_resource(CurrentObjective(objective));
         ecs_world.insert_resource(objective_progress);
         ecs_world.insert_resource(outcome);
@@ -300,6 +308,46 @@ mod tests {
         );
 
         assert!(!reset.unseen_confirmation.0);
+    }
+
+    /// Task 055's isolation hint self-dismisses by comparing `world.tick`
+    /// against `shown_at_tick` — but `start_world` resets `world.tick` to 0,
+    /// so a stale hint left over from the world just abandoned must be
+    /// cleared explicitly, or it would read as freshly-shown again in the
+    /// new world (elapsed ticks saturate to 0, not "already expired").
+    #[test]
+    fn advancing_to_the_next_world_clears_a_stale_isolation_hint() {
+        let config = SimConfig::default();
+        let (mut world, objective) = build_world(13, 0, &config, 0);
+        let mut run_progress = RunProgress {
+            run_seed: 13,
+            world_index: 0,
+            world_seed: 13,
+            worlds_cleared: 0,
+            unlocks: Default::default(),
+        };
+        let mut era_progress = EraProgress::default();
+        let mut era_next_state = NextState::default();
+        let mut ecs_world = resource_world(
+            Some(objective),
+            ObjectiveProgress::default(),
+            CurrentWorldOutcome::default(),
+        );
+        ecs_world.resource_mut::<IsolationHint>().text =
+            Some(crate::text::HINT_ISOLATED_FIRST_PLACEMENT);
+        let mut state = SystemState::<WorldResetParams>::new(&mut ecs_world);
+        let mut reset = state.get_mut(&mut ecs_world).unwrap();
+
+        advance_to_next_world(
+            &mut world,
+            &mut run_progress,
+            &config,
+            &mut era_progress,
+            &mut era_next_state,
+            &mut reset,
+        );
+
+        assert!(reset.isolation_hint.text.is_none());
     }
 
     /// `MatrixKnowledge` must be resized to the *new* world's active-tag

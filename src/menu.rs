@@ -14,7 +14,7 @@ use crate::notebook::{
     MatrixKnowledge, NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells,
 };
 use crate::text;
-use crate::ui::{SelectedSpecies, SpliceDraft};
+use crate::ui::{IsolationHint, SelectedSpecies, SpliceDraft};
 use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::{CurrentObjective, CurrentWorldOutcome, ObjectiveProgress};
 use abiogenesis::run::{MetaProgress, RunProgress};
@@ -123,6 +123,7 @@ fn start_run(commands: &mut Commands, config: &SimConfig, meta: &MetaProgress, r
     commands.insert_resource(ObservationLog::default());
     commands.insert_resource(PlayerPlacedCells::default());
     commands.insert_resource(NotebookHasUnseenConfirmation::default());
+    commands.insert_resource(IsolationHint::default());
     commands.insert_resource(ActionBudget {
         points_remaining: config.time.point_budget_per_era,
     });

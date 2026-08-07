@@ -20,7 +20,10 @@ use abiogenesis::world::{Organism, SimWorld};
 use crate::notebook::{EverSeeded, PlayerPlacedCells};
 use crate::render::{world_to_cell, GridCamera};
 use crate::run_flow::{start_world, WorldResetParams};
-use crate::ui::{ActionMode, SelectedAction, SelectedSpecies, SpliceDraft, SpliceEditChoice};
+use crate::text;
+use crate::ui::{
+    ActionMode, IsolationHint, SelectedAction, SelectedSpecies, SpliceDraft, SpliceEditChoice,
+};
 
 pub struct InputPlugin;
 
@@ -190,7 +193,12 @@ fn reseed_world(
 /// even the empty-cell check. Records the cell into `PlayerPlacedCells`
 /// (task 026) so the Notebook can log a salient entry if this organism
 /// later dies, and latches `EverSeeded` (task 053's onboarding hint) since
-/// `PlayerPlacedCells` alone empties back out on death.
+/// `PlayerPlacedCells` alone empties back out on death. On the very first
+/// such placement of the player's very first run (`!ever_seeded.0` still
+/// true when this runs, gated by `MetaProgress::seen_isolation_hint`),
+/// checks whether the placement was isolated and sets `IsolationHint` (task
+/// 055) accordingly — informational only, never a gate on the placement
+/// itself (task 050 deliberately removed placement constraints).
 #[allow(clippy::too_many_arguments)]
 fn seed_organism_on_click(
     buttons: Res<ButtonInput<MouseButton>>,
@@ -204,6 +212,8 @@ fn seed_organism_on_click(
     mut budget: ResMut<ActionBudget>,
     mut placed: ResMut<PlayerPlacedCells>,
     mut ever_seeded: ResMut<EverSeeded>,
+    mut meta: ResMut<MetaProgress>,
+    mut isolation_hint: ResMut<IsolationHint>,
 ) {
     if selected_action.0 != ActionMode::Seed {
         return;
@@ -229,7 +239,27 @@ fn seed_organism_on_click(
     });
     budget.points_remaining -= config.time.action_costs.seed;
     placed.0.insert(index);
+
+    if !ever_seeded.0 && !meta.seen_isolation_hint {
+        isolation_hint.text = Some(if is_isolated_placement(&world, x, y) {
+            text::HINT_ISOLATED_FIRST_PLACEMENT
+        } else {
+            text::HINT_CLUSTERED_FIRST_PLACEMENT
+        });
+        isolation_hint.shown_at_tick = world.tick;
+        meta.seen_isolation_hint = true;
+    }
     ever_seeded.0 = true;
+}
+
+/// Whether the cell at `(x, y)` has no occupied Moore neighbour (task 055) —
+/// the condition the confounder-weight formula (`sim.rs`'s
+/// `weight = 1/(1+confounders)`) rewards with full-weight evidence. Pure so
+/// it's unit-testable without a running `App`.
+fn is_isolated_placement(world: &SimWorld, x: usize, y: usize) -> bool {
+    world
+        .moore_neighbours(x, y)
+        .all(|idx| world.cells[idx].organism.is_none())
 }
 
 /// Left-click while `ActionMode::Stress` is selected (GDD §6 "Stress"):
@@ -658,6 +688,7 @@ mod tests {
         });
         app.insert_resource(PlayerPlacedCells(std::collections::HashSet::from([1, 5])));
         app.insert_resource(NotebookHasUnseenConfirmation::default());
+        app.insert_resource(IsolationHint::default());
         app.insert_resource(RunProgress::default());
         app.insert_resource(CurrentObjective::default());
         app.insert_resource(ObjectiveProgress::default());
@@ -738,5 +769,23 @@ mod tests {
             budget.points_remaining, config.time.point_budget_per_era,
             "the action budget must refill on a manually-completed era, same as an auto-played one"
         );
+    }
+
+    #[test]
+    fn is_isolated_placement_true_with_no_occupied_neighbours() {
+        let config = SimConfig::default();
+        let world = SimWorld::new(42, &config);
+        assert!(is_isolated_placement(&world, 5, 5));
+    }
+
+    #[test]
+    fn is_isolated_placement_false_with_one_occupied_moore_neighbour() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.get_mut(6, 5).organism = Some(Organism {
+            species: SpeciesId(0),
+            energy: 1.0,
+        });
+        assert!(!is_isolated_placement(&world, 5, 5));
     }
 }

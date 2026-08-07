@@ -143,6 +143,13 @@ pub const NOTEBOOK_BADGE_GLYPH: &str = "★";
 pub const NOTEBOOK_BADGE_HOVER: &str =
     "A hypothesis was just confirmed — open the notebook to see it";
 
+// --- Viewport onboarding hints — guided first-isolation hint (task 055) ---
+
+pub const HINT_ISOLATED_FIRST_PLACEMENT: &str =
+    "You isolated this species — watch its energy over the next few ticks for a clean first reading";
+pub const HINT_CLUSTERED_FIRST_PLACEMENT: &str =
+    "Tip: an isolated species gives cleaner readings — try it in a future era";
+
 // --- HUD — objective panel (`ui.rs::objective_panel`) ---
 
 pub const HEADING_OBJECTIVE: &str = "Objective";
