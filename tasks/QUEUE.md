@@ -79,11 +79,11 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 | `[x]` | 057 | Species/reproduction-threshold legibility (Population panel + notebook catalog) | none | [057](done/057-species-reproduction-threshold-legibility.md) |
 | `[x]` | 058 | Player-facing temperature/light overlay toggles (independent `T`/`L` keys, not F1 cycling) | none | [058](done/058-temperature-light-overlay-toggles.md) |
 
-**Second playtest round** (2026-08-07, same-day follow-up after 057/058 landed): two real bugs fixed immediately (notebook silent on Splice-created species; Decomposer structurally unreachable in a single run), one design question opened as a proposal pending discussion (objective pacing), one non-issue confirmed by design (no per-species light preference exists, explained to the user directly, no artifact).
+**Second playtest round** (2026-08-07, same-day follow-up after 057/058 landed): two real bugs fixed immediately (notebook silent on Splice-created species; Decomposer structurally unreachable in a single run), one design question opened as a proposal then resolved into an approved task after a follow-up design discussion (objective pacing), one non-issue confirmed by design (no per-species light preference exists, explained to the user directly, no artifact).
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[?]` | 059 | Objective pacing / multi-objective design — worlds clear too fast, one easy objective ends exploration early | none | [059](059-objective-pacing-design.md) |
+| `[ ]` | 059 | Sequential per-world objectives (2 → 3 across the difficulty curve), era budget retuned to compensate | none | [059](059-objective-pacing-design.md) |
 
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
@@ -159,4 +159,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-07 (second playtest round: two quick bugfixes landed — splice notebook logging, Decomposer availability — and task 059 proposed for objective pacing)*
+*Last updated: 2026-08-07 (task 059 resolved into an approved, scoped task: sequential 2→3 objectives per world plus a retuned era budget, after a follow-up design discussion)*
