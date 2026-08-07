@@ -181,14 +181,19 @@ pub fn population_line(
     avg_energy: f32,
     repro_threshold: f32,
 ) -> String {
-    format!("  {species_label}: {population} · avg energy {avg_energy:.2} / {repro_threshold:.1}")
+    format!("  {species_label}: {population} · energy {avg_energy:.2}/{repro_threshold:.1}")
 }
 
 // --- HUD — seed palette group ---
 
 pub const HEADING_SEED_PALETTE: &str = "Seed palette";
 pub const SEED_PALETTE_HOVER: &str = "Click an empty cell to place the selected species";
-pub const KEYBOARD_HINT: &str = "space era · s tick · r reseed · t/l temp/light · Esc quit";
+/// Split into two lines (task 057/058 lengthened this past a single line's
+/// room at `ui::HUD_WIDTH`) rather than relying on `egui`'s label wrap, which
+/// broke mid-word ("t/l temp/light · E" / "quit") instead of at a natural
+/// boundary once the combined text got too long.
+pub const KEYBOARD_HINT_PRIMARY: &str = "space era · s tick · r reseed";
+pub const KEYBOARD_HINT_SECONDARY: &str = "t/l temp/light · Esc quit";
 
 // --- Viewport onboarding hints (task 053) ---
 

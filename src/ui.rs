@@ -94,8 +94,12 @@ pub struct SpliceDraft {
 /// On-screen width of the HUD panel, reserved from the grid camera's
 /// viewport so the panel never draws over the grid (task 008 acceptance
 /// criterion). Presentation-only, not a simulation coefficient (see
-/// `render::CELL_SIZE` for the same rationale).
-const HUD_WIDTH: f32 = 260.0;
+/// `render::CELL_SIZE` for the same rationale). Raised from the original
+/// `260.0` (playtest finding, 2026-08-07): tasks 057/058 lengthened the
+/// Population line (repro-threshold suffix) and the keyboard hint (`t`/`l`
+/// toggles) past what `260.0` had room for, clipping/mid-word-wrapping the
+/// text — `300.0` gives both, and future HUD text, headroom.
+const HUD_WIDTH: f32 = 300.0;
 
 /// `RenderLayers` for the dedicated egui camera: no grid entity is ever
 /// assigned to it, so this camera draws nothing of the scene, only the
@@ -337,7 +341,8 @@ fn hud_panel(
             });
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                ui.weak(text::KEYBOARD_HINT);
+                ui.weak(text::KEYBOARD_HINT_PRIMARY);
+                ui.weak(text::KEYBOARD_HINT_SECONDARY);
                 ui.horizontal(|ui| {
                     ui.weak(text::NOTEBOOK_AFFORDANCE_LABEL);
                     if unseen_confirmation.0 {
