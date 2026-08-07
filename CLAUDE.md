@@ -18,6 +18,7 @@ cargo fmt
 | [`abiogenesis-gdd.md`](abiogenesis-gdd.md) | **Design — source of truth.** Mechanics, tick formulas (§5.6), numeric baseline (§5.9). |
 | [`TECH_DESIGN.md`](TECH_DESIGN.md) | Architecture: plugins, states, `SystemSets`, invariants. |
 | [`tasks/QUEUE.md`](tasks/QUEUE.md) | **What to do now.** |
+| [`player_guide.md`](player_guide.md) | **Player-facing manual.** What the game is, controls, loop, mechanics — also surfaced in-game via the main menu's "How to play" panel. |
 
 ## Conventions
 

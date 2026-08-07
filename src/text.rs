@@ -19,10 +19,64 @@ pub const MENU_SEED_LABEL: &str = "Run seed (leave blank to generate one)";
 pub const MENU_SEED_HINT: &str = "e.g. 42";
 pub const MENU_NEW_RUN_BUTTON: &str = "New run";
 
+// --- How-to-play guide (task 056) ---
+//
+// A condensed companion to `player_guide.md` (the repo's full manual) — not
+// a runtime render of that file: the engine has no markdown renderer, and
+// task 034's "every player-facing string lives in text.rs" convention means
+// this panel gets its own copy rather than reaching outside the crate for
+// content. Rendered in two places, same `HOW_TO_PLAY_SECTIONS` array both
+// times (one heading+body pair per entry, in an `egui::ScrollArea`):
+// `screens.rs::intro_screen_ui` shows it automatically, once, before the
+// player's very first "Begin"; `menu.rs::main_menu_ui`'s toggle button makes
+// it available again on every later visit to the main menu, since the intro
+// screen itself never shows a second time (`MetaProgress::seen_intro`).
+
+pub const HOW_TO_PLAY_SHOW_BUTTON: &str = "How to play";
+pub const HOW_TO_PLAY_HIDE_BUTTON: &str = "Hide guide";
+
+pub const HOW_TO_PLAY_SECTIONS: &[(&str, &str)] = &[
+    (
+        "The premise",
+        "You're a xenobiologist seeding an alien ecosystem whose biochemistry is hidden. \
+         Species interact through tags you can't see directly, only infer from what happens \
+         when they meet — that hidden tag × tag matrix is different every run.",
+    ),
+    (
+        "Controls",
+        "Left click: perform the selected action on a cell. Space: advance one era. \
+         S: advance a single tick. Tab: open your notebook. R: reseed the current world. \
+         Esc: quit.",
+    ),
+    (
+        "The loop",
+        "Seed organisms, advance an era, observe what happened, form a hypothesis and spend \
+         your budget testing it, repeat until the world's objective is met.",
+    ),
+    (
+        "Actions and budget",
+        "Each era gives a small budget of points: Seed and Stress and Cull cost 1, Splice \
+         (editing a species' genome) costs 2. You can't do everything — bet on your best \
+         hypothesis.",
+    ),
+    (
+        "The notebook",
+        "Every adjacency between tagged organisms is a data point, weighted by how isolated \
+         it was — a clean, uncrowded pairing counts far more than one buried in a crowd. \
+         Once evidence for a tag pair adds up enough, it's confirmed and lights up in your \
+         hypothesis grid.",
+    ),
+    (
+        "Objectives and failure",
+        "Each world sets one goal (coexistence, surviving a hostile zone, or triggering a \
+         bloom). Total extinction retries the same world; running out of eras ends the run. \
+         You only need to decode the part of the matrix relevant to your objective.",
+    ),
+];
+
 // --- Intro screen (`screens.rs::intro_screen_ui`, task 052) ---
 
 pub const INTRO_TITLE: &str = "A sterile world";
-pub const INTRO_BODY: &str = "You seed an alien ecosystem and watch it grow — but its biochemistry is hidden. Species interact through a tag-based matrix you can't see directly, only infer from what happens when they meet. Each era is one deliberate experiment: seed, stress, cull, or splice within a limited budget, then observe.";
 pub const INTRO_CONTINUE_BUTTON: &str = "Begin";
 
 // --- World-cleared / defeat screens (`screens.rs`) ---

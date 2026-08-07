@@ -35,10 +35,19 @@ impl Plugin for ScreensPlugin {
     }
 }
 
+/// Max height of the intro screen's how-to-play scroll area (task 056) —
+/// presentation-only, not a simulation coefficient, same rationale
+/// `ui.rs::HUD_WIDTH` gives for its own layout constant.
+const INTRO_GUIDE_HEIGHT: f32 = 340.0;
+
 /// One-time framing interstitial (task 052) between `MainMenu`'s "New run"
 /// and `Playing`: the world is already built by the time this shows (`menu.
 /// rs::start_run` runs first), so unlike the other screens here there's
 /// nothing to rebuild on continue — just flip `seen_intro` and move on.
+/// Shows the full how-to-play guide (task 056, `text::HOW_TO_PLAY_SECTIONS`)
+/// before "Begin" rather than a separate short blurb, since this is exactly
+/// the moment a first-time player needs it — the old one-paragraph
+/// `INTRO_BODY` duplicated what the guide already says at more length.
 fn intro_screen_ui(
     mut contexts: EguiContexts,
     mut meta: ResMut<MetaProgress>,
@@ -47,7 +56,18 @@ fn intro_screen_ui(
     let ctx = contexts.ctx_mut()?;
     interstitial(ctx, "intro-viewport", |ui| {
         ui.heading(text::INTRO_TITLE);
-        ui.label(text::INTRO_BODY);
+        ui.add_space(12.0);
+        egui::ScrollArea::vertical()
+            .id_salt("intro_how_to_play")
+            .max_height(INTRO_GUIDE_HEIGHT)
+            .show(ui, |ui| {
+                for (heading, body) in text::HOW_TO_PLAY_SECTIONS {
+                    ui.strong(*heading);
+                    ui.label(*body);
+                    ui.add_space(8.0);
+                }
+            });
+        ui.add_space(12.0);
         if ui.button(text::INTRO_CONTINUE_BUTTON).clicked() {
             meta.seen_intro = true;
             next_state.set(GameState::Playing);

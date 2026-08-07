@@ -29,6 +29,11 @@ use abiogenesis::worldgen::build_world;
 #[derive(Resource, Default)]
 struct SeedInput(String);
 
+/// Max height of the "How to play" panel's scroll area (task 056) —
+/// presentation-only, not a simulation coefficient, same rationale
+/// `ui.rs::HUD_WIDTH` gives for its own layout constant.
+const HOW_TO_PLAY_PANEL_HEIGHT: f32 = 260.0;
+
 pub struct MenuPlugin;
 
 impl Plugin for MenuPlugin {
@@ -51,6 +56,7 @@ fn main_menu_ui(
     config: Res<SimConfig>,
     meta: Res<MetaProgress>,
     mut next_state: ResMut<NextState<GameState>>,
+    mut show_guide: Local<bool>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     let mut viewport_ui = egui::Ui::new(
@@ -83,7 +89,31 @@ fn main_menu_ui(
             }
             ui.add_space(16.0);
             ui.label(text::unlocks_summary(meta.bonus_available_species));
+            ui.add_space(16.0);
+
+            let toggle_label = if *show_guide {
+                text::HOW_TO_PLAY_HIDE_BUTTON
+            } else {
+                text::HOW_TO_PLAY_SHOW_BUTTON
+            };
+            if ui.button(toggle_label).clicked() {
+                *show_guide = !*show_guide;
+            }
         });
+
+        if *show_guide {
+            ui.add_space(16.0);
+            egui::ScrollArea::vertical()
+                .id_salt("how_to_play")
+                .max_height(HOW_TO_PLAY_PANEL_HEIGHT)
+                .show(ui, |ui| {
+                    for (heading, body) in text::HOW_TO_PLAY_SECTIONS {
+                        ui.strong(*heading);
+                        ui.label(*body);
+                        ui.add_space(8.0);
+                    }
+                });
+        }
     });
     Ok(())
 }

@@ -66,6 +66,12 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 | `[x]` | 054 | Celebrate the first confirmed hypothesis-grid cell | none | [054](done/054-celebrate-first-confirmed-hypothesis.md) |
 | `[x]` | 055 | Guided first-isolation hint | 053 | [055](done/055-guided-first-isolation-hint.md) |
 
+**Player-facing documentation** (2026-08-07, requested directly by the user, independent of the design sessions above):
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[x]` | 056 | Player guide (manual + in-game "How to play" panel) | none | [056](done/056-player-guide.md) |
+
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) and expands into task files after Phase 3.
@@ -138,4 +144,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-07 (task 055 completed: guided first-isolation hint, self-dismissing after 30 ticks; first-minutes engagement session — tasks 052-055 — now fully done)*
+*Last updated: 2026-08-07 (task 056 refined: the how-to-play guide now shows on the one-time intro screen before "Begin", not just the main menu, replacing the old redundant `INTRO_BODY` paragraph)*

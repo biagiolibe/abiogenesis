@@ -161,6 +161,10 @@ With the MVP complete, a fresh install still hands the player a silent HUD and a
 - `[x]` 054 — Celebrate the first confirmed hypothesis-grid cell: `MatrixKnowledge::record` now reports the unconfirmed→confirmed transition, driving a `★` observation-log entry and a HUD badge on the notebook affordance (cleared per-world, on notebook open) → [054](tasks/done/054-celebrate-first-confirmed-hypothesis.md)
 - `[x]` 055 — Guided first-isolation hint: on the player's first-ever placement of their first-ever run (`MetaProgress.seen_isolation_hint`), checks isolation via `SimWorld::moore_neighbours` and shows a self-dismissing (30-tick) hint pointing at the confounder-weight formula's reward for isolated experiments — informational only, never a placement gate → [055](tasks/done/055-guided-first-isolation-hint.md)
 
+### 📖 Player-facing documentation (2026-08-07)
+
+- `[x]` 056 — Player guide: a versioned `player_guide.md` manual (what the game is, controls, core loop, actions & costs, notebook/deduction, objectives & difficulty, tips, active-development note), condensed into `text::HOW_TO_PLAY_SECTIONS` and shown automatically on the one-time intro screen before "Begin" (replacing the old, now-redundant `INTRO_BODY` paragraph) plus a "How to play" toggle on the main menu for any later visit, since the intro itself never shows twice → [056](tasks/done/056-player-guide.md)
+
 ### 🎚️ Final tuning — *the real art*
 
 **Goal:** *interesting and readable* emergence, avoiding "everything dies" and "one dominates" (GDD §13, §14).
