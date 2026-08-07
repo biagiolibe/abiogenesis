@@ -169,8 +169,8 @@ With the MVP complete, a fresh install still hands the player a silent HUD and a
 
 Playtest-driven UX gap raised directly by the user: species info isn't clear in the HUD, the reproduction threshold is invisible outside the debug F2 overlay, the notebook's raw genome floats aren't intuitive, and temperature/light are hard to read on the grid itself. Two independent fixes; the second (temperature/light map encoding) is still under design discussion, not yet a task file.
 
-- `[ ]` 057 — Species/reproduction-threshold legibility: surface `repro_threshold` in the HUD Population panel's avg-energy line, and add a human-readable annotation for thermal optimum/tolerance alongside the notebook catalog's raw floats → [057](tasks/057-species-reproduction-threshold-legibility.md)
-- `[ ]` 058 — Player-facing temperature/light overlay toggles: two independent, mutually-exclusive `T`/`L` toggle keys (not `F1`'s dev cycling) reusing `debug_view`'s `heat_color` heatmap, chosen over always-on background tints because they stay legible even if future worldgen turns temperature/light into randomized zones rather than fixed linear gradients → [058](tasks/058-temperature-light-overlay-toggles.md)
+- `[x]` 057 — Species/reproduction-threshold legibility: surface `repro_threshold` in the HUD Population panel's avg-energy line, and add a human-readable annotation for thermal optimum/tolerance alongside the notebook catalog's raw floats → [057](tasks/done/057-species-reproduction-threshold-legibility.md)
+- `[x]` 058 — Player-facing temperature/light overlay toggles: two independent, mutually-exclusive `T`/`L` toggle keys (not `F1`'s dev cycling) reusing `debug_view`'s `heat_color` heatmap, chosen over always-on background tints because they stay legible even if future worldgen turns temperature/light into randomized zones rather than fixed linear gradients → [058](tasks/done/058-temperature-light-overlay-toggles.md)
 
 ### 🎚️ Final tuning — *the real art*
 
@@ -210,4 +210,4 @@ Playtest-driven UX gap raised directly by the user: species info isn't clear in 
 
 ---
 
-*Last updated: 2026-08-07*
+*Last updated: 2026-08-07 (tasks 057 and 058 completed)*

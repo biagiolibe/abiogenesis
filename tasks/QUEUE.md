@@ -76,8 +76,8 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 057 | Species/reproduction-threshold legibility (Population panel + notebook catalog) | none | [057](057-species-reproduction-threshold-legibility.md) |
-| `[ ]` | 058 | Player-facing temperature/light overlay toggles (independent `T`/`L` keys, not F1 cycling) | none | [058](058-temperature-light-overlay-toggles.md) |
+| `[x]` | 057 | Species/reproduction-threshold legibility (Population panel + notebook catalog) | none | [057](done/057-species-reproduction-threshold-legibility.md) |
+| `[x]` | 058 | Player-facing temperature/light overlay toggles (independent `T`/`L` keys, not F1 cycling) | none | [058](done/058-temperature-light-overlay-toggles.md) |
 
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
@@ -151,4 +151,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-07 (task 058 created: player-facing temperature/light overlay toggles, following a design discussion on how to encode environmental scalars that may become randomized zones in future worldgen)*
+*Last updated: 2026-08-07 (tasks 057 and 058 completed and archived)*

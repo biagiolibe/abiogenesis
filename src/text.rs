@@ -174,15 +174,20 @@ pub fn action_tooltip(mode: ActionMode, cost: u32) -> String {
 pub const HEADING_POPULATION: &str = "Population";
 pub const NO_POPULATION: &str = "  (none)";
 
-pub fn population_line(species_label: &str, population: usize, avg_energy: f32) -> String {
-    format!("  {species_label}: {population} · avg energy {avg_energy:.2}")
+pub fn population_line(
+    species_label: &str,
+    population: usize,
+    avg_energy: f32,
+    repro_threshold: f32,
+) -> String {
+    format!("  {species_label}: {population} · avg energy {avg_energy:.2} / {repro_threshold:.1}")
 }
 
 // --- HUD — seed palette group ---
 
 pub const HEADING_SEED_PALETTE: &str = "Seed palette";
 pub const SEED_PALETTE_HOVER: &str = "Click an empty cell to place the selected species";
-pub const KEYBOARD_HINT: &str = "space era · s tick · r reseed · Esc quit";
+pub const KEYBOARD_HINT: &str = "space era · s tick · r reseed · t/l temp/light · Esc quit";
 
 // --- Viewport onboarding hints (task 053) ---
 
@@ -332,8 +337,11 @@ pub fn species_catalog_line(
     metabolism: impl std::fmt::Debug,
     temp_optimum: f32,
     temp_tolerance: f32,
+    temp_label: &str,
 ) -> String {
-    format!("{species_label}: {metabolism:?} · temp {temp_optimum:.2}±{temp_tolerance:.2}")
+    format!(
+        "{species_label}: {metabolism:?} · temp {temp_optimum:.2}±{temp_tolerance:.2} ({temp_label})"
+    )
 }
 
 #[cfg(test)]

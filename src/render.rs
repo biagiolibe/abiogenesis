@@ -57,6 +57,76 @@ pub fn species_color(id: SpeciesId) -> egui::Color32 {
     egui::ecolor::Hsva::new(hue, 0.75, 0.9, 1.0).into()
 }
 
+/// Blue (0.0, cold/low) to red (1.0, hot/high) through the hue wheel — a
+/// standard heatmap gradient, not tied to any in-game color meaning. Shared
+/// by the dev-only `debug_view` cycle and the player-facing temperature/light
+/// overlay toggles (task 058) — both want the same visual language for the
+/// same raw scalars.
+fn heat_color(value: f32) -> Color {
+    let hue = 240.0 * (1.0 - value.clamp(0.0, 1.0));
+    Color::hsl(hue, 0.85, 0.5)
+}
+
+/// Which environmental scalar, if any, the player has toggled a full-grid
+/// heatmap overlay for (task 058 — `debug_view`'s `F1` cycle is dev-only and
+/// undiscoverable; temperature and light are declared Phase-0 environmental
+/// scalars, not part of the hidden interaction matrix GDD §7/§11 guards, so
+/// making them player-readable on demand doesn't leak deduction-pillar
+/// state). Mutually exclusive by construction: `toggle_environment_overlay`
+/// only ever sets one variant at a time.
+#[derive(Resource, Default, Clone, Copy, PartialEq, Eq)]
+pub enum EnvironmentOverlay {
+    #[default]
+    Off,
+    Temperature,
+    Light,
+}
+
+/// `T`/`L` toggle the temperature/light overlays on and off; pressing one
+/// while the other is active switches directly instead of requiring the
+/// player to turn the first one off.
+fn toggle_environment_overlay(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut overlay: ResMut<EnvironmentOverlay>,
+) {
+    if keys.just_pressed(KeyCode::KeyT) {
+        *overlay = if *overlay == EnvironmentOverlay::Temperature {
+            EnvironmentOverlay::Off
+        } else {
+            EnvironmentOverlay::Temperature
+        };
+    } else if keys.just_pressed(KeyCode::KeyL) {
+        *overlay = if *overlay == EnvironmentOverlay::Light {
+            EnvironmentOverlay::Off
+        } else {
+            EnvironmentOverlay::Light
+        };
+    }
+}
+
+/// Runs after `sync_grid_colors` and overwrites its output when a toggle is
+/// active, same shape as `debug_view::apply_debug_view` — the two overlays
+/// are independent features (one dev-only and covers all raw scalars incl.
+/// `toxicity`, this one is player-facing and only ever shows temperature or
+/// light) that happen to share `heat_color`.
+fn apply_environment_overlay(
+    world: Res<SimWorld>,
+    overlay: Res<EnvironmentOverlay>,
+    mut cells: Query<(&GridCell, &mut Sprite)>,
+) {
+    if *overlay == EnvironmentOverlay::Off {
+        return;
+    }
+    for (cell, mut sprite) in &mut cells {
+        let scalar = match *overlay {
+            EnvironmentOverlay::Off => unreachable!(),
+            EnvironmentOverlay::Temperature => world.get(cell.x, cell.y).temperature,
+            EnvironmentOverlay::Light => world.get(cell.x, cell.y).light,
+        };
+        sprite.color = heat_color(scalar);
+    }
+}
+
 /// Links a rendered sprite back to its cell in `SimWorld`. The sprite is a
 /// view: simulation state lives in the resource, never here (TECH_DESIGN §3.1).
 #[derive(Component)]
@@ -83,9 +153,16 @@ impl Plugin for GridRenderPlugin {
         // until `sync_grid_colors` starts running once `Playing` begins
         // (task 044: `SimWorld` doesn't exist before then).
         app.add_systems(Startup, (spawn_camera, spawn_grid, spawn_metabolism_shapes))
+            .init_resource::<EnvironmentOverlay>()
             .add_systems(
                 Update,
-                sync_grid_colors.run_if(in_state(GameState::Playing)),
+                (
+                    sync_grid_colors.run_if(in_state(GameState::Playing)),
+                    toggle_environment_overlay,
+                    apply_environment_overlay
+                        .after(sync_grid_colors)
+                        .run_if(in_state(GameState::Playing)),
+                ),
             );
         #[cfg(debug_assertions)]
         {
@@ -109,15 +186,22 @@ impl Plugin for GridRenderPlugin {
     }
 }
 
-/// A dev-only heatmap overlay for the raw environment scalars (`Stress`,
-/// task 023, revealed the need: `toxicity` has no visible effect anywhere,
-/// which was only discoverable by grepping the tick code, not by playing).
-/// Never compiled into a release build — the game's whole deduction pillar
-/// (GDD §7, §11) is built on the player *not* having direct instrument
-/// readouts, so this must not leak past development.
+/// A dev-only heatmap overlay for raw `toxicity` (task 023 revealed the need:
+/// before task 033's always-on tint, it had no visible effect anywhere,
+/// discoverable only by grepping the tick code). `Temperature`/`Light` used
+/// to be part of this same `F1` cycle, but task 058 gave them dedicated
+/// player-facing `T`/`L` toggles (`EnvironmentOverlay`) that render the exact
+/// same `heat_color` heatmap, so keeping them here too would just be the same
+/// view behind two different keys — trimmed down to the one scalar that
+/// still lacks a full, undiluted (non-tinted) heatmap anywhere else. Never
+/// compiled into a release build — the game's whole deduction pillar (GDD
+/// §7, §11) is built on the player *not* having direct instrument readouts
+/// for the hidden interaction matrix, so this must not leak past
+/// development (toxicity itself isn't part of that hidden matrix, but this
+/// isolated view is still a dev convenience, not meant to ship).
 #[cfg(debug_assertions)]
 mod debug_view {
-    use super::GridCell;
+    use super::{heat_color, GridCell};
     use bevy::prelude::*;
 
     use abiogenesis::world::SimWorld;
@@ -129,18 +213,14 @@ mod debug_view {
     pub enum DebugView {
         #[default]
         Normal,
-        Temperature,
         Toxicity,
-        Light,
     }
 
     impl DebugView {
         fn next(self) -> Self {
             match self {
-                DebugView::Normal => DebugView::Temperature,
-                DebugView::Temperature => DebugView::Toxicity,
-                DebugView::Toxicity => DebugView::Light,
-                DebugView::Light => DebugView::Normal,
+                DebugView::Normal => DebugView::Toxicity,
+                DebugView::Toxicity => DebugView::Normal,
             }
         }
     }
@@ -165,19 +245,10 @@ mod debug_view {
         for (cell, mut sprite) in &mut cells {
             let scalar = match *view {
                 DebugView::Normal => unreachable!(),
-                DebugView::Temperature => world.get(cell.x, cell.y).temperature,
                 DebugView::Toxicity => world.get(cell.x, cell.y).toxicity,
-                DebugView::Light => world.get(cell.x, cell.y).light,
             };
             sprite.color = heat_color(scalar);
         }
-    }
-
-    /// Blue (0.0, cold/low) to red (1.0, hot/high) through the hue wheel —
-    /// a standard heatmap gradient, not tied to any in-game color meaning.
-    fn heat_color(value: f32) -> Color {
-        let hue = 240.0 * (1.0 - value.clamp(0.0, 1.0));
-        Color::hsl(hue, 0.85, 0.5)
     }
 }
 
@@ -489,6 +560,18 @@ fn toxicity_tint(base: Color, toxicity: f32) -> Color {
 mod tests {
     use super::*;
     use abiogenesis::world::{Cell, Organism, SpeciesId};
+
+    #[test]
+    fn heat_color_pins_the_blue_cold_to_red_hot_endpoints() {
+        let Color::Hsla(cold) = heat_color(0.0) else {
+            panic!("expected Hsla");
+        };
+        let Color::Hsla(hot) = heat_color(1.0) else {
+            panic!("expected Hsla");
+        };
+        assert!((cold.hue - 240.0).abs() < f32::EPSILON);
+        assert!((hot.hue - 0.0).abs() < f32::EPSILON);
+    }
 
     #[test]
     fn occupied_cells_are_saturated_and_residue_desaturated() {

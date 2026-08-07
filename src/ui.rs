@@ -305,6 +305,7 @@ fn hud_panel(
                             &species_label(*species),
                             *population,
                             *avg_energy,
+                            config.energy.repro_threshold,
                         ));
                     });
                 }

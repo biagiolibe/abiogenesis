@@ -326,6 +326,7 @@ fn notebook_window(
     log: Res<ObservationLog>,
     world: Res<SimWorld>,
     knowledge: Res<MatrixKnowledge>,
+    config: Res<SimConfig>,
 ) -> Result {
     if !open.0 {
         return Ok(());
@@ -364,7 +365,7 @@ fn notebook_window(
 
             ui.separator();
             ui.heading(text::HEADING_CATALOG);
-            catalog_panel(ui, &world);
+            catalog_panel(ui, &world, &config);
         });
     Ok(())
 }
@@ -555,7 +556,30 @@ fn node_tooltip_text(
 /// alongside its (still-opaque) tags. Phase 2's whole active pool is
 /// visible from the seed selector already, so per-encounter tag discovery
 /// isn't modeled here — that's a Phase 3 worldgen concern.
-fn catalog_panel(ui: &mut egui::Ui, world: &SimWorld) {
+/// A readable band ("cold"/"temperate"/"hot") for a species' `temp_optimum`,
+/// derived from `EnvironmentConfig`'s actual gradient bounds (not a hardcoded
+/// cutoff, per CLAUDE.md's no-magic-numbers rule) so it stays correct if the
+/// gradient range is retuned. The raw `temp_optimum`/`temp_tolerance` numbers
+/// stay in `species_catalog_line` alongside this label — `Splice`'s
+/// `ShiftTempOptimum` math needs the precise value, this is just an aid to
+/// read it at a glance.
+fn temperature_label(
+    temp_optimum: f32,
+    env: &abiogenesis::config::EnvironmentConfig,
+) -> &'static str {
+    let low = env.temperature_gradient_left;
+    let high = env.temperature_gradient_right;
+    let band = (high - low) / 3.0;
+    if temp_optimum <= low + band {
+        "cold"
+    } else if temp_optimum >= high - band {
+        "hot"
+    } else {
+        "temperate"
+    }
+}
+
+fn catalog_panel(ui: &mut egui::Ui, world: &SimWorld, config: &SimConfig) {
     ui.label(text::ACTIVE_TAGS_LABEL);
     ui.horizontal(|ui| {
         for &tag in &world.active_tags {
@@ -572,6 +596,7 @@ fn catalog_panel(ui: &mut egui::Ui, world: &SimWorld) {
                 species.metabolism,
                 species.temp_optimum,
                 species.temp_tolerance,
+                temperature_label(species.temp_optimum, &config.environment),
             ));
             for &slot in &species.tags {
                 let tag = world.active_tags[slot.0 as usize];
@@ -586,6 +611,18 @@ mod tests {
     use super::*;
     use abiogenesis::config::SimConfig;
     use abiogenesis::world::SpeciesId;
+
+    #[test]
+    fn temperature_label_splits_the_gradient_range_into_thirds() {
+        let env = SimConfig::default().environment;
+        // Default gradient: left 0.2, right 0.8, so bands are [0.2, 0.4],
+        // (0.4, 0.6), [0.6, 0.8].
+        assert_eq!(temperature_label(0.2, &env), "cold");
+        assert_eq!(temperature_label(0.4, &env), "cold");
+        assert_eq!(temperature_label(0.5, &env), "temperate");
+        assert_eq!(temperature_label(0.6, &env), "hot");
+        assert_eq!(temperature_label(0.8, &env), "hot");
+    }
 
     fn app_for_record_events(world: SimWorld) -> App {
         let mut app = App::new();

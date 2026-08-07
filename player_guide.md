@@ -15,6 +15,8 @@ There are two mysteries running at once: **what will happen** — the ecosystem 
 | `s` | Advance a single tick (fine-grained observation) |
 | `tab` | Open / close your notebook |
 | `r` | Reseed the current world (same difficulty, fresh random state) |
+| `t` | Toggle a temperature heatmap over the grid (blue = cold, red = hot) |
+| `l` | Toggle a light heatmap over the grid (blue = dark, red = bright) |
 | `Esc` | Quit |
 
 The HUD's left panel lets you pick which species to seed, which action is active, and shows your population, action budget, and current objective at a glance.
@@ -45,7 +47,7 @@ Every species has a readable side and a hidden side.
   - *Predator* draws energy from neighboring organisms.
   - *Decomposer* draws energy from the residue left by dead organisms.
 - **Preferred temperature** — each species has a comfort zone; being far outside it costs energy.
-- **Reproduction threshold** — once an organism has enough energy, it reproduces into an empty neighboring cell.
+- **Reproduction threshold** — once an organism has enough energy, it reproduces into an empty neighboring cell. The threshold is the same for every species and shown right in the Population panel (`avg energy X.XX / threshold`).
 
 **Hidden:**
 - **1 to 3 biochemical tags** per species — shown only as nameless glyphs and colors. Tags are the *only* thing that determines how two adjacent species affect each other, and that effect is defined by a secret matrix generated fresh for every world. You never see the matrix directly — you infer it from what happens when tagged organisms sit next to each other.
