@@ -108,7 +108,7 @@ impl Default for TimeConfig {
             era_budget_late: 25,
             point_budget_per_era: 3,
             action_costs: ActionCosts::default(),
-            era_tick_hz: 20.0,
+            era_tick_hz: 8.0,
         }
     }
 }
