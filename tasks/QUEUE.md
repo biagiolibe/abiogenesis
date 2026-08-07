@@ -57,6 +57,14 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 | `[x]` | 050 | Remove auto-placed starting organisms; the player seeds the first world | none | [050](done/050-no-auto-placed-starting-organisms.md) |
 | `[x]` | 051 | Total extinction retries the world, not the whole run | 050 | [051](done/051-total-extinction-retries-world-not-run.md) |
 
+**First-minutes engagement** (2026-08-07 design session): the MVP is complete but the opening minutes leave a fresh player facing a silent HUD and an empty grid. Three independent onboarding interventions.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[ ]` | 052 | Intro screen for the first run | none | [052](052-intro-screen-first-run.md) |
+| `[ ]` | 053 | In-viewport contextual hints for the first actions | none | [053](053-in-viewport-contextual-hints.md) |
+| `[ ]` | 054 | Celebrate the first confirmed hypothesis-grid cell | none | [054](054-celebrate-first-confirmed-hypothesis.md) |
+
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) and expands into task files after Phase 3.
@@ -129,4 +137,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-07 (task 051, a design gap surfaced by task 050's own review)*
+*Last updated: 2026-08-07 (tasks 052-054 added, first-minutes engagement design session)*

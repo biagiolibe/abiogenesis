@@ -152,6 +152,14 @@ Two bugs and two balance/design changes surfaced by playing a full run end to en
 - `[x]` 050 — Remove auto-placed starting organisms: the player seeds the first world via `Seed` instead of the game placing organisms automatically — closer to the game's own premise, also sidesteps `Coexistence` requiring more species than were ever placed. Fixed `is_total_extinction`'s "species exist, nothing placed yet" false positive with a new `SimWorld::ever_populated` flag → [050](tasks/done/050-no-auto-placed-starting-organisms.md)
 - `[x]` 051 — Total extinction retries the world, not the whole run: task 050 exposed a design cliff — a single early-seeded organism dying could trip `TotalExtinction` and end the *entire run* over one bad click. New `GameState::WorldFailed` interstitial + `run_flow::retry_world` (rebuilds the same `world_index`/seed) handle `TotalExtinction` without touching `run_progress` or `MetaProgress`; `EraBudgetExhausted` still ends the run via `Defeat` as before → [051](tasks/done/051-total-extinction-retries-world-not-run.md)
 
+### 🌱 First-minutes engagement (2026-08-07)
+
+With the MVP complete, a fresh install still hands the player a silent HUD and an empty grid with no framing: `Menu → Playing` is instant (`menu.rs::start_run`), task 050 removed auto-placed organisms so the grid starts empty with no explanation of `Seed`, and the notebook's confirmation "aha" (GDD §7, the game's core discovery beat) produces zero feedback outside the notebook window itself. Three independent onboarding interventions, none touching `sim`/`world`/`config`:
+
+- `[ ]` 052 — Intro screen for the first run: one-time interstitial (new `GameState::Intro`, reuses `screens.rs::interstitial()`) framing the double mystery (emergent ecosystem + hidden matrix) before the first `Playing` state ever, gated by a new `MetaProgress.seen_intro` flag → [052](tasks/052-intro-screen-first-run.md)
+- `[ ]` 053 — In-viewport contextual hints: self-dismissing hints drawn over the grid (not buried in HUD tooltips) guiding the player to place their first organism, then to open the notebook, driven by existing `PlayerPlacedCells` (task 050) plus a new "notebook ever opened" flag → [053](tasks/053-in-viewport-contextual-hints.md)
+- `[ ]` 054 — Celebrate the first confirmed hypothesis-grid cell: `MatrixKnowledge`'s confirmation event (task 020) currently only changes what the notebook renders — add an observation-log entry plus a badge on the notebook affordance so the game's central *aha* moment doesn't go unnoticed → [054](tasks/054-celebrate-first-confirmed-hypothesis.md)
+
 ### 🎚️ Final tuning — *the real art*
 
 **Goal:** *interesting and readable* emergence, avoiding "everything dies" and "one dominates" (GDD §13, §14).
@@ -190,4 +198,4 @@ Two bugs and two balance/design changes surfaced by playing a full run end to en
 
 ---
 
-*Last updated: 2026-08-06*
+*Last updated: 2026-08-07*
