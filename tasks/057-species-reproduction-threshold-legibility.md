@@ -42,6 +42,10 @@ floats aren't intuitive.
       CLAUDE.md's "no magic numbers" rule.
 - [ ] Existing tests pass; add unit tests for any new pure formatting/labeling
       function (following the pattern of `text.rs`'s other `*_line` functions).
+- [ ] `player_guide.md`'s line 48 ("Reproduction threshold — once an organism has
+      enough energy, it reproduces into an empty neighboring cell") gets a short
+      addition noting the threshold is now visible in the Population panel,
+      since the guide currently only describes the mechanic, not where to see it.
 
 ---
 

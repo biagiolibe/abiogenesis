@@ -71,6 +71,8 @@ play; this task extends the same principle to the other two.
       rendering, and does not run in menus/transition screens.
 - [ ] Existing tests pass; if `heat_color` is extracted to a shared module, add a
       unit test pinning its endpoints (0.0 → blue-ish hue, 1.0 → red-ish hue).
+- [ ] `player_guide.md`'s Controls table gets a row for the new `T`/`L` toggle
+      keys (matching the actual bound keys, wherever they land after step 6).
 
 ---
 
