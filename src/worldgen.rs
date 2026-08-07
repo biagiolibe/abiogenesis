@@ -142,16 +142,26 @@ pub fn generate_starting_palette(world: &mut SimWorld, config: &SimConfig) {
 
 /// Adds `count` species to `world.species`, available for `Seed` but not
 /// placed on the grid — the same generation rule `generate_starting_palette`
-/// uses for its own `extra_available_species_count` (alternating `Predator`/
-/// `Decomposer`, temperature optimum spread across the world's actual
-/// range), factored out so `build_world` can reuse it to apply
+/// uses for its own `extra_available_species_count` (`Predator`/`Decomposer`
+/// each drawn with equal probability per slot, temperature optimum spread
+/// across the world's actual range), factored out so `build_world` can reuse
+/// it to apply
 /// `MetaProgress::bonus_available_species` (task 046) on top: more species
 /// to *choose from*, never anything about the hidden matrix.
 pub fn add_bonus_species(world: &mut SimWorld, config: &SimConfig, count: u32) {
     let cold = world.get(0, 0).temperature;
     let hot = world.get(world.width - 1, 0).temperature;
-    for i in 0..count as usize {
-        let metabolism = if i % 2 == 0 {
+    for _ in 0..count as usize {
+        // A per-slot coin flip, not `i % 2` parity: `add_bonus_species` is
+        // called independently from `generate_starting_palette` (fixed
+        // `extra_available_species_count`) and again from `build_world`
+        // (the separate meta-progression bonus, `MetaProgress::
+        // bonus_available_species`) — each call restarted its own `i` at 0,
+        // so a lone slot (the shipped default `extra_available_species_count
+        // = 1`) always landed on index 0 and was deterministically always
+        // `Predator`, making `Decomposer` structurally unreachable for an
+        // entire run (playtest finding: 4 worlds cleared, never seen).
+        let metabolism = if world.rng_mut().random_bool(0.5) {
             Metabolism::Predator
         } else {
             Metabolism::Decomposer
@@ -432,6 +442,35 @@ mod tests {
                 .any(|species| species.metabolism != Metabolism::Photolithic),
             "the available pool should include non-photolithic metabolisms for variety"
         );
+    }
+
+    #[test]
+    fn add_bonus_species_can_produce_both_predator_and_decomposer() {
+        // Playtest finding: with the old `i % 2 == 0` rule, `add_bonus_species`
+        // always restarted `i` at 0 on every independent call (once from
+        // `generate_starting_palette`'s fixed slot, once more from
+        // `build_world`'s meta-progression bonus), so a lone slot always
+        // landed on `Predator` and `Decomposer` was mathematically
+        // unreachable for an entire run. A per-slot coin flip fixes that;
+        // sampling many seeds with several slots each pins that both
+        // metabolisms are actually reachable, so this can't silently
+        // regress back to a fixed pattern.
+        let config = SimConfig::default();
+        let mut saw_predator = false;
+        let mut saw_decomposer = false;
+        for seed in 0..50u64 {
+            let mut world = SimWorld::new(seed, &config);
+            add_bonus_species(&mut world, &config, 8);
+            for species in &world.species {
+                match species.metabolism {
+                    Metabolism::Predator => saw_predator = true,
+                    Metabolism::Decomposer => saw_decomposer = true,
+                    Metabolism::Photolithic => {}
+                }
+            }
+        }
+        assert!(saw_predator, "Predator should be reachable");
+        assert!(saw_decomposer, "Decomposer should be reachable");
     }
 
     #[test]

@@ -172,6 +172,14 @@ Playtest-driven UX gap raised directly by the user: species info isn't clear in 
 - `[x]` 057 — Species/reproduction-threshold legibility: surface `repro_threshold` in the HUD Population panel's avg-energy line, and add a human-readable annotation for thermal optimum/tolerance alongside the notebook catalog's raw floats → [057](tasks/done/057-species-reproduction-threshold-legibility.md)
 - `[x]` 058 — Player-facing temperature/light overlay toggles: two independent, mutually-exclusive `T`/`L` toggle keys (not `F1`'s dev cycling) reusing `debug_view`'s `heat_color` heatmap, chosen over always-on background tints because they stay legible even if future worldgen turns temperature/light into randomized zones rather than fixed linear gradients → [058](tasks/done/058-temperature-light-overlay-toggles.md)
 
+### 🐛 Second playtest round (2026-08-07)
+
+Four observations from a further playtest session, after 057/058 landed. Two were real bugs, fixed immediately; one is a design question (opened as a proposal, task 059); one is not a bug — light has no per-species preference by design (`gain = light * metabolism_gain * env_fit`, only `env_fit` is temperature-personalized, matching GDD §5.6/§5.9 exactly), explained to the user directly with no code/doc artifact.
+
+- `[x]` Bugfix — `Splice`-created species were invisible in the notebook: no `LogEntry` was ever pushed, unlike every other salient event (deaths, extinctions, matrix confirmations). `apply_splice` now logs the creation via `text::species_created_message`.
+- `[x]` Bugfix — `Decomposer` was structurally unreachable within a single run at default config: `add_bonus_species`'s `i % 2 == 0` rule restarted `i` at 0 on every independent call site (`generate_starting_palette`'s fixed slot, `build_world`'s separate meta-progression bonus), so the shipped default (`extra_available_species_count = 1`) always resolved to `Predator`. Replaced with a per-slot random draw from the world's own seeded RNG.
+- `[?]` 059 — Objective pacing / multi-objective design: proposal only, not yet scoped. Confirms the playtest finding (worlds clear before much of the matrix is explored; `TriggerBloom`'s threshold was never retuned by task 049 the way the other two objective kinds were) but leaves the actual fix (multi-objective worlds vs. retuning `TriggerBloom` vs. gating clearance on matrix-discovery progress vs. another difficulty pass) for a dedicated design session → [059](tasks/059-objective-pacing-design.md)
+
 ### 🎚️ Final tuning — *the real art*
 
 **Goal:** *interesting and readable* emergence, avoiding "everything dies" and "one dominates" (GDD §13, §14).
@@ -210,4 +218,4 @@ Playtest-driven UX gap raised directly by the user: species info isn't clear in 
 
 ---
 
-*Last updated: 2026-08-07 (tasks 057 and 058 completed)*
+*Last updated: 2026-08-07 (second playtest round: two bugfixes landed, task 059 proposed for objective pacing)*

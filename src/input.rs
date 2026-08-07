@@ -15,10 +15,10 @@ use abiogenesis::sim::{
     OrganismDied, SpeciesExtinct,
 };
 use abiogenesis::state::{EraState, GameState};
-use abiogenesis::world::{Organism, SimWorld};
+use abiogenesis::world::{Organism, SimWorld, SpeciesId};
 
-use crate::notebook::{EverSeeded, PlayerPlacedCells};
-use crate::render::{world_to_cell, GridCamera};
+use crate::notebook::{EverSeeded, LogEntry, ObservationLog, PlayerPlacedCells};
+use crate::render::{species_label, world_to_cell, GridCamera};
 use crate::run_flow::{start_world, WorldResetParams};
 use crate::text;
 use crate::ui::{
@@ -371,6 +371,7 @@ fn apply_splice(
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
     mut budget: ResMut<ActionBudget>,
+    mut log: ResMut<ObservationLog>,
 ) {
     if !draft.apply_requested {
         return;
@@ -421,6 +422,12 @@ fn apply_splice(
         return;
     }
     world.species.push(new_species);
+    let new_species_id = SpeciesId(world.species.len() as u8 - 1);
+    log.entries.push(LogEntry {
+        era: world.era,
+        species: Some(new_species_id),
+        text: text::species_created_message(&species_label(new_species_id)),
+    });
     budget.points_remaining -= config.time.action_costs.splice;
     *draft = SpliceDraft::default();
 }
@@ -436,8 +443,8 @@ fn quit(keys: Res<ButtonInput<KeyCode>>, mut exit: MessageWriter<AppExit>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::notebook::{MatrixKnowledge, NotebookHasUnseenConfirmation, ObservationLog};
-    use abiogenesis::world::{Species, SpeciesId, TagId, TagSlot};
+    use crate::notebook::{MatrixKnowledge, NotebookHasUnseenConfirmation};
+    use abiogenesis::world::{Species, TagId, TagSlot};
     use abiogenesis::worldgen::generate_starting_palette;
     use bevy::state::state::State;
 
@@ -467,6 +474,7 @@ mod tests {
             points_remaining: 3,
         });
         app.insert_resource(draft);
+        app.insert_resource(ObservationLog::default());
         app.add_systems(Update, apply_splice);
         app
     }
@@ -514,6 +522,28 @@ mod tests {
             draft.source, None,
             "the draft resets after a successful splice"
         );
+    }
+
+    #[test]
+    fn a_successful_splice_logs_the_new_species() {
+        let (world, config) = world_with_one_taggable_species();
+        let mut app = app_with(
+            world,
+            config,
+            SpliceDraft {
+                source: Some(SpeciesId(0)),
+                edit: SpliceEditChoice::SwapTag {
+                    old: Some(TagSlot(0)),
+                    new: Some(TagSlot(1)),
+                },
+                apply_requested: true,
+            },
+        );
+        app.update();
+
+        let log = app.world().resource::<ObservationLog>();
+        assert_eq!(log.entries.len(), 1, "the new species must be logged");
+        assert_eq!(log.entries[0].species, Some(SpeciesId(1)));
     }
 
     #[test]

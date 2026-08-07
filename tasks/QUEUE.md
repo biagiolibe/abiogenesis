@@ -79,6 +79,12 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 | `[x]` | 057 | Species/reproduction-threshold legibility (Population panel + notebook catalog) | none | [057](done/057-species-reproduction-threshold-legibility.md) |
 | `[x]` | 058 | Player-facing temperature/light overlay toggles (independent `T`/`L` keys, not F1 cycling) | none | [058](done/058-temperature-light-overlay-toggles.md) |
 
+**Second playtest round** (2026-08-07, same-day follow-up after 057/058 landed): two real bugs fixed immediately (notebook silent on Splice-created species; Decomposer structurally unreachable in a single run), one design question opened as a proposal pending discussion (objective pacing), one non-issue confirmed by design (no per-species light preference exists, explained to the user directly, no artifact).
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[?]` | 059 | Objective pacing / multi-objective design — worlds clear too fast, one easy objective ends exploration early | none | [059](059-objective-pacing-design.md) |
+
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) and expands into task files after Phase 3.
@@ -95,6 +101,8 @@ Tasks that take < 15 min and don't need a detailed briefing.
 | `[x]` | Observation log legibility: `LogEntry` carries its `SpeciesId` so each line gets a `species_color` swatch (matching the Population/Seed Palette pattern), messages use `species_label` instead of raw `species N`, and the scroll area sticks to the newest entry (`stick_to_bottom`) instead of leaving new events off-screen — raised directly by the player as "poco leggibile" | 🟢 P3 |
 | `[x]` | Dev-only `F2` per-cell energy-number overlay, `#[cfg(debug_assertions)]`-gated, mirroring the F1 heatmap's toggle pattern — requested to debug unexpected deaths without a hidden-matrix cause | 🟢 P3 |
 | `[x]` | Death log lines for player-placed organisms include the energy-update breakdown (gain/matrix/upkeep/crowding/predation) so a death's cause is legible without re-deriving it from the tick code — same motivation as above | 🟢 P3 |
+| `[x]` | Bugfix: `Splice`-created species left zero trace in the notebook — `apply_splice` now pushes a `LogEntry` (`text::species_created_message`) the same way extinction/death events already do — raised directly by the player as "quando creo una specie, questa non viene riportata sul notebook" | 🟡 P2 |
+| `[x]` | Bugfix: `Decomposer` was structurally unreachable in a single run — `add_bonus_species`'s `i % 2 == 0` parity rule always restarted `i` at 0 on every independent call site, so the shipped default (`extra_available_species_count = 1`) always landed on `Predator`; replaced with a per-slot random draw from the world's seeded RNG — raised directly by the player after 4 cleared worlds with no Decomposer seen | 🟡 P2 |
 
 ---
 
@@ -151,4 +159,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-07 (tasks 057 and 058 completed and archived)*
+*Last updated: 2026-08-07 (second playtest round: two quick bugfixes landed — splice notebook logging, Decomposer availability — and task 059 proposed for objective pacing)*

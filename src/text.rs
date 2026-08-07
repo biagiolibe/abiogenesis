@@ -274,6 +274,15 @@ pub fn extinction_message(species_label: &str) -> String {
     format!("{species_label} went extinct")
 }
 
+/// Reported the same way `extinction_message` is (a `LogEntry` with this
+/// species as its subject) — a `Splice` (task 025) previously appended a new
+/// species to `world.species` with no trace anywhere in the notebook, the
+/// only feedback being that it silently became selectable in the Seed
+/// palette. Raised directly by a playtester.
+pub fn species_created_message(species_label: &str) -> String {
+    format!("{species_label} created via Splice")
+}
+
 /// Breaks a death down into the energy-update terms that caused it (GDD
 /// §5.6 step 5), so the log answers "why" instead of only "what": each term
 /// is shown as its actual net contribution (costs negated), not the raw
