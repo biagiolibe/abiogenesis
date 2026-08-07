@@ -61,7 +61,7 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 052 | Intro screen for the first run | none | [052](052-intro-screen-first-run.md) |
+| `[x]` | 052 | Intro screen for the first run | none | [052](done/052-intro-screen-first-run.md) |
 | `[ ]` | 053 | In-viewport contextual hints for the first actions | none | [053](053-in-viewport-contextual-hints.md) |
 | `[ ]` | 054 | Celebrate the first confirmed hypothesis-grid cell | none | [054](054-celebrate-first-confirmed-hypothesis.md) |
 | `[ ]` | 055 | Guided first-isolation hint | 053 | [055](055-guided-first-isolation-hint.md) |

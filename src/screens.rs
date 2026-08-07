@@ -29,12 +29,34 @@ impl Plugin for ScreensPlugin {
         app.add_systems(
             EguiPrimaryContextPass,
             (
+                intro_screen_ui.run_if(in_state(GameState::Intro)),
                 world_cleared_screen_ui.run_if(in_state(GameState::WorldCleared)),
                 world_failed_screen_ui.run_if(in_state(GameState::WorldFailed)),
                 defeat_screen_ui.run_if(in_state(GameState::Defeat)),
             ),
         );
     }
+}
+
+/// One-time framing interstitial (task 052) between `MainMenu`'s "New run"
+/// and `Playing`: the world is already built by the time this shows (`menu.
+/// rs::start_run` runs first), so unlike the other screens here there's
+/// nothing to rebuild on continue — just flip `seen_intro` and move on.
+fn intro_screen_ui(
+    mut contexts: EguiContexts,
+    mut meta: ResMut<MetaProgress>,
+    mut next_state: ResMut<NextState<GameState>>,
+) -> Result {
+    let ctx = contexts.ctx_mut()?;
+    interstitial(ctx, "intro-viewport", |ui| {
+        ui.heading(text::INTRO_TITLE);
+        ui.label(text::INTRO_BODY);
+        if ui.button(text::INTRO_CONTINUE_BUTTON).clicked() {
+            meta.seen_intro = true;
+            next_state.set(GameState::Playing);
+        }
+    });
+    Ok(())
 }
 
 /// "Objective met" interstitial: advancing generates world `world_index + 1`

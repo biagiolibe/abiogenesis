@@ -22,11 +22,17 @@ use bevy::prelude::*;
 /// Losing every organism doesn't end the run — the player retries the exact
 /// same world (same seed) — while running out the era budget still does,
 /// via `Defeat`. See `objectives.rs::evaluate_current_objective`.
+///
+/// `Intro` (task 052) is a one-time framing interstitial reachable only
+/// between `MainMenu`'s "New run" and `Playing`, gated by
+/// `MetaProgress.seen_intro` — every run after the first (within the same
+/// process session) skips straight to `Playing`.
 #[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum GameState {
     #[default]
     Loading,
     MainMenu,
+    Intro,
     Playing,
     WorldCleared,
     WorldFailed,

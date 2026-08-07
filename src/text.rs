@@ -19,6 +19,12 @@ pub const MENU_SEED_LABEL: &str = "Run seed (leave blank to generate one)";
 pub const MENU_SEED_HINT: &str = "e.g. 42";
 pub const MENU_NEW_RUN_BUTTON: &str = "New run";
 
+// --- Intro screen (`screens.rs::intro_screen_ui`, task 052) ---
+
+pub const INTRO_TITLE: &str = "A sterile world";
+pub const INTRO_BODY: &str = "You seed an alien ecosystem and watch it grow — but its biochemistry is hidden. Species interact through a tag-based matrix you can't see directly, only infer from what happens when they meet. Each era is one deliberate experiment: seed, stress, cull, or splice within a limited budget, then observe.";
+pub const INTRO_CONTINUE_BUTTON: &str = "Begin";
+
 // --- World-cleared / defeat screens (`screens.rs`) ---
 
 pub const WORLD_CLEARED_TITLE: &str = "World cleared!";

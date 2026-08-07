@@ -69,6 +69,11 @@ pub struct Unlocks {
 #[derive(Resource, Debug, Clone, Copy, Default)]
 pub struct MetaProgress {
     pub bonus_available_species: u32,
+    /// Whether the one-time intro screen (task 052) has already played this
+    /// process session. Same non-persistence caveat as the rest of
+    /// `MetaProgress`: `false` again on every fresh launch, not just once
+    /// ever — there's no save file yet to make "once per install" literal.
+    pub seen_intro: bool,
 }
 
 impl MetaProgress {

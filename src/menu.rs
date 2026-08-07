@@ -73,7 +73,11 @@ fn main_menu_ui(
             if ui.button(text::MENU_NEW_RUN_BUTTON).clicked() {
                 let run_seed = parse_or_generate_seed(&seed_input.0);
                 start_run(&mut commands, &config, &meta, run_seed);
-                next_state.set(GameState::Playing);
+                if meta.seen_intro {
+                    next_state.set(GameState::Playing);
+                } else {
+                    next_state.set(GameState::Intro);
+                }
             }
             ui.add_space(16.0);
             ui.label(text::unlocks_summary(meta.bonus_available_species));
