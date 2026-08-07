@@ -6,10 +6,13 @@ use bevy::camera::Camera;
 use bevy::prelude::*;
 
 use abiogenesis::config::SimConfig;
-use abiogenesis::objectives::{CurrentObjective, CurrentWorldOutcome, ObjectiveProgress};
-use abiogenesis::run::RunProgress;
+use abiogenesis::objectives::{
+    apply_tick_outcome, CurrentObjective, CurrentWorldOutcome, ObjectiveProgress,
+};
+use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::{
-    step, ActionBudget, AdjacencyObserved, EraProgress, OrganismDied, SpeciesExtinct,
+    tick_and_complete_era, ActionBudget, AdjacencyObserved, EraCompleted, EraProgress,
+    OrganismDied, SpeciesExtinct,
 };
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{Organism, SimWorld};
@@ -63,8 +66,12 @@ fn clicked_cell(
     world_to_cell(world_pos, width, height)
 }
 
-/// `space`: starts an era, unless one is already advancing (acceptance
-/// criterion: advancement inputs are ignored during `Advancing`).
+/// `space`: starts (or resumes auto-playing) an era, unless one is already
+/// advancing (acceptance criterion: advancement inputs are ignored during
+/// `Advancing`). Only resets `EraProgress` to a full `era_ticks` if no era is
+/// currently in flight — if the player already stepped some ticks manually
+/// via `s` (`single_tick`), `space` auto-plays whatever ticks remain rather
+/// than discarding that progress and restarting the era from zero.
 fn start_era(
     keys: Res<ButtonInput<KeyCode>>,
     era_state: Res<State<EraState>>,
@@ -76,31 +83,69 @@ fn start_era(
         return;
     }
     if keys.just_pressed(KeyCode::Space) {
-        progress.start(config.time.era_ticks);
+        if progress.remaining() == 0 {
+            progress.start(config.time.era_ticks);
+        }
         next_state.set(EraState::Advancing);
     }
 }
 
-/// `s`: advances a single tick directly, with no state transition — useful
-/// for fine observation and debugging (GDD §11).
+/// `s`: advances a single tick directly, with no `EraState` transition —
+/// useful for fine observation and debugging (GDD §11). Starts a fresh era
+/// (`EraProgress`) if none is in flight, and shares `advance_tick`'s
+/// era-completion bookkeeping and objective evaluation via
+/// `tick_and_complete_era`/`apply_tick_outcome` — a player who only ever
+/// presses `s` must still see eras complete, the action budget refill, and
+/// objectives/failure conditions evaluate exactly as they would under
+/// `space`, since both paths advance the same ticks.
+#[allow(clippy::too_many_arguments)]
 fn single_tick(
     keys: Res<ButtonInput<KeyCode>>,
     era_state: Res<State<EraState>>,
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
+    mut progress: ResMut<EraProgress>,
+    mut budget: ResMut<ActionBudget>,
     mut died: MessageWriter<OrganismDied>,
     mut extinct: MessageWriter<SpeciesExtinct>,
     mut adjacencies: MessageWriter<AdjacencyObserved>,
+    mut era_completed: MessageWriter<EraCompleted>,
+    objective: Res<CurrentObjective>,
+    mut objective_progress: ResMut<ObjectiveProgress>,
+    mut outcome: ResMut<CurrentWorldOutcome>,
+    run_progress: Res<RunProgress>,
+    mut meta: ResMut<MetaProgress>,
+    mut next_game_state: ResMut<NextState<GameState>>,
 ) {
     if *era_state.get() == EraState::Advancing {
         return;
     }
-    if keys.just_pressed(KeyCode::KeyS) {
-        let events = step(&mut world, &config);
-        died.write_batch(events.deaths);
-        extinct.write_batch(events.extinctions);
-        adjacencies.write_batch(events.adjacencies);
+    if !keys.just_pressed(KeyCode::KeyS) {
+        return;
     }
+    if progress.remaining() == 0 {
+        progress.start(config.time.era_ticks);
+    }
+    let events = tick_and_complete_era(
+        &mut world,
+        &config,
+        &mut progress,
+        &mut budget,
+        &mut era_completed,
+    );
+    died.write_batch(events.deaths);
+    extinct.write_batch(events.extinctions);
+    adjacencies.write_batch(events.adjacencies);
+    apply_tick_outcome(
+        &world,
+        objective.0.as_ref(),
+        &mut objective_progress,
+        &mut outcome,
+        &run_progress,
+        &mut meta,
+        &config,
+        &mut next_game_state,
+    );
 }
 
 /// `r`: reseeds the *current* world (same `world_index`, so the same
@@ -650,6 +695,60 @@ mod tests {
         assert!(
             placed.0.is_empty(),
             "stale player-placed cell indices from the old world must not carry over"
+        );
+    }
+
+    /// A player who only ever presses `s` (never `space`) must still see
+    /// eras complete: `world.era` advances, the action budget refills, and
+    /// `EraCompleted` fires — the bug this test guards against had all three
+    /// silently never happening because `single_tick` called `step()`
+    /// directly, bypassing `advance_tick`'s era-boundary bookkeeping
+    /// entirely.
+    #[test]
+    fn repeated_single_ticks_alone_complete_an_era_and_refill_the_budget() {
+        let config = SimConfig::default();
+        let world = SimWorld::new(42, &config);
+
+        let mut app = App::new();
+        app.insert_resource(config.clone());
+        app.insert_resource(world);
+        app.insert_resource(ButtonInput::<KeyCode>::default());
+        app.insert_resource(State::new(EraState::Observing));
+        app.insert_resource(EraProgress::default());
+        app.insert_resource(ActionBudget {
+            points_remaining: 0,
+        });
+        app.add_message::<OrganismDied>();
+        app.add_message::<SpeciesExtinct>();
+        app.add_message::<AdjacencyObserved>();
+        app.add_message::<EraCompleted>();
+        app.insert_resource(CurrentObjective::default());
+        app.insert_resource(ObjectiveProgress::default());
+        app.insert_resource(CurrentWorldOutcome::default());
+        app.insert_resource(RunProgress::default());
+        app.insert_resource(MetaProgress::default());
+        app.insert_resource(NextState::<GameState>::default());
+        app.add_systems(Update, single_tick);
+
+        for _ in 0..config.time.era_ticks {
+            app.world_mut()
+                .resource_mut::<ButtonInput<KeyCode>>()
+                .press(KeyCode::KeyS);
+            app.update();
+            app.world_mut()
+                .resource_mut::<ButtonInput<KeyCode>>()
+                .release(KeyCode::KeyS);
+        }
+
+        let world = app.world().resource::<SimWorld>();
+        assert_eq!(
+            world.era, 1,
+            "era_ticks worth of manual single-ticks must complete the era"
+        );
+        let budget = app.world().resource::<ActionBudget>();
+        assert_eq!(
+            budget.points_remaining, config.time.point_budget_per_era,
+            "the action budget must refill on a manually-completed era, same as an auto-played one"
         );
     }
 }

@@ -462,6 +462,28 @@ impl Plugin for SimPlugin {
 /// Each parameter is a distinct Bevy resource/writer this system needs, not
 /// incidental complexity — splitting it wouldn't reduce the coupling, only
 /// hide it, so the arg count is allowed rather than fought.
+/// Runs one tick and, if it was the era's last tick, performs the
+/// era-completion bookkeeping (`world.era` advance, budget refill,
+/// `EraCompleted`). Shared by `advance_tick`'s auto-play and `single_tick`'s
+/// manual step (`input.rs`) so an era is exactly `era_ticks` ticks — and
+/// completes identically — regardless of which key triggered them.
+pub fn tick_and_complete_era(
+    world: &mut SimWorld,
+    config: &SimConfig,
+    progress: &mut EraProgress,
+    budget: &mut ActionBudget,
+    era_completed: &mut MessageWriter<EraCompleted>,
+) -> TickEvents {
+    let events = step(world, config);
+    progress.remaining -= 1;
+    if progress.remaining() == 0 {
+        world.era += 1;
+        budget.refill(config.time.point_budget_per_era);
+        era_completed.write(EraCompleted { era: world.era });
+    }
+    events
+}
+
 #[allow(clippy::too_many_arguments)]
 fn advance_tick(
     mut world: ResMut<SimWorld>,
@@ -477,15 +499,17 @@ fn advance_tick(
     if progress.remaining() == 0 {
         return;
     }
-    let events = step(&mut world, &config);
+    let events = tick_and_complete_era(
+        &mut world,
+        &config,
+        &mut progress,
+        &mut budget,
+        &mut era_completed,
+    );
     died.write_batch(events.deaths);
     extinct.write_batch(events.extinctions);
     adjacencies.write_batch(events.adjacencies);
-    progress.remaining -= 1;
     if progress.remaining() == 0 {
-        world.era += 1;
-        budget.refill(config.time.point_budget_per_era);
-        era_completed.write(EraCompleted { era: world.era });
         next_state.set(EraState::Observing);
     }
 }

@@ -284,20 +284,26 @@ impl Plugin for ObjectivesPlugin {
 /// for the era boundary). Runs even while no objective has been assigned
 /// yet (`CurrentObjective(None)`, before task 042's worldgen wires one in):
 /// `evaluate_world` still checks failure conditions in that case.
+/// Evaluates the current objective against `world`'s present state and
+/// applies whatever state transition the result implies. Called once per
+/// simulated tick — shared by `evaluate_current_objective` (the
+/// `FixedUpdate`/`Advancing` system driving auto-play eras) and `input.rs`'s
+/// `single_tick` (the `s` key's manual step) so a world can only clear or
+/// fail on ticks that actually happened, regardless of which key drove them.
 #[allow(clippy::too_many_arguments)]
-fn evaluate_current_objective(
-    world: Res<SimWorld>,
-    objective: Res<CurrentObjective>,
-    mut progress: ResMut<ObjectiveProgress>,
-    mut outcome: ResMut<CurrentWorldOutcome>,
-    run_progress: Res<RunProgress>,
-    mut meta: ResMut<MetaProgress>,
-    config: Res<SimConfig>,
-    mut next_game_state: ResMut<NextState<GameState>>,
+pub fn apply_tick_outcome(
+    world: &SimWorld,
+    objective: Option<&Objective>,
+    progress: &mut ObjectiveProgress,
+    outcome: &mut CurrentWorldOutcome,
+    run_progress: &RunProgress,
+    meta: &mut MetaProgress,
+    config: &SimConfig,
+    next_game_state: &mut NextState<GameState>,
 ) {
-    let era_budget = world_params(run_progress.world_index, &config).era_budget;
+    let era_budget = world_params(run_progress.world_index, config).era_budget;
     let previous_outcome = outcome.0;
-    let new_outcome = evaluate_world(objective.0.as_ref(), &world, &mut progress, era_budget);
+    let new_outcome = evaluate_world(objective, world, progress, era_budget);
     outcome.0 = new_outcome;
 
     // Only act on the `Ongoing -> {Failed, Cleared}` edge, not every tick
@@ -328,6 +334,29 @@ fn evaluate_current_objective(
         WorldOutcome::Cleared => next_game_state.set(GameState::WorldCleared),
         WorldOutcome::Ongoing => {}
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn evaluate_current_objective(
+    world: Res<SimWorld>,
+    objective: Res<CurrentObjective>,
+    mut progress: ResMut<ObjectiveProgress>,
+    mut outcome: ResMut<CurrentWorldOutcome>,
+    run_progress: Res<RunProgress>,
+    mut meta: ResMut<MetaProgress>,
+    config: Res<SimConfig>,
+    mut next_game_state: ResMut<NextState<GameState>>,
+) {
+    apply_tick_outcome(
+        &world,
+        objective.0.as_ref(),
+        &mut progress,
+        &mut outcome,
+        &run_progress,
+        &mut meta,
+        &config,
+        &mut next_game_state,
+    );
 }
 
 #[cfg(test)]
