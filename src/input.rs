@@ -17,9 +17,9 @@ use abiogenesis::sim::{
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{Organism, SimWorld};
 
-use crate::notebook::{MatrixKnowledge, ObservationLog, PlayerPlacedCells};
+use crate::notebook::{EverSeeded, PlayerPlacedCells};
 use crate::render::{world_to_cell, GridCamera};
-use crate::run_flow::start_world;
+use crate::run_flow::{start_world, WorldResetParams};
 use crate::ui::{ActionMode, SelectedAction, SelectedSpecies, SpliceDraft, SpliceEditChoice};
 
 pub struct InputPlugin;
@@ -155,7 +155,6 @@ fn single_tick(
 /// implementation, not two that can drift apart. Allowed even
 /// mid-`Advancing`: a full world reset legitimately invalidates whatever
 /// animation was playing.
-#[allow(clippy::too_many_arguments)]
 fn reseed_world(
     keys: Res<ButtonInput<KeyCode>>,
     mut world: ResMut<SimWorld>,
@@ -163,15 +162,7 @@ fn reseed_world(
     mut run_progress: ResMut<RunProgress>,
     mut progress: ResMut<EraProgress>,
     mut next_state: ResMut<NextState<EraState>>,
-    mut knowledge: ResMut<MatrixKnowledge>,
-    mut log: ResMut<ObservationLog>,
-    mut budget: ResMut<ActionBudget>,
-    mut selected: ResMut<SelectedSpecies>,
-    mut splice_draft: ResMut<SpliceDraft>,
-    mut placed: ResMut<PlayerPlacedCells>,
-    mut objective: ResMut<CurrentObjective>,
-    mut objective_progress: ResMut<ObjectiveProgress>,
-    mut outcome: ResMut<CurrentWorldOutcome>,
+    mut reset: WorldResetParams,
 ) {
     if keys.just_pressed(KeyCode::KeyR) {
         let new_seed = world.next_seed();
@@ -183,15 +174,7 @@ fn reseed_world(
             run_progress.unlocks.bonus_available_species,
             &mut progress,
             &mut next_state,
-            &mut knowledge,
-            &mut log,
-            &mut budget,
-            &mut selected,
-            &mut splice_draft,
-            &mut placed,
-            &mut objective,
-            &mut objective_progress,
-            &mut outcome,
+            &mut reset,
         );
         run_progress.world_seed = new_seed;
     }
@@ -206,7 +189,8 @@ fn reseed_world(
 /// action points (task 022); an unaffordable click does nothing at all, not
 /// even the empty-cell check. Records the cell into `PlayerPlacedCells`
 /// (task 026) so the Notebook can log a salient entry if this organism
-/// later dies.
+/// later dies, and latches `EverSeeded` (task 053's onboarding hint) since
+/// `PlayerPlacedCells` alone empties back out on death.
 #[allow(clippy::too_many_arguments)]
 fn seed_organism_on_click(
     buttons: Res<ButtonInput<MouseButton>>,
@@ -219,6 +203,7 @@ fn seed_organism_on_click(
     config: Res<SimConfig>,
     mut budget: ResMut<ActionBudget>,
     mut placed: ResMut<PlayerPlacedCells>,
+    mut ever_seeded: ResMut<EverSeeded>,
 ) {
     if selected_action.0 != ActionMode::Seed {
         return;
@@ -244,6 +229,7 @@ fn seed_organism_on_click(
     });
     budget.points_remaining -= config.time.action_costs.seed;
     placed.0.insert(index);
+    ever_seeded.0 = true;
 }
 
 /// Left-click while `ActionMode::Stress` is selected (GDD §6 "Stress"):
@@ -420,6 +406,7 @@ fn quit(keys: Res<ButtonInput<KeyCode>>, mut exit: MessageWriter<AppExit>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::notebook::{MatrixKnowledge, NotebookHasUnseenConfirmation, ObservationLog};
     use abiogenesis::world::{Species, SpeciesId, TagId, TagSlot};
     use abiogenesis::worldgen::generate_starting_palette;
     use bevy::state::state::State;
@@ -670,6 +657,7 @@ mod tests {
             ..SpliceDraft::default()
         });
         app.insert_resource(PlayerPlacedCells(std::collections::HashSet::from([1, 5])));
+        app.insert_resource(NotebookHasUnseenConfirmation::default());
         app.insert_resource(RunProgress::default());
         app.insert_resource(CurrentObjective::default());
         app.insert_resource(ObjectiveProgress::default());

@@ -18,10 +18,34 @@ use abiogenesis::sim::{ActionBudget, EraProgress};
 use abiogenesis::state::EraState;
 use abiogenesis::world::{SimWorld, SpeciesId};
 use abiogenesis::worldgen::build_world;
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
-use crate::notebook::{MatrixKnowledge, ObservationLog, PlayerPlacedCells};
+use crate::notebook::{
+    MatrixKnowledge, NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells,
+};
 use crate::ui::{SelectedSpecies, SpliceDraft};
+
+/// Every piece of per-world state a world (re)start resets, bundled into one
+/// `SystemParam` (task 054) — `start_world`'s individual `&mut` arguments
+/// pushed its callers (`reseed_world`/`screens.rs`'s two functions) past
+/// Bevy's ~16-parameter ceiling for a system function the moment a 10th
+/// piece of state (`NotebookHasUnseenConfirmation`) joined the list. One
+/// bundled param keeps every caller well under that ceiling regardless of
+/// how many more reset targets future tasks add.
+#[derive(SystemParam)]
+pub struct WorldResetParams<'w> {
+    pub knowledge: ResMut<'w, MatrixKnowledge>,
+    pub log: ResMut<'w, ObservationLog>,
+    pub budget: ResMut<'w, ActionBudget>,
+    pub selected: ResMut<'w, SelectedSpecies>,
+    pub splice_draft: ResMut<'w, SpliceDraft>,
+    pub placed: ResMut<'w, PlayerPlacedCells>,
+    pub unseen_confirmation: ResMut<'w, NotebookHasUnseenConfirmation>,
+    pub objective: ResMut<'w, CurrentObjective>,
+    pub objective_progress: ResMut<'w, ObjectiveProgress>,
+    pub outcome: ResMut<'w, CurrentWorldOutcome>,
+}
 
 /// Rebuilds `world` in place as world `world_index` seeded with `seed`
 /// (`worldgen::build_world`, which also generates the new world's
@@ -41,15 +65,7 @@ pub fn start_world(
     bonus_available_species: u32,
     era_progress: &mut EraProgress,
     era_next_state: &mut NextState<EraState>,
-    knowledge: &mut MatrixKnowledge,
-    log: &mut ObservationLog,
-    budget: &mut ActionBudget,
-    selected: &mut SelectedSpecies,
-    splice_draft: &mut SpliceDraft,
-    placed: &mut PlayerPlacedCells,
-    objective: &mut CurrentObjective,
-    objective_progress: &mut ObjectiveProgress,
-    outcome: &mut CurrentWorldOutcome,
+    reset: &mut WorldResetParams,
 ) {
     let (new_world, new_objective) =
         build_world(seed, world_index, config, bonus_available_species);
@@ -58,19 +74,20 @@ pub fn start_world(
     era_progress.cancel();
     era_next_state.set(EraState::Observing);
 
-    *knowledge = MatrixKnowledge::new(
+    *reset.knowledge = MatrixKnowledge::new(
         world.active_tags.len(),
         config.notebook.confirmation_threshold,
     );
-    log.entries.clear();
-    budget.refill(config.time.point_budget_per_era);
-    selected.0 = SpeciesId(0);
-    *splice_draft = SpliceDraft::default();
-    placed.0.clear();
+    reset.log.entries.clear();
+    reset.budget.refill(config.time.point_budget_per_era);
+    reset.selected.0 = SpeciesId(0);
+    *reset.splice_draft = SpliceDraft::default();
+    reset.placed.0.clear();
+    reset.unseen_confirmation.0 = false;
 
-    *objective = CurrentObjective(Some(new_objective));
-    *objective_progress = ObjectiveProgress::default();
-    *outcome = CurrentWorldOutcome::default();
+    *reset.objective = CurrentObjective(Some(new_objective));
+    *reset.objective_progress = ObjectiveProgress::default();
+    *reset.outcome = CurrentWorldOutcome::default();
 }
 
 /// The concrete effect of "World cleared → Continue" (task 045): advances
@@ -80,22 +97,13 @@ pub fn start_world(
 /// transition uses. Factored out of `screens.rs::world_cleared_screen_ui` so
 /// it's testable without egui or a running `Bevy` `App` — same rationale
 /// `menu.rs::start_run` gives for splitting UI from effect.
-#[allow(clippy::too_many_arguments)]
 pub fn advance_to_next_world(
     world: &mut SimWorld,
     run_progress: &mut RunProgress,
     config: &SimConfig,
     era_progress: &mut EraProgress,
     era_next_state: &mut NextState<EraState>,
-    knowledge: &mut MatrixKnowledge,
-    log: &mut ObservationLog,
-    budget: &mut ActionBudget,
-    selected: &mut SelectedSpecies,
-    splice_draft: &mut SpliceDraft,
-    placed: &mut PlayerPlacedCells,
-    objective: &mut CurrentObjective,
-    objective_progress: &mut ObjectiveProgress,
-    outcome: &mut CurrentWorldOutcome,
+    reset: &mut WorldResetParams,
 ) {
     let next_world_index = run_progress.world_index + 1;
     let next_seed = world.next_seed();
@@ -107,15 +115,7 @@ pub fn advance_to_next_world(
         run_progress.unlocks.bonus_available_species,
         era_progress,
         era_next_state,
-        knowledge,
-        log,
-        budget,
-        selected,
-        splice_draft,
-        placed,
-        objective,
-        objective_progress,
-        outcome,
+        reset,
     );
     run_progress.world_index = next_world_index;
     run_progress.world_seed = next_seed;
@@ -129,22 +129,13 @@ pub fn advance_to_next_world(
 /// than a new one. Unlike `advance_to_next_world`, `run_progress` itself
 /// isn't mutated — `world_index`/`world_seed`/`worlds_cleared` all stay
 /// put, since nothing about the run's progress actually changed.
-#[allow(clippy::too_many_arguments)]
 pub fn retry_world(
     world: &mut SimWorld,
     run_progress: &RunProgress,
     config: &SimConfig,
     era_progress: &mut EraProgress,
     era_next_state: &mut NextState<EraState>,
-    knowledge: &mut MatrixKnowledge,
-    log: &mut ObservationLog,
-    budget: &mut ActionBudget,
-    selected: &mut SelectedSpecies,
-    splice_draft: &mut SpliceDraft,
-    placed: &mut PlayerPlacedCells,
-    objective: &mut CurrentObjective,
-    objective_progress: &mut ObjectiveProgress,
-    outcome: &mut CurrentWorldOutcome,
+    reset: &mut WorldResetParams,
 ) {
     start_world(
         world,
@@ -154,15 +145,7 @@ pub fn retry_world(
         run_progress.unlocks.bonus_available_species,
         era_progress,
         era_next_state,
-        knowledge,
-        log,
-        budget,
-        selected,
-        splice_draft,
-        placed,
-        objective,
-        objective_progress,
-        outcome,
+        reset,
     );
 }
 
@@ -171,27 +154,31 @@ mod tests {
     use super::*;
     use abiogenesis::config::SimConfig;
     use abiogenesis::worldgen::{build_world, world_params};
+    use bevy::ecs::system::SystemState;
 
-    fn fresh_resources() -> (
-        EraProgress,
-        NextState<EraState>,
-        MatrixKnowledge,
-        ObservationLog,
-        ActionBudget,
-        SelectedSpecies,
-        SpliceDraft,
-        PlayerPlacedCells,
-    ) {
-        (
-            EraProgress::default(),
-            NextState::default(),
-            MatrixKnowledge::new(5, 3.0),
-            ObservationLog::default(),
-            ActionBudget::default(),
-            SelectedSpecies(SpeciesId(0)),
-            SpliceDraft::default(),
-            PlayerPlacedCells::default(),
-        )
+    /// Builds a scratch ECS `World` with every resource `WorldResetParams`
+    /// bundles, so `start_world`/`advance_to_next_world`/`retry_world` can be
+    /// exercised exactly as the real systems call them — `WorldResetParams`
+    /// derives `SystemParam` (task 054, to stay under Bevy's per-system
+    /// parameter ceiling), so its fields can no longer be assembled from
+    /// plain owned locals the way the pre-054 tuple-of-resources helper did.
+    fn resource_world(
+        objective: Option<abiogenesis::objectives::Objective>,
+        objective_progress: ObjectiveProgress,
+        outcome: CurrentWorldOutcome,
+    ) -> World {
+        let mut ecs_world = World::new();
+        ecs_world.insert_resource(MatrixKnowledge::new(5, 3.0));
+        ecs_world.insert_resource(ObservationLog::default());
+        ecs_world.insert_resource(ActionBudget::default());
+        ecs_world.insert_resource(SelectedSpecies(SpeciesId(0)));
+        ecs_world.insert_resource(SpliceDraft::default());
+        ecs_world.insert_resource(PlayerPlacedCells::default());
+        ecs_world.insert_resource(NotebookHasUnseenConfirmation::default());
+        ecs_world.insert_resource(CurrentObjective(objective));
+        ecs_world.insert_resource(objective_progress);
+        ecs_world.insert_resource(outcome);
+        ecs_world
     }
 
     /// Task 045's own acceptance criterion: "advances the run programmatically
@@ -211,19 +198,15 @@ mod tests {
             worlds_cleared: 0,
             unlocks: Default::default(),
         };
-        let (
-            mut era_progress,
-            mut era_next_state,
-            mut knowledge,
-            mut log,
-            mut budget,
-            mut selected,
-            mut splice_draft,
-            mut placed,
-        ) = fresh_resources();
-        let mut current_objective = CurrentObjective(Some(objective));
-        let mut objective_progress = ObjectiveProgress::default();
-        let mut outcome = CurrentWorldOutcome::default();
+        let mut era_progress = EraProgress::default();
+        let mut era_next_state = NextState::default();
+        let mut ecs_world = resource_world(
+            Some(objective),
+            ObjectiveProgress::default(),
+            CurrentWorldOutcome::default(),
+        );
+        let mut state = SystemState::<WorldResetParams>::new(&mut ecs_world);
+        let mut reset = state.get_mut(&mut ecs_world).unwrap();
 
         // Independently reproduce what the transition *should* produce,
         // without going through `advance_to_next_world` at all.
@@ -237,15 +220,7 @@ mod tests {
             &config,
             &mut era_progress,
             &mut era_next_state,
-            &mut knowledge,
-            &mut log,
-            &mut budget,
-            &mut selected,
-            &mut splice_draft,
-            &mut placed,
-            &mut current_objective,
-            &mut objective_progress,
-            &mut outcome,
+            &mut reset,
         );
 
         assert_eq!(run_progress.world_index, 1);
@@ -258,10 +233,13 @@ mod tests {
             world_params(1, &config).active_tag_count as usize,
             "world 1 must actually use world_index 1's difficulty parameters"
         );
-        assert_eq!(current_objective.0, Some(expected_objective_1));
-        assert_eq!(objective_progress.consecutive_ticks, 0);
-        assert!(!objective_progress.satisfied);
-        assert_eq!(outcome.0, abiogenesis::objectives::WorldOutcome::Ongoing);
+        assert_eq!(reset.objective.0, Some(expected_objective_1));
+        assert_eq!(reset.objective_progress.consecutive_ticks, 0);
+        assert!(!reset.objective_progress.satisfied);
+        assert_eq!(
+            reset.outcome.0,
+            abiogenesis::objectives::WorldOutcome::Ongoing
+        );
 
         // Second consecutive transition, chained off the first — this is
         // the "two cycles" the acceptance criterion asks for.
@@ -275,22 +253,53 @@ mod tests {
             &config,
             &mut era_progress,
             &mut era_next_state,
-            &mut knowledge,
-            &mut log,
-            &mut budget,
-            &mut selected,
-            &mut splice_draft,
-            &mut placed,
-            &mut current_objective,
-            &mut objective_progress,
-            &mut outcome,
+            &mut reset,
         );
 
         assert_eq!(run_progress.world_index, 2);
         assert_eq!(run_progress.worlds_cleared, 2);
         assert_eq!(world.active_tags, expected_world_2.active_tags);
         assert_eq!(world.matrix, expected_world_2.matrix);
-        assert_eq!(current_objective.0, Some(expected_objective_2));
+        assert_eq!(reset.objective.0, Some(expected_objective_2));
+    }
+
+    /// Task 054's confirmation badge is a per-world notification: its
+    /// referent (`MatrixKnowledge`) resets on every world (re)start, so a
+    /// badge left lit from the world just abandoned would point at a
+    /// hypothesis grid that's already been wiped back to zero evidence.
+    /// `start_world` must clear it exactly like it clears `PlayerPlacedCells`.
+    #[test]
+    fn advancing_to_the_next_world_clears_a_stale_unseen_confirmation_badge() {
+        let config = SimConfig::default();
+        let (mut world, objective) = build_world(11, 0, &config, 0);
+        let mut run_progress = RunProgress {
+            run_seed: 11,
+            world_index: 0,
+            world_seed: 11,
+            worlds_cleared: 0,
+            unlocks: Default::default(),
+        };
+        let mut era_progress = EraProgress::default();
+        let mut era_next_state = NextState::default();
+        let mut ecs_world = resource_world(
+            Some(objective),
+            ObjectiveProgress::default(),
+            CurrentWorldOutcome::default(),
+        );
+        ecs_world.resource_mut::<NotebookHasUnseenConfirmation>().0 = true;
+        let mut state = SystemState::<WorldResetParams>::new(&mut ecs_world);
+        let mut reset = state.get_mut(&mut ecs_world).unwrap();
+
+        advance_to_next_world(
+            &mut world,
+            &mut run_progress,
+            &config,
+            &mut era_progress,
+            &mut era_next_state,
+            &mut reset,
+        );
+
+        assert!(!reset.unseen_confirmation.0);
     }
 
     /// `MatrixKnowledge` must be resized to the *new* world's active-tag
@@ -307,19 +316,15 @@ mod tests {
             worlds_cleared: 0,
             unlocks: Default::default(),
         };
-        let (
-            mut era_progress,
-            mut era_next_state,
-            mut knowledge,
-            mut log,
-            mut budget,
-            mut selected,
-            mut splice_draft,
-            mut placed,
-        ) = fresh_resources();
-        let mut current_objective = CurrentObjective(Some(objective));
-        let mut objective_progress = ObjectiveProgress::default();
-        let mut outcome = CurrentWorldOutcome::default();
+        let mut era_progress = EraProgress::default();
+        let mut era_next_state = NextState::default();
+        let mut ecs_world = resource_world(
+            Some(objective),
+            ObjectiveProgress::default(),
+            CurrentWorldOutcome::default(),
+        );
+        let mut state = SystemState::<WorldResetParams>::new(&mut ecs_world);
+        let mut reset = state.get_mut(&mut ecs_world).unwrap();
 
         advance_to_next_world(
             &mut world,
@@ -327,21 +332,13 @@ mod tests {
             &config,
             &mut era_progress,
             &mut era_next_state,
-            &mut knowledge,
-            &mut log,
-            &mut budget,
-            &mut selected,
-            &mut splice_draft,
-            &mut placed,
-            &mut current_objective,
-            &mut objective_progress,
-            &mut outcome,
+            &mut reset,
         );
 
         let expected_tags = world_params(1, &config).active_tag_count as usize;
         // `record`/`evidence` index `size * size` — the real out-of-bounds
         // failure mode if `knowledge` were left at the stale size 5.
-        knowledge.record(
+        reset.knowledge.record(
             abiogenesis::world::TagSlot((expected_tags - 1) as u8),
             abiogenesis::world::TagSlot((expected_tags - 1) as u8),
             1.0,
@@ -363,22 +360,18 @@ mod tests {
             worlds_cleared: 3,
             unlocks: Default::default(),
         };
-        let (
-            mut era_progress,
-            mut era_next_state,
-            mut knowledge,
-            mut log,
-            mut budget,
-            mut selected,
-            mut splice_draft,
-            mut placed,
-        ) = fresh_resources();
-        let mut current_objective = CurrentObjective(Some(objective));
-        let mut objective_progress = ObjectiveProgress {
-            consecutive_ticks: 7,
-            satisfied: false,
-        };
-        let mut outcome = CurrentWorldOutcome(WorldOutcome::Failed(FailureReason::TotalExtinction));
+        let mut era_progress = EraProgress::default();
+        let mut era_next_state = NextState::default();
+        let mut ecs_world = resource_world(
+            Some(objective),
+            ObjectiveProgress {
+                consecutive_ticks: 7,
+                satisfied: false,
+            },
+            CurrentWorldOutcome(WorldOutcome::Failed(FailureReason::TotalExtinction)),
+        );
+        let mut state = SystemState::<WorldResetParams>::new(&mut ecs_world);
+        let mut reset = state.get_mut(&mut ecs_world).unwrap();
 
         let (expected_world, expected_objective) = build_world(99, 1, &config, 0);
 
@@ -388,15 +381,7 @@ mod tests {
             &config,
             &mut era_progress,
             &mut era_next_state,
-            &mut knowledge,
-            &mut log,
-            &mut budget,
-            &mut selected,
-            &mut splice_draft,
-            &mut placed,
-            &mut current_objective,
-            &mut objective_progress,
-            &mut outcome,
+            &mut reset,
         );
 
         assert_eq!(run_progress.world_index, 1);
@@ -404,8 +389,8 @@ mod tests {
         assert_eq!(run_progress.worlds_cleared, 3);
         assert_eq!(world.active_tags, expected_world.active_tags);
         assert_eq!(world.matrix, expected_world.matrix);
-        assert_eq!(current_objective.0, Some(expected_objective));
-        assert_eq!(objective_progress.consecutive_ticks, 0);
-        assert_eq!(outcome.0, WorldOutcome::Ongoing);
+        assert_eq!(reset.objective.0, Some(expected_objective));
+        assert_eq!(reset.objective_progress.consecutive_ticks, 0);
+        assert_eq!(reset.outcome.0, WorldOutcome::Ongoing);
     }
 }

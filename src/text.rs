@@ -130,6 +130,19 @@ pub const HEADING_SEED_PALETTE: &str = "Seed palette";
 pub const SEED_PALETTE_HOVER: &str = "Click an empty cell to place the selected species";
 pub const KEYBOARD_HINT: &str = "space era · s tick · r reseed · Esc quit";
 
+// --- Viewport onboarding hints (task 053) ---
+
+pub const HINT_PLACE_FIRST_ORGANISM: &str =
+    "Pick a species in the Seed palette, then click an empty cell to place it";
+pub const HINT_OPEN_NOTEBOOK: &str = "Press tab to open your notebook and log hypotheses";
+
+// --- HUD — notebook affordance badge (task 054) ---
+
+pub const NOTEBOOK_AFFORDANCE_LABEL: &str = "Notebook (tab)";
+pub const NOTEBOOK_BADGE_GLYPH: &str = "★";
+pub const NOTEBOOK_BADGE_HOVER: &str =
+    "A hypothesis was just confirmed — open the notebook to see it";
+
 // --- HUD — objective panel (`ui.rs::objective_panel`) ---
 
 pub const HEADING_OBJECTIVE: &str = "Objective";
@@ -219,6 +232,15 @@ pub fn player_organism_death_message(
         -crowding_penalty + 0.0,
         -predation_loss + 0.0,
     )
+}
+
+/// A matrix cell crossing the confirmation threshold (GDD §7's "aha"
+/// moment, task 054) — distinguished from ordinary log lines by a leading
+/// glyph the caller renders separately (`notebook.rs`'s `CONFIRMATION_GLYPH`),
+/// same split `LogEntry`/`species_color` uses for species-subject lines.
+pub fn confirmation_message(from_glyph: &str, to_glyph: &str, positive: bool) -> String {
+    let sign = if positive { "boosts" } else { "harms" };
+    format!("Confirmed: tag {from_glyph} {sign} tag {to_glyph}")
 }
 
 // --- Notebook — hypothesis graph (`notebook.rs::hypothesis_grid`) ---

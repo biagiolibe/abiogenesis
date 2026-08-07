@@ -11,16 +11,13 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
 use abiogenesis::config::SimConfig;
-use abiogenesis::objectives::{CurrentObjective, CurrentWorldOutcome, ObjectiveProgress};
 use abiogenesis::run::{MetaProgress, RunProgress};
-use abiogenesis::sim::{ActionBudget, EraProgress};
+use abiogenesis::sim::EraProgress;
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::SimWorld;
 
-use crate::notebook::{MatrixKnowledge, ObservationLog, PlayerPlacedCells};
-use crate::run_flow::{advance_to_next_world, retry_world};
+use crate::run_flow::{advance_to_next_world, retry_world, WorldResetParams};
 use crate::text;
-use crate::ui::{SelectedSpecies, SpliceDraft};
 
 pub struct ScreensPlugin;
 
@@ -71,15 +68,7 @@ fn world_cleared_screen_ui(
     mut run_progress: ResMut<RunProgress>,
     mut era_progress: ResMut<EraProgress>,
     mut era_next_state: ResMut<NextState<EraState>>,
-    mut knowledge: ResMut<MatrixKnowledge>,
-    mut log: ResMut<ObservationLog>,
-    mut budget: ResMut<ActionBudget>,
-    mut selected: ResMut<SelectedSpecies>,
-    mut splice_draft: ResMut<SpliceDraft>,
-    mut placed: ResMut<PlayerPlacedCells>,
-    mut objective: ResMut<CurrentObjective>,
-    mut objective_progress: ResMut<ObjectiveProgress>,
-    mut outcome: ResMut<CurrentWorldOutcome>,
+    mut reset: WorldResetParams,
     mut next_state: ResMut<NextState<GameState>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
@@ -93,15 +82,7 @@ fn world_cleared_screen_ui(
                 &config,
                 &mut era_progress,
                 &mut era_next_state,
-                &mut knowledge,
-                &mut log,
-                &mut budget,
-                &mut selected,
-                &mut splice_draft,
-                &mut placed,
-                &mut objective,
-                &mut objective_progress,
-                &mut outcome,
+                &mut reset,
             );
             next_state.set(GameState::Playing);
         }
@@ -121,15 +102,7 @@ fn world_failed_screen_ui(
     run_progress: Res<RunProgress>,
     mut era_progress: ResMut<EraProgress>,
     mut era_next_state: ResMut<NextState<EraState>>,
-    mut knowledge: ResMut<MatrixKnowledge>,
-    mut log: ResMut<ObservationLog>,
-    mut budget: ResMut<ActionBudget>,
-    mut selected: ResMut<SelectedSpecies>,
-    mut splice_draft: ResMut<SpliceDraft>,
-    mut placed: ResMut<PlayerPlacedCells>,
-    mut objective: ResMut<CurrentObjective>,
-    mut objective_progress: ResMut<ObjectiveProgress>,
-    mut outcome: ResMut<CurrentWorldOutcome>,
+    mut reset: WorldResetParams,
     mut next_state: ResMut<NextState<GameState>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
@@ -143,15 +116,7 @@ fn world_failed_screen_ui(
                 &config,
                 &mut era_progress,
                 &mut era_next_state,
-                &mut knowledge,
-                &mut log,
-                &mut budget,
-                &mut selected,
-                &mut splice_draft,
-                &mut placed,
-                &mut objective,
-                &mut objective_progress,
-                &mut outcome,
+                &mut reset,
             );
             next_state.set(GameState::Playing);
         }

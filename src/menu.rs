@@ -10,7 +10,9 @@
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
-use crate::notebook::{MatrixKnowledge, ObservationLog, PlayerPlacedCells};
+use crate::notebook::{
+    MatrixKnowledge, NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells,
+};
 use crate::text;
 use crate::ui::{SelectedSpecies, SpliceDraft};
 use abiogenesis::config::SimConfig;
@@ -120,6 +122,7 @@ fn start_run(commands: &mut Commands, config: &SimConfig, meta: &MetaProgress, r
     commands.insert_resource(run_progress);
     commands.insert_resource(ObservationLog::default());
     commands.insert_resource(PlayerPlacedCells::default());
+    commands.insert_resource(NotebookHasUnseenConfirmation::default());
     commands.insert_resource(ActionBudget {
         points_remaining: config.time.point_budget_per_era,
     });

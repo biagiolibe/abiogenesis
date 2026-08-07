@@ -5,7 +5,7 @@ use bevy_egui::{
     egui, EguiContexts, EguiGlobalSettings, EguiPrimaryContextPass, PrimaryEguiContext,
 };
 
-use crate::notebook::tag_glyph;
+use crate::notebook::{tag_glyph, EverSeeded, NotebookEverOpened, NotebookHasUnseenConfirmation};
 use crate::render::{species_color, species_label, GridCamera};
 use crate::text;
 use abiogenesis::config::SimConfig;
@@ -95,6 +95,11 @@ const HUD_CAMERA_LAYER: usize = 1;
 /// uses for tags.
 const SPECIES_GLYPH: &str = "●";
 
+/// Color of the notebook's unseen-confirmation badge (task 054) — matches
+/// no existing semantic (it's neither a species nor a tag color), so it
+/// gets its own constant rather than reusing one of those.
+const NOTEBOOK_BADGE_COLOR: egui::Color32 = egui::Color32::from_rgb(230, 190, 60);
+
 pub struct UiPlugin;
 
 /// DejaVu Sans (Bitstream Vera License, see `assets/fonts/DejaVu-LICENSE.txt`)
@@ -130,7 +135,7 @@ impl Plugin for UiPlugin {
             .add_systems(EguiPrimaryContextPass, configure_fonts)
             .add_systems(
                 EguiPrimaryContextPass,
-                hud_panel.run_if(in_state(GameState::Playing)),
+                (hud_panel, viewport_hint).run_if(in_state(GameState::Playing)),
             );
     }
 }
@@ -219,6 +224,7 @@ fn hud_panel(
     config: Res<SimConfig>,
     objective: Res<CurrentObjective>,
     objective_progress: Res<ObjectiveProgress>,
+    unseen_confirmation: Res<NotebookHasUnseenConfirmation>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     let mut viewport_ui = egui::Ui::new(
@@ -309,6 +315,67 @@ fn hud_panel(
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                 ui.weak(text::KEYBOARD_HINT);
+                ui.horizontal(|ui| {
+                    ui.weak(text::NOTEBOOK_AFFORDANCE_LABEL);
+                    if unseen_confirmation.0 {
+                        ui.colored_label(NOTEBOOK_BADGE_COLOR, text::NOTEBOOK_BADGE_GLYPH)
+                            .on_hover_text(text::NOTEBOOK_BADGE_HOVER);
+                    }
+                });
+            });
+        });
+
+    Ok(())
+}
+
+/// Vertical gap between the grid viewport's top edge and the onboarding
+/// hint area (task 053), keeping it clear of the grid's own top row.
+const VIEWPORT_HINT_TOP_MARGIN: f32 = 24.0;
+
+/// Which onboarding hint to show, if any, given the two milestones task 053
+/// guides the player through. `ever_seeded` rather than `PlayerPlacedCells`
+/// emptiness: a placed organism's death removes it from `PlayerPlacedCells`
+/// (per-organism, consumed on death), which would otherwise make the first
+/// hint reappear after the player's first placement dies.
+fn hint_text(ever_seeded: bool, notebook_ever_opened: bool) -> Option<&'static str> {
+    if !ever_seeded {
+        Some(text::HINT_PLACE_FIRST_ORGANISM)
+    } else if !notebook_ever_opened {
+        Some(text::HINT_OPEN_NOTEBOOK)
+    } else {
+        None
+    }
+}
+
+/// Non-interactive onboarding hint over the grid viewport (task 053),
+/// guiding a fresh player through their first two actions: placing an
+/// organism, then opening the notebook. Purely state-driven — no dismiss
+/// affordance — and anchored above the grid area (excluding `HUD_WIDTH`) so
+/// it never overlaps the cells the player needs to click.
+fn viewport_hint(
+    mut contexts: EguiContexts,
+    ever_seeded: Res<EverSeeded>,
+    notebook_ever_opened: Res<NotebookEverOpened>,
+) -> Result {
+    let Some(hint) = hint_text(ever_seeded.0, notebook_ever_opened.0) else {
+        return Ok(());
+    };
+
+    let ctx = contexts.ctx_mut()?;
+    let grid_rect = {
+        let mut rect = ctx.viewport_rect();
+        rect.max.x -= HUD_WIDTH;
+        rect
+    };
+
+    egui::Area::new("viewport_hint".into())
+        .order(egui::Order::Foreground)
+        .interactable(false)
+        .fixed_pos(grid_rect.center_top() + egui::vec2(0.0, VIEWPORT_HINT_TOP_MARGIN))
+        .pivot(egui::Align2::CENTER_TOP)
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.label(hint);
             });
         });
 
@@ -605,5 +672,27 @@ mod tests {
     #[test]
     fn eras_progress_handles_a_zero_era_length_without_dividing_by_zero() {
         assert_eq!(eras_progress(10, 50, 0), (0, 0));
+    }
+
+    #[test]
+    fn hint_text_prioritizes_the_seed_hint_before_anything_is_placed() {
+        assert_eq!(
+            hint_text(false, false),
+            Some(text::HINT_PLACE_FIRST_ORGANISM)
+        );
+        assert_eq!(
+            hint_text(false, true),
+            Some(text::HINT_PLACE_FIRST_ORGANISM)
+        );
+    }
+
+    #[test]
+    fn hint_text_switches_to_the_notebook_hint_once_seeded() {
+        assert_eq!(hint_text(true, false), Some(text::HINT_OPEN_NOTEBOOK));
+    }
+
+    #[test]
+    fn hint_text_is_none_once_both_milestones_are_reached() {
+        assert_eq!(hint_text(true, true), None);
     }
 }

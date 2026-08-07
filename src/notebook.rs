@@ -18,13 +18,16 @@ use crate::text;
 
 /// One curated log line, tagged with the era it happened in. `text`
 /// describes the event only; the window prepends the era. `species` is the
-/// entry's subject, if it has one (every current entry kind does) — carried
-/// separately from `text` (rather than baked into the string) so the window
-/// can render a `species_color` swatch alongside the line, the same
-/// glyph+color pattern `ui.rs`'s Population/Seed Palette panels use.
+/// entry's subject, if it has one — carried separately from `text` (rather
+/// than baked into the string) so the window can render a `species_color`
+/// swatch alongside the line, the same glyph+color pattern `ui.rs`'s
+/// Population/Seed Palette panels use. `None` for entry kinds with no
+/// species subject (task 054's matrix-confirmation lines are about a tag
+/// pair, not any one species) — the window renders those with a neutral
+/// glyph instead of a colored swatch.
 pub struct LogEntry {
     pub era: u32,
-    pub species: SpeciesId,
+    pub species: Option<SpeciesId>,
     pub text: String,
 }
 
@@ -40,6 +43,21 @@ pub struct ObservationLog {
 #[derive(Resource, Default)]
 pub struct NotebookWindowOpen(pub bool);
 
+/// Whether the notebook window has ever been opened, set once on the first
+/// `NotebookWindowOpen` transition to `true` and never reset. Drives the
+/// second onboarding hint (task 053): shown until the player opens the
+/// notebook for the first time, then gone for good.
+#[derive(Resource, Default)]
+pub struct NotebookEverOpened(pub bool);
+
+/// Whether a matrix-cell confirmation (task 054, GDD §7's "aha" moment) has
+/// happened since the player last opened the notebook — drives a badge on
+/// the HUD's notebook affordance so the event is noticeable even with the
+/// window closed. Set on every fresh confirmation, cleared on the next
+/// `NotebookWindowOpen` transition to `true`.
+#[derive(Resource, Default)]
+pub struct NotebookHasUnseenConfirmation(pub bool);
+
 /// Cell indices currently holding a player-`Seed`-ed organism (task 026),
 /// written by `input.rs::seed_organism_on_click` on a successful placement.
 /// A raw cell index alone can't tell "the organism I placed" from "whatever
@@ -53,6 +71,16 @@ pub struct NotebookWindowOpen(pub bool);
 /// removals are ever performed on it, never iteration.
 #[derive(Resource, Default)]
 pub struct PlayerPlacedCells(pub HashSet<usize>);
+
+/// Whether the player has ever placed an organism via `Seed`, set once by
+/// `input.rs::seed_organism_on_click` on the first successful placement and
+/// never reset. Unlike `PlayerPlacedCells`, this never empties back out — a
+/// later death removes the cell from `PlayerPlacedCells` (its membership is
+/// per-organism, consumed on death) but must not make it look like the
+/// player has never seeded anything, which is what the first onboarding
+/// hint (task 053) needs to key off of.
+#[derive(Resource, Default)]
+pub struct EverSeeded(pub bool);
 
 /// Cumulative weighted evidence for every `(exerter_tag, receiver_tag)`
 /// pair (GDD §7's "B with a hint of C" confirmation model) — the mechanism
@@ -86,9 +114,15 @@ impl MatrixKnowledge {
         }
     }
 
-    pub fn record(&mut self, exerter: TagSlot, receiver: TagSlot, weight: f32) {
+    /// Adds `weight` to a pair's evidence, returning `true` if this call is
+    /// the one that pushed it from below `threshold` to at/above it (GDD
+    /// §7's "aha" moment) — `false` on every other call, including repeat
+    /// evidence for an already-confirmed pair.
+    pub fn record(&mut self, exerter: TagSlot, receiver: TagSlot, weight: f32) -> bool {
         let idx = exerter.0 as usize * self.size + receiver.0 as usize;
+        let was_confirmed = self.evidence[idx] >= self.threshold;
         self.evidence[idx] += weight;
+        !was_confirmed && self.evidence[idx] >= self.threshold
     }
 
     pub fn evidence(&self, exerter: TagSlot, receiver: TagSlot) -> f32 {
@@ -133,7 +167,10 @@ impl Plugin for NotebookPlugin {
         app.insert_resource(knowledge)
             .init_resource::<ObservationLog>()
             .init_resource::<NotebookWindowOpen>()
+            .init_resource::<NotebookEverOpened>()
             .init_resource::<PlayerPlacedCells>()
+            .init_resource::<EverSeeded>()
+            .init_resource::<NotebookHasUnseenConfirmation>()
             .add_systems(
                 Update,
                 (toggle_notebook, record_events, accumulate_evidence)
@@ -148,24 +185,51 @@ impl Plugin for NotebookPlugin {
 
 /// Drains `AdjacencyObserved` (task 018) into `MatrixKnowledge`, weighting
 /// each observation `observation_weight_numerator / (1 + n_confounders)`
-/// (GDD §7).
+/// (GDD §7). Every pair `record` reports as newly confirmed gets a log
+/// entry and raises the HUD badge (task 054) — the game's central discovery
+/// beat, previously silent outside the hypothesis grid itself.
 fn accumulate_evidence(
     config: Res<SimConfig>,
+    world: Res<SimWorld>,
     mut observed: MessageReader<AdjacencyObserved>,
     mut knowledge: ResMut<MatrixKnowledge>,
+    mut log: ResMut<ObservationLog>,
+    mut unseen: ResMut<NotebookHasUnseenConfirmation>,
 ) {
     for event in observed.read() {
         let weight =
             config.notebook.observation_weight_numerator / (1.0 + event.n_confounders as f32);
-        knowledge.record(event.exerter_tag, event.receiver_tag, weight);
+        let newly_confirmed = knowledge.record(event.exerter_tag, event.receiver_tag, weight);
+        if newly_confirmed {
+            let from_glyph = tag_glyph(world.active_tags[event.exerter_tag.0 as usize]);
+            let to_glyph = tag_glyph(world.active_tags[event.receiver_tag.0 as usize]);
+            let positive = world.matrix.get(event.exerter_tag, event.receiver_tag) > 0;
+            log.entries.push(LogEntry {
+                era: world.era,
+                species: None,
+                text: text::confirmation_message(from_glyph, to_glyph, positive),
+            });
+            unseen.0 = true;
+        }
     }
 }
 
 /// `tab`: opens/closes the notebook window, mirroring `input.rs`'s
-/// `keys.just_pressed(...)` key-handling pattern.
-fn toggle_notebook(keys: Res<ButtonInput<KeyCode>>, mut open: ResMut<NotebookWindowOpen>) {
+/// `keys.just_pressed(...)` key-handling pattern. Opening also latches
+/// `NotebookEverOpened` (task 053) and clears the confirmation badge (task
+/// 054) — the player has now seen whatever the badge was pointing at.
+fn toggle_notebook(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut open: ResMut<NotebookWindowOpen>,
+    mut ever_opened: ResMut<NotebookEverOpened>,
+    mut unseen_confirmation: ResMut<NotebookHasUnseenConfirmation>,
+) {
     if keys.just_pressed(KeyCode::Tab) {
         open.0 = !open.0;
+        if open.0 {
+            ever_opened.0 = true;
+            unseen_confirmation.0 = false;
+        }
     }
 }
 
@@ -191,7 +255,7 @@ fn record_events(
     for event in extinctions.read() {
         log.entries.push(LogEntry {
             era: world.era,
-            species: event.species,
+            species: Some(event.species),
             text: text::extinction_message(&species_label(event.species)),
         });
     }
@@ -201,7 +265,7 @@ fn record_events(
             let (x, y) = (event.cell % world.width, event.cell / world.width);
             log.entries.push(LogEntry {
                 era: world.era,
-                species: event.species,
+                species: Some(event.species),
                 text: text::player_organism_death_message(
                     &species_label(event.species),
                     x,
@@ -231,6 +295,11 @@ fn tag_color(tag: TagId) -> egui::Color32 {
 }
 
 const TAG_GLYPH: &str = "●";
+
+/// Marks a matrix-confirmation log line (task 054) in place of the
+/// species-color swatch other entries get — a confirmation is about a tag
+/// pair, not any one species, so there's no `species_color` to render.
+const CONFIRMATION_GLYPH: &str = "★";
 
 /// Fixed Greek-letter alphabet for `tag_glyph` (task 029): opaque, stable
 /// within a run, deterministic from `TagId` — never a hint at the tag's
@@ -276,7 +345,14 @@ fn notebook_window(
                     }
                     for entry in &log.entries {
                         ui.horizontal(|ui| {
-                            ui.colored_label(species_color(entry.species), TAG_GLYPH);
+                            match entry.species {
+                                Some(species) => {
+                                    ui.colored_label(species_color(species), TAG_GLYPH);
+                                }
+                                None => {
+                                    ui.label(CONFIRMATION_GLYPH);
+                                }
+                            }
                             ui.label(text::log_entry_line(entry.era, &entry.text));
                         });
                     }
@@ -670,6 +746,17 @@ mod tests {
     }
 
     #[test]
+    fn record_reports_the_confirmation_transition_exactly_once() {
+        let mut knowledge = MatrixKnowledge::new(2, THRESHOLD);
+        assert!(!knowledge.record(TagSlot(0), TagSlot(1), 1.0));
+        assert!(!knowledge.record(TagSlot(0), TagSlot(1), 1.0));
+        assert!(knowledge.record(TagSlot(0), TagSlot(1), 1.0));
+        // Already confirmed: further evidence keeps accumulating but no
+        // longer reports a fresh transition.
+        assert!(!knowledge.record(TagSlot(0), TagSlot(1), 1.0));
+    }
+
+    #[test]
     fn confounded_observations_need_four_times_as_many() {
         // n_confounders = 3 -> weight 0.25 each; 12 * 0.25 == threshold.
         let mut knowledge = MatrixKnowledge::new(2, THRESHOLD);
@@ -691,12 +778,16 @@ mod tests {
     #[test]
     fn accumulate_evidence_applies_the_confounder_weight() {
         let config = SimConfig::default();
+        let world = SimWorld::new(42, &config);
         let mut app = App::new();
         app.insert_resource(config.clone());
         app.insert_resource(MatrixKnowledge::new(
-            5,
+            world.active_tags.len(),
             config.notebook.confirmation_threshold,
         ));
+        app.insert_resource(world);
+        app.init_resource::<ObservationLog>();
+        app.init_resource::<NotebookHasUnseenConfirmation>();
         app.add_message::<AdjacencyObserved>();
         app.add_systems(Update, accumulate_evidence);
 
