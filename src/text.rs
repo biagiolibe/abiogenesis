@@ -68,9 +68,10 @@ pub const HOW_TO_PLAY_SECTIONS: &[(&str, &str)] = &[
     ),
     (
         "Objectives and failure",
-        "Each world sets one goal (coexistence, surviving a hostile zone, or triggering a \
-         bloom). Total extinction retries the same world; running out of eras ends the run. \
-         You only need to decode the part of the matrix relevant to your objective.",
+        "Each world sets a sequence of 2-3 goals (coexistence, surviving a hostile zone, or \
+         triggering a bloom), cleared one after another. Total extinction retries the same \
+         world; running out of eras ends the run. You only need to decode the part of the \
+         matrix relevant to your objectives.",
     ),
 ];
 
@@ -217,6 +218,13 @@ pub const OBJECTIVE_CLEARED: &str = "Cleared!";
 pub const BLOOM_NOT_TRIGGERED: &str = "not yet triggered";
 pub const BLOOM_TRIGGERED: &str = "triggered!";
 
+/// "Objective i/N" (task 059): shown only when a world poses more than one
+/// objective in sequence, so the player knows there's more to come after the
+/// current one clears — `index` is 0-based internally, shown 1-based.
+pub fn objective_sequence_position(index: usize, total: usize) -> String {
+    format!("Objective {} / {total}", index + 1)
+}
+
 pub fn zone_label(zone: ZoneKind) -> &'static str {
     match zone {
         ZoneKind::Toxic => "toxic zone",
@@ -272,6 +280,16 @@ pub fn log_entry_line(era: u32, text: &str) -> String {
 
 pub fn extinction_message(species_label: &str) -> String {
     format!("{species_label} went extinct")
+}
+
+/// A world's objective sequence (task 059) advanced past a non-final entry —
+/// `index` is the newly-current objective's 0-based position, shown 1-based
+/// to match `objective_sequence_position`'s HUD display. Deliberately
+/// doesn't describe the new objective's own content: the HUD's objective
+/// panel already shows that in full; this log line only needs to mark the
+/// transition happened.
+pub fn objective_advanced_message(index: usize) -> String {
+    format!("Objective cleared — moving on to objective {}", index + 1)
 }
 
 /// Reported the same way `extinction_message` is (a `LogEntry` with this

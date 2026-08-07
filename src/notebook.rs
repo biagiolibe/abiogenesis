@@ -9,6 +9,7 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
 use abiogenesis::config::SimConfig;
+use abiogenesis::objectives::ObjectiveAdvanced;
 use abiogenesis::sim::{AdjacencyObserved, OrganismDied, SpeciesExtinct};
 use abiogenesis::state::GameState;
 use abiogenesis::world::{SimWorld, SpeciesId, TagId, TagSlot};
@@ -249,6 +250,7 @@ fn record_events(
     world: Res<SimWorld>,
     mut extinctions: MessageReader<SpeciesExtinct>,
     mut deaths: MessageReader<OrganismDied>,
+    mut objectives_advanced: MessageReader<ObjectiveAdvanced>,
     mut placed: ResMut<PlayerPlacedCells>,
     mut log: ResMut<ObservationLog>,
 ) {
@@ -257,6 +259,14 @@ fn record_events(
             era: world.era,
             species: Some(event.species),
             text: text::extinction_message(&species_label(event.species)),
+        });
+    }
+
+    for event in objectives_advanced.read() {
+        log.entries.push(LogEntry {
+            era: world.era,
+            species: None,
+            text: text::objective_advanced_message(event.index),
         });
     }
 
@@ -631,6 +641,7 @@ mod tests {
         app.init_resource::<PlayerPlacedCells>();
         app.add_message::<SpeciesExtinct>();
         app.add_message::<OrganismDied>();
+        app.add_message::<ObjectiveAdvanced>();
         app.add_systems(Update, record_events);
         app
     }
@@ -653,6 +664,30 @@ mod tests {
         assert_eq!(log.entries.len(), 1);
         assert_eq!(log.entries[0].era, 3);
         assert!(log.entries[0].text.contains("species 2"));
+    }
+
+    #[test]
+    fn objective_advanced_appends_a_log_entry() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.era = 5;
+        let mut app = app_for_record_events(world);
+
+        app.world_mut()
+            .resource_mut::<Messages<ObjectiveAdvanced>>()
+            .write(ObjectiveAdvanced {
+                index: 1,
+                objective: abiogenesis::objectives::Objective::TriggerBloom {
+                    species: SpeciesId(0),
+                    population_threshold: 8,
+                },
+            });
+        app.update();
+
+        let log = app.world().resource::<ObservationLog>();
+        assert_eq!(log.entries.len(), 1);
+        assert_eq!(log.entries[0].era, 5);
+        assert_eq!(log.entries[0].species, None);
     }
 
     #[test]

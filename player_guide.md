@@ -91,13 +91,13 @@ Once the accumulated evidence for a tag pair crosses a threshold, that relations
 
 ## Objectives, victory, and failure
 
-Every world sets one concrete goal, shown in the HUD, one of:
+Every world sets a **sequence of goals** — 2 in the early worlds, 3 once the difficulty ramps up — shown in the HUD one at a time ("Objective i / N"). Each is one of:
 
 - **Coexistence** — sustain N species at once for a number of eras.
 - **Survive in a hostile zone** — get a species to survive in the world's toxic zone.
 - **Trigger a bloom** — grow a specific species past a population threshold.
 
-Meet it, and you move to the next world: more active tags, a meaner matrix, a harsher environment.
+Clearing one objective moves you straight to the next in the same world — the world itself only clears once every objective in the sequence has. Meet the last one, and you move to the next world: more active tags, a meaner matrix, a harsher environment.
 
 **Two ways a world goes wrong:**
 - **Total extinction** — every organism dies. This retries the *same* world (same difficulty, fresh random draw), not your whole run — one bad world doesn't end everything you've built.

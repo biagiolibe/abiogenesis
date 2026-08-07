@@ -328,7 +328,9 @@ fn hud_panel(
                 ui.strong(text::HEADING_OBJECTIVE);
                 objective_panel(
                     ui,
-                    objective.0.as_ref(),
+                    objective.current(),
+                    objective.index,
+                    objective.total(),
                     &objective_progress,
                     config.time.era_ticks,
                 );
@@ -444,6 +446,8 @@ fn viewport_hint(
 fn objective_panel(
     ui: &mut egui::Ui,
     objective: Option<&Objective>,
+    index: usize,
+    total: usize,
     progress: &ObjectiveProgress,
     era_ticks: u32,
 ) {
@@ -451,6 +455,10 @@ fn objective_panel(
         ui.weak(text::NO_OBJECTIVE);
         return;
     };
+
+    if total > 1 {
+        ui.weak(text::objective_sequence_position(index, total));
+    }
 
     let (description, fraction, bar_text) = match *objective {
         Objective::Coexistence { min_species, ticks } => {

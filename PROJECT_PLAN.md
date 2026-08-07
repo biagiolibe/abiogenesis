@@ -178,7 +178,7 @@ Four observations from a further playtest session, after 057/058 landed. Two wer
 
 - `[x]` Bugfix — `Splice`-created species were invisible in the notebook: no `LogEntry` was ever pushed, unlike every other salient event (deaths, extinctions, matrix confirmations). `apply_splice` now logs the creation via `text::species_created_message`.
 - `[x]` Bugfix — `Decomposer` was structurally unreachable within a single run at default config: `add_bonus_species`'s `i % 2 == 0` rule restarted `i` at 0 on every independent call site (`generate_starting_palette`'s fixed slot, `build_world`'s separate meta-progression bonus), so the shipped default (`extra_available_species_count = 1`) always resolved to `Predator`. Replaced with a per-slot random draw from the world's own seeded RNG.
-- `[ ]` 059 — Sequential per-world objectives: resolved after a follow-up design discussion into a scoped task — worlds get 2 objectives at the easy end of the difficulty curve, 3 at the hard end (ramped like every other `WorldParams` field), cleared in sequence rather than ending the world on the first; `era_budget` retuned 40/25 → 60/45 to compensate for the extra objectives → [059](tasks/059-objective-pacing-design.md)
+- `[x]` 059 — Sequential per-world objectives: worlds pose 2 objectives at the easy end of the difficulty curve, 3 at the hard end (`WorldParams::objective_count`, ramped like every other field), cleared in order via `CurrentObjective { objectives, index }` — clearing a non-final objective advances `index` and resets `ObjectiveProgress` instead of ending the world, logged via a new `ObjectiveAdvanced` message; no two consecutive objectives share a kind; `era_budget` retuned 40/25 → 60/45 to compensate → [059](tasks/done/059-objective-pacing-design.md)
 
 ### 🎚️ Final tuning — *the real art*
 
@@ -218,4 +218,4 @@ Four observations from a further playtest session, after 057/058 landed. Two wer
 
 ---
 
-*Last updated: 2026-08-07 (task 059 approved and scoped: sequential 2→3 objectives per world, era budget retuned to compensate)*
+*Last updated: 2026-08-07 (task 059 completed: sequential 2→3 objectives per world, era budget retuned to compensate)*

@@ -104,8 +104,8 @@ impl Default for TimeConfig {
     fn default() -> Self {
         Self {
             era_ticks: 25,
-            era_budget_early: 40,
-            era_budget_late: 25,
+            era_budget_early: 60,
+            era_budget_late: 45,
             point_budget_per_era: 3,
             action_costs: ActionCosts::default(),
             era_tick_hz: 8.0,
@@ -281,6 +281,12 @@ pub struct DifficultyConfig {
     pub objective_severity_early: f32,
     /// Objective severity multiplier at the late endpoint.
     pub objective_severity_late: f32,
+    /// How many objectives a world poses in sequence at the run's start
+    /// (task 059) — a world only clears once every one of them has, in
+    /// order.
+    pub objective_count_early: u32,
+    /// How many objectives a world poses in sequence at the late endpoint.
+    pub objective_count_late: u32,
 }
 
 impl Default for DifficultyConfig {
@@ -293,6 +299,8 @@ impl Default for DifficultyConfig {
             matrix_density_late: 0.6,
             objective_severity_early: 1.0,
             objective_severity_late: 2.0,
+            objective_count_early: 2,
+            objective_count_late: 3,
         }
     }
 }

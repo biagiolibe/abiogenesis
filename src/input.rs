@@ -6,8 +6,10 @@ use bevy::camera::Camera;
 use bevy::prelude::*;
 
 use abiogenesis::config::SimConfig;
+use abiogenesis::objectives::{apply_tick_outcome, ObjectiveOutcomeParams};
+#[cfg(test)]
 use abiogenesis::objectives::{
-    apply_tick_outcome, CurrentObjective, CurrentWorldOutcome, ObjectiveProgress,
+    CurrentObjective, CurrentWorldOutcome, ObjectiveAdvanced, ObjectiveProgress,
 };
 use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::{
@@ -113,12 +115,7 @@ fn single_tick(
     mut extinct: MessageWriter<SpeciesExtinct>,
     mut adjacencies: MessageWriter<AdjacencyObserved>,
     mut era_completed: MessageWriter<EraCompleted>,
-    objective: Res<CurrentObjective>,
-    mut objective_progress: ResMut<ObjectiveProgress>,
-    mut outcome: ResMut<CurrentWorldOutcome>,
-    run_progress: Res<RunProgress>,
-    mut meta: ResMut<MetaProgress>,
-    mut next_game_state: ResMut<NextState<GameState>>,
+    mut objective_outcome: ObjectiveOutcomeParams,
 ) {
     if *era_state.get() == EraState::Advancing {
         return;
@@ -139,16 +136,7 @@ fn single_tick(
     died.write_batch(events.deaths);
     extinct.write_batch(events.extinctions);
     adjacencies.write_batch(events.adjacencies);
-    apply_tick_outcome(
-        &world,
-        objective.0.as_ref(),
-        &mut objective_progress,
-        &mut outcome,
-        &run_progress,
-        &mut meta,
-        &config,
-        &mut next_game_state,
-    );
+    apply_tick_outcome(&world, &config, &mut objective_outcome);
 }
 
 /// `r`: reseeds the *current* world (same `world_index`, so the same
@@ -771,6 +759,7 @@ mod tests {
         app.add_message::<SpeciesExtinct>();
         app.add_message::<AdjacencyObserved>();
         app.add_message::<EraCompleted>();
+        app.add_message::<ObjectiveAdvanced>();
         app.insert_resource(CurrentObjective::default());
         app.insert_resource(ObjectiveProgress::default());
         app.insert_resource(CurrentWorldOutcome::default());

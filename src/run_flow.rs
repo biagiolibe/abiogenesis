@@ -68,7 +68,7 @@ pub fn start_world(
     era_next_state: &mut NextState<EraState>,
     reset: &mut WorldResetParams,
 ) {
-    let (new_world, new_objective) =
+    let (new_world, new_objectives) =
         build_world(seed, world_index, config, bonus_available_species);
     *world = new_world;
 
@@ -92,7 +92,7 @@ pub fn start_world(
     // 0 elapsed, not a large "already expired" value.
     reset.isolation_hint.text = None;
 
-    *reset.objective = CurrentObjective(Some(new_objective));
+    *reset.objective = CurrentObjective::new(new_objectives);
     *reset.objective_progress = ObjectiveProgress::default();
     *reset.outcome = CurrentWorldOutcome::default();
 }
@@ -170,7 +170,7 @@ mod tests {
     /// parameter ceiling), so its fields can no longer be assembled from
     /// plain owned locals the way the pre-054 tuple-of-resources helper did.
     fn resource_world(
-        objective: Option<abiogenesis::objectives::Objective>,
+        objectives: Vec<abiogenesis::objectives::Objective>,
         objective_progress: ObjectiveProgress,
         outcome: CurrentWorldOutcome,
     ) -> World {
@@ -183,7 +183,7 @@ mod tests {
         ecs_world.insert_resource(PlayerPlacedCells::default());
         ecs_world.insert_resource(NotebookHasUnseenConfirmation::default());
         ecs_world.insert_resource(IsolationHint::default());
-        ecs_world.insert_resource(CurrentObjective(objective));
+        ecs_world.insert_resource(CurrentObjective::new(objectives));
         ecs_world.insert_resource(objective_progress);
         ecs_world.insert_resource(outcome);
         ecs_world
@@ -198,7 +198,7 @@ mod tests {
     #[test]
     fn two_consecutive_world_cleared_transitions_advance_and_match_build_world() {
         let config = SimConfig::default();
-        let (mut world, objective) = build_world(123, 0, &config, 0);
+        let (mut world, objectives) = build_world(123, 0, &config, 0);
         let mut run_progress = RunProgress {
             run_seed: 123,
             world_index: 0,
@@ -209,7 +209,7 @@ mod tests {
         let mut era_progress = EraProgress::default();
         let mut era_next_state = NextState::default();
         let mut ecs_world = resource_world(
-            Some(objective),
+            objectives,
             ObjectiveProgress::default(),
             CurrentWorldOutcome::default(),
         );
@@ -220,7 +220,7 @@ mod tests {
         // without going through `advance_to_next_world` at all.
         let mut reference_world = build_world(123, 0, &config, 0).0;
         let expected_seed_1 = reference_world.next_seed();
-        let (expected_world_1, expected_objective_1) = build_world(expected_seed_1, 1, &config, 0);
+        let (expected_world_1, expected_objectives_1) = build_world(expected_seed_1, 1, &config, 0);
 
         advance_to_next_world(
             &mut world,
@@ -241,7 +241,8 @@ mod tests {
             world_params(1, &config).active_tag_count as usize,
             "world 1 must actually use world_index 1's difficulty parameters"
         );
-        assert_eq!(reset.objective.0, Some(expected_objective_1));
+        assert_eq!(reset.objective.objectives, expected_objectives_1);
+        assert_eq!(reset.objective.index, 0);
         assert_eq!(reset.objective_progress.consecutive_ticks, 0);
         assert!(!reset.objective_progress.satisfied);
         assert_eq!(
@@ -253,7 +254,7 @@ mod tests {
         // the "two cycles" the acceptance criterion asks for.
         reference_world = expected_world_1;
         let expected_seed_2 = reference_world.next_seed();
-        let (expected_world_2, expected_objective_2) = build_world(expected_seed_2, 2, &config, 0);
+        let (expected_world_2, expected_objectives_2) = build_world(expected_seed_2, 2, &config, 0);
 
         advance_to_next_world(
             &mut world,
@@ -268,7 +269,7 @@ mod tests {
         assert_eq!(run_progress.worlds_cleared, 2);
         assert_eq!(world.active_tags, expected_world_2.active_tags);
         assert_eq!(world.matrix, expected_world_2.matrix);
-        assert_eq!(reset.objective.0, Some(expected_objective_2));
+        assert_eq!(reset.objective.objectives, expected_objectives_2);
     }
 
     /// Task 054's confirmation badge is a per-world notification: its
@@ -279,7 +280,7 @@ mod tests {
     #[test]
     fn advancing_to_the_next_world_clears_a_stale_unseen_confirmation_badge() {
         let config = SimConfig::default();
-        let (mut world, objective) = build_world(11, 0, &config, 0);
+        let (mut world, objectives) = build_world(11, 0, &config, 0);
         let mut run_progress = RunProgress {
             run_seed: 11,
             world_index: 0,
@@ -290,7 +291,7 @@ mod tests {
         let mut era_progress = EraProgress::default();
         let mut era_next_state = NextState::default();
         let mut ecs_world = resource_world(
-            Some(objective),
+            objectives,
             ObjectiveProgress::default(),
             CurrentWorldOutcome::default(),
         );
@@ -318,7 +319,7 @@ mod tests {
     #[test]
     fn advancing_to_the_next_world_clears_a_stale_isolation_hint() {
         let config = SimConfig::default();
-        let (mut world, objective) = build_world(13, 0, &config, 0);
+        let (mut world, objectives) = build_world(13, 0, &config, 0);
         let mut run_progress = RunProgress {
             run_seed: 13,
             world_index: 0,
@@ -329,7 +330,7 @@ mod tests {
         let mut era_progress = EraProgress::default();
         let mut era_next_state = NextState::default();
         let mut ecs_world = resource_world(
-            Some(objective),
+            objectives,
             ObjectiveProgress::default(),
             CurrentWorldOutcome::default(),
         );
@@ -356,7 +357,7 @@ mod tests {
     #[test]
     fn matrix_knowledge_is_resized_to_the_new_worlds_active_tag_count() {
         let config = SimConfig::default();
-        let (mut world, objective) = build_world(7, 0, &config, 0);
+        let (mut world, objectives) = build_world(7, 0, &config, 0);
         let mut run_progress = RunProgress {
             run_seed: 7,
             world_index: 0,
@@ -367,7 +368,7 @@ mod tests {
         let mut era_progress = EraProgress::default();
         let mut era_next_state = NextState::default();
         let mut ecs_world = resource_world(
-            Some(objective),
+            objectives,
             ObjectiveProgress::default(),
             CurrentWorldOutcome::default(),
         );
@@ -400,7 +401,7 @@ mod tests {
     #[test]
     fn retry_world_rebuilds_the_identical_world_and_leaves_run_progress_untouched() {
         let config = SimConfig::default();
-        let (mut world, objective) = build_world(99, 1, &config, 0);
+        let (mut world, objectives) = build_world(99, 1, &config, 0);
         let run_progress = RunProgress {
             run_seed: 42,
             world_index: 1,
@@ -411,7 +412,7 @@ mod tests {
         let mut era_progress = EraProgress::default();
         let mut era_next_state = NextState::default();
         let mut ecs_world = resource_world(
-            Some(objective),
+            objectives,
             ObjectiveProgress {
                 consecutive_ticks: 7,
                 satisfied: false,
@@ -421,7 +422,7 @@ mod tests {
         let mut state = SystemState::<WorldResetParams>::new(&mut ecs_world);
         let mut reset = state.get_mut(&mut ecs_world).unwrap();
 
-        let (expected_world, expected_objective) = build_world(99, 1, &config, 0);
+        let (expected_world, expected_objectives) = build_world(99, 1, &config, 0);
 
         retry_world(
             &mut world,
@@ -437,7 +438,8 @@ mod tests {
         assert_eq!(run_progress.worlds_cleared, 3);
         assert_eq!(world.active_tags, expected_world.active_tags);
         assert_eq!(world.matrix, expected_world.matrix);
-        assert_eq!(reset.objective.0, Some(expected_objective));
+        assert_eq!(reset.objective.objectives, expected_objectives);
+        assert_eq!(reset.objective.index, 0);
         assert_eq!(reset.objective_progress.consecutive_ticks, 0);
         assert_eq!(reset.outcome.0, WorldOutcome::Ongoing);
     }

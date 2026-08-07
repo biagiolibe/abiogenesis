@@ -5,6 +5,7 @@
 // is deliberately testable against a hand-built `SimWorld`, independent of
 // worldgen.
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 use crate::config::SimConfig;
@@ -85,11 +86,54 @@ pub struct ObjectiveProgress {
     pub satisfied: bool,
 }
 
-/// The objective assigned to the current world. `None` until task 042's
-/// worldgen assigns one (or a test sets one directly) — the driving system
-/// below is a no-op while empty.
-#[derive(Resource, Debug, Clone, Copy, Default)]
-pub struct CurrentObjective(pub Option<Objective>);
+/// The current world's objective sequence (task 059, GDD §8/§9): worlds pose
+/// 2-3 objectives in order, not just one — clearing `objectives[index]`
+/// advances `index` rather than ending the world, until the last one clears.
+/// Empty until task 042/059's worldgen assigns a sequence (or a test sets one
+/// directly) — the driving system below is a no-op while empty.
+#[derive(Resource, Debug, Clone, Default)]
+pub struct CurrentObjective {
+    pub objectives: Vec<Objective>,
+    pub index: usize,
+}
+
+impl CurrentObjective {
+    pub fn new(objectives: Vec<Objective>) -> Self {
+        Self {
+            objectives,
+            index: 0,
+        }
+    }
+
+    /// The objective currently being evaluated, `None` once every objective
+    /// in the sequence has cleared (shouldn't normally be observed — the
+    /// world transitions to `WorldCleared` the same tick the last one does —
+    /// but kept total rather than panicking on an out-of-range index).
+    pub fn current(&self) -> Option<&Objective> {
+        self.objectives.get(self.index)
+    }
+
+    /// Whether `index` points at the last objective in the sequence — the
+    /// only one whose clearing should end the world instead of advancing.
+    pub fn is_last(&self) -> bool {
+        self.index + 1 >= self.objectives.len()
+    }
+
+    pub fn total(&self) -> usize {
+        self.objectives.len()
+    }
+}
+
+/// A world advanced from one objective to the next in its sequence (task
+/// 059) without ending — `index` is the newly-current objective's position.
+/// Consumed by `notebook.rs::record_events` to log the transition, the same
+/// way it already consumes `sim.rs`'s `SpeciesExtinct`/`OrganismDied`, rather
+/// than `objectives.rs` reaching into `ObservationLog` directly.
+#[derive(Debug, Clone, Copy, Message)]
+pub struct ObjectiveAdvanced {
+    pub index: usize,
+    pub objective: Objective,
+}
 
 /// The current world's outcome, as last computed by `evaluate`. A plain
 /// resource (not an event) since UI (task 043) and run-flow systems (task
@@ -268,6 +312,7 @@ impl Plugin for ObjectivesPlugin {
         app.init_resource::<CurrentObjective>()
             .init_resource::<ObjectiveProgress>()
             .init_resource::<CurrentWorldOutcome>()
+            .add_message::<ObjectiveAdvanced>()
             .add_systems(
                 FixedUpdate,
                 evaluate_current_objective
@@ -282,29 +327,47 @@ impl Plugin for ObjectivesPlugin {
 /// objectives need tick-granularity, not era-granularity; task 041's
 /// total-extinction check needs it too, so a mid-era wipeout doesn't wait
 /// for the era boundary). Runs even while no objective has been assigned
-/// yet (`CurrentObjective(None)`, before task 042's worldgen wires one in):
-/// `evaluate_world` still checks failure conditions in that case.
+/// yet (an empty `CurrentObjective`, before task 042/059's worldgen wires a
+/// sequence in): `evaluate_world` still checks failure conditions in that case.
 /// Evaluates the current objective against `world`'s present state and
 /// applies whatever state transition the result implies. Called once per
 /// simulated tick — shared by `evaluate_current_objective` (the
 /// `FixedUpdate`/`Advancing` system driving auto-play eras) and `input.rs`'s
 /// `single_tick` (the `s` key's manual step) so a world can only clear or
 /// fail on ticks that actually happened, regardless of which key drove them.
-#[allow(clippy::too_many_arguments)]
+///
+/// Bundled into one `SystemParam` (mirrors `run_flow.rs`'s `WorldResetParams`,
+/// task 054): `single_tick` already sits close to Bevy's per-system parameter
+/// ceiling on its own tick-advancement/message-writer parameters, and task
+/// 059 adding `ObjectiveAdvanced`'s `MessageWriter` on top of the existing
+/// five objective/outcome fields pushed it over — bundling here is what lets
+/// both `evaluate_current_objective` and `single_tick` share this logic
+/// without either exceeding the ceiling.
+#[derive(SystemParam)]
+pub struct ObjectiveOutcomeParams<'w> {
+    pub objective: ResMut<'w, CurrentObjective>,
+    pub progress: ResMut<'w, ObjectiveProgress>,
+    pub outcome: ResMut<'w, CurrentWorldOutcome>,
+    pub run_progress: Res<'w, RunProgress>,
+    pub meta: ResMut<'w, MetaProgress>,
+    pub next_game_state: ResMut<'w, NextState<GameState>>,
+    pub advanced: MessageWriter<'w, ObjectiveAdvanced>,
+}
+
 pub fn apply_tick_outcome(
     world: &SimWorld,
-    objective: Option<&Objective>,
-    progress: &mut ObjectiveProgress,
-    outcome: &mut CurrentWorldOutcome,
-    run_progress: &RunProgress,
-    meta: &mut MetaProgress,
     config: &SimConfig,
-    next_game_state: &mut NextState<GameState>,
+    params: &mut ObjectiveOutcomeParams,
 ) {
-    let era_budget = world_params(run_progress.world_index, config).era_budget;
-    let previous_outcome = outcome.0;
-    let new_outcome = evaluate_world(objective, world, progress, era_budget);
-    outcome.0 = new_outcome;
+    let era_budget = world_params(params.run_progress.world_index, config).era_budget;
+    let previous_outcome = params.outcome.0;
+    let new_outcome = evaluate_world(
+        params.objective.current(),
+        world,
+        &mut params.progress,
+        era_budget,
+    );
+    params.outcome.0 = new_outcome;
 
     // Only act on the `Ongoing -> {Failed, Cleared}` edge, not every tick
     // the world spends already concluded. `FixedUpdate` can run this system
@@ -323,40 +386,44 @@ pub fn apply_tick_outcome(
         // same world instead. `worlds_cleared` is untouched, so `meta`
         // doesn't absorb anything here; the run isn't over.
         WorldOutcome::Failed(FailureReason::TotalExtinction) => {
-            next_game_state.set(GameState::WorldFailed);
+            params.next_game_state.set(GameState::WorldFailed);
         }
         // Running out the era budget without meeting the objective is a
         // real, skill-based run-ending failure — unchanged from before 051.
         WorldOutcome::Failed(FailureReason::EraBudgetExhausted) => {
-            meta.absorb(run_progress.worlds_cleared);
-            next_game_state.set(GameState::Defeat);
+            params.meta.absorb(params.run_progress.worlds_cleared);
+            params.next_game_state.set(GameState::Defeat);
         }
-        WorldOutcome::Cleared => next_game_state.set(GameState::WorldCleared),
+        // Clearing the *last* objective in the sequence ends the world, same
+        // as before task 059. Clearing an earlier one (task 059) advances to
+        // the next objective with fresh progress instead, and resets
+        // `outcome` back to `Ongoing` so the `previous_outcome` guard above
+        // can still catch the *next* Ongoing -> {Failed, Cleared} edge —
+        // without this the world would look permanently "already concluded"
+        // and the final objective's own clearing would never fire.
+        WorldOutcome::Cleared if params.objective.is_last() => {
+            params.next_game_state.set(GameState::WorldCleared);
+        }
+        WorldOutcome::Cleared => {
+            params.objective.index += 1;
+            *params.progress = ObjectiveProgress::default();
+            params.outcome.0 = WorldOutcome::Ongoing;
+            let index = params.objective.index;
+            params.advanced.write(ObjectiveAdvanced {
+                index,
+                objective: params.objective.objectives[index],
+            });
+        }
         WorldOutcome::Ongoing => {}
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn evaluate_current_objective(
     world: Res<SimWorld>,
-    objective: Res<CurrentObjective>,
-    mut progress: ResMut<ObjectiveProgress>,
-    mut outcome: ResMut<CurrentWorldOutcome>,
-    run_progress: Res<RunProgress>,
-    mut meta: ResMut<MetaProgress>,
     config: Res<SimConfig>,
-    mut next_game_state: ResMut<NextState<GameState>>,
+    mut params: ObjectiveOutcomeParams,
 ) {
-    apply_tick_outcome(
-        &world,
-        objective.0.as_ref(),
-        &mut progress,
-        &mut outcome,
-        &run_progress,
-        &mut meta,
-        &config,
-        &mut next_game_state,
-    );
+    apply_tick_outcome(&world, &config, &mut params);
 }
 
 #[cfg(test)]

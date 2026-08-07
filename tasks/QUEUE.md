@@ -83,7 +83,7 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 059 | Sequential per-world objectives (2 → 3 across the difficulty curve), era budget retuned to compensate | none | [059](059-objective-pacing-design.md) |
+| `[x]` | 059 | Sequential per-world objectives (2 → 3 across the difficulty curve), era budget retuned to compensate | none | [059](done/059-objective-pacing-design.md) |
 
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
@@ -159,4 +159,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-07 (task 059 resolved into an approved, scoped task: sequential 2→3 objectives per world plus a retuned era budget, after a follow-up design discussion)*
+*Last updated: 2026-08-07 (task 059 completed and archived: sequential 2→3 objectives per world, era budget retuned 40/25 → 60/45)*

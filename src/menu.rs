@@ -138,7 +138,7 @@ fn parse_or_generate_seed(input: &str) -> u64 {
 /// no longer guarantees matches world 0.
 fn start_run(commands: &mut Commands, config: &SimConfig, meta: &MetaProgress, run_seed: u64) {
     let run_progress = RunProgress::start(run_seed, meta);
-    let (world, objective) = build_world(
+    let (world, objectives) = build_world(
         run_progress.world_seed,
         run_progress.world_index,
         config,
@@ -159,7 +159,7 @@ fn start_run(commands: &mut Commands, config: &SimConfig, meta: &MetaProgress, r
     });
     commands.insert_resource(SelectedSpecies(SpeciesId(0)));
     commands.insert_resource(SpliceDraft::default());
-    commands.insert_resource(CurrentObjective(Some(objective)));
+    commands.insert_resource(CurrentObjective::new(objectives));
     commands.insert_resource(ObjectiveProgress::default());
     commands.insert_resource(CurrentWorldOutcome::default());
 }

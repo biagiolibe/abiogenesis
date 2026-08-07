@@ -18,7 +18,7 @@ struct WorldSnapshot {
     active_tags: Vec<abiogenesis::world::TagId>,
     matrix: abiogenesis::world::TagMatrix,
     cells: Vec<abiogenesis::world::Cell>,
-    objective: Objective,
+    objectives: Vec<Objective>,
 }
 
 /// Plays `run_seed` through `WORLDS_TO_PLAY` consecutive worlds exactly as
@@ -30,7 +30,7 @@ fn play_run(run_seed: u64, config: &SimConfig) -> Vec<WorldSnapshot> {
     let mut seed = run_seed;
 
     for world_index in 0..WORLDS_TO_PLAY {
-        let (mut world, objective) = build_world(seed, world_index, config, 0);
+        let (mut world, objectives) = build_world(seed, world_index, config, 0);
         for _ in 0..TICKS_PER_WORLD {
             step(&mut world, config);
         }
@@ -39,7 +39,7 @@ fn play_run(run_seed: u64, config: &SimConfig) -> Vec<WorldSnapshot> {
             active_tags: world.active_tags.clone(),
             matrix: world.matrix.clone(),
             cells: world.cells.clone(),
-            objective,
+            objectives,
         });
     }
 
@@ -67,8 +67,8 @@ fn run_reproduces_the_same_world_sequence_from_the_same_run_seed() {
             "world {world_index}'s grid state after {TICKS_PER_WORLD} ticks must match"
         );
         assert_eq!(
-            world_a.objective, world_b.objective,
-            "world {world_index}'s generated objective must match"
+            world_a.objectives, world_b.objectives,
+            "world {world_index}'s generated objective sequence must match"
         );
     }
 }

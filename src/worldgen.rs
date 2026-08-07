@@ -22,8 +22,9 @@ pub struct WorldParams {
     /// How many tags from the global pool are active in this world (GDD §9:
     /// 5 -> ~8 across the curve).
     pub active_tag_count: u32,
-    /// How many eras this world's run may take before failing (GDD §8: 40 ->
-    /// 25 across the curve).
+    /// How many eras this world's run may take before failing (GDD §8: 60 ->
+    /// 45 across the curve — raised from the original 40 -> 25 by task 059 to
+    /// compensate for `objective_count` growing from 1 to 2-3 per world).
     pub era_budget: u32,
     /// Toxic zone width in cells (GDD §9: "larger toxic zones").
     pub toxic_zone_width: u32,
@@ -38,6 +39,11 @@ pub struct WorldParams {
     /// Multiplier task 042 applies to objective thresholds (GDD §9:
     /// "stricter objectives").
     pub objective_severity: f32,
+    /// How many objectives (task 059) this world poses in sequence, 2 -> 3
+    /// across the curve. A world only clears once every one of them has, in
+    /// order — the lever that makes a world last longer without needing an
+    /// even harsher single objective.
+    pub objective_count: u32,
 }
 
 /// Computes `WorldParams` for `world_index` (the run's `RunProgress::world_index`,
@@ -66,6 +72,11 @@ pub fn world_params(world_index: u32, config: &SimConfig) -> WorldParams {
         objective_severity: lerp_f32(
             difficulty.objective_severity_early,
             difficulty.objective_severity_late,
+            t,
+        ),
+        objective_count: lerp_u32(
+            difficulty.objective_count_early,
+            difficulty.objective_count_late,
             t,
         ),
     }
@@ -200,44 +211,69 @@ fn scale_severity(base: u32, severity: f32) -> u32 {
 /// Builds one full world of a run — grid, species, matrix, environment
 /// (`SimWorld::new_for_world`), starting palette (`generate_starting_palette`),
 /// `bonus_available_species` extra species earned via meta-progression
-/// (`add_bonus_species`, task 046), and its `Objective` (`generate_objective`)
-/// — in the one order each step requires (bonus species join the pool
-/// `Objective` generation can pick from; objective generation itself reads
-/// whatever species the world ended up with). The single entry point task
-/// 044's main menu (first world) and task 045's world transition (every
-/// later world) both call, so "how a world comes into being" has exactly
-/// one definition.
+/// (`add_bonus_species`, task 046), and its objective sequence
+/// (`generate_objectives`) — in the one order each step requires (bonus
+/// species join the pool objective generation can pick from; objective
+/// generation itself reads whatever species the world ended up with). The
+/// single entry point task 044's main menu (first world) and task 045's
+/// world transition (every later world) both call, so "how a world comes
+/// into being" has exactly one definition.
 pub fn build_world(
     seed: u64,
     world_index: u32,
     config: &SimConfig,
     bonus_available_species: u32,
-) -> (SimWorld, Objective) {
+) -> (SimWorld, Vec<Objective>) {
     let mut world = SimWorld::new_for_world(seed, world_index, config);
     generate_starting_palette(&mut world, config);
     add_bonus_species(&mut world, config, bonus_available_species);
     let params = world_params(world_index, config);
-    let objective = generate_objective(&mut world, &params, config);
-    (world, objective)
+    let objectives = generate_objectives(&mut world, &params, config);
+    (world, objectives)
 }
 
-/// Chooses and parametrizes this world's `Objective` (task 040, GDD §8/§9),
-/// deterministic from the world's own seeded RNG — same seed, same
-/// objective. Must run after `generate_starting_palette` (task 039):
+/// Chooses and parametrizes this world's objective sequence (task 040/059,
+/// GDD §8/§9): `params.objective_count` objectives (2 -> 3 across the
+/// difficulty curve), cleared in order — a world only clears once every one
+/// of them has. Deterministic from the world's own seeded RNG — same seed,
+/// same sequence. Must run after `generate_starting_palette` (task 039):
 /// `Coexistence`'s `min_species` cap and `SurviveIn`/`TriggerBloom`'s
 /// `species` pick both read the species this world actually ended up with.
 ///
+/// No two *consecutive* objectives share an `ObjectiveKind` — each slot
+/// excludes the previous slot's pick from its own candidates, so a run of
+/// e.g. `TriggerBloom, TriggerBloom, TriggerBloom` can't happen even though
+/// the RNG alone would occasionally produce it. When only one kind is
+/// actually available (e.g. fewer than 2 species and no toxic zone, so only
+/// `TriggerBloom` is coherent at all), the exclusion is skipped rather than
+/// leaving an empty candidate list.
+pub fn generate_objectives(
+    world: &mut SimWorld,
+    params: &WorldParams,
+    config: &SimConfig,
+) -> Vec<Objective> {
+    let mut objectives = Vec::with_capacity(params.objective_count as usize);
+    let mut previous_kind = None;
+    for _ in 0..params.objective_count {
+        let (objective, kind) = generate_one_objective(world, params, config, previous_kind);
+        objectives.push(objective);
+        previous_kind = Some(kind);
+    }
+    objectives
+}
+
 /// Coherence (task 042's acceptance criteria) is enforced by construction,
 /// not by rejecting a bad draw after the fact: `SurviveIn`'s toxic zone is
 /// only ever a candidate when `params` says this world actually has one,
 /// and `Coexistence`'s `min_species` is only ever a candidate — then
 /// clamped — against the species pool this exact world generated, so it can
 /// never ask for more coexisting species than exist to place.
-pub fn generate_objective(
+fn generate_one_objective(
     world: &mut SimWorld,
     params: &WorldParams,
     config: &SimConfig,
-) -> Objective {
+    exclude: Option<ObjectiveKind>,
+) -> (Objective, ObjectiveKind) {
     let severity = params.objective_severity;
     let species_count = world.species.len() as u32;
     let has_toxic_zone = params.toxic_zone_width > 0 && params.toxic_zone_height > 0;
@@ -249,10 +285,13 @@ pub fn generate_objective(
     if has_toxic_zone {
         candidates.push(ObjectiveKind::SurviveIn);
     }
+    if candidates.len() > 1 {
+        candidates.retain(|&kind| Some(kind) != exclude);
+    }
 
     let pick = candidates[world.rng_mut().random_range(0..candidates.len())];
     let obj = &config.objectives;
-    match pick {
+    let objective = match pick {
         ObjectiveKind::Coexistence => Objective::Coexistence {
             min_species: scale_severity(obj.coexistence_min_species_base, severity)
                 .clamp(2, species_count),
@@ -270,7 +309,8 @@ pub fn generate_objective(
                 severity,
             ),
         },
-    }
+    };
+    (objective, pick)
 }
 
 #[cfg(test)]
@@ -480,13 +520,49 @@ mod tests {
 
         let mut a = SimWorld::new(42, &config);
         generate_starting_palette(&mut a, &config);
-        let objective_a = generate_objective(&mut a, &params, &config);
+        let objectives_a = generate_objectives(&mut a, &params, &config);
 
         let mut b = SimWorld::new(42, &config);
         generate_starting_palette(&mut b, &config);
-        let objective_b = generate_objective(&mut b, &params, &config);
+        let objectives_b = generate_objectives(&mut b, &params, &config);
 
-        assert_eq!(objective_a, objective_b);
+        assert_eq!(objectives_a, objectives_b);
+    }
+
+    #[test]
+    fn objective_count_ramps_from_two_to_three() {
+        let config = SimConfig::default();
+        assert_eq!(
+            world_params(0, &config).objective_count,
+            config.difficulty.objective_count_early
+        );
+        assert_eq!(
+            world_params(config.difficulty.ramp_worlds, &config).objective_count,
+            config.difficulty.objective_count_late
+        );
+    }
+
+    #[test]
+    fn generated_objectives_never_repeat_the_same_kind_consecutively() {
+        let config = SimConfig::default();
+        for seed in 0..50u64 {
+            let mut world = SimWorld::new(seed, &config);
+            generate_starting_palette(&mut world, &config);
+            // A late-endpoint world both has a toxic zone and enough species
+            // for every `ObjectiveKind` to be a live candidate every slot —
+            // otherwise a run of repeats could be the *only* coherent
+            // sequence rather than evidence of a missing exclusion.
+            let params = world_params(config.difficulty.ramp_worlds, &config);
+            let objectives = generate_objectives(&mut world, &params, &config);
+
+            for pair in objectives.windows(2) {
+                assert_ne!(
+                    std::mem::discriminant(&pair[0]),
+                    std::mem::discriminant(&pair[1]),
+                    "seed {seed}: consecutive objectives share a kind: {pair:?}"
+                );
+            }
+        }
     }
 
     /// Task 049: the HUD displays sustained-objective progress in whole
@@ -530,7 +606,7 @@ mod tests {
             params.toxic_zone_width = 0;
             params.toxic_zone_height = 0;
             params.objective_severity = severity;
-            generate_objective(&mut world, &params, &config)
+            generate_one_objective(&mut world, &params, &config, None).0
         };
 
         let early = build(config.difficulty.objective_severity_early);
@@ -565,13 +641,13 @@ mod tests {
             let params = world_params(0, &config);
             let species_count = world.species.len() as u32;
 
-            if let Objective::Coexistence { min_species, .. } =
-                generate_objective(&mut world, &params, &config)
-            {
-                assert!(
-                    min_species <= species_count,
-                    "seed {seed}: min_species {min_species} exceeds the pool of {species_count}"
-                );
+            for objective in generate_objectives(&mut world, &params, &config) {
+                if let Objective::Coexistence { min_species, .. } = objective {
+                    assert!(
+                        min_species <= species_count,
+                        "seed {seed}: min_species {min_species} exceeds the pool of {species_count}"
+                    );
+                }
             }
         }
     }
@@ -586,11 +662,12 @@ mod tests {
             params.toxic_zone_width = 0;
             params.toxic_zone_height = 0;
 
-            let objective = generate_objective(&mut world, &params, &config);
-            assert!(
-                !matches!(objective, Objective::SurviveIn { .. }),
-                "seed {seed}: SurviveIn picked despite no toxic zone: {objective:?}"
-            );
+            for objective in generate_objectives(&mut world, &params, &config) {
+                assert!(
+                    !matches!(objective, Objective::SurviveIn { .. }),
+                    "seed {seed}: SurviveIn picked despite no toxic zone: {objective:?}"
+                );
+            }
         }
     }
 
@@ -603,15 +680,17 @@ mod tests {
             let params = world_params(0, &config);
             let species_count = world.species.len() as u32;
 
-            let objective = generate_objective(&mut world, &params, &config);
-            match objective {
-                Objective::SurviveIn { species, .. } | Objective::TriggerBloom { species, .. } => {
-                    assert!(
-                        (species.0 as u32) < species_count,
-                        "seed {seed}: species {species:?} out of bounds for pool of {species_count}"
-                    );
+            for objective in generate_objectives(&mut world, &params, &config) {
+                match objective {
+                    Objective::SurviveIn { species, .. }
+                    | Objective::TriggerBloom { species, .. } => {
+                        assert!(
+                            (species.0 as u32) < species_count,
+                            "seed {seed}: species {species:?} out of bounds for pool of {species_count}"
+                        );
+                    }
+                    Objective::Coexistence { .. } => {}
                 }
-                Objective::Coexistence { .. } => {}
             }
         }
     }
