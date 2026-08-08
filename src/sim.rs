@@ -38,6 +38,16 @@ pub struct SpeciesExtinct {
     pub species: SpeciesId,
 }
 
+/// A new organism was born via reproduction this tick (GDD §5.3's
+/// `repro_threshold` mechanic) — the real "an individual crossed the
+/// threshold" signal (task 063), mirroring `OrganismDied`/`SpeciesExtinct`'s
+/// existing event pattern rather than leaving births to be inferred from a
+/// population average.
+#[derive(Debug, Clone, Copy, Message)]
+pub struct OrganismBorn {
+    pub species: SpeciesId,
+}
+
 /// An era finished (TECH_DESIGN.md §4): `era` is `world.era` after the
 /// increment, i.e. how many eras this world has completed so far. The hook
 /// run-flow logic (failure conditions, task 041; world transition, task 045)
@@ -82,6 +92,7 @@ pub struct TickEvents {
     pub deaths: Vec<OrganismDied>,
     pub extinctions: Vec<SpeciesExtinct>,
     pub adjacencies: Vec<AdjacencyObserved>,
+    pub births: Vec<OrganismBorn>,
 }
 
 /// Advances the simulation by one tick: for each occupied cell, computes
@@ -363,6 +374,9 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
                         energy: new_energy - energy.repro_cost,
                         ..organism
                     });
+                    events.births.push(OrganismBorn {
+                        species: organism.species,
+                    });
                 }
             }
         }
@@ -453,6 +467,7 @@ impl Plugin for SimPlugin {
         app.add_message::<SpeciesExtinct>();
         app.add_message::<AdjacencyObserved>();
         app.add_message::<EraCompleted>();
+        app.add_message::<OrganismBorn>();
         app.add_systems(
             FixedUpdate,
             advance_tick
@@ -503,6 +518,7 @@ fn advance_tick(
     mut extinct: MessageWriter<SpeciesExtinct>,
     mut adjacencies: MessageWriter<AdjacencyObserved>,
     mut era_completed: MessageWriter<EraCompleted>,
+    mut born: MessageWriter<OrganismBorn>,
 ) {
     if progress.remaining() == 0 {
         return;
@@ -517,6 +533,7 @@ fn advance_tick(
     died.write_batch(events.deaths);
     extinct.write_batch(events.extinctions);
     adjacencies.write_batch(events.adjacencies);
+    born.write_batch(events.births);
     if progress.remaining() == 0 {
         next_state.set(EraState::Observing);
     }
@@ -659,6 +676,7 @@ mod tests {
         app.add_message::<SpeciesExtinct>();
         app.add_message::<AdjacencyObserved>();
         app.add_message::<EraCompleted>();
+        app.add_message::<OrganismBorn>();
         app.add_systems(Update, advance_tick.run_if(in_state(EraState::Advancing)));
 
         app.world_mut()

@@ -14,7 +14,7 @@ use abiogenesis::objectives::{
 use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::{
     tick_and_complete_era, ActionBudget, AdjacencyObserved, EraCompleted, EraProgress,
-    OrganismDied, SpeciesExtinct,
+    OrganismBorn, OrganismDied, SpeciesExtinct,
 };
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{Organism, SimWorld, SpeciesId};
@@ -115,6 +115,7 @@ fn single_tick(
     mut extinct: MessageWriter<SpeciesExtinct>,
     mut adjacencies: MessageWriter<AdjacencyObserved>,
     mut era_completed: MessageWriter<EraCompleted>,
+    mut born: MessageWriter<OrganismBorn>,
     mut objective_outcome: ObjectiveOutcomeParams,
 ) {
     if *era_state.get() == EraState::Advancing {
@@ -136,6 +137,7 @@ fn single_tick(
     died.write_batch(events.deaths);
     extinct.write_batch(events.extinctions);
     adjacencies.write_batch(events.adjacencies);
+    born.write_batch(events.births);
     apply_tick_outcome(&world, &config, &mut objective_outcome);
 }
 
@@ -712,6 +714,8 @@ mod tests {
         app.insert_resource(CurrentObjective::default());
         app.insert_resource(ObjectiveProgress::default());
         app.insert_resource(CurrentWorldOutcome::default());
+        app.insert_resource(crate::ui::PopulationTrends::default());
+        app.insert_resource(crate::notebook::BirthTally::default());
         app.add_systems(Update, reseed_world);
         app.update();
 
@@ -760,6 +764,7 @@ mod tests {
         app.add_message::<SpeciesExtinct>();
         app.add_message::<AdjacencyObserved>();
         app.add_message::<EraCompleted>();
+        app.add_message::<OrganismBorn>();
         app.add_message::<ObjectiveAdvanced>();
         app.insert_resource(CurrentObjective::default());
         app.insert_resource(ObjectiveProgress::default());

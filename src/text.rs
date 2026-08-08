@@ -184,13 +184,17 @@ pub fn action_tooltip(mode: ActionMode, cost: u32) -> String {
 pub const HEADING_POPULATION: &str = "Population";
 pub const NO_POPULATION: &str = "  (none)";
 
-pub fn population_line(
-    species_label: &str,
-    population: usize,
-    avg_energy: f32,
-    repro_threshold: f32,
-) -> String {
-    format!("  {species_label}: {population} · energy {avg_energy:.2}/{repro_threshold:.1}")
+/// The reproduction-threshold comparison this line used to show
+/// (`avg_energy/repro_threshold`) compared a population *average* against a
+/// per-*individual* trait — misleading, since the average could sit well
+/// below threshold while individual organisms had already crossed it (task
+/// 063). `repro_threshold` moved to `species_catalog_line`, where it
+/// belongs as a static species trait; this line keeps the raw average and
+/// lets `ui.rs` render the era-over-era trend (`PopulationTrend`) as a
+/// separate colored glyph alongside it, the same way it already renders the
+/// species-color swatch separately from this string.
+pub fn population_line(species_label: &str, population: usize, avg_energy: f32) -> String {
+    format!("  {species_label}: {population} · energy {avg_energy:.2}")
 }
 
 // --- HUD — seed palette group ---
@@ -296,6 +300,16 @@ pub fn extinction_message(species_label: &str) -> String {
     format!("{species_label} went extinct")
 }
 
+/// A curated once-per-era summary of `OrganismBorn` events (task 063) — the
+/// real "individuals crossed `repro_threshold`" signal, replacing the old
+/// misleading average-vs-threshold comparison on the HUD. Deliberately the
+/// opposite curation choice from `observation_message` (task 061, which
+/// logs every single adjacency): a zero-birth species gets no line, keeping
+/// this a summary rather than a per-birth flood.
+pub fn birth_log_message(species_label: &str, count: u32) -> String {
+    format!("{species_label}: +{count} births this era")
+}
+
 /// A world's objective sequence (task 059) advanced past a non-final entry —
 /// `index` is the newly-current objective's 0-based position, shown 1-based
 /// to match `objective_sequence_position`'s HUD display. Deliberately
@@ -389,9 +403,10 @@ pub fn species_catalog_line(
     temp_optimum: f32,
     temp_tolerance: f32,
     temp_label: &str,
+    repro_threshold: f32,
 ) -> String {
     format!(
-        "{species_label}: {metabolism:?} · temp {temp_optimum:.2}±{temp_tolerance:.2} ({temp_label})"
+        "{species_label}: {metabolism:?} · temp {temp_optimum:.2}±{temp_tolerance:.2} ({temp_label}) · repro ≥{repro_threshold:.1}"
     )
 }
 

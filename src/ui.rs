@@ -10,7 +10,7 @@ use crate::render::{species_color, species_label, GridCamera};
 use crate::text;
 use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::{CurrentObjective, Objective, ObjectiveProgress};
-use abiogenesis::sim::ActionBudget;
+use abiogenesis::sim::{ActionBudget, EraCompleted};
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{SimWorld, SpeciesId, TagSlot};
 
@@ -151,10 +151,12 @@ impl Plugin for UiPlugin {
             .insert_resource(SelectedAction(ActionMode::Seed))
             .init_resource::<SpliceDraft>()
             .init_resource::<IsolationHint>()
+            .init_resource::<PopulationTrends>()
             .add_systems(Startup, spawn_hud_camera)
             .add_systems(
                 Update,
-                reserve_hud_viewport.run_if(in_state(GameState::Playing)),
+                (reserve_hud_viewport, update_population_trends)
+                    .run_if(in_state(GameState::Playing)),
             )
             .add_systems(EguiPrimaryContextPass, configure_fonts)
             .add_systems(
@@ -249,6 +251,7 @@ fn hud_panel(
     objective: Res<CurrentObjective>,
     objective_progress: Res<ObjectiveProgress>,
     unseen_confirmation: Res<NotebookHasUnseenConfirmation>,
+    trends: Res<PopulationTrends>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     let mut viewport_ui = egui::Ui::new(
@@ -309,8 +312,9 @@ fn hud_panel(
                             &species_label(*species),
                             *population,
                             *avg_energy,
-                            config.energy.repro_threshold,
                         ));
+                        let trend = trends.trend_for(*species);
+                        ui.colored_label(trend_color(trend), trend_glyph(trend));
                     });
                 }
             });
@@ -716,9 +720,144 @@ fn species_stats(world: &SimWorld) -> Vec<(SpeciesId, usize, f32)> {
         .collect()
 }
 
+/// A species' average-energy direction since the last completed era (task
+/// 063), replacing the old `avg_energy/repro_threshold` HUD comparison —
+/// that compared a population *average* against a per-*individual*
+/// reproduction trait, which could read as "nobody's close" while
+/// individuals had already crossed the threshold. `Stable` is also the
+/// default for a species with no prior-era snapshot yet (first era it
+/// appears in), since there's nothing yet to compare against.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PopulationTrend {
+    Rising,
+    Falling,
+    Stable,
+}
+
+/// Pure classification: `previous` is `None` for a species with no
+/// prior-era snapshot, `Some` otherwise. `epsilon` (`config.energy.
+/// trend_epsilon`) is the minimum absolute change to call it `Rising`/
+/// `Falling` — without it, energy's natural tick-to-tick noise would flip
+/// the indicator most eras even when the population is actually holding
+/// steady.
+fn classify_trend(previous: Option<f32>, current: f32, epsilon: f32) -> PopulationTrend {
+    let Some(previous) = previous else {
+        return PopulationTrend::Stable;
+    };
+    let delta = current - previous;
+    if delta > epsilon {
+        PopulationTrend::Rising
+    } else if delta < -epsilon {
+        PopulationTrend::Falling
+    } else {
+        PopulationTrend::Stable
+    }
+}
+
+/// Per-species average energy as of the last completed era, and the trend
+/// that comparison produced. `species_stats` recomputes the live average
+/// every frame for the raw number the HUD still shows, but the *trend* must
+/// only update once per era (`update_population_trends`, on
+/// `EraCompleted`) or it would flicker tick-to-tick instead of reading as a
+/// stable per-era signal. Indexed by `SpeciesId`, growing on demand the same
+/// way `species_stats` itself tolerates `Splice` (task 025) adding new
+/// species mid-run.
+#[derive(Resource, Default)]
+pub struct PopulationTrends {
+    previous_avg_energy: Vec<Option<f32>>,
+    current: Vec<PopulationTrend>,
+}
+
+impl PopulationTrends {
+    pub fn trend_for(&self, species: SpeciesId) -> PopulationTrend {
+        self.current
+            .get(species.0 as usize)
+            .copied()
+            .unwrap_or(PopulationTrend::Stable)
+    }
+}
+
+fn update_population_trends(
+    world: Res<SimWorld>,
+    config: Res<SimConfig>,
+    mut era_completed: MessageReader<EraCompleted>,
+    mut trends: ResMut<PopulationTrends>,
+) {
+    let mut fired = false;
+    for _ in era_completed.read() {
+        fired = true;
+    }
+    if !fired {
+        return;
+    }
+
+    let species_count = world.species.len();
+    if trends.previous_avg_energy.len() < species_count {
+        trends.previous_avg_energy.resize(species_count, None);
+        trends
+            .current
+            .resize(species_count, PopulationTrend::Stable);
+    }
+    for (species, _population, avg_energy) in species_stats(&world) {
+        let idx = species.0 as usize;
+        trends.current[idx] = classify_trend(
+            trends.previous_avg_energy[idx],
+            avg_energy,
+            config.energy.trend_epsilon,
+        );
+        trends.previous_avg_energy[idx] = Some(avg_energy);
+    }
+}
+
+/// Glyph for a `PopulationTrend`, matching the sidebar-redesign mockup's
+/// convention (▲ rising, ▼ falling, ▬ stable).
+fn trend_glyph(trend: PopulationTrend) -> &'static str {
+    match trend {
+        PopulationTrend::Rising => "▲",
+        PopulationTrend::Falling => "▼",
+        PopulationTrend::Stable => "▬",
+    }
+}
+
+/// Color for a `PopulationTrend`, same mockup convention: green rising, red
+/// falling, gray stable — gray rather than either the positive/negative edge
+/// colors `notebook.rs` uses for confirmed matrix effects, since "stable" is
+/// neutral information, not the absence of one.
+fn trend_color(trend: PopulationTrend) -> egui::Color32 {
+    match trend {
+        PopulationTrend::Rising => egui::Color32::from_rgb(96, 200, 120),
+        PopulationTrend::Falling => egui::Color32::from_rgb(220, 96, 96),
+        PopulationTrend::Stable => egui::Color32::from_gray(130),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn classify_trend_detects_a_clear_rise() {
+        assert_eq!(classify_trend(Some(5.0), 7.0, 0.5), PopulationTrend::Rising);
+    }
+
+    #[test]
+    fn classify_trend_detects_a_clear_fall() {
+        assert_eq!(
+            classify_trend(Some(7.0), 5.0, 0.5),
+            PopulationTrend::Falling
+        );
+    }
+
+    #[test]
+    fn classify_trend_within_epsilon_reads_as_stable() {
+        assert_eq!(classify_trend(Some(5.0), 5.3, 0.5), PopulationTrend::Stable);
+        assert_eq!(classify_trend(Some(5.0), 4.7, 0.5), PopulationTrend::Stable);
+    }
+
+    #[test]
+    fn classify_trend_with_no_previous_snapshot_reads_as_stable() {
+        assert_eq!(classify_trend(None, 100.0, 0.5), PopulationTrend::Stable);
+    }
 
     #[test]
     fn eras_progress_floors_held_and_ceils_required() {

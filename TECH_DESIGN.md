@@ -122,6 +122,7 @@ Use Bevy events to decouple modules. Defined from Phase 0 as an integration poin
 | `EraCompleted` | `sim` | `ui`, run flow (Phase 3) |
 | `OrganismDied` | `sim` | `notebook` (Phase 2) |
 | `SpeciesExtinct` | `sim` | `notebook`, failure conditions (Phase 3) |
+| `OrganismBorn` | `sim` | `notebook` (task 063) |
 
 These are the foundation of the **observation log** from GDD §7: the notebook is built by consuming events, not by inspecting the grid.
 

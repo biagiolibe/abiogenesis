@@ -171,6 +171,13 @@ pub struct EnergyConfig {
     /// How much the `Splice` action (GDD §6) shifts a new species'
     /// `temp_optimum` away from its source's, before clamping to `[0,1]`.
     pub splice_temp_shift: f32,
+    /// Minimum change in a species' average energy between two consecutive
+    /// eras for the HUD's per-era population trend indicator (task 063) to
+    /// call it `Rising`/`Falling` rather than `Stable` — presentation-only,
+    /// doesn't affect simulation behavior, but stays a named constant here
+    /// rather than a UI-side literal (no magic numbers, TECH_DESIGN.md
+    /// invariant 3).
+    pub trend_epsilon: f32,
 }
 
 impl Default for EnergyConfig {
@@ -191,6 +198,7 @@ impl Default for EnergyConfig {
             residue_ambient_trickle: 0.05,
             default_temp_tolerance: 0.15,
             splice_temp_shift: 0.15,
+            trend_epsilon: 0.5,
         }
     }
 }

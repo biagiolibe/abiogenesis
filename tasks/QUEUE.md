@@ -97,7 +97,7 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 063 | Population trend indicator, repro-threshold relocation, per-era birth log | none | [063](063-population-trend-and-repro-threshold-relocation.md) |
+| `[x]` | 063 | Population trend indicator, repro-threshold relocation, per-era birth log | none | [063](done/063-population-trend-and-repro-threshold-relocation.md) |
 | `[ ]` | 064 | Sidebar console redesign | 063 | [064](064-sidebar-console-redesign.md) |
 
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
@@ -174,4 +174,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-08 (task 062: procedural alien-world background layer — dim seed-derived noise field behind the grid, regenerated on world change)*
+*Last updated: 2026-08-08 (task 063: population trend indicator, repro-threshold relocation to the notebook catalog, per-era birth log — prerequisite for task 064)*

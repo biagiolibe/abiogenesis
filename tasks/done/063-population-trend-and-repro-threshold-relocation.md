@@ -23,29 +23,29 @@
 
 ### Repro-threshold relocation
 
-- [ ] `text::species_catalog_line` (`src/text.rs:376-386`) gains a `repro_threshold: f32` parameter and includes it in the formatted line (e.g. appended as `· repro ≥{repro_threshold:.1}`).
-- [ ] `notebook.rs::catalog_panel` (`src/notebook.rs:592-617`) passes `config.energy.repro_threshold` through.
-- [ ] `text::population_line` (`src/text.rs:187-194`) drops the `repro_threshold` parameter entirely — signature becomes `(species_label, population, avg_energy)` plus whatever the trend indicator needs (see below). Update `src/ui.rs:308-313`'s call site.
-- [ ] `player_guide.md`'s species-legibility section (task 057's addition) updated: reproduction threshold is documented as living in the notebook catalog, not the Population panel.
+- [x] `text::species_catalog_line` (`src/text.rs:376-386`) gains a `repro_threshold: f32` parameter and includes it in the formatted line (e.g. appended as `· repro ≥{repro_threshold:.1}`).
+- [x] `notebook.rs::catalog_panel` (`src/notebook.rs:592-617`) passes `config.energy.repro_threshold` through.
+- [x] `text::population_line` (`src/text.rs:187-194`) drops the `repro_threshold` parameter entirely — signature becomes `(species_label, population, avg_energy)` plus whatever the trend indicator needs (see below). Update `src/ui.rs:308-313`'s call site.
+- [x] `player_guide.md`'s species-legibility section (task 057's addition) updated: reproduction threshold is documented as living in the notebook catalog, not the Population panel.
 
 ### Per-era population trend
 
-- [ ] New resource tracking each species' average energy **as of the last completed era** — e.g. `PopulationTrendHistory(Vec<f32>)` indexed like `TagMatrix`/`MatrixKnowledge` (by `SpeciesId`), or a small struct resource in `ui.rs` or a new `src/population_trend.rs` module (pick whichever keeps `ui.rs`'s existing read-only-against-`SimWorld` discipline, TECH_DESIGN.md §3.3).
-- [ ] A system consuming `EraCompleted` (`src/sim.rs:41-48`, already fired by `advance_tick`/`single_tick`, see `src/sim.rs:475-482`) that: computes current per-species average energy (reuse or extract `ui.rs::species_stats`'s aggregation, `src/ui.rs:696-717`), compares it against the stored previous-era snapshot per species, classifies each as `Rising` / `Falling` / `Stable` using a **named threshold in `SimConfig`** (no magic numbers — e.g. `EnergyConfig::trend_epsilon` or a new small config struct), then overwrites the snapshot with the current value for next era's comparison.
-- [ ] A species with no previous-era snapshot yet (first era it appears in, or first era of the world) reads as `Stable` — there's nothing to compare against, and `Stable` is the least presumptuous default.
-- [ ] `text::population_line` (or its replacement) takes a `PopulationTrend` (or equivalent enum: `Rising`/`Falling`/`Stable`) instead of `repro_threshold`, and `ui.rs`'s HUD rendering shows a small directional indicator (▲/▼/▬, matching the redesign mockup's convention: green rising, red falling, gray stable) instead of the old `avg_energy/repro_threshold` fraction. Keep the raw average-energy number in the line too (mockup keeps `7.44`) — only the threshold comparison goes away, not the number itself.
-- [ ] Unit tests for the trend classification function (pure, given `previous: f32, current: f32, epsilon: f32 -> Trend`) covering: clearly rising, clearly falling, within-epsilon (stable), and the "no previous snapshot" case.
+- [x] New resource tracking each species' average energy **as of the last completed era** — e.g. `PopulationTrendHistory(Vec<f32>)` indexed like `TagMatrix`/`MatrixKnowledge` (by `SpeciesId`), or a small struct resource in `ui.rs` or a new `src/population_trend.rs` module (pick whichever keeps `ui.rs`'s existing read-only-against-`SimWorld` discipline, TECH_DESIGN.md §3.3).
+- [x] A system consuming `EraCompleted` (`src/sim.rs:41-48`, already fired by `advance_tick`/`single_tick`, see `src/sim.rs:475-482`) that: computes current per-species average energy (reuse or extract `ui.rs::species_stats`'s aggregation, `src/ui.rs:696-717`), compares it against the stored previous-era snapshot per species, classifies each as `Rising` / `Falling` / `Stable` using a **named threshold in `SimConfig`** (no magic numbers — e.g. `EnergyConfig::trend_epsilon` or a new small config struct), then overwrites the snapshot with the current value for next era's comparison.
+- [x] A species with no previous-era snapshot yet (first era it appears in, or first era of the world) reads as `Stable` — there's nothing to compare against, and `Stable` is the least presumptuous default.
+- [x] `text::population_line` (or its replacement) takes a `PopulationTrend` (or equivalent enum: `Rising`/`Falling`/`Stable`) instead of `repro_threshold`, and `ui.rs`'s HUD rendering shows a small directional indicator (▲/▼/▬, matching the redesign mockup's convention: green rising, red falling, gray stable) instead of the old `avg_energy/repro_threshold` fraction. Keep the raw average-energy number in the line too (mockup keeps `7.44`) — only the threshold comparison goes away, not the number itself.
+- [x] Unit tests for the trend classification function (pure, given `previous: f32, current: f32, epsilon: f32 -> Trend`) covering: clearly rising, clearly falling, within-epsilon (stable), and the "no previous snapshot" case.
 
 ### Per-era birth log
 
-- [ ] New message type mirroring `OrganismDied`/`SpeciesExtinct`'s pattern (`src/sim.rs:14-39`) — e.g. `OrganismBorn { species: SpeciesId }` — emitted at the reproduction site in `advance_tick` (`src/sim.rs:341-355`, where a child organism is currently spawned with no corresponding event).
-- [ ] A system (`notebook.rs`, alongside `record_events`/`accumulate_evidence`) tallies `OrganismBorn` events per species within the current era, and on `EraCompleted` pushes one `LogEntry` per species with at least one birth that era — e.g. "Kael: +3 births this era" via a new `text.rs` helper — then resets the tally for the next era. Zero-birth species get no line (keeps the log curated, matching `record_events`'s existing filtering philosophy, `src/notebook.rs:237-239` — this is the opposite case from task 061's per-observation logging, which deliberately went verbose; births stay a curated once-per-era summary).
-- [ ] Test coverage: multiple births for the same species in one era tally to a single correct count; births reset to zero after the era-completion log entry fires (no carry-over into the next era's tally).
+- [x] New message type mirroring `OrganismDied`/`SpeciesExtinct`'s pattern (`src/sim.rs:14-39`) — e.g. `OrganismBorn { species: SpeciesId }` — emitted at the reproduction site in `advance_tick` (`src/sim.rs:341-355`, where a child organism is currently spawned with no corresponding event).
+- [x] A system (`notebook.rs`, alongside `record_events`/`accumulate_evidence`) tallies `OrganismBorn` events per species within the current era, and on `EraCompleted` pushes one `LogEntry` per species with at least one birth that era — e.g. "Kael: +3 births this era" via a new `text.rs` helper — then resets the tally for the next era. Zero-birth species get no line (keeps the log curated, matching `record_events`'s existing filtering philosophy, `src/notebook.rs:237-239` — this is the opposite case from task 061's per-observation logging, which deliberately went verbose; births stay a curated once-per-era summary).
+- [x] Test coverage: multiple births for the same species in one era tally to a single correct count; births reset to zero after the era-completion log entry fires (no carry-over into the next era's tally).
 
 ### General
 
-- [ ] `cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt -- --check` all clean.
-- [ ] `abiogenesis-gdd.md` untouched (this is presentation/legibility, not a mechanics change) — verify no formulas moved.
+- [x] `cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt -- --check` all clean.
+- [x] `abiogenesis-gdd.md` untouched (this is presentation/legibility, not a mechanics change) — verify no formulas moved.
 
 ---
 

@@ -22,9 +22,9 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 use crate::notebook::{
-    MatrixKnowledge, NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells,
+    BirthTally, MatrixKnowledge, NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells,
 };
-use crate::ui::{IsolationHint, SelectedSpecies, SpliceDraft};
+use crate::ui::{IsolationHint, PopulationTrends, SelectedSpecies, SpliceDraft};
 
 /// Every piece of per-world state a world (re)start resets, bundled into one
 /// `SystemParam` (task 054) — `start_world`'s individual `&mut` arguments
@@ -46,6 +46,8 @@ pub struct WorldResetParams<'w> {
     pub objective: ResMut<'w, CurrentObjective>,
     pub objective_progress: ResMut<'w, ObjectiveProgress>,
     pub outcome: ResMut<'w, CurrentWorldOutcome>,
+    pub population_trends: ResMut<'w, PopulationTrends>,
+    pub birth_tally: ResMut<'w, BirthTally>,
 }
 
 /// Rebuilds `world` in place as world `world_index` seeded with `seed`
@@ -95,6 +97,12 @@ pub fn start_world(
     *reset.objective = CurrentObjective::new(new_objectives);
     *reset.objective_progress = ObjectiveProgress::default();
     *reset.outcome = CurrentWorldOutcome::default();
+    // Both keyed by `SpeciesId`, which the new world's species registry
+    // restarts from 0 with entirely different species — without this reset,
+    // a stale trend/tally from the previous world would show up mislabeled
+    // against the new world's species the moment it exists.
+    *reset.population_trends = PopulationTrends::default();
+    *reset.birth_tally = BirthTally::default();
 }
 
 /// The concrete effect of "World cleared → Continue" (task 045): advances
@@ -186,6 +194,8 @@ mod tests {
         ecs_world.insert_resource(CurrentObjective::new(objectives));
         ecs_world.insert_resource(objective_progress);
         ecs_world.insert_resource(outcome);
+        ecs_world.insert_resource(PopulationTrends::default());
+        ecs_world.insert_resource(BirthTally::default());
         ecs_world
     }
 

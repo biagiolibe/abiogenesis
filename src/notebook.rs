@@ -10,7 +10,9 @@ use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::ObjectiveAdvanced;
-use abiogenesis::sim::{AdjacencyObserved, OrganismDied, SpeciesExtinct};
+use abiogenesis::sim::{
+    AdjacencyObserved, EraCompleted, OrganismBorn, OrganismDied, SpeciesExtinct,
+};
 use abiogenesis::state::GameState;
 use abiogenesis::world::{SimWorld, SpeciesId, TagId, TagSlot};
 
@@ -105,6 +107,15 @@ pub struct PlayerPlacedCells(pub HashSet<usize>);
 #[derive(Resource, Default)]
 pub struct EverSeeded(pub bool);
 
+/// Running count of `OrganismBorn` events per species within the current
+/// era (task 063), indexed by `SpeciesId`, growing on demand the same way
+/// `ui.rs::PopulationTrends` tolerates `Splice` adding new species mid-run.
+/// Drained into one curated `LogEntry` per species on `EraCompleted`
+/// (`tally_births`), then reset to zero — this never accumulates across
+/// eras, unlike the death/extinction logs it sits alongside.
+#[derive(Resource, Default)]
+pub struct BirthTally(Vec<u32>);
+
 /// Cumulative weighted evidence for every `(exerter_tag, receiver_tag)`
 /// pair (GDD §7's "B with a hint of C" confirmation model) — the mechanism
 /// that progressively reveals `world.matrix`, not a second opacity layer.
@@ -194,9 +205,15 @@ impl Plugin for NotebookPlugin {
             .init_resource::<PlayerPlacedCells>()
             .init_resource::<EverSeeded>()
             .init_resource::<NotebookHasUnseenConfirmation>()
+            .init_resource::<BirthTally>()
             .add_systems(
                 Update,
-                (toggle_notebook, record_events, accumulate_evidence)
+                (
+                    toggle_notebook,
+                    record_events,
+                    accumulate_evidence,
+                    tally_births,
+                )
                     .run_if(in_state(GameState::Playing)),
             )
             .add_systems(
@@ -322,6 +339,51 @@ fn record_events(
             });
         }
     }
+}
+
+/// Tallies `OrganismBorn` events per species as they happen, then — on
+/// `EraCompleted` — pushes one curated `LogEntry` per species with at least
+/// one birth that era ("Kael: +3 births this era") and resets the tally.
+/// The real "individuals crossed `repro_threshold`" signal (task 063),
+/// replacing the old HUD average-vs-threshold comparison that could never
+/// actually show this. Deliberately the opposite curation choice from
+/// `accumulate_evidence`'s per-observation logging (task 061): a zero-birth
+/// species gets no line, keeping this a once-per-era summary, not a flood.
+fn tally_births(
+    mut born: MessageReader<OrganismBorn>,
+    mut era_completed: MessageReader<EraCompleted>,
+    mut tally: ResMut<BirthTally>,
+    mut log: ResMut<ObservationLog>,
+) {
+    for event in born.read() {
+        let idx = event.species.0 as usize;
+        if tally.0.len() <= idx {
+            tally.0.resize(idx + 1, 0);
+        }
+        tally.0[idx] += 1;
+    }
+
+    let mut completed_era = None;
+    for event in era_completed.read() {
+        completed_era = Some(event.era);
+    }
+    let Some(era) = completed_era else {
+        return;
+    };
+
+    for (idx, &count) in tally.0.iter().enumerate() {
+        if count == 0 {
+            continue;
+        }
+        let species = SpeciesId(idx as u8);
+        log.entries.push(LogEntry {
+            era,
+            species: Some(species),
+            text: text::birth_log_message(&species_label(species), count),
+            evidence_quality: None,
+        });
+    }
+    tally.0.fill(0);
 }
 
 /// Golden-angle hue step for tags, same technique `render.rs` uses for
@@ -730,6 +792,7 @@ fn catalog_panel(ui: &mut egui::Ui, world: &SimWorld, config: &SimConfig) {
                 species.temp_optimum,
                 species.temp_tolerance,
                 temperature_label(species.temp_optimum, &config.environment),
+                config.energy.repro_threshold,
             ));
             for &slot in &species.tags {
                 let tag = world.active_tags[slot.0 as usize];
@@ -1099,6 +1162,103 @@ mod tests {
         assert_eq!(
             knowledge.revealed_value(exerter, receiver, &world),
             Some(world.matrix.get(exerter, receiver))
+        );
+    }
+
+    fn app_for_tally_births() -> App {
+        let mut app = App::new();
+        app.init_resource::<BirthTally>();
+        app.init_resource::<ObservationLog>();
+        app.add_message::<OrganismBorn>();
+        app.add_message::<EraCompleted>();
+        app.add_systems(Update, tally_births);
+        app
+    }
+
+    #[test]
+    fn births_accumulate_without_logging_until_the_era_completes() {
+        let mut app = app_for_tally_births();
+
+        app.world_mut()
+            .resource_mut::<Messages<OrganismBorn>>()
+            .write(OrganismBorn {
+                species: SpeciesId(0),
+            });
+        app.update();
+
+        let log = app.world().resource::<ObservationLog>();
+        assert!(
+            log.entries.is_empty(),
+            "no log entry until EraCompleted fires"
+        );
+    }
+
+    #[test]
+    fn multiple_births_for_one_species_tally_to_a_single_correct_count() {
+        let mut app = app_for_tally_births();
+
+        for _ in 0..3 {
+            app.world_mut()
+                .resource_mut::<Messages<OrganismBorn>>()
+                .write(OrganismBorn {
+                    species: SpeciesId(0),
+                });
+        }
+        app.world_mut()
+            .resource_mut::<Messages<OrganismBorn>>()
+            .write(OrganismBorn {
+                species: SpeciesId(1),
+            });
+        app.world_mut()
+            .resource_mut::<Messages<EraCompleted>>()
+            .write(EraCompleted { era: 5 });
+        app.update();
+
+        let log = app.world().resource::<ObservationLog>();
+        assert_eq!(log.entries.len(), 2, "one entry per species with a birth");
+        let species_0 = log
+            .entries
+            .iter()
+            .find(|e| e.species == Some(SpeciesId(0)))
+            .expect("species 0 has an entry");
+        assert!(
+            species_0.text.contains("+3"),
+            "expected the tallied count of 3, got: {}",
+            species_0.text
+        );
+        let species_1 = log
+            .entries
+            .iter()
+            .find(|e| e.species == Some(SpeciesId(1)))
+            .expect("species 1 has an entry");
+        assert!(species_1.text.contains("+1"));
+    }
+
+    #[test]
+    fn the_tally_resets_after_logging_with_no_carry_over_into_the_next_era() {
+        let mut app = app_for_tally_births();
+
+        app.world_mut()
+            .resource_mut::<Messages<OrganismBorn>>()
+            .write(OrganismBorn {
+                species: SpeciesId(0),
+            });
+        app.world_mut()
+            .resource_mut::<Messages<EraCompleted>>()
+            .write(EraCompleted { era: 1 });
+        app.update();
+
+        // A second era completes with no further births at all.
+        app.world_mut()
+            .resource_mut::<Messages<EraCompleted>>()
+            .write(EraCompleted { era: 2 });
+        app.update();
+
+        let log = app.world().resource::<ObservationLog>();
+        assert_eq!(
+            log.entries.len(),
+            1,
+            "the second era must not re-log the first era's births"
         );
     }
 }
