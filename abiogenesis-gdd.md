@@ -204,6 +204,7 @@ Initial values that are mutually coherent (conceptually verified so that a photo
 | Predator `drain_cap` | `2.0` / tick, `upkeep 0.7` | draws from neighbors |
 | Decomposer `extract_rate` | `1.5` / tick, `upkeep 0.5` | from residue |
 | Residue on death | `3.0`, decays `0.2` / tick | feeds decomposers |
+| Residue ambient trickle | `0.05` / tick, per cell | floor against an isolated decomposer starving uninformatively; stays well below the decay rate so it never makes decomposer self-sufficient |
 | `env_fit` | `exp(−(temp−temp_opt)² / (2·temp_tol²))` | `temp_tol` (σ) default `0.15` |
 
 *Quick check:* an isolated photolithic organism with `light≈0.7`, `env_fit≈1` → `gain≈1.4`, net `≈+0.9`/tick (grows); with 6–8 neighbors → net `≈−0.15`/tick (stalls → carrying capacity). In a dark zone (`light 0.2`) → `gain 0.4 < upkeep 0.5` → doesn't survive (light niche). A predator with no prey: `gain 0 − upkeep 0.7` → collapses in ~7 ticks (prey-predator dynamic).

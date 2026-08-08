@@ -92,6 +92,10 @@ pub struct TickEvents {
 /// construction (TECH_DESIGN.md §6).
 pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
     let energy = &config.energy;
+    debug_assert!(
+        energy.residue_ambient_trickle < energy.residue_decay,
+        "residue_ambient_trickle must stay below residue_decay, or residue grows unboundedly"
+    );
     let mut events = TickEvents::default();
 
     // Pre-tick population count per species, for extinction detection
@@ -120,8 +124,12 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
     world.diffuse_environment(config);
 
     // Residue decays every tick unless a death overwrites it further down.
+    // A small ambient trickle is added after decay so residue settles to a
+    // low equilibrium everywhere, keeping an isolated Decomposer readable
+    // instead of starving out with zero information.
     for cell in world.scratch.iter_mut() {
-        cell.residue = (cell.residue - energy.residue_decay).max(0.0);
+        cell.residue =
+            (cell.residue - energy.residue_decay).max(0.0) + energy.residue_ambient_trickle;
     }
 
     // Predation pre-pass (GDD §5.4): a shared-resource drain computed from
@@ -1028,8 +1036,11 @@ mod tests {
     #[test]
     fn decomposer_with_no_residue_behaves_like_dark_photolithic() {
         // No residue anywhere ⇒ gain 0, loses decomposer_upkeep (0.5) per
-        // tick, same shape as photolithic_in_the_dark_eventually_dies.
-        let (mut world, config) = world_with_one_decomposer(0.5, config_seed_energy());
+        // tick, same shape as photolithic_in_the_dark_eventually_dies. This
+        // is the true no-trickle baseline, so the ambient trickle (task 060)
+        // is explicitly disabled here rather than folded into the default.
+        let (mut world, mut config) = world_with_one_decomposer(0.5, config_seed_energy());
+        config.energy.residue_ambient_trickle = 0.0;
         let (cx, cy) = (world.width / 2, world.height / 2);
 
         step(&mut world, &config);
@@ -1054,8 +1065,37 @@ mod tests {
     }
 
     #[test]
+    fn decomposer_survives_much_longer_with_ambient_trickle() {
+        // No-trickle baseline (decomposer_with_no_residue_behaves_like_dark_photolithic)
+        // collapses at tick 10 (5.0 seed energy / 0.5 upkeep per tick). With
+        // the default trickle, the isolated decomposer's own cell equilibrates
+        // to a small residue supply and survives to tick 100 — well past the
+        // GDD §5.9 ~7-tick "obviously starving" baseline, without becoming
+        // self-sufficient (it still dies eventually, unlike Photolithic).
+        let (mut world, config) = world_with_one_decomposer(0.5, config_seed_energy());
+        let (cx, cy) = (world.width / 2, world.height / 2);
+
+        let mut ticks_survived = 0;
+        for _ in 0..150 {
+            step(&mut world, &config);
+            if world.get(cx, cy).organism.is_none() {
+                break;
+            }
+            ticks_survived += 1;
+        }
+        assert!(
+            ticks_survived >= 50,
+            "expected ambient trickle to meaningfully extend survival past the \
+             no-trickle 10-tick collapse, got {} ticks",
+            ticks_survived
+        );
+    }
+
+    #[test]
     fn decomposer_adjacent_to_residue_gains_and_residue_shrinks() {
-        let (mut world, config) = world_with_one_decomposer(0.5, 5.0);
+        // Exact residue-depletion math below assumes no ambient trickle.
+        let (mut world, mut config) = world_with_one_decomposer(0.5, 5.0);
+        config.energy.residue_ambient_trickle = 0.0;
         let (cx, cy) = (world.width / 2, world.height / 2);
         let neighbour_idx = world
             .moore_neighbours(cx, cy)

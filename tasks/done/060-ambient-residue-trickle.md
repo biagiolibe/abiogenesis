@@ -39,21 +39,21 @@ collapse.
 
 ## 📋 Acceptance Criteria
 
-- [ ] `EnergyConfig` (`src/config.rs:138-168`) gains a new field
+- [x] `EnergyConfig` (`src/config.rs:138-168`) gains a new field
       `residue_ambient_trickle: f32`, documented like its neighbours, default
       `0.05` (starting value, not sacred — see tuning note below).
-- [ ] In `advance_tick` (`src/sim.rs`, the residue-decay loop at lines
+- [x] In `advance_tick` (`src/sim.rs`, the residue-decay loop at lines
       122-125), every cell's residue gains the trickle *after* decay each
       tick: `cell.residue = (cell.residue - energy.residue_decay).max(0.0) +
       energy.residue_ambient_trickle;`. Applies uniformly to every cell
       (occupied, empty, or already holding organism-death residue) — it's
       ambient background detritus, not tied to any specific cell state.
-- [ ] **Invariant**: `residue_ambient_trickle` must stay strictly less than
+- [x] **Invariant**: `residue_ambient_trickle` must stay strictly less than
       `residue_decay` (`0.05 < 0.2` today), so residue reaches a small stable
       equilibrium per cell instead of growing unboundedly — add a debug
       assertion or a `tests/balance.rs` check for this relationship, not just
       a comment.
-- [ ] `decomposer_with_no_residue_behaves_like_dark_photolithic`
+- [x] `decomposer_with_no_residue_behaves_like_dark_photolithic`
       (`src/sim.rs:1029`) needs updating: its premise ("no residue anywhere")
       no longer holds by default. Either construct its `SimConfig` with
       `residue_ambient_trickle: 0.0` to preserve the original assertion
@@ -61,19 +61,19 @@ collapse.
       behavior, which should still exist and still work), or add a sibling
       test for the new trickle-present behavior. Pick one and document why in
       the test's comment.
-- [ ] New test: an isolated Decomposer (same `world_with_one_decomposer`
+- [x] New test: an isolated Decomposer (same `world_with_one_decomposer`
       helper) with the *default* config (trickle enabled) survives
       meaningfully longer than the no-trickle case — doesn't need to survive
       indefinitely or grow, just noticeably past the ~7-tick collapse window
       the GDD's predator quick-check uses as its "obviously starving"
       baseline (GDD §5.9). Pick a concrete tick count once you see the actual
       numbers; assert on that, not on vague "longer".
-- [ ] `tests/balance.rs` still green; if the new trickle changes any existing
+- [x] `tests/balance.rs` still green; if the new trickle changes any existing
       balance assumption, retune `residue_ambient_trickle` rather than
       loosening the test.
-- [ ] `cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt
+- [x] `cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt
       -- --check` all clean.
-- [ ] `abiogenesis-gdd.md` §5.9's residue row gets the new constant added
+- [x] `abiogenesis-gdd.md` §5.9's residue row gets the new constant added
       (same table that already lists `Residue on death` / decay rate).
 
 ---

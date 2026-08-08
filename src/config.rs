@@ -160,6 +160,12 @@ pub struct EnergyConfig {
     pub residue_on_death: f32,
     /// Residue decay rate per tick.
     pub residue_decay: f32,
+    /// Ambient background residue gained by every cell each tick,
+    /// independent of organism deaths. Must stay strictly below
+    /// `residue_decay` so residue reaches a small stable equilibrium
+    /// instead of growing unboundedly. Keeps an isolated Decomposer from
+    /// starving out immediately, without making it self-sufficient.
+    pub residue_ambient_trickle: f32,
     /// Default temperature tolerance (σ) for species without an explicit override.
     pub default_temp_tolerance: f32,
     /// How much the `Splice` action (GDD §6) shifts a new species'
@@ -182,6 +188,7 @@ impl Default for EnergyConfig {
             decomposer_upkeep: 0.5,
             residue_on_death: 3.0,
             residue_decay: 0.2,
+            residue_ambient_trickle: 0.05,
             default_temp_tolerance: 0.15,
             splice_temp_shift: 0.15,
         }
