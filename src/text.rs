@@ -212,11 +212,6 @@ pub fn population_line(species_label: &str, population: usize, avg_energy: f32) 
 /// "Species" (task 064): the horizontally scrollable species-selection strip.
 pub const HEADING_SEED_PALETTE: &str = "Species";
 pub const SEED_PALETTE_HOVER: &str = "Click an empty cell to place the selected species";
-/// Static overflow cue for the species chip strip (task 064), mirroring the
-/// `›` glyph at the strip's right edge in `redesign/sidebar-full.svg` — the
-/// strip's own scrollbar is hidden (see `ui.rs`'s `species_chips` comment),
-/// so this is the only signal that more chips may sit off-strip.
-pub const MORE_SPECIES_GLYPH: &str = "›";
 /// Split into two lines (task 057/058 lengthened this past a single line's
 /// room at `ui::HUD_WIDTH`) rather than relying on `egui`'s label wrap, which
 /// broke mid-word ("t/l temp/light · E" / "quit") instead of at a natural

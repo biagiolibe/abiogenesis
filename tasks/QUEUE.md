@@ -99,6 +99,7 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 |-------|----|--------|------------|------|
 | `[x]` | 063 | Population trend indicator, repro-threshold relocation, per-era birth log | none | [063](done/063-population-trend-and-repro-threshold-relocation.md) |
 | `[x]` | 064 | Sidebar console redesign | 063 | [064](done/064-sidebar-console-redesign.md) |
+| `[x]` | 065 | Species list vertical, metabolism glyph, seed relocated (playtest correction to 064) | 064 | [065](done/065-species-list-vertical-metabolism-seed-relocation.md) |
 
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
@@ -174,4 +175,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-08 (task 064: sidebar console redesign — monospace hairline-divided panel, discrete dot/tick indicators, scrollable Biosphere/Species lists, narrative objective styling)*
+*Last updated: 2026-08-09 (task 065: Species list switched from horizontal chip strip to vertical scroll matching Biosphere, metabolism glyph added per row, seed line moved from header to footer — playtest correction to task 064)*

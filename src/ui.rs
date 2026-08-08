@@ -6,7 +6,7 @@ use bevy_egui::{
 };
 
 use crate::notebook::{tag_glyph, EverSeeded, NotebookEverOpened, NotebookHasUnseenConfirmation};
-use crate::render::{species_color, species_label, GridCamera};
+use crate::render::{metabolism_glyph, species_color, species_label, GridCamera};
 use crate::text;
 use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::{CurrentObjective, Objective, ObjectiveProgress};
@@ -128,7 +128,7 @@ const ISOLATION_HINT_DURATION_TICKS: u64 = 30;
 /// How many Biosphere rows (task 064) stay visible before the list scrolls
 /// internally, matching the redesign mockup's "~4-5 visible rows" call.
 ///
-/// `BIOSPHERE_VISIBLE_ROWS * biosphere_row_height(ui)` must stay above 64.0:
+/// `BIOSPHERE_VISIBLE_ROWS * console_row_height(ui)` must stay above 64.0:
 /// `egui::ScrollArea` silently floors its scrolled axis at
 /// `min_scrolled_size` (default `64.0`, egui 0.35 `scroll_area.rs`) — ask
 /// for a smaller `max_height` and the area renders at 64.0 regardless,
@@ -141,11 +141,20 @@ const ISOLATION_HINT_DURATION_TICKS: u64 = 30;
 /// stay consistent with each other if the font or spacing ever changes.
 const BIOSPHERE_VISIBLE_ROWS: usize = 5;
 
-/// The height, in points, of one Biosphere `ui.horizontal` row (glyph +
-/// label + trend glyph), measured from this panel's own text style and
-/// spacing rather than guessed — see `BIOSPHERE_VISIBLE_ROWS`'s doc comment
-/// for why a hardcoded value is unsafe here.
-fn biosphere_row_height(ui: &egui::Ui) -> f32 {
+/// How many Species rows (task 065) stay visible before the list scrolls
+/// internally — same fixed-height/internal-scroll pattern as
+/// `BIOSPHERE_VISIBLE_ROWS`, adopted after the horizontal scrollable chip
+/// strip this replaced turned out less discoverable in practice (no visible
+/// scrollbar, needed a dedicated `›` overflow cue) than the vertical list
+/// pattern already used for Biosphere.
+const SPECIES_VISIBLE_ROWS: usize = 5;
+
+/// The height, in points, of one list row (glyph + label, optionally a
+/// trailing glyph) in the Biosphere or Species sections, measured from this
+/// panel's own text style and spacing rather than guessed — see
+/// `BIOSPHERE_VISIBLE_ROWS`'s doc comment for why a hardcoded value is
+/// unsafe here.
+fn console_row_height(ui: &egui::Ui) -> f32 {
     ui.text_style_height(&egui::TextStyle::Body) + ui.spacing().item_spacing.y
 }
 
@@ -161,11 +170,6 @@ const ERA_PROGRESS_DOT_CAP: u32 = 8;
 /// monospace body text, so the one deliberate font/style break also reads
 /// as visually distinct in color, not just in shape.
 const OBJECTIVE_NARRATIVE_COLOR: egui::Color32 = egui::Color32::from_rgb(180, 178, 169);
-
-/// Horizontal room reserved for `text::MORE_SPECIES_GLYPH` beside the species
-/// chip strip's `ScrollArea` — enough for one monospace glyph plus its
-/// surrounding `ui.horizontal` spacing.
-const MORE_SPECIES_GLYPH_WIDTH: f32 = 16.0;
 
 pub struct UiPlugin;
 
@@ -334,7 +338,6 @@ fn hud_panel(
 
             ui.heading(text::HEADING_TITLE);
             ui.label(text::era_tick_line(world.era, world.tick));
-            ui.label(text::seed_line(world.seed));
             ui.label(text::state_line(era_state.get()));
 
             hairline(ui);
@@ -359,7 +362,7 @@ fn hud_panel(
             }
             egui::ScrollArea::vertical()
                 .id_salt("biosphere_list")
-                .max_height(BIOSPHERE_VISIBLE_ROWS as f32 * biosphere_row_height(ui))
+                .max_height(BIOSPHERE_VISIBLE_ROWS as f32 * console_row_height(ui))
                 .show(ui, |ui| {
                     for (species, population, avg_energy) in &stats {
                         ui.horizontal(|ui| {
@@ -381,38 +384,17 @@ fn hud_panel(
             hairline(ui);
             ui.strong(text::HEADING_SEED_PALETTE)
                 .on_hover_text(text::SEED_PALETTE_HOVER);
-            // A visible scrollbar here would overlap the chip row itself —
-            // this scroll area is exactly one row tall, with no extra
-            // height reserved below it — turning every click near a chip's
-            // edge into a scrollbar grab instead of a selection (caught by
-            // playtest: dragging where a click was intended scrolled the
-            // strip rather than selecting a chip). Hidden entirely; wheel
-            // and drag-to-scroll both still work, just without a visible
-            // track competing with the console's minimal aesthetic anyway.
-            ui.horizontal(|ui| {
-                // Reserve room for the `›` cue below: an unconstrained
-                // ScrollArea claims all remaining horizontal space in this
-                // `ui.horizontal`, which pushed the glyph off the fixed-width
-                // side panel's clip rect entirely (invisible, not just
-                // crowded) until this was capped.
-                let available = ui.available_width() - MORE_SPECIES_GLYPH_WIDTH;
-                egui::ScrollArea::horizontal()
-                    .id_salt("species_chips")
-                    .max_width(available)
-                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            for i in 0..world.species.len() as u8 {
-                                species_chip(ui, SpeciesId(i), &mut selected.0);
-                            }
-                        });
-                    });
-                // Hiding the scrollbar above removes the only visual cue
-                // that more chips exist off-strip — the mockup
-                // (sidebar-full.svg) marks this with a static `›` at the
-                // strip's right edge, which we mirror here.
-                ui.weak(text::MORE_SPECIES_GLYPH);
-            });
+            egui::ScrollArea::vertical()
+                .id_salt("species_list")
+                .max_height(SPECIES_VISIBLE_ROWS as f32 * console_row_height(ui))
+                .show(ui, |ui| {
+                    for i in 0..world.species.len() as u8 {
+                        species_row(ui, SpeciesId(i), &world, &mut selected.0);
+                    }
+                });
+            if world.species.len() > SPECIES_VISIBLE_ROWS {
+                ui.weak(text::SCROLL_FOR_MORE);
+            }
 
             hairline(ui);
             ui.strong(text::HEADING_OBJECTIVE);
@@ -428,6 +410,7 @@ fn hud_panel(
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                 ui.weak(text::KEYBOARD_HINT_PRIMARY);
                 ui.weak(text::KEYBOARD_HINT_SECONDARY);
+                ui.weak(text::seed_line(world.seed));
                 ui.horizontal(|ui| {
                     ui.weak(text::NOTEBOOK_AFFORDANCE_LABEL);
                     if unseen_confirmation.0 {
@@ -715,15 +698,25 @@ fn dot_row(ui: &mut egui::Ui, filled: u32, total: u32, shape: DotShape) -> egui:
     response
 }
 
-/// One species as a selectable chip in the horizontally scrollable Species
-/// strip (task 064, replacing the vertical radio-button list — the redesign
-/// doc's rationale: a vertical list only works up to 3-4 species, a
-/// scrollable strip scales to however many `Splice` produces). Clicking
-/// sets `SelectedSpecies` exactly as the old radio buttons did, no behavior
-/// change past layout.
-fn species_chip(ui: &mut egui::Ui, species: SpeciesId, selected: &mut SpeciesId) {
+/// One species as a selectable row in the Species list (task 065 —
+/// converted from a horizontally scrollable chip strip, task 064's original
+/// choice, after playtest feedback: the strip's hidden scrollbar needed a
+/// dedicated `›` overflow cue and was less discoverable than the vertical,
+/// internally-scrolling pattern already used for Biosphere). Shows the
+/// species' metabolism (task 065) alongside its color swatch and name — a
+/// *readable* trait per GDD §5.3, but previously only visible in the
+/// notebook's species catalog, which a fresh player hasn't opened yet at
+/// their first placement. Clicking sets `SelectedSpecies`, same behavior as
+/// the old chip/radio list.
+fn species_row(ui: &mut egui::Ui, species: SpeciesId, world: &SimWorld, selected: &mut SpeciesId) {
     let is_selected = *selected == species;
-    let text = egui::RichText::new(species_label(species)).color(species_color(species));
+    let metabolism = world.species[species.0 as usize].metabolism;
+    let text = egui::RichText::new(format!(
+        "{} {}",
+        metabolism_glyph(metabolism),
+        species_label(species)
+    ))
+    .color(species_color(species));
     if ui.selectable_label(is_selected, text).clicked() {
         *selected = species;
     }

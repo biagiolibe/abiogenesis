@@ -61,6 +61,20 @@ pub fn species_color(id: SpeciesId) -> egui::Color32 {
     egui::ecolor::Hsva::new(hue, 0.75, 0.9, 1.0).into()
 }
 
+/// A single glyph for a species' metabolism (task 065 — the sidebar's
+/// Species list needs a species identifiable without opening the notebook,
+/// since metabolism is a *readable* trait, GDD §5.3, not a hidden one like
+/// tags). Indicative, unlike `notebook::tag_glyph`'s deliberately opaque
+/// Greek letters: sun for light-drawing Photolithic, a strike for
+/// prey-drawing Predator, a recycling mark for residue-drawing Decomposer.
+pub fn metabolism_glyph(metabolism: Metabolism) -> &'static str {
+    match metabolism {
+        Metabolism::Photolithic => "☀",
+        Metabolism::Predator => "⚔",
+        Metabolism::Decomposer => "♻",
+    }
+}
+
 /// Blue (0.0, cold/low) to red (1.0, hot/high) through the hue wheel — a
 /// standard heatmap gradient, not tied to any in-game color meaning. Shared
 /// by the dev-only `debug_view` cycle and the player-facing temperature/light
