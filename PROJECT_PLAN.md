@@ -40,27 +40,9 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 
 ### Raised from playtesting (2026-08-08)
 
-- `[?]` **Decomposer is nearly unsustainable in isolation.** By design (GDD §16's playthrough example) it's meant to be a "second-order" niche that blooms after a predator collapse or environmental die-off, not a self-sufficient starter like Photolithic (always-on light) or even Predator (can coexist with live prey). In practice a Decomposer seeded alone has no residue to draw on and starves out before the player can get a clean isolated read on it — already visible enough to have needed an ad-hoc player-guide explanation (commit `cc90b26`). Cheapest lever without changing the ecological intent: a small ambient background residue trickle (independent of organism deaths), tuned just enough that an isolated Decomposer doesn't collapse outright — not enough to make it self-sufficient like Photolithic. Needs confirmation this is a real recurring pain point (not a one-off run) before scoping into a task.
+- `[?]` **Always-on discrete temperature/light background tint** — surfaced while reviewing `abiogenesis-ui-redesign.md`; needs its own discussion before scoping: it would make the map always show banded temp/light tint by default, which cuts against task 058's explicit choice to keep temperature/light legibility an opt-in `T`/`L` toggle (kept deliberately distinct from the hidden-matrix mystery). Adopting it means reversing or narrowing that opt-in design, not just adding a layer.
 
-### From `abiogenesis-ui-redesign.md` (2026-08-08)
-
-Presentation-only notes reviewed against the current codebase; most of the document (hypothesis graph, per-metabolism shapes, toxic-zone rendering, shared species color) turned out to already be implemented (tasks 031/032/033, plus the map/HUD/log color source). What's left:
-
-- `[?]` **Presentation refinement bundle** — zero gameplay risk, additive-only changes to existing UI code:
-  - Observation-log entries get a small colored dot for evidence quality (green = isolated observation, amber = confounded), reusing the already-computed `weight = 1/(1+n_confounders)` (GDD §7) — currently not shown anywhere in the log (`notebook.rs`).
-  - Hypothesis graph (`notebook.rs`, already a circular node graph since task 031) gets three incremental refinements: dashed border on tag nodes with zero observations, edge thickness proportional to confirmed effect intensity, numeric label on strong confirmed edges only.
-  - Notebook catalog panel gets the species-color swatch next to each species name — the one screen that doesn't yet reuse the shared `species_color()` source already used by the map, HUD, and observation log.
-- `[?]` **Always-on discrete temperature/light background tint** — needs its own discussion before scoping, separate from the bundle above: it would make the map always show banded temp/light tint by default, which cuts against task 058's explicit choice to keep temperature/light legibility an opt-in `T`/`L` toggle (kept deliberately distinct from the hidden-matrix mystery). Adopting it means reversing or narrowing that opt-in design, not just adding a layer.
-
-### Atmospheric background layer (2026-08-08, explicit exception to pillar 3)
-
-Raised directly by the user: the grid currently reads as an empty black background outside occupied/tinted cells (`cell_color` in `render.rs` already scales empty-cell lightness by `light`, but the range — `0.03` to `0.15` — is too compressed to read as anything). Discussed and deliberately scoped as an exception to GDD pillar 3 ("the fun is in the system, not the graphics") rather than working around it, because the goal here is genuinely atmospheric, not informational — it must never carry gameplay signal a player could confuse with real data (temperature/light overlays, toxicity tint, matrix hints).
-
-- `[?]` **Procedural alien-world background layer**, rendered behind the grid (the grid sprites must stay the primary readability layer — this should sit dim/low-contrast under them, not compete):
-  - Start with a **shader/procedurally-generated gradient or noise field** (palette + motion, no hand-painted assets, no art pipeline) rather than illustrated art — keeps production cost near zero and stays compatible with procedural worldgen.
-  - Interesting option to explore during design: derive the background's variant (hue/intensity/pattern) from that world's own `WorldParams` (e.g. its temperature-gradient profile or toxic-zone size) so each world reads as visually distinct using data the worldgen already produces, instead of inventing new parameters.
-  - Pairs naturally with the still-open **camera zoom/pan** proposal (already in this section, "Born from the move to Bevy") — a parallax effect on the background gives that feature more payoff, though zoom/pan is not a prerequisite to ship a static version first.
-  - Explicitly out of scope for a first pass: hand-illustrated biome art (real production cost, style-direction risk, and tends to fight grid contrast) — worth revisiting only if the procedural version proves the atmosphere is worth it.
+> The other three ideas from this session — decomposer sustainability, a notebook presentation-refinement bundle, and a procedural background layer — were scoped into tasks 060/061/062 (§2).
 
 ---
 
@@ -204,6 +186,14 @@ Four observations from a further playtest session, after 057/058 landed. Two wer
 - `[x]` Bugfix — `Decomposer` was structurally unreachable within a single run at default config: `add_bonus_species`'s `i % 2 == 0` rule restarted `i` at 0 on every independent call site (`generate_starting_palette`'s fixed slot, `build_world`'s separate meta-progression bonus), so the shipped default (`extra_available_species_count = 1`) always resolved to `Predator`. Replaced with a per-slot random draw from the world's own seeded RNG.
 - `[x]` 059 — Sequential per-world objectives: worlds pose 2 objectives at the easy end of the difficulty curve, 3 at the hard end (`WorldParams::objective_count`, ramped like every other field), cleared in order via `CurrentObjective { objectives, index }` — clearing a non-final objective advances `index` and resets `ObjectiveProgress` instead of ending the world, logged via a new `ObjectiveAdvanced` message; no two consecutive objectives share a kind; `era_budget` retuned 40/25 → 60/45 to compensate → [059](tasks/done/059-objective-pacing-design.md)
 
+### 🌌 From today's design session (2026-08-08)
+
+Three proposals from §1 scoped into tasks after discussion; the always-on temperature/light background tint idea raised in the same review stays a `[?]` in §1, needing its own discussion first.
+
+- `[ ]` 060 — Ambient residue trickle: a small `EnergyConfig::residue_ambient_trickle` constant, added to every cell's residue each tick (below `residue_decay` so it reaches a small equilibrium, not unbounded growth), so an isolated `Decomposer` doesn't collapse uninformatively before the player can read anything from it — deliberately not enough to make it self-sufficient like Photolithic → [060](tasks/060-ambient-residue-trickle.md)
+- `[ ]` 061 — Notebook presentation refinements: every `AdjacencyObserved` event gets its own log line with a clean/confounded evidence-quality dot (not just confirmations, a deliberate reversal of the log's usual curation for this one case); the hypothesis graph gets a dashed marker for never-observed tag nodes, edge thickness by confirmed magnitude, and numeric labels on strong edges; the notebook catalog gets the species-color swatch the map/HUD/log already share → [061](tasks/061-notebook-presentation-refinements.md)
+- `[ ]` 062 — Procedural alien-world background layer: a dim, code-generated (no art assets) background sprite behind the grid, regenerated per world from `SimWorld::seed`, explicitly scoped as an exception to GDD pillar 3 since it's purely atmospheric and must never carry gameplay signal → [062](tasks/062-procedural-background-layer.md)
+
 ### 🎚️ Final tuning — *the real art*
 
 **Goal:** *interesting and readable* emergence, avoiding "everything dies" and "one dominates" (GDD §13, §14).
@@ -242,4 +232,4 @@ Four observations from a further playtest session, after 057/058 landed. Two wer
 
 ---
 
-*Last updated: 2026-08-07 (task 059 completed: sequential 2→3 objectives per world, era budget retuned to compensate)*
+*Last updated: 2026-08-08 (tasks 060/061/062 scoped from today's design session: decomposer residue trickle, notebook UI refinements, procedural background layer)*
