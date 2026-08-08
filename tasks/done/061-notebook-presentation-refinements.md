@@ -49,41 +49,41 @@ carrying zero gameplay/simulation risk:
 
 ### 1. Per-observation evidence-quality log line
 
-- [ ] `accumulate_evidence` (`src/notebook.rs:192-216`) pushes a `LogEntry`
+- [x] `accumulate_evidence` (`src/notebook.rs:192-216`) pushes a `LogEntry`
       for **every** `AdjacencyObserved` event it reads, not only ones that
       trigger a new confirmation. The existing confirmation `LogEntry` (line
       208-212, `species: None`, confirmation glyph) stays as-is for the
       "aha" moment; the new per-observation entry is a separate, additional
       line logged first.
-- [ ] `LogEntry` (`src/notebook.rs:29-33`) gains a field to carry the
+- [x] `LogEntry` (`src/notebook.rs:29-33`) gains a field to carry the
       observation's quality — e.g. `evidence_quality: Option<EvidenceQuality>`
       (`enum EvidenceQuality { Clean, Confounded }`, derived from
       `event.n_confounders == 0`), `None` for every non-adjacency entry kind
       (deaths, extinctions, confirmations, species-created) so they render
       unchanged.
-- [ ] `notebook_window`'s log loop (`src/notebook.rs:357-369`) renders a
+- [x] `notebook_window`'s log loop (`src/notebook.rs:357-369`) renders a
       small colored dot before the line when `evidence_quality.is_some()`:
       green for `Clean`, amber for `Confounded` — reuse `EDGE_POSITIVE_COLOR`-
       style constants or define new ones near `PARTIAL_EVIDENCE_COLOR`
       (`src/notebook.rs:403`) for consistency.
-- [ ] The new per-observation line's text is short and doesn't duplicate the
+- [x] The new per-observation line's text is short and doesn't duplicate the
       confirmation message — e.g. "`{exerter glyph} -> {receiver glyph}
       observed`" via a new `text.rs` helper (task 034's convention), not an
       inline `format!` in `notebook.rs`.
-- [ ] Verify in a manual playtest (or a test asserting log length) that a
+- [x] Verify in a manual playtest (or a test asserting log length) that a
       single tick with several simultaneous adjacencies doesn't make the log
       unreadably noisy — `stick_to_bottom` (already set, line 351) should
       keep the latest entries visible; if volume turns out to be a real
       problem, note it as a follow-up rather than silently reverting the
       per-observation logging decision.
-- [ ] New/updated tests in `notebook.rs`'s test module covering: a clean
+- [x] New/updated tests in `notebook.rs`'s test module covering: a clean
       observation (`n_confounders == 0`) logs `Clean`, a confounded one logs
       `Confounded`, and non-adjacency log entries still have
       `evidence_quality: None`.
 
 ### 2. Hypothesis graph refinements
 
-- [ ] **Dashed border for zero-evidence nodes**: a tag node renders with a
+- [x] **Dashed border for zero-evidence nodes**: a tag node renders with a
       dashed circle outline (instead of, or in addition to, the current
       solid `painter.circle_filled`, `src/notebook.rs:466`) when it has zero
       evidence in *every* direction — i.e. `knowledge.evidence(slot, other)
@@ -93,24 +93,24 @@ carrying zero gameplay/simulation risk:
       simpler "thin gray outline ring" if a true dash pattern is impractical
       in the time budget — note in the task's completion notes which one was
       chosen and why.
-- [ ] **Edge thickness by magnitude**: `draw_edge` (`src/notebook.rs:487`)
+- [x] **Edge thickness by magnitude**: `draw_edge` (`src/notebook.rs:487`)
       takes a `color` parameter today; extend it (or add a variant) to also
       take the confirmed value's magnitude (`1` or `2`, from
       `world.matrix.get(exerter, receiver).abs()`) and scale stroke width
       accordingly — e.g. `1.5` for magnitude 1, `3.0` for magnitude 2 (tune
       by eye, no config needed, this is pure presentation).
-- [ ] **Numeric label on strong (magnitude 2) confirmed edges only**: draw
+- [x] **Numeric label on strong (magnitude 2) confirmed edges only**: draw
       the signed value (`+2`/`-2`) near the edge midpoint for those edges;
       magnitude-1 edges stay unlabeled, matching the redesign note's intent
       to avoid clutter.
-- [ ] Existing `hypothesis_grid`/`draw_edge`/`draw_partial_marker` tests (if
+- [x] Existing `hypothesis_grid`/`draw_edge`/`draw_partial_marker` tests (if
       any exist beyond the module's evidence-accumulation tests) still pass;
       add a test only if the magnitude-lookup logic is non-trivial enough to
       warrant one in isolation from egui rendering.
 
 ### 3. Catalog species-color swatch
 
-- [ ] `catalog_panel` (`src/notebook.rs:592-617`)'s per-species
+- [x] `catalog_panel` (`src/notebook.rs:592-617`)'s per-species
       `ui.horizontal` block (line 603) gets a `species_color(SpeciesId(id as
       u8))`-colored swatch (matching the pattern already used for the
       observation log's species glyph, `src/notebook.rs:361`) before the
@@ -118,9 +118,9 @@ carrying zero gameplay/simulation risk:
 
 ### General
 
-- [ ] `cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt
+- [x] `cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt
       -- --check` all clean.
-- [ ] `PROJECT_PLAN.md`'s "Presentation refinement bundle" proposal entry
+- [x] `PROJECT_PLAN.md`'s "Presentation refinement bundle" proposal entry
       updated/removed once this lands.
 
 ---

@@ -89,8 +89,8 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 060 | Ambient residue trickle so an isolated Decomposer doesn't collapse outright | none | [060](060-ambient-residue-trickle.md) |
-| `[ ]` | 061 | Notebook presentation refinements (evidence-quality log, graph polish, catalog color) | none | [061](061-notebook-presentation-refinements.md) |
+| `[x]` | 060 | Ambient residue trickle so an isolated Decomposer doesn't collapse outright | none | [060](done/060-ambient-residue-trickle.md) |
+| `[x]` | 061 | Notebook presentation refinements (evidence-quality log, graph polish, catalog color) | none | [061](done/061-notebook-presentation-refinements.md) |
 | `[ ]` | 062 | Procedural alien-world background layer | none | [062](062-procedural-background-layer.md) |
 
 **Sidebar console redesign** (2026-08-08, from `redesign/abiogenesis-sidebar-redesign.md`, a self-contained design doc with two SVG mockups): a full HUD sidebar reskin — one continuous hairline-divided monospace panel instead of four bordered boxes, diegetic English labels (Moves/Biosphere/Species/"This world wants" — revised from a first, too-formal English pass), discrete tick indicators instead of progress bars, scrollable Biosphere/Species lists for N species, and a narrative-styled objective line. Split into a data-correctness prerequisite (063) and the visual/structural rewrite that consumes it (064).
@@ -174,4 +174,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-08 (tasks 063/064 scoped from `redesign/abiogenesis-sidebar-redesign.md`: population trend/repro-threshold data fix, then the sidebar console visual redesign)*
+*Last updated: 2026-08-08 (task 061: notebook presentation refinements — per-observation evidence-quality log dots, hypothesis-graph zero-evidence/magnitude polish, catalog species-color swatch)*

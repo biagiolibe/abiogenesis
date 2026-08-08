@@ -341,6 +341,16 @@ pub fn player_organism_death_message(
     )
 }
 
+/// A single `AdjacencyObserved` event (task 061), logged for every raw
+/// observation rather than only the ones that cross the confirmation
+/// threshold — the isolation principle (GDD §7) made visible by
+/// reinforcement, not just prose. Short and distinct from
+/// `confirmation_message` so the two don't read as duplicates next to each
+/// other in the log.
+pub fn observation_message(from_glyph: &str, to_glyph: &str) -> String {
+    format!("{from_glyph} → {to_glyph} observed")
+}
+
 /// A matrix cell crossing the confirmation threshold (GDD §7's "aha"
 /// moment, task 054) — distinguished from ordinary log lines by a leading
 /// glyph the caller renders separately (`notebook.rs`'s `CONFIRMATION_GLYPH`),

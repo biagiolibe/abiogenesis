@@ -30,6 +30,28 @@ pub struct LogEntry {
     pub era: u32,
     pub species: Option<SpeciesId>,
     pub text: String,
+    pub evidence_quality: Option<EvidenceQuality>,
+}
+
+/// An `AdjacencyObserved` event's evidence quality (GDD §7: "an isolated
+/// observation is worth more"), derived straight from `n_confounders` —
+/// `Clean` when the observation had none, `Confounded` otherwise. `None` on
+/// `LogEntry` for every other entry kind (deaths, extinctions, confirmations,
+/// species-created), which carry no per-observation weight to show.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EvidenceQuality {
+    Clean,
+    Confounded,
+}
+
+impl EvidenceQuality {
+    fn from_confounders(n_confounders: u32) -> Self {
+        if n_confounders == 0 {
+            EvidenceQuality::Clean
+        } else {
+            EvidenceQuality::Confounded
+        }
+    }
 }
 
 /// Ordered (oldest first), ever-growing record of salient events.
@@ -198,17 +220,25 @@ fn accumulate_evidence(
     mut unseen: ResMut<NotebookHasUnseenConfirmation>,
 ) {
     for event in observed.read() {
+        let from_glyph = tag_glyph(world.active_tags[event.exerter_tag.0 as usize]);
+        let to_glyph = tag_glyph(world.active_tags[event.receiver_tag.0 as usize]);
+        log.entries.push(LogEntry {
+            era: world.era,
+            species: None,
+            text: text::observation_message(from_glyph, to_glyph),
+            evidence_quality: Some(EvidenceQuality::from_confounders(event.n_confounders)),
+        });
+
         let weight =
             config.notebook.observation_weight_numerator / (1.0 + event.n_confounders as f32);
         let newly_confirmed = knowledge.record(event.exerter_tag, event.receiver_tag, weight);
         if newly_confirmed {
-            let from_glyph = tag_glyph(world.active_tags[event.exerter_tag.0 as usize]);
-            let to_glyph = tag_glyph(world.active_tags[event.receiver_tag.0 as usize]);
             let positive = world.matrix.get(event.exerter_tag, event.receiver_tag) > 0;
             log.entries.push(LogEntry {
                 era: world.era,
                 species: None,
                 text: text::confirmation_message(from_glyph, to_glyph, positive),
+                evidence_quality: None,
             });
             unseen.0 = true;
         }
@@ -259,6 +289,7 @@ fn record_events(
             era: world.era,
             species: Some(event.species),
             text: text::extinction_message(&species_label(event.species)),
+            evidence_quality: None,
         });
     }
 
@@ -267,6 +298,7 @@ fn record_events(
             era: world.era,
             species: None,
             text: text::objective_advanced_message(event.index),
+            evidence_quality: None,
         });
     }
 
@@ -286,6 +318,7 @@ fn record_events(
                     event.crowding_penalty,
                     event.predation_loss,
                 ),
+                evidence_quality: None,
             });
         }
     }
@@ -310,6 +343,18 @@ const TAG_GLYPH: &str = "●";
 /// species-color swatch other entries get — a confirmation is about a tag
 /// pair, not any one species, so there's no `species_color` to render.
 const CONFIRMATION_GLYPH: &str = "★";
+
+/// Marks a per-observation log line (task 061) in place of the species-color
+/// swatch or the confirmation glyph — colored by `EvidenceQuality` so the
+/// isolation principle (GDD §7) is visible at a glance, not just in prose.
+const EVIDENCE_DOT_GLYPH: &str = "●";
+
+fn evidence_quality_color(quality: EvidenceQuality) -> egui::Color32 {
+    match quality {
+        EvidenceQuality::Clean => EDGE_POSITIVE_COLOR,
+        EvidenceQuality::Confounded => PARTIAL_EVIDENCE_COLOR,
+    }
+}
 
 /// Fixed Greek-letter alphabet for `tag_glyph` (task 029): opaque, stable
 /// within a run, deterministic from `TagId` — never a hint at the tag's
@@ -356,11 +401,17 @@ fn notebook_window(
                     }
                     for entry in &log.entries {
                         ui.horizontal(|ui| {
-                            match entry.species {
-                                Some(species) => {
+                            match (entry.species, entry.evidence_quality) {
+                                (Some(species), _) => {
                                     ui.colored_label(species_color(species), TAG_GLYPH);
                                 }
-                                None => {
+                                (None, Some(quality)) => {
+                                    ui.colored_label(
+                                        evidence_quality_color(quality),
+                                        EVIDENCE_DOT_GLYPH,
+                                    );
+                                }
+                                (None, None) => {
                                     ui.label(CONFIRMATION_GLYPH);
                                 }
                             }
@@ -453,7 +504,7 @@ fn hypothesis_grid(ui: &mut egui::Ui, world: &SimWorld, knowledge: &MatrixKnowle
                 } else {
                     EDGE_NEGATIVE_COLOR
                 };
-                draw_edge(&painter, positions[ei], positions[ri], color);
+                draw_edge(&painter, positions[ei], positions[ri], color, value);
             } else if knowledge.evidence(exerter, receiver) > 0.0 {
                 draw_partial_marker(&painter, positions[ei], positions[ri]);
             }
@@ -463,6 +514,9 @@ fn hypothesis_grid(ui: &mut egui::Ui, world: &SimWorld, knowledge: &MatrixKnowle
     for (i, &tag) in tags.iter().enumerate() {
         let slot = TagSlot(i as u8);
         let pos = positions[i];
+        if has_no_evidence(slot, tags.len(), knowledge) {
+            draw_dashed_ring(&painter, pos, NODE_RADIUS + DASHED_RING_MARGIN);
+        }
         painter.circle_filled(pos, NODE_RADIUS, tag_color(tag));
         painter.text(
             pos,
@@ -479,12 +533,26 @@ fn hypothesis_grid(ui: &mut egui::Ui, world: &SimWorld, knowledge: &MatrixKnowle
     }
 }
 
+/// Stroke width for a confirmed edge of magnitude 1 vs. magnitude 2 (task
+/// 061) — tuned by eye, pure presentation, no config entry warranted.
+const EDGE_STROKE_WEAK: f32 = 1.5;
+const EDGE_STROKE_STRONG: f32 = 3.0;
+
 /// Draws one directed edge as a line stopping short of both node
 /// boundaries, capped with a small triangular arrowhead at the receiver
 /// end. Offset perpendicular to its own travel direction by `EDGE_OFFSET`
 /// so a confirmed `A → B` and a confirmed `B → A` render as two distinct
-/// parallel lines rather than overlapping.
-fn draw_edge(painter: &egui::Painter, from: egui::Pos2, to: egui::Pos2, color: egui::Color32) {
+/// parallel lines rather than overlapping. `value` is the confirmed matrix
+/// entry (`±1` or `±2`): its magnitude sets the stroke width, and a
+/// magnitude-2 edge additionally gets a signed numeric label near its
+/// midpoint — magnitude-1 edges stay unlabeled to avoid clutter.
+fn draw_edge(
+    painter: &egui::Painter,
+    from: egui::Pos2,
+    to: egui::Pos2,
+    color: egui::Color32,
+    value: i8,
+) {
     let dir = (to - from).normalized();
     let perp = egui::vec2(-dir.y, dir.x);
     let offset = perp * EDGE_OFFSET;
@@ -493,7 +561,13 @@ fn draw_edge(painter: &egui::Painter, from: egui::Pos2, to: egui::Pos2, color: e
     let tip = to + offset - dir * NODE_RADIUS;
     let base = tip - dir * ARROW_LENGTH;
 
-    painter.line_segment([start, base], egui::Stroke::new(2.0, color));
+    let magnitude = value.unsigned_abs();
+    let width = if magnitude >= 2 {
+        EDGE_STROKE_STRONG
+    } else {
+        EDGE_STROKE_WEAK
+    };
+    painter.line_segment([start, base], egui::Stroke::new(width, color));
     painter.add(egui::Shape::convex_polygon(
         vec![
             tip,
@@ -503,6 +577,54 @@ fn draw_edge(painter: &egui::Painter, from: egui::Pos2, to: egui::Pos2, color: e
         color,
         egui::Stroke::NONE,
     ));
+
+    if magnitude >= 2 {
+        let mid = start.lerp(base, 0.5) + perp * 6.0;
+        painter.text(
+            mid,
+            egui::Align2::CENTER_CENTER,
+            format!("{value:+}"),
+            egui::FontId::proportional(10.0),
+            color,
+        );
+    }
+}
+
+/// Whether a tag has zero evidence in *every* direction against every other
+/// active tag — drives the dashed-ring marker (task 061) distinguishing "no
+/// observation has ever touched this tag" from a tag with at least some
+/// partial or confirmed evidence.
+fn has_no_evidence(slot: TagSlot, tag_count: usize, knowledge: &MatrixKnowledge) -> bool {
+    (0..tag_count).all(|oi| {
+        if oi == slot.0 as usize {
+            return true;
+        }
+        let other = TagSlot(oi as u8);
+        knowledge.evidence(slot, other) == 0.0 && knowledge.evidence(other, slot) == 0.0
+    })
+}
+
+/// Margin between a zero-evidence node's dashed ring and its filled circle.
+const DASHED_RING_MARGIN: f32 = 3.0;
+/// Number of dash segments around the ring's circumference.
+const DASHED_RING_SEGMENTS: usize = 16;
+const DASHED_RING_COLOR: egui::Color32 = egui::Color32::from_gray(160);
+
+/// Approximates a dashed circle outline (egui's `Painter` has no built-in
+/// dashed-circle primitive) as alternating short arcs, each drawn as a small
+/// straight line segment — accurate enough at `NODE_RADIUS` scale, cheaper
+/// than a true arc tessellation.
+fn draw_dashed_ring(painter: &egui::Painter, center: egui::Pos2, radius: f32) {
+    for i in 0..DASHED_RING_SEGMENTS {
+        if i % 2 != 0 {
+            continue;
+        }
+        let a0 = i as f32 / DASHED_RING_SEGMENTS as f32 * std::f32::consts::TAU;
+        let a1 = (i as f32 + 0.6) / DASHED_RING_SEGMENTS as f32 * std::f32::consts::TAU;
+        let p0 = center + radius * egui::vec2(a0.cos(), a0.sin());
+        let p1 = center + radius * egui::vec2(a1.cos(), a1.sin());
+        painter.line_segment([p0, p1], egui::Stroke::new(1.5, DASHED_RING_COLOR));
+    }
 }
 
 /// A small, dim, lineless dot (task 028) marking a pair with `evidence >
@@ -601,6 +723,7 @@ fn catalog_panel(ui: &mut egui::Ui, world: &SimWorld, config: &SimConfig) {
     ui.label(text::SPECIES_HEADING);
     for (id, species) in world.species.iter().enumerate() {
         ui.horizontal(|ui| {
+            ui.colored_label(species_color(SpeciesId(id as u8)), TAG_GLYPH);
             ui.label(text::species_catalog_line(
                 &species_label(SpeciesId(id as u8)),
                 species.metabolism,
@@ -879,6 +1002,88 @@ mod tests {
             "expected numerator(1.0) / (1 + 3 confounders) = 0.25, got {}",
             knowledge.evidence(TagSlot(0), TagSlot(1))
         );
+    }
+
+    fn app_for_accumulate_evidence(config: SimConfig, world: SimWorld) -> App {
+        let mut app = App::new();
+        app.insert_resource(MatrixKnowledge::new(
+            world.active_tags.len(),
+            config.notebook.confirmation_threshold,
+        ));
+        app.insert_resource(config);
+        app.insert_resource(world);
+        app.init_resource::<ObservationLog>();
+        app.init_resource::<NotebookHasUnseenConfirmation>();
+        app.add_message::<AdjacencyObserved>();
+        app.add_systems(Update, accumulate_evidence);
+        app
+    }
+
+    #[test]
+    fn a_clean_observation_logs_an_evidence_quality_clean_entry() {
+        let config = SimConfig::default();
+        let world = SimWorld::new(42, &config);
+        let mut app = app_for_accumulate_evidence(config, world);
+
+        app.world_mut()
+            .resource_mut::<Messages<AdjacencyObserved>>()
+            .write(AdjacencyObserved {
+                receiver_species: SpeciesId(0),
+                exerter_tag: TagSlot(0),
+                receiver_tag: TagSlot(1),
+                n_confounders: 0,
+            });
+        app.update();
+
+        let log = app.world().resource::<ObservationLog>();
+        assert_eq!(log.entries.len(), 1);
+        assert_eq!(
+            log.entries[0].evidence_quality,
+            Some(EvidenceQuality::Clean)
+        );
+        assert_eq!(log.entries[0].species, None);
+    }
+
+    #[test]
+    fn a_confounded_observation_logs_an_evidence_quality_confounded_entry() {
+        let config = SimConfig::default();
+        let world = SimWorld::new(42, &config);
+        let mut app = app_for_accumulate_evidence(config, world);
+
+        app.world_mut()
+            .resource_mut::<Messages<AdjacencyObserved>>()
+            .write(AdjacencyObserved {
+                receiver_species: SpeciesId(0),
+                exerter_tag: TagSlot(0),
+                receiver_tag: TagSlot(1),
+                n_confounders: 2,
+            });
+        app.update();
+
+        let log = app.world().resource::<ObservationLog>();
+        assert_eq!(log.entries.len(), 1);
+        assert_eq!(
+            log.entries[0].evidence_quality,
+            Some(EvidenceQuality::Confounded)
+        );
+    }
+
+    #[test]
+    fn non_adjacency_log_entries_carry_no_evidence_quality() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.era = 3;
+        let mut app = app_for_record_events(world);
+
+        app.world_mut()
+            .resource_mut::<Messages<SpeciesExtinct>>()
+            .write(SpeciesExtinct {
+                species: SpeciesId(2),
+            });
+        app.update();
+
+        let log = app.world().resource::<ObservationLog>();
+        assert_eq!(log.entries[0].evidence_quality, None);
     }
 
     #[test]
