@@ -140,7 +140,10 @@ pub fn state_line(state: impl std::fmt::Debug) -> String {
 
 // --- HUD — action group ---
 
-pub const HEADING_ACTION: &str = "Action";
+/// "Moves" (task 064's sidebar redesign — diegetic relabeling of the four
+/// HUD sections, revised with the user past a first, too-formal English
+/// pass): the action selector and per-era budget.
+pub const HEADING_ACTION: &str = "Moves";
 pub const BUDGET_HOVER: &str = "Action points remaining this era";
 
 pub fn budget_bar_text(remaining: u32, total: u32) -> String {
@@ -181,8 +184,15 @@ pub fn action_tooltip(mode: ActionMode, cost: u32) -> String {
 
 // --- HUD — population group ---
 
-pub const HEADING_POPULATION: &str = "Population";
+/// "Biosphere" (task 064): the per-species population/trend list.
+pub const HEADING_POPULATION: &str = "Biosphere";
 pub const NO_POPULATION: &str = "  (none)";
+/// Shown under the Biosphere list (task 064) only when it holds more rows
+/// than fit in its fixed-height scroll area — the redesign mockup's
+/// gradient-fade affordance, approximated as a plain hint label rather than
+/// a true CSS-style fade (cheaper in egui's immediate-mode painter, and the
+/// redesign doc explicitly allows the simplification).
+pub const SCROLL_FOR_MORE: &str = "scroll for more";
 
 /// The reproduction-threshold comparison this line used to show
 /// (`avg_energy/repro_threshold`) compared a population *average* against a
@@ -199,8 +209,14 @@ pub fn population_line(species_label: &str, population: usize, avg_energy: f32) 
 
 // --- HUD — seed palette group ---
 
-pub const HEADING_SEED_PALETTE: &str = "Seed palette";
+/// "Species" (task 064): the horizontally scrollable species-selection strip.
+pub const HEADING_SEED_PALETTE: &str = "Species";
 pub const SEED_PALETTE_HOVER: &str = "Click an empty cell to place the selected species";
+/// Static overflow cue for the species chip strip (task 064), mirroring the
+/// `›` glyph at the strip's right edge in `redesign/sidebar-full.svg` — the
+/// strip's own scrollbar is hidden (see `ui.rs`'s `species_chips` comment),
+/// so this is the only signal that more chips may sit off-strip.
+pub const MORE_SPECIES_GLYPH: &str = "›";
 /// Split into two lines (task 057/058 lengthened this past a single line's
 /// room at `ui::HUD_WIDTH`) rather than relying on `egui`'s label wrap, which
 /// broke mid-word ("t/l temp/light · E" / "quit") instead of at a natural
@@ -230,11 +246,22 @@ pub const HINT_CLUSTERED_FIRST_PLACEMENT: &str =
 
 // --- HUD — objective panel (`ui.rs::objective_panel`) ---
 
-pub const HEADING_OBJECTIVE: &str = "Objective";
+/// "This world wants" (task 064): the active objective, styled as a quoted
+/// narrative line (`narrative_quote`) rather than a plain progress readout.
+pub const HEADING_OBJECTIVE: &str = "This world wants";
 pub const NO_OBJECTIVE: &str = "(no objective assigned yet)";
+
+/// Wraps an objective's description in quotes for the narrative-styled
+/// display (task 064, redesign doc §5) — the sentence itself still comes
+/// from `coexistence_objective_line`/`survive_in_objective_line`/
+/// `trigger_bloom_objective_line`, this only adds the quoting the italic
+/// treatment implies.
+pub fn narrative_quote(description: &str) -> String {
+    format!("\"{description}\"")
+}
+
 pub const OBJECTIVE_CLEARED: &str = "Cleared!";
 pub const BLOOM_NOT_TRIGGERED: &str = "not yet triggered";
-pub const BLOOM_TRIGGERED: &str = "triggered!";
 
 /// "Objective i/N" (task 059): shown only when a world poses more than one
 /// objective in sequence, so the player knows there's more to come after the

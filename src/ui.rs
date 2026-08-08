@@ -94,12 +94,14 @@ pub struct SpliceDraft {
 /// On-screen width of the HUD panel, reserved from the grid camera's
 /// viewport so the panel never draws over the grid (task 008 acceptance
 /// criterion). Presentation-only, not a simulation coefficient (see
-/// `render::CELL_SIZE` for the same rationale). Raised from the original
-/// `260.0` (playtest finding, 2026-08-07): tasks 057/058 lengthened the
-/// Population line (repro-threshold suffix) and the keyboard hint (`t`/`l`
-/// toggles) past what `260.0` had room for, clipping/mid-word-wrapping the
-/// text — `300.0` gives both, and future HUD text, headroom.
-const HUD_WIDTH: f32 = 300.0;
+/// `render::CELL_SIZE` for the same rationale). Raised from `260.0`
+/// (playtest finding, 2026-08-07, tasks 057/058) to `300.0`, then to
+/// `340.0` (task 064): switching the panel to a monospace font made every
+/// line measurably wider than the same string in the proportional font this
+/// budget was tuned against — the Biosphere row (species label + energy +
+/// trend glyph) was clipping its trailing glyph inside the vertical
+/// `ScrollArea`, which also reserves its own scrollbar width.
+const HUD_WIDTH: f32 = 340.0;
 
 /// `RenderLayers` for the dedicated egui camera: no grid entity is ever
 /// assigned to it, so this camera draws nothing of the scene, only the
@@ -122,6 +124,48 @@ const NOTEBOOK_BADGE_COLOR: egui::Color32 = egui::Color32::from_rgb(230, 190, 60
 /// the freshly-placed organism's energy, short enough not to linger once
 /// the moment it refers to has passed.
 const ISOLATION_HINT_DURATION_TICKS: u64 = 30;
+
+/// How many Biosphere rows (task 064) stay visible before the list scrolls
+/// internally, matching the redesign mockup's "~4-5 visible rows" call.
+///
+/// `BIOSPHERE_VISIBLE_ROWS * biosphere_row_height(ui)` must stay above 64.0:
+/// `egui::ScrollArea` silently floors its scrolled axis at
+/// `min_scrolled_size` (default `64.0`, egui 0.35 `scroll_area.rs`) — ask
+/// for a smaller `max_height` and the area renders at 64.0 regardless,
+/// which reads as "the cap doesn't work" instead of an early scroll trigger.
+/// Confirmed by instrumenting `ui.clip_rect()` at runtime: a `max_height`
+/// of `20.0` or `40.0` both measured an actual clip height of exactly
+/// `64.0`. The row height below is measured from the panel's own style
+/// rather than hardcoded (measured at `~18.1pt`, `max_height ~90.6pt` —
+/// safely above the floor) so the cap and the `SCROLL_FOR_MORE` threshold
+/// stay consistent with each other if the font or spacing ever changes.
+const BIOSPHERE_VISIBLE_ROWS: usize = 5;
+
+/// The height, in points, of one Biosphere `ui.horizontal` row (glyph +
+/// label + trend glyph), measured from this panel's own text style and
+/// spacing rather than guessed — see `BIOSPHERE_VISIBLE_ROWS`'s doc comment
+/// for why a hardcoded value is unsafe here.
+fn biosphere_row_height(ui: &egui::Ui) -> f32 {
+    ui.text_style_height(&egui::TextStyle::Body) + ui.spacing().item_spacing.y
+}
+
+/// Past this many required eras, an objective's progress indicator falls
+/// back from a dot row to a compact "X / Y eras" readout (task 064) — a
+/// row of dots sized to an unbounded `eras_required` would either overflow
+/// `HUD_WIDTH` or shrink past legibility. Chosen so a dot row still fits
+/// comfortably within the panel width at `DOT_SIZE`/`DOT_GAP`.
+const ERA_PROGRESS_DOT_CAP: u32 = 8;
+
+/// Color for the objective's narrative-quoted line (task 064 §5) — a warm,
+/// slightly desaturated off-white distinct from the panel's neutral-gray
+/// monospace body text, so the one deliberate font/style break also reads
+/// as visually distinct in color, not just in shape.
+const OBJECTIVE_NARRATIVE_COLOR: egui::Color32 = egui::Color32::from_rgb(180, 178, 169);
+
+/// Horizontal room reserved for `text::MORE_SPECIES_GLYPH` beside the species
+/// chip strip's `ScrollArea` — enough for one monospace glyph plus its
+/// surrounding `ui.horizontal` spacing.
+const MORE_SPECIES_GLYPH_WIDTH: f32 = 16.0;
 
 pub struct UiPlugin;
 
@@ -166,12 +210,15 @@ impl Plugin for UiPlugin {
     }
 }
 
-/// Registers `DEJAVU_SANS` as a lowest-priority fallback for the
-/// proportional font family: egui's own default font is tried first for
-/// every glyph, DejaVu Sans only fills the gaps (Greek letters, `●`). The
-/// egui context doesn't exist until the first `EguiPrimaryContextPass` run
-/// (it's attached to the camera spawned in `spawn_hud_camera`), so this
-/// can't run at `Startup`; `done` makes it a one-shot within that schedule.
+/// Registers `DEJAVU_SANS` as a lowest-priority fallback for both the
+/// proportional and monospace font families: egui's own default font for
+/// each family is tried first for every glyph, DejaVu Sans only fills the
+/// gaps (Greek letters, `●`, and — since task 064's HUD console adopted
+/// monospace panel-wide — `▲`/`▼`/`▬` if the built-in monospace family turns
+/// out not to cover them). The egui context doesn't exist until the first
+/// `EguiPrimaryContextPass` run (it's attached to the camera spawned in
+/// `spawn_hud_camera`), so this can't run at `Startup`; `done` makes it a
+/// one-shot within that schedule.
 fn configure_fonts(mut contexts: EguiContexts, mut done: Local<bool>) -> Result {
     if *done {
         return Ok(());
@@ -180,10 +227,16 @@ fn configure_fonts(mut contexts: EguiContexts, mut done: Local<bool>) -> Result 
     ctx.add_font(egui::epaint::text::FontInsert::new(
         "DejaVuSans",
         egui::FontData::from_static(DEJAVU_SANS),
-        vec![egui::epaint::text::InsertFontFamily {
-            family: egui::FontFamily::Proportional,
-            priority: egui::epaint::text::FontPriority::Lowest,
-        }],
+        vec![
+            egui::epaint::text::InsertFontFamily {
+                family: egui::FontFamily::Proportional,
+                priority: egui::epaint::text::FontPriority::Lowest,
+            },
+            egui::epaint::text::InsertFontFamily {
+                family: egui::FontFamily::Monospace,
+                priority: egui::epaint::text::FontPriority::Lowest,
+            },
+        ],
     ));
     *done = true;
     Ok(())
@@ -268,81 +321,109 @@ fn hud_panel(
         .exact_size(HUD_WIDTH)
         .resizable(false)
         .show(&mut viewport_ui, |ui| {
+            // One continuous "lab console" panel (task 064): monospace
+            // panel-wide, scoped to this `Ui` and its children only — egui's
+            // per-`TextStyle` font map is copy-on-write, so this never
+            // touches the notebook window, menu screens, or the grid itself
+            // (pillar-3 scoping the redesign doc calls for explicitly).
+            // Family only, not size, so headings/body/small text keep their
+            // existing relative proportions.
+            for font_id in ui.style_mut().text_styles.values_mut() {
+                font_id.family = egui::FontFamily::Monospace;
+            }
+
             ui.heading(text::HEADING_TITLE);
+            ui.label(text::era_tick_line(world.era, world.tick));
+            ui.label(text::seed_line(world.seed));
+            ui.label(text::state_line(era_state.get()));
 
-            group_frame(ui, |ui| {
-                ui.label(text::era_tick_line(world.era, world.tick));
-                ui.label(text::seed_line(world.seed));
-                ui.label(text::state_line(era_state.get()));
-            });
+            hairline(ui);
+            ui.strong(text::HEADING_ACTION);
+            action_icon_row(ui, &mut selected_action, &config);
 
-            ui.add_space(6.0);
-            group_frame(ui, |ui| {
-                ui.strong(text::HEADING_ACTION);
-                action_icon_row(ui, &mut selected_action, &config);
-
-                let total = config.time.point_budget_per_era;
-                let fraction = if total == 0 {
-                    0.0
-                } else {
-                    budget.points_remaining as f32 / total as f32
-                };
-                ui.add(
-                    egui::ProgressBar::new(fraction)
-                        .text(text::budget_bar_text(budget.points_remaining, total)),
-                )
+            let total = config.time.point_budget_per_era;
+            dot_row(ui, budget.points_remaining, total, DotShape::Tick)
                 .on_hover_text(text::BUDGET_HOVER);
+            ui.weak(text::budget_bar_text(budget.points_remaining, total));
 
-                if selected_action.0 == ActionMode::Splice {
-                    ui.separator();
+            if selected_action.0 == ActionMode::Splice {
+                ui.indent("splice_panel", |ui| {
                     splice_panel(ui, &world, &mut splice_draft);
-                }
+                });
+            }
+
+            hairline(ui);
+            ui.strong(text::HEADING_POPULATION);
+            if stats.is_empty() {
+                ui.weak(text::NO_POPULATION);
+            }
+            egui::ScrollArea::vertical()
+                .id_salt("biosphere_list")
+                .max_height(BIOSPHERE_VISIBLE_ROWS as f32 * biosphere_row_height(ui))
+                .show(ui, |ui| {
+                    for (species, population, avg_energy) in &stats {
+                        ui.horizontal(|ui| {
+                            ui.colored_label(species_color(*species), SPECIES_GLYPH);
+                            ui.label(text::population_line(
+                                &species_label(*species),
+                                *population,
+                                *avg_energy,
+                            ));
+                            let trend = trends.trend_for(*species);
+                            ui.colored_label(trend_color(trend), trend_glyph(trend));
+                        });
+                    }
+                });
+            if stats.len() > BIOSPHERE_VISIBLE_ROWS {
+                ui.weak(text::SCROLL_FOR_MORE);
+            }
+
+            hairline(ui);
+            ui.strong(text::HEADING_SEED_PALETTE)
+                .on_hover_text(text::SEED_PALETTE_HOVER);
+            // A visible scrollbar here would overlap the chip row itself —
+            // this scroll area is exactly one row tall, with no extra
+            // height reserved below it — turning every click near a chip's
+            // edge into a scrollbar grab instead of a selection (caught by
+            // playtest: dragging where a click was intended scrolled the
+            // strip rather than selecting a chip). Hidden entirely; wheel
+            // and drag-to-scroll both still work, just without a visible
+            // track competing with the console's minimal aesthetic anyway.
+            ui.horizontal(|ui| {
+                // Reserve room for the `›` cue below: an unconstrained
+                // ScrollArea claims all remaining horizontal space in this
+                // `ui.horizontal`, which pushed the glyph off the fixed-width
+                // side panel's clip rect entirely (invisible, not just
+                // crowded) until this was capped.
+                let available = ui.available_width() - MORE_SPECIES_GLYPH_WIDTH;
+                egui::ScrollArea::horizontal()
+                    .id_salt("species_chips")
+                    .max_width(available)
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            for i in 0..world.species.len() as u8 {
+                                species_chip(ui, SpeciesId(i), &mut selected.0);
+                            }
+                        });
+                    });
+                // Hiding the scrollbar above removes the only visual cue
+                // that more chips exist off-strip — the mockup
+                // (sidebar-full.svg) marks this with a static `›` at the
+                // strip's right edge, which we mirror here.
+                ui.weak(text::MORE_SPECIES_GLYPH);
             });
 
-            ui.add_space(6.0);
-            group_frame(ui, |ui| {
-                ui.strong(text::HEADING_POPULATION);
-                if stats.is_empty() {
-                    ui.weak(text::NO_POPULATION);
-                }
-                for (species, population, avg_energy) in &stats {
-                    ui.horizontal(|ui| {
-                        ui.colored_label(species_color(*species), SPECIES_GLYPH);
-                        ui.label(text::population_line(
-                            &species_label(*species),
-                            *population,
-                            *avg_energy,
-                        ));
-                        let trend = trends.trend_for(*species);
-                        ui.colored_label(trend_color(trend), trend_glyph(trend));
-                    });
-                }
-            });
-
-            ui.add_space(6.0);
-            group_frame(ui, |ui| {
-                ui.strong(text::HEADING_SEED_PALETTE)
-                    .on_hover_text(text::SEED_PALETTE_HOVER);
-                for i in 0..world.species.len() as u8 {
-                    let species = SpeciesId(i);
-                    ui.horizontal(|ui| {
-                        ui.colored_label(species_color(species), SPECIES_GLYPH);
-                        ui.radio_value(&mut selected.0, species, species_label(species));
-                    });
-                }
-            });
-            ui.add_space(6.0);
-            group_frame(ui, |ui| {
-                ui.strong(text::HEADING_OBJECTIVE);
-                objective_panel(
-                    ui,
-                    objective.current(),
-                    objective.index,
-                    objective.total(),
-                    &objective_progress,
-                    config.time.era_ticks,
-                );
-            });
+            hairline(ui);
+            ui.strong(text::HEADING_OBJECTIVE);
+            objective_panel(
+                ui,
+                objective.current(),
+                objective.index,
+                objective.total(),
+                &objective_progress,
+                config.time.era_ticks,
+            );
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                 ui.weak(text::KEYBOARD_HINT_PRIMARY);
@@ -440,18 +521,14 @@ fn viewport_hint(
     Ok(())
 }
 
-/// Current-objective panel (task 043, GDD §11): the objective's sentence
-/// plus a progress bar, reusing the `ActionBudget` bar's visual pattern
-/// (`egui::ProgressBar` with an overlaid text). Formats the concrete
-/// numbers/labels here (species name, era counts) and hands them to
-/// `text.rs`'s parametrized templates, since `text.rs` never reaches into
-/// `Objective`/`SimWorld`-derived data on its own (task 034's constraint).
-///
-/// The bar's *fill* stays tick-precise (`fraction`, straight from
-/// `consecutive_ticks`/`ticks`) for smooth per-tick animation; only the
-/// *label* overlaid on it is reformatted in eras (task 049, GDD §11: ticks
-/// aren't a unit the player should need to think in — `era_ticks` is the
-/// player's own "advance era" button).
+/// Current-objective panel (task 043, GDD §11; restyled task 064 per the
+/// sidebar redesign's §5 "narrative accent"): the objective's sentence as an
+/// italicized, quoted line in the panel's one deliberate non-monospace
+/// accent, followed by a discrete progress indicator instead of a
+/// continuous bar. Formats the concrete numbers/labels here (species name,
+/// era counts) and hands them to `text.rs`'s parametrized templates, since
+/// `text.rs` never reaches into `Objective`/`SimWorld`-derived data on its
+/// own (task 034's constraint).
 fn objective_panel(
     ui: &mut egui::Ui,
     objective: Option<&Objective>,
@@ -469,72 +546,84 @@ fn objective_panel(
         ui.weak(text::objective_sequence_position(index, total));
     }
 
-    let (description, fraction, bar_text) = match *objective {
-        Objective::Coexistence { min_species, ticks } => {
-            let fraction = if ticks == 0 {
-                1.0
-            } else {
-                progress.consecutive_ticks as f32 / ticks as f32
-            };
-            let (eras_held, eras_required) =
-                eras_progress(progress.consecutive_ticks, ticks, era_ticks);
-            (
-                text::coexistence_objective_line(min_species),
-                fraction,
-                text::sustained_progress_bar_text(eras_held, eras_required),
-            )
-        }
-        Objective::SurviveIn {
-            species,
-            zone,
-            ticks,
-        } => {
-            let fraction = if ticks == 0 {
-                1.0
-            } else {
-                progress.consecutive_ticks as f32 / ticks as f32
-            };
-            let (eras_held, eras_required) =
-                eras_progress(progress.consecutive_ticks, ticks, era_ticks);
-            (
-                text::survive_in_objective_line(&species_label(species), text::zone_label(zone)),
-                fraction,
-                text::sustained_progress_bar_text(eras_held, eras_required),
-            )
+    let description = match *objective {
+        Objective::Coexistence { min_species, .. } => text::coexistence_objective_line(min_species),
+        Objective::SurviveIn { species, zone, .. } => {
+            text::survive_in_objective_line(&species_label(species), text::zone_label(zone))
         }
         Objective::TriggerBloom {
             species,
             population_threshold,
-        } => {
-            let fraction = if progress.satisfied { 1.0 } else { 0.0 };
-            let bar_text = if progress.satisfied {
-                text::BLOOM_TRIGGERED
-            } else {
-                text::BLOOM_NOT_TRIGGERED
-            };
-            (
-                text::trigger_bloom_objective_line(&species_label(species), population_threshold),
-                fraction,
-                bar_text.to_string(),
-            )
-        }
+        } => text::trigger_bloom_objective_line(&species_label(species), population_threshold),
     };
+    // The redesign's one deliberate break from the panel-wide monospace
+    // style (task 064 §5, "da usare con parsimonia" — used sparingly,
+    // nowhere else in the panel): switched back to the game's normal
+    // proportional font and italicized, so it reads as a narrative quote
+    // rather than console output, without needing to bundle a dedicated
+    // serif font asset for a single line (`DejaVuSans` stays a glyph-gap
+    // fallback, not a stylistic choice, so isn't reused here).
+    ui.label(
+        egui::RichText::new(text::narrative_quote(&description))
+            .italics()
+            .family(egui::FontFamily::Proportional)
+            .color(OBJECTIVE_NARRATIVE_COLOR),
+    );
 
-    ui.label(description);
-    let bar_text = if progress.satisfied {
-        text::OBJECTIVE_CLEARED.to_string()
+    if progress.satisfied {
+        ui.weak(text::OBJECTIVE_CLEARED);
+        return;
+    }
+
+    match *objective {
+        Objective::Coexistence { ticks, .. } | Objective::SurviveIn { ticks, .. } => {
+            let (eras_held, eras_required) =
+                eras_progress(progress.consecutive_ticks, ticks, era_ticks);
+            match era_progress_display(eras_required) {
+                EraProgressDisplay::Dots => {
+                    dot_row(ui, eras_held, eras_required, DotShape::Circle);
+                }
+                EraProgressDisplay::Numeric => {
+                    ui.weak(text::sustained_progress_bar_text(eras_held, eras_required));
+                }
+            }
+        }
+        // A bloom is a single triggering event, not a sustained count (see
+        // `Objective::TriggerBloom`'s own doc comment) — a state label is
+        // the whole story, no indicator of any shape needed.
+        Objective::TriggerBloom { .. } => {
+            ui.weak(text::BLOOM_NOT_TRIGGERED);
+        }
+    }
+}
+
+/// Which shape an objective's era-progress indicator takes, given how many
+/// eras it requires — the pure decision behind `objective_panel`'s dots-vs-
+/// text branch, split out so the `ERA_PROGRESS_DOT_CAP` boundary is
+/// unit-testable without an `egui::Ui`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EraProgressDisplay {
+    Dots,
+    Numeric,
+}
+
+/// Past `ERA_PROGRESS_DOT_CAP`, a row of dots would either grow wider than
+/// `HUD_WIDTH` or shrink unreadably small — a compact "X / Y eras" readout
+/// degrades gracefully instead.
+fn era_progress_display(eras_required: u32) -> EraProgressDisplay {
+    if eras_required <= ERA_PROGRESS_DOT_CAP {
+        EraProgressDisplay::Dots
     } else {
-        bar_text
-    };
-    ui.add(egui::ProgressBar::new(fraction.clamp(0.0, 1.0)).text(bar_text));
+        EraProgressDisplay::Numeric
+    }
 }
 
 /// Converts a sustained objective's tick counts to whole eras for display
 /// (task 049): `eras_held` floors (an era in progress doesn't count until
 /// complete), `eras_required` ceils (a requirement of, say, 70 ticks with a
 /// 25-tick era still genuinely needs 3 full eras, not 2) — chosen so the
-/// displayed fraction never claims "done" before `progress.satisfied`
-/// actually flips.
+/// displayed count never claims "done" before `progress.satisfied` actually
+/// flips.
 fn eras_progress(consecutive_ticks: u32, required_ticks: u32, era_ticks: u32) -> (u32, u32) {
     if era_ticks == 0 {
         return (0, 0);
@@ -545,15 +634,99 @@ fn eras_progress(consecutive_ticks: u32, required_ticks: u32, era_ticks: u32) ->
     )
 }
 
-/// Visually separates one HUD zone from the next (task 030): a bordered,
-/// rounded `egui::Frame` instead of the flat `ui.separator()` list this
-/// replaced, so World state / Action / Population / Seed palette read as
-/// distinct groups rather than one undifferentiated stack.
-fn group_frame<R>(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui) -> R) -> R {
-    egui::Frame::group(ui.style())
-        .inner_margin(6.0)
-        .show(ui, |ui| add_contents(ui))
-        .inner
+/// Low-contrast divider between HUD sections (task 064's redesign,
+/// replacing `group_frame`'s bordered boxes): a thin painted line rather
+/// than `egui::Separator`, so its color is independent of `Visuals`'
+/// widget-stroke styling and stays a deliberately faint hairline instead of
+/// picking up whatever contrast egui's default separator uses elsewhere.
+const HAIRLINE_COLOR: egui::Color32 = egui::Color32::from_rgb(35, 38, 46);
+
+fn hairline(ui: &mut egui::Ui) {
+    ui.add_space(6.0);
+    let rect = ui.available_rect_before_wrap();
+    let y = ui.cursor().top();
+    ui.painter()
+        .hline(rect.x_range(), y, egui::Stroke::new(0.5, HAIRLINE_COLOR));
+    ui.add_space(6.0);
+}
+
+/// Which shape `dot_row` paints per slot — `Tick` for the action budget
+/// (matching the redesign mockup's rounded-rect ticks), `Circle` for
+/// objective era-progress (matching its own mockup's hollow/filled dots).
+/// Two call sites, two mockup-specified shapes, kept as one function rather
+/// than two near-duplicates.
+#[derive(Clone, Copy)]
+enum DotShape {
+    Tick,
+    Circle,
+}
+
+/// Color for a filled slot in `dot_row` — the same green `trend_color` uses
+/// for `Rising`, reused here as this panel's one "available/progressing"
+/// accent rather than inventing a second green.
+const DOT_FILLED_COLOR: egui::Color32 = egui::Color32::from_rgb(96, 200, 120);
+const DOT_EMPTY_COLOR: egui::Color32 = egui::Color32::from_gray(60);
+const DOT_SIZE: f32 = 8.0;
+const DOT_GAP: f32 = 5.0;
+
+/// Renders `total` discrete slots, the first `filled` of them filled — the
+/// task 064 replacement for continuous `egui::ProgressBar`s on small,
+/// countable resources (action budget, era progress) that a percentage bar
+/// misrepresents as a continuous metric. `total == 0` (a zero-budget config,
+/// or an objective needing zero eras) draws nothing rather than a
+/// zero-width allocation.
+fn dot_row(ui: &mut egui::Ui, filled: u32, total: u32, shape: DotShape) -> egui::Response {
+    let filled = filled.min(total);
+    let width = if total == 0 {
+        0.0
+    } else {
+        total as f32 * (DOT_SIZE + DOT_GAP) - DOT_GAP
+    };
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(width.max(0.0), DOT_SIZE), egui::Sense::hover());
+    let painter = ui.painter();
+    for i in 0..total {
+        let is_filled = i < filled;
+        let x = rect.left() + i as f32 * (DOT_SIZE + DOT_GAP);
+        match shape {
+            DotShape::Tick => {
+                let tick_rect = egui::Rect::from_min_size(
+                    egui::pos2(x, rect.center().y - 1.5),
+                    egui::vec2(DOT_SIZE, 3.0),
+                );
+                let color = if is_filled {
+                    DOT_FILLED_COLOR
+                } else {
+                    DOT_EMPTY_COLOR
+                };
+                painter.rect_filled(tick_rect, 1.5, color);
+            }
+            DotShape::Circle => {
+                let center = egui::pos2(x + DOT_SIZE / 2.0, rect.center().y);
+                let radius = DOT_SIZE / 2.0;
+                if is_filled {
+                    painter.circle_filled(center, radius, DOT_FILLED_COLOR);
+                } else {
+                    painter.circle_stroke(center, radius, egui::Stroke::new(1.0, DOT_EMPTY_COLOR));
+                }
+            }
+        }
+    }
+    response
+}
+
+/// One species as a selectable chip in the horizontally scrollable Species
+/// strip (task 064, replacing the vertical radio-button list — the redesign
+/// doc's rationale: a vertical list only works up to 3-4 species, a
+/// scrollable strip scales to however many `Splice` produces). Clicking
+/// sets `SelectedSpecies` exactly as the old radio buttons did, no behavior
+/// change past layout.
+fn species_chip(ui: &mut egui::Ui, species: SpeciesId, selected: &mut SpeciesId) {
+    let is_selected = *selected == species;
+    let text = egui::RichText::new(species_label(species)).color(species_color(species));
+    if ui.selectable_label(is_selected, text).clicked() {
+        *selected = species;
+    }
 }
 
 /// One glyph per `ActionMode`, in selector order. Names/descriptions/costs
@@ -834,6 +1007,23 @@ fn trend_color(trend: PopulationTrend) -> egui::Color32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn era_progress_display_shows_dots_at_and_under_the_cap() {
+        assert_eq!(
+            era_progress_display(ERA_PROGRESS_DOT_CAP),
+            EraProgressDisplay::Dots
+        );
+        assert_eq!(era_progress_display(1), EraProgressDisplay::Dots);
+    }
+
+    #[test]
+    fn era_progress_display_falls_back_to_numeric_past_the_cap() {
+        assert_eq!(
+            era_progress_display(ERA_PROGRESS_DOT_CAP + 1),
+            EraProgressDisplay::Numeric
+        );
+    }
 
     #[test]
     fn classify_trend_detects_a_clear_rise() {

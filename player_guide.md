@@ -19,7 +19,7 @@ There are two mysteries running at once: **what will happen** — the ecosystem 
 | `l` | Toggle a light heatmap over the grid (blue = dark, red = bright) |
 | `Esc` | Quit |
 
-The HUD's left panel lets you pick which species to seed, which action is active, and shows your population, action budget, and current objective at a glance.
+The HUD's right-hand console lets you pick which species to seed (**Species**), which action is active (**Moves**), and shows your biosphere and its trends (**Biosphere**) and current goal (**This world wants**) at a glance.
 
 ---
 
@@ -47,7 +47,7 @@ Every species has a readable side and a hidden side.
   - *Predator* draws energy from neighboring organisms.
   - *Decomposer* draws energy from residue in its own cell or a neighboring one — it needs to actually be adjacent to leftover residue, not just anywhere.
 - **Preferred temperature** — every metabolism's gain above is *multiplied* by how close the cell's temperature is to the species' comfort zone, not added to as a separate cost. This applies equally to all three: a Decomposer sitting right next to abundant residue can still starve to death if that cell's temperature is far from its optimum — the residue being there isn't enough on its own. If an organism keeps dying despite its metabolism's fuel being visibly present (residue, light, prey), suspect a bad temperature fit before suspecting a hidden matrix effect.
-- **Reproduction threshold** — once an organism has enough energy, it reproduces into an empty neighboring cell. The threshold is the same for every species and shown in the notebook's species catalog (`tab`), alongside metabolism and temperature range. The HUD's Population panel instead shows each species' population trend since the last era (▲ rising / ▼ falling / ▬ stable) — actual births are logged as a per-era summary ("Kael: +3 births this era") when they happen.
+- **Reproduction threshold** — once an organism has enough energy, it reproduces into an empty neighboring cell. The threshold is the same for every species and shown in the notebook's species catalog (`tab`), alongside metabolism and temperature range. The HUD's Biosphere section instead shows each species' population trend since the last era (▲ rising / ▼ falling / ▬ stable) — actual births are logged as a per-era summary ("Kael: +3 births this era") when they happen.
 
 **Hidden:**
 - **1 to 3 biochemical tags** per species — shown only as nameless glyphs and colors. Tags are the *only* thing that determines how two adjacent species affect each other, and that effect is defined by a secret matrix generated fresh for every world. You never see the matrix directly — you infer it from what happens when tagged organisms sit next to each other.
