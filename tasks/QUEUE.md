@@ -101,6 +101,14 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 | `[x]` | 064 | Sidebar console redesign | 063 | [064](done/064-sidebar-console-redesign.md) |
 | `[x]` | 065 | Species list vertical, metabolism glyph, seed relocated (playtest correction to 064) | 064 | [065](done/065-species-list-vertical-metabolism-seed-relocation.md) |
 
+**Terrain map** (2026-08-09, from `redesign/abiogenesis-terrain-map.md`): elevation becomes real per-cell simulation data (plains/hills/mountains/sea, procedurally generated per world), not a decorative visual seed — a possible future factor in evolution. Sea is deliberately not hardcoded as permanently unplaceable (a future aquatic species is planned); placement gating goes through a single centralized check. The toxic zone becomes variable position/size, guaranteed to overlap placeable land so `SurviveIn` stays satisfiable. Split into a data/worldgen task, a placement-gating task, and a rendering task, mirroring the 063→064 pattern.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[ ]` | 066 | Terrain field + procedural elevation generation | none | [066](066-terrain-field-procedural-elevation-generation.md) |
+| `[ ]` | 067 | Placement gating on terrain | 066 | [067](067-placement-gating-on-terrain.md) |
+| `[ ]` | 068 | Terrain rendering: elevation bands, boundaries, peak glyphs, toxic-zone overlay | 066, 067 | [068](068-terrain-rendering-bands-boundaries-glyphs.md) |
+
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) and expands into task files after Phase 3.
@@ -175,4 +183,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-09 (task 065: Species list switched from horizontal chip strip to vertical scroll matching Biosphere, metabolism glyph added per row, seed line moved from header to footer — playtest correction to task 064)*
+*Last updated: 2026-08-09 (tasks 066-068 added: terrain map — elevation as real per-cell simulation data from `redesign/abiogenesis-terrain-map.md`)*

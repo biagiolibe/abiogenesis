@@ -203,6 +203,14 @@ Full HUD sidebar reskin from a self-contained design doc (with two SVG mockups):
 - `[x]` 064 — Sidebar console redesign: the structural/visual rewrite of `hud_panel` — one continuous hairline-divided monospace panel, discrete dot/tick indicators replacing progress bars, an italicized narrative-styled objective line (`RichText::italics()` approximation, no new font asset), and scrollable Biosphere/Species lists for N species. Verification surfaced and fixed two real UX bugs (`HUD_WIDTH` too narrow for monospace text; the horizontal chip strip's scrollbar overlapping the clickable row) and one egui gotcha (`ScrollArea` floors its scrolled axis at `min_scrolled_size = 64.0`pt — the Biosphere row cap is now measured from the panel's own text style instead of a hardcoded guess, keeping it and the "scroll for more" hint threshold consistent) → [064](tasks/done/064-sidebar-console-redesign.md)
 - `[x]` 065 — Species list vertical, metabolism glyph, seed relocated: playtest correction to 064, raised directly by the user. The mockup's horizontal chip strip for Species turned out less discoverable in practice than Biosphere's vertical-scroll pattern (its hidden scrollbar needed a dedicated `›` cue just to signal overflow) — switched Species to the same vertical `ScrollArea`/`SCROLL_FOR_MORE` pattern, removing the chip-strip machinery entirely. Each Species row now shows its metabolism (☀/⚔/♻, `render::metabolism_glyph`) since it's a readable GDD trait a fresh player otherwise couldn't see before opening the notebook. The seed number moved from the header to the footer, next to the keyboard hints, matching the mockup's header (which never included it) → [065](tasks/done/065-species-list-vertical-metabolism-seed-relocation.md)
 
+### 🏔️ Terrain map: elevation as real simulation data (2026-08-09, from `redesign/abiogenesis-terrain-map.md`)
+
+The redesign doc originally proposed elevation bands as a visual-only overlay with terrain generation itself out of scope. Design discussion superseded that: elevation becomes a real per-cell dimension (plains/hills/mountains/sea, procedurally generated per world), a possible future factor in evolution alongside others TBD — not a decorative value disconnected from the simulation, per the doc's own point 6. Sea is deliberately *not* hardcoded as permanently unplaceable: a future aquatic species is planned, so gating goes through one centralized `SimWorld` check instead of scattered terrain conditionals. The toxic zone (previously a fixed bottom-right rectangle) becomes variable position/size, generated to always overlap enough placeable land to keep `SurviveIn` satisfiable. Split into three dependency-ordered tasks mirroring the 063→064 data/visual split.
+
+- `[ ]` 066 — Terrain field + procedural elevation generation (data/worldgen layer, no rendering, no placement gating) → [066](tasks/066-terrain-field-procedural-elevation-generation.md)
+- `[ ]` 067 — Placement gating on terrain (Seed action + reproduction respect terrain, via a single centralized query point) → [067](tasks/067-placement-gating-on-terrain.md)
+- `[ ]` 068 — Terrain rendering: elevation bands, boundaries, peak glyphs, toxic-zone dashed overlay → [068](tasks/068-terrain-rendering-bands-boundaries-glyphs.md)
+
 ### 🎚️ Final tuning — *the real art*
 
 **Goal:** *interesting and readable* emergence, avoiding "everything dies" and "one dominates" (GDD §13, §14).
@@ -241,4 +249,4 @@ Full HUD sidebar reskin from a self-contained design doc (with two SVG mockups):
 
 ---
 
-*Last updated: 2026-08-09 (task 065 complete: playtest correction to the sidebar console — Species list now vertical with metabolism glyphs, seed moved to the footer)*
+*Last updated: 2026-08-09 (tasks 066-068 added: terrain map — elevation as real per-cell simulation data, procedurally generated, gating placement, then rendered as flat bands/boundaries/glyphs, from `redesign/abiogenesis-terrain-map.md`)*
