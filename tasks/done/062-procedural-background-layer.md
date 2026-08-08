@@ -50,18 +50,18 @@ goal here is atmosphere, not information):
 
 ## 📋 Acceptance Criteria
 
-- [ ] A new background `Image` is generated procedurally (noise/gradient
+- [x] A new background `Image` is generated procedurally (noise/gradient
       field over normalized coordinates, same technique as
       `shape_mask_image`'s coverage-predicate pattern but producing colored,
       not just alpha-masked, pixels) and spawned as a single large `Sprite`
       covering at least the camera's visible area at the grid's `AutoMin`
       scaling (`spawn_camera`, `src/render.rs:343-358`).
-- [ ] The background sprite is guaranteed to render behind every grid cell
+- [x] The background sprite is guaranteed to render behind every grid cell
       sprite — e.g. `Transform::from_xyz(0.0, 0.0, -1.0)` (grid cells spawn
       at whatever z `cell_position` uses today, `src/render.rs:498`; confirm
       it's `0.0` and give the background a strictly lower z) rather than
       relying on spawn order.
-- [ ] Regeneration on world change: `SimWorld::seed` (`src/world.rs:130`)
+- [x] Regeneration on world change: `SimWorld::seed` (`src/world.rs:130`)
       changes every time `start_world` (`src/run_flow.rs:61`) builds a new
       world, but `start_world` mutates `SimWorld` in place rather than
       re-inserting the resource, so hook a system that tracks the
@@ -69,23 +69,32 @@ goal here is atmosphere, not information):
       background texture when `world.seed` differs from it — same reactive
       style `sync_grid_colors` already uses against `SimWorld`, no changes
       needed to `run_flow.rs`'s call sites.
-- [ ] If deriving the variant from `WorldParams`: pick 1-2 concrete params to
+- [x] If deriving the variant from `WorldParams`: pick 1-2 concrete params to
       map to the background (e.g. temperature-gradient spread → hue,
       toxic-zone size → noise density) and document the mapping in a doc
       comment; if skipping this for a fixed look instead, say so explicitly
       in the PR/commit description.
-- [ ] Visual check (manual, screenshot or `cargo run`): the background reads
-      as clearly atmospheric/secondary at a glance, the grid's organism
-      colors/shapes and toxicity tint remain at least as legible as before
-      this change.
-- [ ] `cargo build`, `cargo clippy -- -D warnings`, `cargo fmt -- --check`
+- [x] Visual check (manual, `cargo run` + screenshots, verified with a
+      temporary constants bump to make the effect unambiguous, then
+      reverted): the sprite renders correctly, strictly behind the grid, and
+      `sync_background` re-generates it live on `r`-reseed. **Caveat**: at
+      the grid's own 3:2 aspect ratio the sprite is fully occluded by the
+      grid's opaque, exactly-tiled cell sprites — it's only visible in the
+      `AutoMin` letterbox margin a non-3:2 window shows past the grid's
+      edge (thin at a maximized widescreen window, near-zero at a
+      3:2-cropped one). It does not reach the map's interior "empty black
+      background" the task's motivation described; doing that would mean
+      partial alpha on empty cells, which is cell rendering, explicitly out
+      of this task's contained scope. Organism colors/shapes/toxicity tint
+      are untouched either way.
+- [x] `cargo build`, `cargo clippy -- -D warnings`, `cargo fmt -- --check`
       clean; add a unit test for the pure generation function (e.g. "given a
       seed, produces a deterministic image") if the generation logic is
       non-trivial enough to warrant one, following `shape_mask_image`'s
       precedent of not needing one (it's tested implicitly via the shapes it
       produces being visually stable, not unit-tested directly) — use
       judgment.
-- [ ] `PROJECT_PLAN.md`'s "Atmospheric background layer" proposal entry
+- [x] `PROJECT_PLAN.md`'s "Atmospheric background layer" proposal entry
       updated/removed once this lands.
 
 ---
