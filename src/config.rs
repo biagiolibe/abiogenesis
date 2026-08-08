@@ -17,6 +17,7 @@ pub struct SimConfig {
     pub difficulty: DifficultyConfig,
     pub worldgen: WorldgenConfig,
     pub objectives: ObjectiveConfig,
+    pub terrain: TerrainConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -387,6 +388,67 @@ impl Default for ObjectiveConfig {
             coexistence_ticks_base: 100,
             survive_in_ticks_base: 75,
             trigger_bloom_population_threshold_base: 8,
+        }
+    }
+}
+
+/// Procedural terrain generation (task 066, `redesign/abiogenesis-terrain-map.md`):
+/// elevation is real per-cell simulation data, not a decorative value, so its
+/// thresholds live here like every other simulation coefficient (no magic
+/// numbers). `Sea` is deliberately not called out as "impassable" anywhere in
+/// this config — that's a placement-gating decision (task 067), kept
+/// separate so a future aquatic species doesn't require touching generation.
+#[derive(Debug, Clone)]
+pub struct TerrainConfig {
+    /// How many summed plane waves shape the elevation field (task 066) —
+    /// same dependency-free noise technique as `render.rs`'s decorative
+    /// background layer, but this field is real simulation data.
+    pub noise_wave_count: u32,
+    /// Elevation below this becomes `TerrainKind::Sea`.
+    pub sea_threshold: f32,
+    /// Elevation at/above `sea_threshold` and below this becomes `Plain`.
+    pub hill_threshold: f32,
+    /// Elevation at/above `hill_threshold` and below this becomes `Hill`;
+    /// at/above it becomes `Mountain`.
+    pub mountain_threshold: f32,
+    /// Minimum elevation, within `Mountain`, for a cell to even be eligible
+    /// as a peak (in addition to being a local maximum among its Moore
+    /// neighbours) — keeps peaks confined to a mountain's actual summit
+    /// rather than marking every local wobble along its foot.
+    pub peak_elevation_threshold: f32,
+    /// Minimum fraction of the grid that must classify as placeable
+    /// (`Plain`, `Hill`, or non-peak `Mountain`; `Sea` never counts) for a
+    /// generated terrain to be accepted outright.
+    pub min_placeable_fraction: f32,
+    /// Bounded resample attempts (whole elevation field, not per-cell — a
+    /// per-cell resample would destroy the organic shape) if a draw's
+    /// placeable fraction falls short of `min_placeable_fraction`. The best
+    /// draw seen is kept if none clears the floor within this many
+    /// attempts, same defensive-generation spirit as tasks 047/048.
+    pub max_generation_attempts: u32,
+    /// Minimum fraction of the toxic zone's own footprint that must be
+    /// placeable land, once a candidate position is tried — keeps the
+    /// `SurviveIn` objective satisfiable regardless of where terrain
+    /// generation put the sea/mountains.
+    pub min_toxic_zone_placeable_fraction: f32,
+    /// Bounded resample attempts when searching for a toxic zone position
+    /// meeting `min_toxic_zone_placeable_fraction`. The best position seen
+    /// is kept if none clears the floor within this many attempts.
+    pub max_toxic_zone_placement_attempts: u32,
+}
+
+impl Default for TerrainConfig {
+    fn default() -> Self {
+        Self {
+            noise_wave_count: 4,
+            sea_threshold: 0.32,
+            hill_threshold: 0.55,
+            mountain_threshold: 0.78,
+            peak_elevation_threshold: 0.88,
+            min_placeable_fraction: 0.55,
+            max_generation_attempts: 8,
+            min_toxic_zone_placeable_fraction: 0.5,
+            max_toxic_zone_placement_attempts: 24,
         }
     }
 }

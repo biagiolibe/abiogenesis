@@ -539,7 +539,12 @@ mod tests {
     #[test]
     fn survive_in_toxic_zone_requires_sustained_presence() {
         let mut world = world_with_species(1);
-        world.toxic_zone = ToxicZoneBounds { x0: 0, y0: 0 };
+        world.toxic_zone = ToxicZoneBounds {
+            x0: 0,
+            y0: 0,
+            width: 1,
+            height: 1,
+        };
         place(&mut world, 0, 0, SpeciesId(0));
 
         let objective = Objective::SurviveIn {
@@ -566,11 +571,13 @@ mod tests {
     #[test]
     fn survive_in_toxic_zone_is_not_satisfied_by_a_clean_cell() {
         let mut world = world_with_species(1);
-        // The zone is the bottom-right corner; the organism sits at (0, 0),
-        // outside it.
+        // The zone is a single cell in the bottom-right corner; the organism
+        // sits at (0, 0), outside it.
         world.toxic_zone = ToxicZoneBounds {
             x0: world.width - 1,
             y0: world.height - 1,
+            width: 1,
+            height: 1,
         };
         place(&mut world, 0, 0, SpeciesId(0));
 
@@ -605,6 +612,23 @@ mod tests {
             tags: Vec::new(),
         });
         place(&mut world, 0, 0, SpeciesId(0));
+
+        // Task 066: world construction now generates terrain and places the
+        // toxic zone somewhere derived from it, which could in principle put
+        // real toxicity near (0, 0). This test isolates diffusion leakage
+        // specifically, so it resets to a known, fixed 1x1 zone far from
+        // (0, 0) rather than relying on incidental placement.
+        for cell in world.cells.iter_mut() {
+            cell.toxicity = 0.0;
+        }
+        world.toxic_zone = ToxicZoneBounds {
+            x0: world.width - 1,
+            y0: world.height - 1,
+            width: 1,
+            height: 1,
+        };
+        let corner = world.index(world.width - 1, world.height - 1);
+        world.cells[corner].toxicity = config.environment.toxic_zone_value;
 
         // Diffusion only, not a full `sim::step` — this isolates the effect
         // under test (toxicity leaking via diffusion) from organism

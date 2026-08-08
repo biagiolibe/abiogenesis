@@ -2,13 +2,15 @@
 // are complete and correct before the tick algorithm consumes them.
 #![allow(dead_code)]
 
+use std::f32::consts::TAU;
+
 use bevy::prelude::*;
 use rand::rngs::StdRng;
 use rand::seq::IndexedRandom;
 use rand::RngExt;
 use rand::SeedableRng;
 
-use crate::config::{SimConfig, TagConfig};
+use crate::config::{SimConfig, TagConfig, TerrainConfig};
 use crate::worldgen::{world_params, WorldParams};
 
 /// How a species derives energy (GDD §5.4). Only `Photolithic` is active in
@@ -83,24 +85,43 @@ pub struct Organism {
     pub energy: f32,
 }
 
-/// The toxic zone's fixed geometry (GDD §5.2): every cell with `x >= x0 &&
-/// y >= y0` is in the zone. Set once at world construction from
-/// `WorldParams` and never touched again — unlike the per-cell `toxicity`
-/// scalar, which `diffuse_environment` blends toward neighbours every tick
-/// and so drifts away from the zone's actual shape over time (task 047:
-/// `objectives.rs`'s `SurviveIn` zone check reads this, not `toxicity`,
-/// precisely because the scalar isn't a reliable proxy for "in the zone"
-/// once diffusion has run for a while).
+/// The toxic zone's geometry (GDD §5.2): every cell within the rectangle
+/// `[x0, x0+width) x [y0, y0+height)` is in the zone. Set once at world
+/// construction (task 066: position and size now vary per world, chosen to
+/// overlap enough placeable terrain — no longer always anchored to the
+/// grid's bottom-right corner) and never touched again — unlike the
+/// per-cell `toxicity` scalar, which `diffuse_environment` blends toward
+/// neighbours every tick and so drifts away from the zone's actual shape
+/// over time (task 047: `objectives.rs`'s `SurviveIn` zone check reads
+/// this, not `toxicity`, precisely because the scalar isn't a reliable
+/// proxy for "in the zone" once diffusion has run for a while).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ToxicZoneBounds {
     pub x0: usize,
     pub y0: usize,
+    pub width: usize,
+    pub height: usize,
 }
 
 impl ToxicZoneBounds {
     pub fn contains(&self, x: usize, y: usize) -> bool {
-        x >= self.x0 && y >= self.y0
+        x >= self.x0 && x < self.x0 + self.width && y >= self.y0 && y < self.y0 + self.height
     }
+}
+
+/// A cell's elevation band (task 066, `redesign/abiogenesis-terrain-map.md`):
+/// real per-cell simulation data, not a decorative visual value — a
+/// possible future factor in evolution alongside others TBD. Deliberately
+/// doesn't encode "can a species live here" itself (that's placement
+/// gating, task 067, via a single centralized check) so a future aquatic
+/// species doesn't require touching this type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TerrainKind {
+    Sea,
+    #[default]
+    Plain,
+    Hill,
+    Mountain,
 }
 
 /// One grid cell. Single occupancy (GDD §5.1): `organism` is never a collection.
@@ -112,6 +133,15 @@ pub struct Cell {
     pub organism: Option<Organism>,
     /// Dead matter left behind, feeds decomposers from Phase 1 (GDD §5.6 step 6).
     pub residue: f32,
+    /// This cell's elevation band (task 066). Defaults to `Plain` — the
+    /// ordinary placeable band — so every existing call site building cells
+    /// via `Cell::default()` before terrain generation runs stays placeable.
+    pub terrain: TerrainKind,
+    /// Whether this cell is a local-maximum summit within `Mountain` (task
+    /// 066) — decided once at generation time and stored here, not
+    /// re-derived later by rendering or gameplay code. Peaks are
+    /// unplaceable regardless of `terrain` (task 067).
+    pub is_peak: bool,
 }
 
 /// The simulated world: a dense grid, the species registry, and the seeded
@@ -196,27 +226,174 @@ impl SimWorld {
             ever_populated: false,
             rng,
         };
-        world.apply_gradients(config, &params);
+        world.generate_terrain(config);
+        world.apply_environment_gradients(config, &params);
+        world.place_toxic_zone(config, &params);
         world
+    }
+
+    /// Generates this world's terrain (task 066): a per-cell classification
+    /// (`TerrainKind` + a sparse `is_peak` flag) into organic sea/plain/
+    /// hill/mountain regions, from a summed-plane-wave elevation field —
+    /// the same dependency-free noise technique as the decorative
+    /// background layer (`render.rs`'s `background_field`), except this
+    /// field is real simulation data, so it lives here and never touches
+    /// `self.rng` (which drives tag/species/reproduction draws): it derives
+    /// its own stream via `TERRAIN_SEED_OFFSET`, so adding this generation
+    /// step doesn't shift any of those existing draws for a given seed.
+    ///
+    /// Bounded-resamples the *whole* elevation field (not per-cell — a
+    /// per-cell resample would destroy the organic shape) up to
+    /// `TerrainConfig::max_generation_attempts` times if the placeable
+    /// fraction falls short of `TerrainConfig::min_placeable_fraction`,
+    /// keeping the best draw seen if none clears the floor — same
+    /// defensive-generation spirit as tasks 047/048 (an unplayable world
+    /// must be caught here, not left as a rare-seed bug). Must run before
+    /// `place_toxic_zone`, which needs real terrain to search against.
+    fn generate_terrain(&mut self, config: &SimConfig) {
+        let terrain_cfg = &config.terrain;
+        let mut rng = StdRng::seed_from_u64(self.seed ^ TERRAIN_SEED_OFFSET);
+        let cell_count = self.width * self.height;
+
+        let mut best: Option<(Vec<TerrainKind>, Vec<bool>, f32)> = None;
+        for _ in 0..terrain_cfg.max_generation_attempts.max(1) {
+            let waves = terrain_waves(&mut rng, terrain_cfg.noise_wave_count as usize);
+            let elevations: Vec<f32> = (0..self.height)
+                .flat_map(|y| (0..self.width).map(move |x| (x, y)))
+                .map(|(x, y)| {
+                    let nx = x as f32 / (self.width - 1).max(1) as f32;
+                    let ny = y as f32 / (self.height - 1).max(1) as f32;
+                    terrain_elevation(&waves, nx, ny)
+                })
+                .collect();
+            let kinds: Vec<TerrainKind> = elevations
+                .iter()
+                .map(|&e| classify_elevation(e, terrain_cfg))
+                .collect();
+
+            let mut peaks = vec![false; cell_count];
+            for y in 0..self.height {
+                for x in 0..self.width {
+                    let idx = self.index(x, y);
+                    if kinds[idx] != TerrainKind::Mountain
+                        || elevations[idx] < terrain_cfg.peak_elevation_threshold
+                    {
+                        continue;
+                    }
+                    peaks[idx] = self
+                        .moore_neighbours(x, y)
+                        .all(|n| elevations[n] <= elevations[idx]);
+                }
+            }
+
+            let placeable = kinds
+                .iter()
+                .zip(&peaks)
+                .filter(|&(&kind, &peak)| is_placeable_kind(kind, peak))
+                .count();
+            let fraction = placeable as f32 / cell_count as f32;
+
+            if fraction >= terrain_cfg.min_placeable_fraction {
+                self.write_terrain(&kinds, &peaks);
+                return;
+            }
+            if best
+                .as_ref()
+                .is_none_or(|&(_, _, best_fraction)| fraction > best_fraction)
+            {
+                best = Some((kinds, peaks, fraction));
+            }
+        }
+        let (kinds, peaks, _) = best.expect("the loop above runs at least once");
+        self.write_terrain(&kinds, &peaks);
+    }
+
+    fn write_terrain(&mut self, kinds: &[TerrainKind], peaks: &[bool]) {
+        for (idx, cell) in self.cells.iter_mut().enumerate() {
+            cell.terrain = kinds[idx];
+            cell.is_peak = peaks[idx];
+        }
+    }
+
+    /// Places the toxic zone (task 066): searches random rectangle
+    /// positions of `params`'s size (its own derived RNG stream, via
+    /// `TOXIC_ZONE_SEED_OFFSET`, never `self.rng`) for one overlapping
+    /// enough placeable terrain (`TerrainConfig::min_toxic_zone_placeable_fraction`),
+    /// bounded by `max_toxic_zone_placement_attempts` and keeping the best
+    /// position seen otherwise — the same guarantee `generate_terrain` makes
+    /// for the grid as a whole, applied to the zone's own footprint, so
+    /// `objectives.rs`'s `SurviveIn` can never land on an unwinnable
+    /// all-sea/all-peak zone. Must run after `generate_terrain`.
+    fn place_toxic_zone(&mut self, config: &SimConfig, params: &WorldParams) {
+        let env = &config.environment;
+        let width = (params.toxic_zone_width as usize).min(self.width);
+        let height = (params.toxic_zone_height as usize).min(self.height);
+        if width == 0 || height == 0 {
+            self.toxic_zone = ToxicZoneBounds::default();
+            return;
+        }
+        let terrain_cfg = &config.terrain;
+        let mut rng = StdRng::seed_from_u64(self.seed ^ TOXIC_ZONE_SEED_OFFSET);
+        let max_x0 = self.width - width;
+        let max_y0 = self.height - height;
+
+        let mut best: Option<(usize, usize, f32)> = None;
+        for _ in 0..terrain_cfg.max_toxic_zone_placement_attempts.max(1) {
+            let x0 = rng.random_range(0..=max_x0);
+            let y0 = rng.random_range(0..=max_y0);
+            let fraction = self.placeable_fraction_in(x0, y0, width, height);
+            if fraction >= terrain_cfg.min_toxic_zone_placeable_fraction {
+                self.set_toxic_zone(x0, y0, width, height, env.toxic_zone_value);
+                return;
+            }
+            if best.is_none_or(|(_, _, best_fraction)| fraction > best_fraction) {
+                best = Some((x0, y0, fraction));
+            }
+        }
+        let (x0, y0, _) = best.expect("the loop above runs at least once");
+        self.set_toxic_zone(x0, y0, width, height, env.toxic_zone_value);
+    }
+
+    /// Fraction of `[x0, x0+width) x [y0, y0+height)` that's placeable
+    /// terrain — the metric `place_toxic_zone` searches against.
+    fn placeable_fraction_in(&self, x0: usize, y0: usize, width: usize, height: usize) -> f32 {
+        let mut placeable = 0usize;
+        for y in y0..y0 + height {
+            for x in x0..x0 + width {
+                let cell = self.get(x, y);
+                if is_placeable_kind(cell.terrain, cell.is_peak) {
+                    placeable += 1;
+                }
+            }
+        }
+        placeable as f32 / (width * height) as f32
+    }
+
+    fn set_toxic_zone(&mut self, x0: usize, y0: usize, width: usize, height: usize, value: f32) {
+        self.toxic_zone = ToxicZoneBounds {
+            x0,
+            y0,
+            width,
+            height,
+        };
+        for y in y0..y0 + height {
+            for x in x0..x0 + width {
+                let idx = self.index(x, y);
+                self.cells[idx].toxicity = value;
+            }
+        }
     }
 
     /// Light falls top→bottom, temperature rises left→right (the two axes
     /// differ on purpose: their crossing is what creates 2D niches, GDD
-    /// §5.2); the toxic zone's size and the temperature gradient's spread
-    /// come from `params` (task 038), so later, harder worlds get more
-    /// extreme environments (GDD §9) without changing the gradient shape
-    /// itself. Doesn't touch the RNG, so it's deterministic independently
-    /// of the seed, given the same `params`.
-    fn apply_gradients(&mut self, config: &SimConfig, params: &WorldParams) {
+    /// §5.2); the temperature gradient's spread comes from `params` (task
+    /// 038), so later, harder worlds get harsher gradients (GDD §9) without
+    /// changing the gradient shape itself. Doesn't touch the RNG, so it's
+    /// deterministic independently of the seed, given the same `params`.
+    /// Toxicity is no longer set here (task 066: `place_toxic_zone` owns
+    /// it, since the zone's position now depends on generated terrain).
+    fn apply_environment_gradients(&mut self, config: &SimConfig, params: &WorldParams) {
         let env = &config.environment;
-        let zone_x0 = self.width.saturating_sub(params.toxic_zone_width as usize);
-        let zone_y0 = self
-            .height
-            .saturating_sub(params.toxic_zone_height as usize);
-        self.toxic_zone = ToxicZoneBounds {
-            x0: zone_x0,
-            y0: zone_y0,
-        };
         let temperature_left = env.temperature_gradient_left;
         let temperature_right = (temperature_left + params.temperature_spread).min(1.0);
 
@@ -226,15 +403,9 @@ impl SimWorld {
             for x in 0..self.width {
                 let tx = x as f32 / (self.width - 1).max(1) as f32;
                 let temperature = lerp(temperature_left, temperature_right, tx);
-                let toxicity = if x >= zone_x0 && y >= zone_y0 {
-                    env.toxic_zone_value
-                } else {
-                    0.0
-                };
                 let idx = self.index(x, y);
                 self.cells[idx].light = light;
                 self.cells[idx].temperature = temperature;
-                self.cells[idx].toxicity = toxicity;
             }
         }
     }
@@ -310,6 +481,79 @@ impl SimWorld {
             })
         })
     }
+}
+
+/// XOR salt decorrelating terrain generation's RNG stream (task 066) from
+/// `SimWorld::rng` (tag/species/reproduction draws) and from
+/// `TOXIC_ZONE_SEED_OFFSET` below — an arbitrary constant, chosen only to
+/// not collide with the other salt.
+const TERRAIN_SEED_OFFSET: u64 = 0x9E37_79B9_7F4A_7C15;
+
+/// Same purpose as `TERRAIN_SEED_OFFSET`, for the toxic zone's placement
+/// search (task 066) — a different constant so the two derived streams
+/// don't start in lockstep.
+const TOXIC_ZONE_SEED_OFFSET: u64 = 0xC2B2_AE3D_27D4_EB4F;
+
+/// One term of the terrain elevation field: a plane wave traveling in
+/// direction `(dir_x, dir_y)` with the given spatial frequency and phase —
+/// the same dependency-free noise technique as `render.rs`'s decorative
+/// `BackgroundWave`/`background_field`, except this field is real
+/// simulation data (task 066), so it lives here instead.
+struct TerrainWave {
+    dir_x: f32,
+    dir_y: f32,
+    freq: f32,
+    phase: f32,
+}
+
+/// Draws `count` waves with random direction, a low frequency (so the
+/// field stays smooth and organic, not noisy), and random phase, all from
+/// `rng` — the sole source of randomness, so the same seed always produces
+/// the same terrain.
+fn terrain_waves(rng: &mut StdRng, count: usize) -> Vec<TerrainWave> {
+    (0..count.max(1))
+        .map(|_| {
+            let angle = rng.random_range(0.0..TAU);
+            TerrainWave {
+                dir_x: angle.cos(),
+                dir_y: angle.sin(),
+                freq: rng.random_range(1.0..3.5),
+                phase: rng.random_range(0.0..TAU),
+            }
+        })
+        .collect()
+}
+
+/// Sums `waves` at normalized coordinates `(nx, ny)` into an elevation
+/// value in `[0, 1]`.
+fn terrain_elevation(waves: &[TerrainWave], nx: f32, ny: f32) -> f32 {
+    let sum: f32 = waves
+        .iter()
+        .map(|wave| (wave.freq * (nx * wave.dir_x + ny * wave.dir_y) + wave.phase).sin())
+        .sum();
+    (sum / waves.len() as f32 + 1.0) * 0.5
+}
+
+/// Elevation → `TerrainKind` band, per `TerrainConfig`'s thresholds.
+fn classify_elevation(elevation: f32, terrain: &TerrainConfig) -> TerrainKind {
+    if elevation < terrain.sea_threshold {
+        TerrainKind::Sea
+    } else if elevation < terrain.hill_threshold {
+        TerrainKind::Plain
+    } else if elevation < terrain.mountain_threshold {
+        TerrainKind::Hill
+    } else {
+        TerrainKind::Mountain
+    }
+}
+
+/// Whether a cell of terrain `kind`, with peak status `is_peak`, could ever
+/// hold a species today — `Sea` and mountain peaks are off-limits to every
+/// species that exists right now (task 067's placement gating and this
+/// module's own generation-time viability checks both go through this one
+/// function, so a future aquatic species only needs to extend it here).
+fn is_placeable_kind(kind: TerrainKind, is_peak: bool) -> bool {
+    kind != TerrainKind::Sea && !is_peak
 }
 
 /// No longer spawns a `SimWorld` at `Startup` (task 044): the first world
@@ -547,17 +791,110 @@ mod tests {
         }
     }
 
+    /// Task 066: the zone's position is no longer fixed to the grid's
+    /// bottom-right corner, so this checks the general invariant instead —
+    /// every cell's toxicity matches `toxic_zone_value` exactly where
+    /// `ToxicZoneBounds::contains` says it should, and `0.0` everywhere else.
     #[test]
-    fn toxic_zone_is_isolated_to_its_corner() {
+    fn toxic_zone_matches_its_own_bounds() {
         let config = test_config();
         let world = SimWorld::new(42, &config);
         let env = &config.environment;
 
-        assert_eq!(
-            world.get(world.width - 1, world.height - 1).toxicity,
-            env.toxic_zone_value
+        assert!(
+            world.toxic_zone.width > 0 && world.toxic_zone.height > 0,
+            "world_index 0's default config always has a non-empty toxic zone"
         );
-        assert_eq!(world.get(0, 0).toxicity, 0.0);
+        for y in 0..world.height {
+            for x in 0..world.width {
+                let expected = if world.toxic_zone.contains(x, y) {
+                    env.toxic_zone_value
+                } else {
+                    0.0
+                };
+                assert_eq!(world.get(x, y).toxicity, expected, "cell ({x}, {y})");
+            }
+        }
+    }
+
+    /// Task 066: the toxic zone's position now depends on generated
+    /// terrain, but its footprint must still always contain enough
+    /// placeable land for `SurviveIn` to remain satisfiable — checked
+    /// across a sample of seeds, not just one.
+    #[test]
+    fn toxic_zone_always_overlaps_enough_placeable_land() {
+        let config = test_config();
+        for seed in 0..30u64 {
+            let world = SimWorld::new(seed, &config);
+            let zone = world.toxic_zone;
+            if zone.width == 0 || zone.height == 0 {
+                continue;
+            }
+            let placeable = (zone.y0..zone.y0 + zone.height)
+                .flat_map(|y| (zone.x0..zone.x0 + zone.width).map(move |x| (x, y)))
+                .filter(|&(x, y)| {
+                    let cell = world.get(x, y);
+                    cell.terrain != TerrainKind::Sea && !cell.is_peak
+                })
+                .count();
+            let fraction = placeable as f32 / (zone.width * zone.height) as f32;
+            assert!(
+                fraction >= config.terrain.min_toxic_zone_placeable_fraction,
+                "seed {seed}: toxic zone placeable fraction {fraction} below the configured floor"
+            );
+        }
+    }
+
+    #[test]
+    fn terrain_generation_is_deterministic_for_a_given_seed() {
+        let config = test_config();
+        let a = SimWorld::new(7, &config);
+        let b = SimWorld::new(7, &config);
+
+        let terrain_a: Vec<(TerrainKind, bool)> =
+            a.cells.iter().map(|c| (c.terrain, c.is_peak)).collect();
+        let terrain_b: Vec<(TerrainKind, bool)> =
+            b.cells.iter().map(|c| (c.terrain, c.is_peak)).collect();
+        assert_eq!(terrain_a, terrain_b);
+    }
+
+    #[test]
+    fn terrain_varies_with_seed() {
+        let config = test_config();
+        let a = SimWorld::new(7, &config);
+        let b = SimWorld::new(8, &config);
+
+        let terrain_a: Vec<TerrainKind> = a.cells.iter().map(|c| c.terrain).collect();
+        let terrain_b: Vec<TerrainKind> = b.cells.iter().map(|c| c.terrain).collect();
+        assert_ne!(terrain_a, terrain_b);
+    }
+
+    #[test]
+    fn placeable_land_fraction_floor_holds_across_seeds() {
+        let config = test_config();
+        for seed in 0..30u64 {
+            let world = SimWorld::new(seed, &config);
+            let placeable = world
+                .cells
+                .iter()
+                .filter(|c| c.terrain != TerrainKind::Sea && !c.is_peak)
+                .count();
+            let fraction = placeable as f32 / world.cells.len() as f32;
+            assert!(
+                fraction >= config.terrain.min_placeable_fraction,
+                "seed {seed}: placeable fraction {fraction} below the configured floor"
+            );
+        }
+    }
+
+    #[test]
+    fn peaks_only_occur_within_the_mountain_band() {
+        let config = test_config();
+        let world = SimWorld::new(7, &config);
+        assert!(world
+            .cells
+            .iter()
+            .all(|c| !c.is_peak || c.terrain == TerrainKind::Mountain));
     }
 
     #[test]

@@ -105,7 +105,7 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 066 | Terrain field + procedural elevation generation | none | [066](066-terrain-field-procedural-elevation-generation.md) |
+| `[x]` | 066 | Terrain field + procedural elevation generation | none | [066](done/066-terrain-field-procedural-elevation-generation.md) |
 | `[ ]` | 067 | Placement gating on terrain | 066 | [067](067-placement-gating-on-terrain.md) |
 | `[ ]` | 068 | Terrain rendering: elevation bands, boundaries, peak glyphs, toxic-zone overlay | 066, 067 | [068](068-terrain-rendering-bands-boundaries-glyphs.md) |
 
@@ -183,4 +183,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-09 (tasks 066-068 added: terrain map — elevation as real per-cell simulation data from `redesign/abiogenesis-terrain-map.md`)*
+*Last updated: 2026-08-09 (task 066 complete: procedural terrain generation — `TerrainKind`/peaks per cell, land-fraction viability guarantee, toxic zone repositioned to overlap placeable terrain; 067/068 next)*

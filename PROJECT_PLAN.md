@@ -207,7 +207,7 @@ Full HUD sidebar reskin from a self-contained design doc (with two SVG mockups):
 
 The redesign doc originally proposed elevation bands as a visual-only overlay with terrain generation itself out of scope. Design discussion superseded that: elevation becomes a real per-cell dimension (plains/hills/mountains/sea, procedurally generated per world), a possible future factor in evolution alongside others TBD — not a decorative value disconnected from the simulation, per the doc's own point 6. Sea is deliberately *not* hardcoded as permanently unplaceable: a future aquatic species is planned, so gating goes through one centralized `SimWorld` check instead of scattered terrain conditionals. The toxic zone (previously a fixed bottom-right rectangle) becomes variable position/size, generated to always overlap enough placeable land to keep `SurviveIn` satisfiable. Split into three dependency-ordered tasks mirroring the 063→064 data/visual split.
 
-- `[ ]` 066 — Terrain field + procedural elevation generation (data/worldgen layer, no rendering, no placement gating) → [066](tasks/066-terrain-field-procedural-elevation-generation.md)
+- `[x]` 066 — Terrain field + procedural elevation generation: `Cell` gained `TerrainKind` (Sea/Plain/Hill/Mountain, default `Plain` so every existing test stays placeable) and `is_peak`, generated per world from a summed-plane-wave elevation field on its own derived RNG stream (`self.seed ^ TERRAIN_SEED_OFFSET`, never `world.rng`), bounded-resampled against a configurable minimum placeable-land fraction. `ToxicZoneBounds` became a positionable rectangle (`x0, y0, width, height`, was a corner-anchored `{x0, y0}`); `place_toxic_zone` now searches for a position overlapping enough placeable terrain (own derived stream, `TOXIC_ZONE_SEED_OFFSET`), closing the `SurviveIn`-on-an-all-sea-zone risk flagged during design. All 90 existing tests pass unmodified in logic (only the two `objectives.rs` tests hardcoding a corner-anchored zone needed literal updates); `cargo clippy -- -D warnings` clean → [066](tasks/done/066-terrain-field-procedural-elevation-generation.md)
 - `[ ]` 067 — Placement gating on terrain (Seed action + reproduction respect terrain, via a single centralized query point) → [067](tasks/067-placement-gating-on-terrain.md)
 - `[ ]` 068 — Terrain rendering: elevation bands, boundaries, peak glyphs, toxic-zone dashed overlay → [068](tasks/068-terrain-rendering-bands-boundaries-glyphs.md)
 
@@ -249,4 +249,4 @@ The redesign doc originally proposed elevation bands as a visual-only overlay wi
 
 ---
 
-*Last updated: 2026-08-09 (tasks 066-068 added: terrain map — elevation as real per-cell simulation data, procedurally generated, gating placement, then rendered as flat bands/boundaries/glyphs, from `redesign/abiogenesis-terrain-map.md`)*
+*Last updated: 2026-08-09 (task 066 complete: procedural terrain generation and toxic-zone repositioning; 067 — placement gating — is next)*
