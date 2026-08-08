@@ -38,6 +38,30 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 - `[?]` **Real-time mode** as an option — GDD §4 noted it "costs little to add later"; with Bevy it's nearly free (just don't stop at the end of an era).
 - `[?]` **Real main menu** with seed selection and sharing — determinism (GDD §5.7) makes sharing interesting seeds worthwhile.
 
+### Raised from playtesting (2026-08-08)
+
+- `[?]` **Decomposer is nearly unsustainable in isolation.** By design (GDD §16's playthrough example) it's meant to be a "second-order" niche that blooms after a predator collapse or environmental die-off, not a self-sufficient starter like Photolithic (always-on light) or even Predator (can coexist with live prey). In practice a Decomposer seeded alone has no residue to draw on and starves out before the player can get a clean isolated read on it — already visible enough to have needed an ad-hoc player-guide explanation (commit `cc90b26`). Cheapest lever without changing the ecological intent: a small ambient background residue trickle (independent of organism deaths), tuned just enough that an isolated Decomposer doesn't collapse outright — not enough to make it self-sufficient like Photolithic. Needs confirmation this is a real recurring pain point (not a one-off run) before scoping into a task.
+
+### From `abiogenesis-ui-redesign.md` (2026-08-08)
+
+Presentation-only notes reviewed against the current codebase; most of the document (hypothesis graph, per-metabolism shapes, toxic-zone rendering, shared species color) turned out to already be implemented (tasks 031/032/033, plus the map/HUD/log color source). What's left:
+
+- `[?]` **Presentation refinement bundle** — zero gameplay risk, additive-only changes to existing UI code:
+  - Observation-log entries get a small colored dot for evidence quality (green = isolated observation, amber = confounded), reusing the already-computed `weight = 1/(1+n_confounders)` (GDD §7) — currently not shown anywhere in the log (`notebook.rs`).
+  - Hypothesis graph (`notebook.rs`, already a circular node graph since task 031) gets three incremental refinements: dashed border on tag nodes with zero observations, edge thickness proportional to confirmed effect intensity, numeric label on strong confirmed edges only.
+  - Notebook catalog panel gets the species-color swatch next to each species name — the one screen that doesn't yet reuse the shared `species_color()` source already used by the map, HUD, and observation log.
+- `[?]` **Always-on discrete temperature/light background tint** — needs its own discussion before scoping, separate from the bundle above: it would make the map always show banded temp/light tint by default, which cuts against task 058's explicit choice to keep temperature/light legibility an opt-in `T`/`L` toggle (kept deliberately distinct from the hidden-matrix mystery). Adopting it means reversing or narrowing that opt-in design, not just adding a layer.
+
+### Atmospheric background layer (2026-08-08, explicit exception to pillar 3)
+
+Raised directly by the user: the grid currently reads as an empty black background outside occupied/tinted cells (`cell_color` in `render.rs` already scales empty-cell lightness by `light`, but the range — `0.03` to `0.15` — is too compressed to read as anything). Discussed and deliberately scoped as an exception to GDD pillar 3 ("the fun is in the system, not the graphics") rather than working around it, because the goal here is genuinely atmospheric, not informational — it must never carry gameplay signal a player could confuse with real data (temperature/light overlays, toxicity tint, matrix hints).
+
+- `[?]` **Procedural alien-world background layer**, rendered behind the grid (the grid sprites must stay the primary readability layer — this should sit dim/low-contrast under them, not compete):
+  - Start with a **shader/procedurally-generated gradient or noise field** (palette + motion, no hand-painted assets, no art pipeline) rather than illustrated art — keeps production cost near zero and stays compatible with procedural worldgen.
+  - Interesting option to explore during design: derive the background's variant (hue/intensity/pattern) from that world's own `WorldParams` (e.g. its temperature-gradient profile or toxic-zone size) so each world reads as visually distinct using data the worldgen already produces, instead of inventing new parameters.
+  - Pairs naturally with the still-open **camera zoom/pan** proposal (already in this section, "Born from the move to Bevy") — a parallax effect on the background gives that feature more payoff, though zoom/pan is not a prerequisite to ship a static version first.
+  - Explicitly out of scope for a first pass: hand-illustrated biome art (real production cost, style-direction risk, and tends to fight grid contrast) — worth revisiting only if the procedural version proves the atmosphere is worth it.
+
 ---
 
 ## 🔵 SECTION 2 — BACKLOG (Operational)
