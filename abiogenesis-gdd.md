@@ -5,13 +5,14 @@
 **Platform:** Desktop, 2D graphical window
 **Tech:** Rust + Bevy (ECS)
 **Mode:** Single-player, era-based, with objectives and light meta-progression
-**Document status:** v0.4 — pre-implementation design (closed decisions + numeric baseline + playthrough example)
+**Document status:** v0.5 — post-Phase-3/playtest alignment (closed decisions + numeric baseline + playthrough example)
 
 > Legend for the status of each decision:
 > **[DECIDED]** agreed and stable · **[PROPOSED]** baseline I'm proposing, to be approved/corrected · **[OPEN]** to be decided together
 
 ### Changelog
 
+- **v0.5** — **Alignment with Phase 3 ("the run") and two rounds of playtest tuning (tasks 035–059).** §5.6 makes explicit that `env_fit` gates all three metabolisms' gain, not just Photolithic's. §5.9 era budget updated to its retuned value. §8 documents the sequential per-world objectives (2→3), the world-level (not run-level) retry on total extinction, and the removal of auto-placed starting species. §5.2 flags `toxicity` as a declared-but-currently-inert scalar. None of this changes the pillars or the core mechanical model — it's the numeric baseline and a few rules catching up to what playtesting settled on.
 - **v0.4** — **Stack change: from terminal (`ratatui`) to a 2D graphical window with Bevy and an ECS model.** This drives revisions to §5.1 (grid size), §11 (presentation), and §12 (stack and architecture), plus a correction to §13 on the scaffold's status. **The design itself does not change:** §§1–10 and §§14–16 — pillars, core loop, simulation model, tick formulas, numeric baseline §5.9, notebook, objectives, playthrough example — remain valid word for word. Pillar 3 ("the fun is in the system, not the graphics") remains fully in effect: colored squares, zero art assets.
 - **v0.3** — Closed design decisions, numeric baseline (§5.9), playthrough example (§16).
 
@@ -90,6 +91,8 @@ A few scalars per cell, in `[0,1]`:
 - `light`
 - `toxicity`
 
+**Current status:** `toxicity` is declared and rendered (toxic zones exist in worldgen, and the Stress action's target scalar could in principle be extended to it), but as implemented it is **not read anywhere in the tick loop** — it has no effect on `env_fit`, gain, or costs. Only `temperature` and `light` are live inputs to the simulation today. Toxicity-driven gameplay (e.g. a chemolithotroph metabolism tied to it) is tracked as a future addition in `VISION.md`, not part of the current baseline.
+
 **Phase 0:** static gradients (e.g., high light at the top, temperature on a different axis) to create spatial heterogeneity → niches.
 **Phase 1+:** slow diffusion of scalars (averaging with neighbors at a low rate), so environmental interventions propagate over time.
 
@@ -139,10 +142,10 @@ The **structure** is decided; the **numeric coefficients** are a baseline to val
 For each occupied cell:
 
 1. **Environmental fitness:** `env_fit = gaussian(temperature, temp_optimum, temp_tolerance)` ∈ `[0,1]`.
-2. **Metabolic gain** (depends on metabolism):
+2. **Metabolic gain** (depends on metabolism). `env_fit` gates all three the same way — it multiplies the raw gain, not just Photolithic's — so an organism can be sitting on abundant fuel (light, prey, residue) and still starve if the cell's temperature is far from its optimum:
    - *Photolithic:* `gain = light * metabolism_gain * env_fit`.
    - *Predator:* draws energy from occupied neighbors (within a cap), weighted by `env_fit`.
-   - *Decomposer:* draws from residue/dead matter in the cell or its neighbors.
+   - *Decomposer:* draws from residue/dead matter in the cell or its neighbors, weighted by `env_fit`.
 3. **Hidden matrix effect:** for each occupied neighbor, for each tag pair (mine × theirs), sum the effect from the secret matrix → `interaction_delta` (can be + or −).
 4. **Costs:** `upkeep` (base cost per tick) + `crowding_penalty = crowd_factor * n_occupied_neighbors` (carrying capacity).
 5. **Energy update:** `energy += gain + interaction_delta − upkeep − crowding_penalty`.
@@ -184,7 +187,7 @@ Initial values that are mutually coherent (conceptually verified so that a photo
 | Constant | Value | Notes |
 |---|---|---|
 | `ERA_TICKS` | `25` | ticks per era |
-| Era budget / world | `40` (early) → `25` (late) | finite: gives roguelike tension |
+| Era budget / world | `60` (early) → `45` (late) | finite: gives roguelike tension. Retuned twice in playtest (tasks 049, 059) — most recently to absorb the cost of worlds now posing 2–3 sequential objectives (§8) instead of one |
 | Point budget / era | `3` | |
 | Action costs | seed `1`, stress `1`, cull `1`, splice `2` | splice tunable up to `3` |
 
@@ -260,19 +263,19 @@ This is the heart of progression (§ pillar 2) and turns observation into a *ded
 
 ## 8. Objectives, victory, and defeat **[DECIDED]**
 
-Each world poses one or more **explicit requirements**. Examples of the kind of objective:
+Each world poses a **sequence of explicit requirements**, resolved in order: **2** objectives in early worlds, ramping to **3** in late worlds (task 059). Clearing a non-final objective in the sequence advances to the next one and resets its progress — it does not clear the world by itself. No two consecutive objectives in a world share the same kind. Examples of the kind of objective:
 
 - "Achieve a biosphere with **≥3 coexisting species** for **4 eras**." *(2026-08-06 playtest: the requirement is tuned and displayed in eras, the player's own unit of interaction — not raw ticks, which the player never consciously operates in.)*
 - "Grow a species that **survives in the toxic zone**."
 - "**Trigger a bloom** of a specific type."
 
-- **Success** → move to the next world (more active tags, meaner matrix, more hostile environment).
-- **Failure** → the run ends; a new run = new biochemistry.
+- **Success** (every objective in the world's sequence cleared) → move to the next world (more active tags, meaner matrix, more hostile environment).
+- **Failure** → the current world must be retried; a new attempt keeps the run's meta-progression but re-seeds the world (task 051). The run itself only ends by the player's own choice to stop, not automatically on a single world's failure.
 
 **Failure conditions [DECIDED]:**
 
-- **Total extinction** → immediate failure (the obvious floor).
-- **Era budget per world** generous but **finite** (baseline: 40 eras in early worlds, dropping toward 25 in late worlds): a stuck player fails instead of grinding forever. This is what gives the roguelike tension.
+- **Total extinction** → immediate failure of the current world, not the run (`GameState::WorldFailed`, task 051): the world is retried, not the whole run.
+- **Era budget per world** generous but **finite** (baseline: 60 eras in early worlds, dropping toward 45 in late worlds — retuned from the original 40/25 to absorb the cost of multi-objective worlds, see §5.9): a stuck player fails instead of grinding forever. This is what gives the roguelike tension.
 
 **Bonus objectives [DECIDED as direction / low priority]:** planned in principle (grant meta-progression currency), but **after** the clean "primary objective → advance" core. Not in the minimal MVP.
 
@@ -284,8 +287,8 @@ Each world is generated procedurally:
 
 - New **biochemical matrix** (asymmetric, with the cyclicity constraint of §5.8).
 - **Environment** (gradients, extreme zones) with increasing hostility.
-- **Active tags** (subset of the pool) and available **starting species**.
-- World **objective(s)**.
+- **Active tags** (subset of the pool) and a pool of **available starting species**. *(Task 050: none of them are auto-placed — the player seeds every organism in the world manually, including the first ones. Worldgen only decides what's available to seed, not what's on the grid.)*
+- World **objective(s)**, resolved in sequence (§8).
 
 **Curve [DECIDED direction]:** the first worlds with **5 active tags** and a mild environment; gradually up to **~8 active tags**, matrices with more "nasty" relationships, more extreme environments (large toxic zones, harsh thermal gradients), stricter objectives, and shorter era budgets.
 
