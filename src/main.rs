@@ -35,6 +35,34 @@ fn main() {
                 // iterating; switch `mode` to
                 // `WindowMode::BorderlessFullscreen(MonitorSelection::Current)`
                 // for the shipped build.
+                //
+                // `fullsize_content_view` + `titlebar_transparent` (macOS):
+                // without these, the default title bar reserves an extra
+                // "toolbar" band below the traffic lights, in a visibly
+                // different shade from both the title bar and the game's own
+                // background — a dead, non-interactive gray strip eating into
+                // the grid's vertical space (raised directly by the user,
+                // mistaken at first for a grid-proportion bug; confirmed via
+                // screenshot diffing that the game's own rendering already
+                // filled 100% of the space *below* that OS-reserved band).
+                // Drawing content full-size under a transparent title bar
+                // removes the band entirely — traffic lights float over the
+                // grid instead of sitting above a separate reserved area.
+                fullsize_content_view: true,
+                titlebar_transparent: true,
+                // Deliberately oversized so macOS clamps it to the screen's
+                // visible frame at window-creation time, instead of using a
+                // runtime `Window::set_maximized` call — combining
+                // `set_maximized` with `fullsize_content_view` hits a known
+                // winit/macOS bug where the post-maximize `inner_size` under-
+                // reports the window's true (reclaimed-titlebar) height,
+                // which showed up as the same dead gray band reappearing at
+                // the *bottom* of the grid instead of the top. Requesting a
+                // size no real display can satisfy sidesteps the buggy
+                // runtime resize path entirely: the window is correctly
+                // clamped and sized once, at creation.
+                resolution: bevy::window::WindowResolution::new(10000, 10000),
+                position: WindowPosition::Centered(bevy::window::MonitorSelection::Primary),
                 ..default()
             }),
             ..default()
@@ -56,18 +84,7 @@ fn main() {
         .init_state::<GameState>()
         .add_sub_state::<EraState>()
         .add_systems(OnEnter(GameState::Loading), enter_main_menu)
-        .add_systems(Startup, maximize_window)
         .run();
-}
-
-/// Maximizes the primary window on launch (dev-mode windowed-fullscreen, see
-/// `WindowPlugin` setup above) — `Window` has no "start maximized" field, only
-/// a runtime request, so this has to run as a `Startup` system rather than
-/// being set on the `Window` struct directly.
-fn maximize_window(mut windows: Query<&mut Window>) {
-    if let Ok(mut window) = windows.single_mut() {
-        window.set_maximized(true);
-    }
 }
 
 /// `Loading` transitions to `MainMenu` (task 044) — the player explicitly

@@ -1,0 +1,79 @@
+<svg width="320" height="500" viewBox="0 0 320 500" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, Menlo, Consolas, monospace">
+  <rect x="0" y="0" width="320" height="500" rx="12" fill="#0d0f14"/>
+
+  <text x="20" y="30" font-size="11" letter-spacing="1" fill="#5a5c64">ABIOGENESIS · CONSOLE</text>
+  <text x="20" y="54" font-size="13" fill="#8f9199">era 5 / tick 125</text>
+  <circle cx="248" cy="50" r="3" fill="#5DCAA5"/>
+  <text x="256" y="54" font-size="12" fill="#8f9199">osservando</text>
+
+  <line x1="20" y1="70" x2="300" y2="70" stroke="#23262e" stroke-width="0.5"/>
+
+  <text x="20" y="94" font-size="11" letter-spacing="1" fill="#5a5c64">INTERVIENI</text>
+
+  <rect x="20" y="104" width="38" height="38" rx="6" fill="#12241d" stroke="#5DCAA5" stroke-width="0.5"/>
+  <path d="M39 114 C33 120 30 127 30 133 a9 9 0 0 0 18 0 c0 -6 -3 -13 -9 -19z" fill="none" stroke="#8FD666" stroke-width="1.6"/>
+
+  <rect x="66" y="104" width="38" height="38" rx="6" fill="none" stroke="#2a2c34" stroke-width="0.5"/>
+  <polygon points="90,111 78,127 86,127 82,136 96,119 88,119" fill="none" stroke="#888780" stroke-width="1.6" stroke-linejoin="round"/>
+
+  <rect x="112" y="104" width="38" height="38" rx="6" fill="none" stroke="#2a2c34" stroke-width="0.5"/>
+  <circle cx="131" cy="119" r="7" fill="none" stroke="#888780" stroke-width="1.6"/>
+  <circle cx="128" cy="118" r="1.2" fill="#888780"/>
+  <circle cx="134" cy="118" r="1.2" fill="#888780"/>
+  <path d="M124 133 c0 -4 3 -6 7 -6 s7 2 7 6" fill="none" stroke="#888780" stroke-width="1.6"/>
+
+  <rect x="158" y="104" width="38" height="38" rx="6" fill="none" stroke="#2a2c34" stroke-width="0.5"/>
+  <path d="M171 111 v8 l-6 14 h16 l-6 -14 v-8" fill="none" stroke="#888780" stroke-width="1.6" stroke-linejoin="round"/>
+  <line x1="167" y1="111" x2="181" y2="111" stroke="#888780" stroke-width="1.6"/>
+
+  <rect x="20" y="158" width="14" height="3" rx="1.5" fill="#5DCAA5"/>
+  <rect x="38" y="158" width="14" height="3" rx="1.5" fill="#5DCAA5"/>
+  <rect x="56" y="158" width="14" height="3" rx="1.5" fill="#5DCAA5"/>
+  <text x="80" y="162" font-size="11" fill="#5a5c64">3 azioni rimaste</text>
+
+  <line x1="20" y1="180" x2="300" y2="180" stroke="#23262e" stroke-width="0.5"/>
+
+  <text x="20" y="204" font-size="11" letter-spacing="1" fill="#5a5c64">CENSIMENTO</text>
+
+  <circle cx="26" cy="220" r="4" fill="#E24B4A"/>
+  <text x="38" y="224" font-size="13" fill="#c8c9ce">Nyx</text>
+  <polygon points="188,216 194,216 191,211" fill="#5DCAA5"/>
+  <text x="200" y="224" font-size="12" fill="#8f9199">7.44</text>
+  <text x="290" y="224" font-size="12" fill="#8f9199" text-anchor="end">96</text>
+  <line x1="20" y1="234" x2="300" y2="234" stroke="#1a1c22" stroke-width="0.5"/>
+
+  <circle cx="26" cy="250" r="4" fill="#639922"/>
+  <text x="38" y="254" font-size="13" fill="#c8c9ce">Kael</text>
+  <rect x="188" y="248" width="7" height="1.6" fill="#888780"/>
+  <text x="200" y="254" font-size="12" fill="#8f9199">5.58</text>
+  <text x="290" y="254" font-size="12" fill="#8f9199" text-anchor="end">37</text>
+  <line x1="20" y1="264" x2="300" y2="264" stroke="#1a1c22" stroke-width="0.5"/>
+
+  <circle cx="26" cy="280" r="4" fill="#7F77DD"/>
+  <text x="38" y="284" font-size="13" fill="#c8c9ce">Sable</text>
+  <polygon points="188,278 194,278 191,283" fill="#E24B4A"/>
+  <text x="200" y="284" font-size="12" fill="#8f9199">5.00</text>
+  <text x="290" y="284" font-size="12" fill="#8f9199" text-anchor="end">3</text>
+
+  <line x1="20" y1="300" x2="300" y2="300" stroke="#23262e" stroke-width="0.5"/>
+
+  <text x="20" y="324" font-size="11" letter-spacing="1" fill="#5a5c64">BANCA GENOMI</text>
+
+  <rect x="20" y="334" width="52" height="26" rx="5" fill="#2a1414" stroke="#E24B4A" stroke-width="0.5"/>
+  <text x="46" y="351" font-size="12" fill="#F09595" text-anchor="middle">Nyx</text>
+  <rect x="80" y="334" width="56" height="26" rx="5" fill="none" stroke="#2a2c34" stroke-width="0.5"/>
+  <text x="108" y="351" font-size="12" fill="#8f9199" text-anchor="middle">Kael</text>
+  <rect x="144" y="334" width="58" height="26" rx="5" fill="none" stroke="#2a2c34" stroke-width="0.5"/>
+  <text x="173" y="351" font-size="12" fill="#8f9199" text-anchor="middle">Sable</text>
+  <text x="290" y="351" font-size="13" fill="#3a3c44" text-anchor="middle">›</text>
+
+  <line x1="20" y1="380" x2="300" y2="380" stroke="#23262e" stroke-width="0.5"/>
+
+  <text x="20" y="404" font-size="11" letter-spacing="1" fill="#5a5c64">DIRETTIVA 1/2</text>
+  <text x="20" y="426" font-size="13.5" font-style="italic" font-family="Georgia, serif" fill="#b4b2a9">"Kael sopravvive nella zona tossica."</text>
+
+  <circle cx="26" cy="448" r="8" fill="none" stroke="#3a3c44" stroke-width="0.5"/>
+  <circle cx="46" cy="448" r="8" fill="none" stroke="#3a3c44" stroke-width="0.5"/>
+  <circle cx="66" cy="448" r="8" fill="none" stroke="#3a3c44" stroke-width="0.5"/>
+  <text x="82" y="452" font-size="11" fill="#5a5c64">0 di 3 ere</text>
+</svg>

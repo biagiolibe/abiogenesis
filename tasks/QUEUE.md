@@ -93,6 +93,13 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 | `[ ]` | 061 | Notebook presentation refinements (evidence-quality log, graph polish, catalog color) | none | [061](061-notebook-presentation-refinements.md) |
 | `[ ]` | 062 | Procedural alien-world background layer | none | [062](062-procedural-background-layer.md) |
 
+**Sidebar console redesign** (2026-08-08, from `redesign/abiogenesis-sidebar-redesign.md`, a self-contained design doc with two SVG mockups): a full HUD sidebar reskin — one continuous hairline-divided monospace panel instead of four bordered boxes, diegetic English labels (Moves/Biosphere/Species/"This world wants" — revised from a first, too-formal English pass), discrete tick indicators instead of progress bars, scrollable Biosphere/Species lists for N species, and a narrative-styled objective line. Split into a data-correctness prerequisite (063) and the visual/structural rewrite that consumes it (064).
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[ ]` | 063 | Population trend indicator, repro-threshold relocation, per-era birth log | none | [063](063-population-trend-and-repro-threshold-relocation.md) |
+| `[ ]` | 064 | Sidebar console redesign | 063 | [064](064-sidebar-console-redesign.md) |
+
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) and expands into task files after Phase 3.
@@ -167,4 +174,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-08 (tasks 060/061/062 scoped from today's design session: decomposer residue trickle, notebook UI refinements, procedural background layer)*
+*Last updated: 2026-08-08 (tasks 063/064 scoped from `redesign/abiogenesis-sidebar-redesign.md`: population trend/repro-threshold data fix, then the sidebar console visual redesign)*

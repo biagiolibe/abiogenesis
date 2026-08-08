@@ -194,6 +194,13 @@ Three proposals from §1 scoped into tasks after discussion; the always-on tempe
 - `[ ]` 061 — Notebook presentation refinements: every `AdjacencyObserved` event gets its own log line with a clean/confounded evidence-quality dot (not just confirmations, a deliberate reversal of the log's usual curation for this one case); the hypothesis graph gets a dashed marker for never-observed tag nodes, edge thickness by confirmed magnitude, and numeric labels on strong edges; the notebook catalog gets the species-color swatch the map/HUD/log already share → [061](tasks/061-notebook-presentation-refinements.md)
 - `[ ]` 062 — Procedural alien-world background layer: a dim, code-generated (no art assets) background sprite behind the grid, regenerated per world from `SimWorld::seed`, explicitly scoped as an exception to GDD pillar 3 since it's purely atmospheric and must never carry gameplay signal → [062](tasks/062-procedural-background-layer.md)
 
+### 🖥️ Sidebar console redesign (2026-08-08, from `redesign/abiogenesis-sidebar-redesign.md`)
+
+Full HUD sidebar reskin from a self-contained design doc (with two SVG mockups): one continuous hairline-divided monospace panel instead of four bordered boxes, diegetic English labels, discrete tick indicators instead of progress bars, scrollable Biosphere/Species lists for N species, narrative-styled objective line. The doc's diegetic labels were originally Italian; confirmed directly with the user to translate them to English, then revised again after a first pass (Intervene/Census/Gene bank/Directive) read as too formal/managerial — settled on **Moves / Biosphere / Species / "This world wants"**.
+
+- `[ ]` 063 — Population trend indicator, repro-threshold relocation, per-era birth log: fixes a real misleading-UI bug the redesign surfaced — the HUD compared a population *average* energy against `repro_threshold`, an individual-level trait, implying a relationship that isn't there. Moves `repro_threshold` to the notebook catalog (a static per-species trait), replaces the HUD figure with a Rising/Falling/Stable trend vs. the previous era, and adds a per-era birth-count log line (the real "someone reproduced" signal) → [063](tasks/063-population-trend-and-repro-threshold-relocation.md)
+- `[ ]` 064 — Sidebar console redesign: the structural/visual rewrite of `hud_panel` implementing the rest of the design doc, blocked on 063 for the Biosphere trend indicator → [064](tasks/064-sidebar-console-redesign.md)
+
 ### 🎚️ Final tuning — *the real art*
 
 **Goal:** *interesting and readable* emergence, avoiding "everything dies" and "one dominates" (GDD §13, §14).
@@ -232,4 +239,4 @@ Three proposals from §1 scoped into tasks after discussion; the always-on tempe
 
 ---
 
-*Last updated: 2026-08-08 (tasks 060/061/062 scoped from today's design session: decomposer residue trickle, notebook UI refinements, procedural background layer)*
+*Last updated: 2026-08-08 (tasks 063/064 scoped from `redesign/abiogenesis-sidebar-redesign.md`: population trend/repro-threshold data fix, then the sidebar console visual redesign)*
