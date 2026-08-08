@@ -175,12 +175,15 @@ fn reseed_world(
 
 /// Left-click while `ActionMode::Seed` is selected: places an organism of
 /// the currently-selected species (GDD §6 "Seed") in the clicked cell, if
-/// it's empty, affordable, and `EraState::Observing` — the same "ignored
-/// mid-`Advancing`" rule the other player-driven systems in this file
-/// follow. Clicks outside the grid (the HUD panel, letterboxed margins) are
-/// silently ignored via `world_to_cell`. Costs `config.time.action_costs.seed`
-/// action points (task 022); an unaffordable click does nothing at all, not
-/// even the empty-cell check. Records the cell into `PlayerPlacedCells`
+/// it's placeable (task 067 — not Sea or a mountain peak), empty,
+/// affordable, and `EraState::Observing` — the same "ignored mid-`Advancing`"
+/// rule the other player-driven systems in this file follow. Clicks outside
+/// the grid (the HUD panel, letterboxed margins) are silently ignored via
+/// `world_to_cell`. Costs `config.time.action_costs.seed` action points
+/// (task 022); an unaffordable click does nothing at all, not even the
+/// placeable/empty-cell checks — same silent-no-op convention an
+/// unplaceable-cell click now also follows, this codebase has no rejected-
+/// action feedback mechanism yet. Records the cell into `PlayerPlacedCells`
 /// (task 026) so the Notebook can log a salient entry if this organism
 /// later dies, and latches `EverSeeded` (task 053's onboarding hint) since
 /// `PlayerPlacedCells` alone empties back out on death. On the very first
@@ -189,6 +192,43 @@ fn reseed_world(
 /// checks whether the placement was isolated and sets `IsolationHint` (task
 /// 055) accordingly — informational only, never a gate on the placement
 /// itself (task 050 deliberately removed placement constraints).
+/// Every rejection rule `seed_organism_on_click` enforces once a clicked
+/// cell is known: affordable, placeable (task 067 — not Sea or a mountain
+/// peak), and empty. Pulled out of the system so it's unit-testable without
+/// the mouse/window/camera harness `clicked_cell` needs. Silent no-op on
+/// every rejection, matching the rest of this file's action gates (no
+/// rejected-action feedback mechanism exists yet); returns whether the
+/// placement actually happened.
+#[allow(clippy::too_many_arguments)]
+fn attempt_seed(
+    world: &mut SimWorld,
+    config: &SimConfig,
+    budget: &mut ActionBudget,
+    placed: &mut PlayerPlacedCells,
+    species: SpeciesId,
+    x: usize,
+    y: usize,
+) -> bool {
+    if budget.points_remaining < config.time.action_costs.seed {
+        return false;
+    }
+    if !world.is_placeable(x, y) {
+        return false;
+    }
+    let index = world.index(x, y);
+    let cell = world.get_mut(x, y);
+    if cell.organism.is_some() {
+        return false;
+    }
+    cell.organism = Some(Organism {
+        species,
+        energy: config.energy.seed_energy,
+    });
+    budget.points_remaining -= config.time.action_costs.seed;
+    placed.0.insert(index);
+    true
+}
+
 #[allow(clippy::too_many_arguments)]
 fn seed_organism_on_click(
     buttons: Res<ButtonInput<MouseButton>>,
@@ -214,21 +254,17 @@ fn seed_organism_on_click(
     let Some((x, y)) = clicked_cell(&buttons, &windows, &cameras, world.width, world.height) else {
         return;
     };
-    if budget.points_remaining < config.time.action_costs.seed {
+    if !attempt_seed(
+        &mut world,
+        &config,
+        &mut budget,
+        &mut placed,
+        selected.0,
+        x,
+        y,
+    ) {
         return;
     }
-
-    let index = world.index(x, y);
-    let cell = world.get_mut(x, y);
-    if cell.organism.is_some() {
-        return;
-    }
-    cell.organism = Some(Organism {
-        species: selected.0,
-        energy: config.energy.seed_energy,
-    });
-    budget.points_remaining -= config.time.action_costs.seed;
-    placed.0.insert(index);
 
     if !ever_seeded.0 && !meta.seen_isolation_hint {
         isolation_hint.text = Some(if is_isolated_placement(&world, x, y) {
@@ -435,7 +471,7 @@ fn quit(keys: Res<ButtonInput<KeyCode>>, mut exit: MessageWriter<AppExit>) {
 mod tests {
     use super::*;
     use crate::notebook::{MatrixKnowledge, NotebookHasUnseenConfirmation};
-    use abiogenesis::world::{Species, TagId, TagSlot};
+    use abiogenesis::world::{Species, TagId, TagSlot, TerrainKind};
     use abiogenesis::worldgen::generate_starting_palette;
     use bevy::state::state::State;
 
@@ -812,5 +848,85 @@ mod tests {
             energy: 1.0,
         });
         assert!(!is_isolated_placement(&world, 5, 5));
+    }
+
+    #[test]
+    fn attempt_seed_rejects_an_unplaceable_cell() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.get_mut(5, 5).terrain = TerrainKind::Sea;
+        let mut budget = ActionBudget {
+            points_remaining: 3,
+        };
+        let mut placed = PlayerPlacedCells::default();
+
+        let placed_ok = attempt_seed(
+            &mut world,
+            &config,
+            &mut budget,
+            &mut placed,
+            SpeciesId(0),
+            5,
+            5,
+        );
+
+        assert!(!placed_ok);
+        assert!(world.get(5, 5).organism.is_none());
+        assert_eq!(
+            budget.points_remaining, 3,
+            "budget must not be spent on a rejected placement"
+        );
+        assert!(placed.0.is_empty());
+    }
+
+    #[test]
+    fn attempt_seed_rejects_an_unplaceable_peak_even_though_the_terrain_is_mountain() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        let cell = world.get_mut(5, 5);
+        cell.terrain = TerrainKind::Mountain;
+        cell.is_peak = true;
+        let mut budget = ActionBudget {
+            points_remaining: 3,
+        };
+        let mut placed = PlayerPlacedCells::default();
+
+        let placed_ok = attempt_seed(
+            &mut world,
+            &config,
+            &mut budget,
+            &mut placed,
+            SpeciesId(0),
+            5,
+            5,
+        );
+
+        assert!(!placed_ok);
+        assert!(world.get(5, 5).organism.is_none());
+    }
+
+    #[test]
+    fn attempt_seed_succeeds_on_ordinary_placeable_terrain() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.get_mut(5, 5).terrain = TerrainKind::Plain;
+        let mut budget = ActionBudget {
+            points_remaining: 3,
+        };
+        let mut placed = PlayerPlacedCells::default();
+
+        let placed_ok = attempt_seed(
+            &mut world,
+            &config,
+            &mut budget,
+            &mut placed,
+            SpeciesId(0),
+            5,
+            5,
+        );
+
+        assert!(placed_ok);
+        assert!(world.get(5, 5).organism.is_some());
+        assert_eq!(budget.points_remaining, 2);
     }
 }

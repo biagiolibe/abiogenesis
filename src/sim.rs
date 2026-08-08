@@ -352,15 +352,16 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
             ..organism
         });
 
-        // 7. Reproduction: only if there's still an empty neighbour once the
-        // birth cell is picked. Empty neighbours are collected from the
-        // snapshot in index order, so the RNG draw is reproducible; the
-        // scratch buffer is re-checked to resolve contention between two
-        // parents claiming the same cell this tick.
+        // 7. Reproduction: only if there's still an empty, placeable
+        // neighbour once the birth cell is picked (task 067 — offspring
+        // never spawn onto Sea or a mountain peak). Empty neighbours are
+        // collected from the snapshot in index order, so the RNG draw is
+        // reproducible; the scratch buffer is re-checked to resolve
+        // contention between two parents claiming the same cell this tick.
         if new_energy >= species.repro_threshold {
             let empty_neighbours: Vec<usize> = world
                 .moore_neighbours(x, y)
-                .filter(|&n| world.cells[n].organism.is_none())
+                .filter(|&n| world.cells[n].organism.is_none() && world.is_placeable_index(n))
                 .collect();
             if !empty_neighbours.is_empty() {
                 let pick = world.rng_mut().random_range(0..empty_neighbours.len());
@@ -543,7 +544,7 @@ fn advance_tick(
 mod tests {
     use super::*;
     use crate::state::GameState;
-    use crate::world::{Cell, Species, SpeciesId, TagMatrix, TagSlot};
+    use crate::world::{Cell, Species, SpeciesId, TagMatrix, TagSlot, TerrainKind};
 
     const TOLERANCE: f32 = 1e-4;
 
@@ -582,6 +583,37 @@ mod tests {
             (organism.energy - 5.9).abs() < TOLERANCE,
             "expected net +0.9, got {}",
             organism.energy - 5.0
+        );
+    }
+
+    /// Task 067: an organism ready to reproduce, surrounded by occupied
+    /// neighbours except a single cell — which is `Sea`, not truly empty.
+    /// Reproduction must not treat it as a valid target just because it
+    /// holds no organism.
+    #[test]
+    fn reproduction_never_spawns_onto_an_unplaceable_neighbour() {
+        let (mut world, config) = world_with_one_organism(0.7, 0.5, 9.5);
+        let (cx, cy) = (world.width / 2, world.height / 2);
+
+        let neighbours: Vec<usize> = world.moore_neighbours(cx, cy).collect();
+        for &idx in neighbours.iter().skip(1) {
+            world.cells[idx].organism = Some(Organism {
+                species: SpeciesId(0),
+                energy: 1.0,
+            });
+        }
+        let target = neighbours[0];
+        world.cells[target].terrain = TerrainKind::Sea;
+
+        let events = step(&mut world, &config);
+
+        assert!(
+            world.cells[target].organism.is_none(),
+            "Sea must never receive an offspring, even as the only occupancy-empty neighbour"
+        );
+        assert!(
+            events.births.is_empty(),
+            "reproduction must not succeed with no placeable empty neighbour"
         );
     }
 

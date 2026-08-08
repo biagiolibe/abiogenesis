@@ -451,6 +451,26 @@ impl SimWorld {
         &mut self.cells[idx]
     }
 
+    /// Whether any species could occupy `(x, y)` today (task 067): the one
+    /// centralized check the player's `Seed` action (`input.rs`) and
+    /// in-tick reproduction (`sim.rs`) both gate placement through, instead
+    /// of duplicating "is this Sea or a peak" inline at each call site. A
+    /// future aquatic species only needs to extend `is_placeable_kind`
+    /// (task 066) here — no other call site should ever check `terrain` or
+    /// `is_peak` directly.
+    pub fn is_placeable(&self, x: usize, y: usize) -> bool {
+        let cell = self.get(x, y);
+        is_placeable_kind(cell.terrain, cell.is_peak)
+    }
+
+    /// Same as `is_placeable`, taking a flat cell index (task 067) — lets
+    /// `sim::step`'s reproduction filter Moore-neighbour indices (what
+    /// `moore_neighbours` yields) without converting back to `(x, y)` first.
+    pub fn is_placeable_index(&self, idx: usize) -> bool {
+        let cell = &self.cells[idx];
+        is_placeable_kind(cell.terrain, cell.is_peak)
+    }
+
     /// The seeded RNG, exposed only through `&mut self` so nobody can clone
     /// it out from under the world and break determinism (invariant 1).
     pub fn rng_mut(&mut self) -> &mut StdRng {
