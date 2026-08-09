@@ -245,7 +245,7 @@ changes' effects visible while playtesting them). 082/083 are numerically
 coupled and must be tuned together, not in isolation. 084 is scoped but
 explicitly blocked — see its file.
 
-- `[ ]` 080 — Interaction spark: instant visual feedback on first-seen relations → [080](tasks/080-interaction-spark-visual-feedback.md)
+- `[x]` 080 — Interaction spark: instant visual feedback on first-seen relations → [080](tasks/done/080-interaction-spark-visual-feedback.md)
 - `[ ]` 081 — The world breathes: toxic zone pulse + diffusion drift check (rescoped down after discussion — see task file; a larger environment idea raised in the process branched into its own proposal, `redesign/abiogenesis-environment-sources.md`) → [081](tasks/081-ambient-diffusion-visible-on-empty-grid.md)
 - `[ ]` 082 — Shorter eras during world 0's opening → [082](tasks/082-shorter-onboarding-eras.md)
 - `[ ]` 083 — Newborn incubation: reproduction delayed to the following era → [083](tasks/083-newborn-incubation-reproduction-delay.md)

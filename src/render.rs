@@ -10,8 +10,9 @@ use bevy_egui::EguiPrimaryContextPass;
 
 use abiogenesis::cluster::compute_cluster_density;
 use abiogenesis::config::SimConfig;
+use abiogenesis::sim::AdjacencyObserved;
 use abiogenesis::state::GameState;
-use abiogenesis::world::{Metabolism, SimWorld, SpeciesId, TerrainKind};
+use abiogenesis::world::{Metabolism, SimWorld, SpeciesId, TagSlot, TerrainKind};
 
 /// Pixel size of one grid cell on screen. Presentation-only, not a
 /// simulation coefficient, so it stays local instead of living in
@@ -174,11 +175,19 @@ impl Plugin for GridRenderPlugin {
         // — the sprites just sit uncolored (`Sprite::from_color(BLACK, ..)`)
         // until `sync_grid_colors` starts running once `Playing` begins
         // (task 044: `SimWorld` doesn't exist before then).
-        app.add_systems(Startup, (spawn_camera, spawn_grid, spawn_metabolism_shapes))
+        // `SeenRelations`' size depends on `SimConfig::tags`, same rationale
+        // and same "fixed at build, resized on every world (re)start" split
+        // as `NotebookPlugin`'s `MatrixKnowledge` init.
+        let config = app.world().resource::<SimConfig>();
+        let seen_relations = SeenRelations::new(config.tags.active_tags_early as usize);
+
+        app.insert_resource(seen_relations)
+            .add_systems(Startup, (spawn_camera, spawn_grid, spawn_metabolism_shapes))
             .init_resource::<EnvironmentOverlay>()
             .init_resource::<MapViewMode>()
             .init_resource::<ClusterDensity>()
             .init_resource::<placement_indicator::PlacementIndicator>()
+            .init_resource::<SparkIndicators>()
             .add_systems(
                 Update,
                 (
@@ -198,6 +207,8 @@ impl Plugin for GridRenderPlugin {
                         .run_if(in_state(GameState::Playing)),
                     placement_indicator::tick_placement_indicator
                         .run_if(in_state(GameState::Playing)),
+                    spawn_spark_on_first_observation.run_if(in_state(GameState::Playing)),
+                    spark_indicator::tick_spark_indicators.run_if(in_state(GameState::Playing)),
                 ),
             )
             .add_systems(
@@ -205,6 +216,7 @@ impl Plugin for GridRenderPlugin {
                 (
                     terrain_overlay::draw_terrain_overlay,
                     placement_indicator::draw_placement_indicator,
+                    spark_indicator::draw_spark_indicators,
                 )
                     .run_if(in_state(GameState::Playing)),
             );
@@ -714,6 +726,158 @@ mod placement_indicator {
             egui::Stroke::new(RING_WIDTH, RING_COLOR.gamma_multiply(alpha)),
         );
         Ok(())
+    }
+}
+
+/// A brief on-map ring marking every cell where a tag-pair relation was just
+/// observed for the *first time ever* in this world (task 080, GDD §5.6's
+/// `interaction_delta` — invisible otherwise until enough `AdjacencyObserved`
+/// evidence accumulates in the Notebook, task 018/020). Same visual language
+/// as `placement_indicator` (fixed radius, alpha-only fade) but `Vec`-backed
+/// rather than single-slot: several relations can be confirmed on the same
+/// tick, unlike a Seed placement which only ever happens one at a time.
+/// Renders at the exact cell in both `MapViewMode::Detail` and `Overview` —
+/// Overview reuses the same per-cell sprites as Detail, just recolored by
+/// cluster density (`cluster::compute_cluster_density`), so there is no
+/// separate blob/centroid geometry to aggregate onto; the cell position
+/// alone is correct in either mode.
+pub use spark_indicator::SparkIndicators;
+
+mod spark_indicator {
+    use super::{cell_position, GridCamera, CELL_SIZE};
+    use abiogenesis::world::SimWorld;
+    use bevy::prelude::*;
+    use bevy_egui::{egui, EguiContexts};
+
+    const DURATION_SECS: f32 = 0.6;
+    const RING_RADIUS: f32 = CELL_SIZE * 0.6;
+    const RING_WIDTH: f32 = 2.0;
+    const RING_COLOR: egui::Color32 = egui::Color32::from_rgb(120, 220, 255);
+
+    #[derive(Resource, Default)]
+    pub struct SparkIndicators(Vec<SparkIndicatorState>);
+
+    struct SparkIndicatorState {
+        x: usize,
+        y: usize,
+        remaining_secs: f32,
+    }
+
+    impl SparkIndicators {
+        pub fn spawn(&mut self, x: usize, y: usize) {
+            self.0.push(SparkIndicatorState {
+                x,
+                y,
+                remaining_secs: DURATION_SECS,
+            });
+        }
+
+        /// How many spark rings are currently live — test-only observation
+        /// point for `spawn_spark_on_first_observation`'s gating behaviour.
+        #[cfg(test)]
+        pub fn len(&self) -> usize {
+            self.0.len()
+        }
+    }
+
+    pub fn tick_spark_indicators(time: Res<Time>, mut indicators: ResMut<SparkIndicators>) {
+        for state in &mut indicators.0 {
+            state.remaining_secs -= time.delta_secs();
+        }
+        indicators.0.retain(|state| state.remaining_secs > 0.0);
+    }
+
+    /// Same viewport-clip and `world_to_viewport` projection as
+    /// `placement_indicator::draw_placement_indicator`; draws once per
+    /// still-live indicator instead of at most one.
+    pub fn draw_spark_indicators(
+        indicators: Res<SparkIndicators>,
+        world: Res<SimWorld>,
+        cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
+        mut contexts: EguiContexts,
+    ) -> Result {
+        if indicators.0.is_empty() {
+            return Ok(());
+        }
+        let Ok((camera, camera_transform)) = cameras.single() else {
+            return Ok(());
+        };
+        let ctx = contexts.ctx_mut()?;
+        let painter = ctx.layer_painter(egui::LayerId::background());
+        let painter = match camera.logical_viewport_rect() {
+            Some(viewport_rect) => painter.with_clip_rect(egui::Rect::from_min_max(
+                egui::pos2(viewport_rect.min.x, viewport_rect.min.y),
+                egui::pos2(viewport_rect.max.x, viewport_rect.max.y),
+            )),
+            None => painter,
+        };
+
+        for state in &indicators.0 {
+            let world_pos = cell_position(state.x, state.y, world.width, world.height);
+            let Ok(viewport_pos) = camera.world_to_viewport(camera_transform, world_pos) else {
+                continue;
+            };
+            let alpha = (state.remaining_secs / DURATION_SECS).clamp(0.0, 1.0);
+            painter.circle_stroke(
+                egui::pos2(viewport_pos.x, viewport_pos.y),
+                RING_RADIUS,
+                egui::Stroke::new(RING_WIDTH, RING_COLOR.gamma_multiply(alpha)),
+            );
+        }
+        Ok(())
+    }
+}
+
+/// Tracks which `(exerter_tag, receiver_tag)` pairs have already triggered
+/// an interaction spark this world (task 080) — a first-observation-only
+/// gate, deliberately a much lower bar than `MatrixKnowledge`'s confirmation
+/// threshold (task 020, GDD §7): these are two independent signals sharing
+/// the same `AdjacencyObserved` event stream. Same flat-`Vec`-indexed-by-
+/// `TagSlot` shape as `TagMatrix`/`MatrixKnowledge` (`exerter * size +
+/// receiver`), not a `HashSet` — a pure membership lookup, never iterated
+/// (`CLAUDE.md`'s no-`HashMap`/`HashSet`-iteration determinism rule).
+#[derive(Resource)]
+pub struct SeenRelations {
+    size: usize,
+    seen: Vec<bool>,
+}
+
+impl SeenRelations {
+    pub fn new(active_tags: usize) -> Self {
+        Self {
+            size: active_tags,
+            seen: vec![false; active_tags * active_tags],
+        }
+    }
+
+    /// Marks a pair as seen, returning `true` if this call is the first
+    /// time this pair has ever been observed in this world.
+    fn mark_seen(&mut self, exerter: TagSlot, receiver: TagSlot) -> bool {
+        let idx = exerter.0 as usize * self.size + receiver.0 as usize;
+        let first = !self.seen[idx];
+        self.seen[idx] = true;
+        first
+    }
+}
+
+/// Drains `AdjacencyObserved` (task 018) and spawns a spark indicator the
+/// first time ever a given `(exerter_tag, receiver_tag)` pair is observed in
+/// this world — turns the hidden matrix into an observed event instead of a
+/// purely deduced one (task 080, proposal 1.A). `event.cell` (task 080)
+/// carries the receiver's cell index directly, so no neighbour lookup is
+/// needed here.
+fn spawn_spark_on_first_observation(
+    world: Res<SimWorld>,
+    mut observed: MessageReader<AdjacencyObserved>,
+    mut seen: ResMut<SeenRelations>,
+    mut indicators: ResMut<SparkIndicators>,
+) {
+    for event in observed.read() {
+        if seen.mark_seen(event.exerter_tag, event.receiver_tag) {
+            let x = event.cell % world.width;
+            let y = event.cell / world.width;
+            indicators.spawn(x, y);
+        }
     }
 }
 
@@ -1322,6 +1486,78 @@ mod tests {
         assert_eq!(
             cell_position(0, 0, 48, 32).x,
             -cell_position(47, 0, 48, 32).x
+        );
+    }
+
+    #[test]
+    fn seen_relations_marks_a_pair_seen_only_once() {
+        let mut seen = SeenRelations::new(3);
+        assert!(seen.mark_seen(TagSlot(0), TagSlot(1)));
+        assert!(!seen.mark_seen(TagSlot(0), TagSlot(1)));
+        // A different pair is tracked independently.
+        assert!(seen.mark_seen(TagSlot(1), TagSlot(0)));
+    }
+
+    fn write_adjacency_observed(app: &mut App, event: AdjacencyObserved) {
+        app.world_mut()
+            .resource_mut::<bevy::ecs::message::Messages<AdjacencyObserved>>()
+            .write(event);
+    }
+
+    /// Mirrors `notebook.rs`'s `accumulate_evidence` test pattern: a scratch
+    /// `App` with just the resources/system under test, driven via
+    /// `Messages<AdjacencyObserved>` directly.
+    #[test]
+    fn spawn_spark_on_first_observation_fires_once_per_pair_not_per_event() {
+        let config = SimConfig::default();
+        let world = SimWorld::new(1, &config);
+        let mut app = App::new();
+        app.insert_resource(world);
+        app.insert_resource(SeenRelations::new(3));
+        app.init_resource::<SparkIndicators>();
+        app.add_message::<AdjacencyObserved>();
+        app.add_systems(Update, spawn_spark_on_first_observation);
+
+        let event = AdjacencyObserved {
+            receiver_species: SpeciesId(0),
+            exerter_tag: TagSlot(0),
+            receiver_tag: TagSlot(1),
+            n_confounders: 0,
+            cell: 5,
+        };
+        write_adjacency_observed(&mut app, event);
+        app.update();
+        assert_eq!(
+            app.world().resource::<SparkIndicators>().len(),
+            1,
+            "the first-ever observation of a pair must spawn exactly one spark"
+        );
+
+        // Same pair observed again (different cell) must not spawn a second
+        // spark — the gate is per-pair, not per-event.
+        write_adjacency_observed(&mut app, AdjacencyObserved { cell: 6, ..event });
+        app.update();
+        assert_eq!(
+            app.world().resource::<SparkIndicators>().len(),
+            1,
+            "a repeat observation of an already-seen pair must not spawn another spark"
+        );
+
+        // A different pair must spawn a second, independent spark.
+        write_adjacency_observed(
+            &mut app,
+            AdjacencyObserved {
+                exerter_tag: TagSlot(1),
+                receiver_tag: TagSlot(2),
+                cell: 7,
+                ..event
+            },
+        );
+        app.update();
+        assert_eq!(
+            app.world().resource::<SparkIndicators>().len(),
+            2,
+            "a genuinely new pair must spawn its own spark"
         );
     }
 }

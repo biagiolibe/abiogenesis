@@ -26,6 +26,7 @@ use bevy::prelude::*;
 use crate::notebook::{
     BirthTally, MatrixKnowledge, NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells,
 };
+use crate::render::SeenRelations;
 use crate::ui::{IsolationHint, PopulationTrends, SelectedSpecies, SpliceDraft};
 
 /// Every piece of per-world state a world (re)start resets, bundled into one
@@ -51,6 +52,7 @@ pub struct WorldResetParams<'w> {
     pub grace: ResMut<'w, GraceProgress>,
     pub population_trends: ResMut<'w, PopulationTrends>,
     pub birth_tally: ResMut<'w, BirthTally>,
+    pub seen_relations: ResMut<'w, SeenRelations>,
 }
 
 /// Rebuilds `world` in place as world `world_index` seeded with `seed`
@@ -84,6 +86,7 @@ pub fn start_world(
         world.active_tags.len(),
         config.notebook.confirmation_threshold,
     );
+    *reset.seen_relations = SeenRelations::new(world.active_tags.len());
     reset.log.entries.clear();
     reset.budget.refill(config.time.point_budget_per_era);
     reset.selected.0 = SpeciesId(0);
@@ -201,6 +204,7 @@ mod tests {
         ecs_world.insert_resource(GraceProgress::default());
         ecs_world.insert_resource(PopulationTrends::default());
         ecs_world.insert_resource(BirthTally::default());
+        ecs_world.insert_resource(SeenRelations::new(5));
         ecs_world
     }
 

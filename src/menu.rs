@@ -13,6 +13,7 @@ use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 use crate::notebook::{
     MatrixKnowledge, NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells,
 };
+use crate::render::SeenRelations;
 use crate::text;
 use crate::ui::{IsolationHint, SelectedSpecies, SpliceDraft};
 use abiogenesis::config::SimConfig;
@@ -148,6 +149,11 @@ fn start_run(commands: &mut Commands, config: &SimConfig, meta: &MetaProgress, r
         world.active_tags.len(),
         config.notebook.confirmation_threshold,
     ));
+    // Same staleness risk `MatrixKnowledge` above is already guarding
+    // against: `GridRenderPlugin::build`'s `SeenRelations` is sized from
+    // `TagConfig::active_tags_early`, a fixed config constant worldgen
+    // (task 038) doesn't guarantee matches world 0's actual tag count.
+    commands.insert_resource(SeenRelations::new(world.active_tags.len()));
     commands.insert_resource(world);
     commands.insert_resource(run_progress);
     commands.insert_resource(ObservationLog::default());

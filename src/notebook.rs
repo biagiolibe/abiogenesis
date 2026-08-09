@@ -1056,6 +1056,7 @@ mod tests {
                 exerter_tag: TagSlot(0),
                 receiver_tag: TagSlot(1),
                 n_confounders: 3,
+                cell: 0,
             });
         app.update();
 
@@ -1095,6 +1096,7 @@ mod tests {
                 exerter_tag: TagSlot(0),
                 receiver_tag: TagSlot(1),
                 n_confounders: 0,
+                cell: 0,
             });
         app.update();
 
@@ -1120,6 +1122,7 @@ mod tests {
                 exerter_tag: TagSlot(0),
                 receiver_tag: TagSlot(1),
                 n_confounders: 2,
+                cell: 0,
             });
         app.update();
 

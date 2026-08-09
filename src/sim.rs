@@ -81,6 +81,10 @@ pub struct AdjacencyObserved {
     pub exerter_tag: TagSlot,
     pub receiver_tag: TagSlot,
     pub n_confounders: u32,
+    /// The receiver's cell index (`SimWorld::index`), for presentation-only
+    /// consumers (task 080's interaction spark) that need to know *where*
+    /// this happened, not just which tags/species were involved.
+    pub cell: usize,
 }
 
 /// Everything `step()` produced this tick, for `advance_tick` to drain into
@@ -295,6 +299,7 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
                             exerter_tag: their_tag,
                             receiver_tag: my_tag,
                             n_confounders,
+                            cell: idx,
                         });
                     }
                 }

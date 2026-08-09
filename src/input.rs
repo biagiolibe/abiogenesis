@@ -780,6 +780,7 @@ mod tests {
         app.insert_resource(GraceProgress::default());
         app.insert_resource(crate::ui::PopulationTrends::default());
         app.insert_resource(crate::notebook::BirthTally::default());
+        app.insert_resource(crate::render::SeenRelations::new(5));
         app.add_systems(Update, reseed_world);
         app.update();
 

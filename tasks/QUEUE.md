@@ -54,7 +54,7 @@ footprint 1:1, including gaps — should render smaller and uniformly filled).
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 080 | Interaction spark: instant visual feedback on first-seen relations | 018, 075, 076 | [080](080-interaction-spark-visual-feedback.md) |
+| `[x]` | 080 | Interaction spark: instant visual feedback on first-seen relations | 018, 075, 076 | [080](done/080-interaction-spark-visual-feedback.md) |
 | `[ ]` | 081 | The world breathes: toxic zone pulse + diffusion drift check (rescoped down after discussion) | 033, 072 | [081](081-ambient-diffusion-visible-on-empty-grid.md) |
 | `[ ]` | 082 | Shorter eras during world 0's opening | 079 | [082](082-shorter-onboarding-eras.md) |
 | `[ ]` | 083 | Newborn incubation: reproduction delayed to the following era | 009 | [083](083-newborn-incubation-reproduction-delay.md) |
@@ -68,4 +68,4 @@ Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN
 
 ---
 
-*Last updated: 2026-08-09 (080-084 scoped from the onboarding & engagement proposals; 084 intentionally kept out of the queue as blocked. 078 and 080-083 are open work.)*
+*Last updated: 2026-08-09 (task 080, interaction spark, completed and moved to `tasks/done/`; live verification also caught and fixed a `SeenRelations` staleness bug in `menu::start_run`, mirroring `MatrixKnowledge`'s existing fix. 084 stays intentionally out of the queue as blocked. 078, 081-083 are open work.)*
