@@ -6,10 +6,6 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy_egui::egui;
 use bevy_egui::EguiPrimaryContextPass;
-use rand::rngs::StdRng;
-use rand::RngExt;
-use rand::SeedableRng;
-use std::f32::consts::TAU;
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::state::GameState;
@@ -176,31 +172,22 @@ impl Plugin for GridRenderPlugin {
         // — the sprites just sit uncolored (`Sprite::from_color(BLACK, ..)`)
         // until `sync_grid_colors` starts running once `Playing` begins
         // (task 044: `SimWorld` doesn't exist before then).
-        app.add_systems(
-            Startup,
-            (
-                spawn_camera,
-                spawn_grid,
-                spawn_metabolism_shapes,
-                spawn_background,
-            ),
-        )
-        .init_resource::<EnvironmentOverlay>()
-        .add_systems(
-            Update,
-            (
-                sync_grid_colors.run_if(in_state(GameState::Playing)),
-                toggle_environment_overlay,
-                apply_environment_overlay
-                    .after(sync_grid_colors)
-                    .run_if(in_state(GameState::Playing)),
-                sync_background.run_if(in_state(GameState::Playing)),
-            ),
-        )
-        .add_systems(
-            EguiPrimaryContextPass,
-            terrain_overlay::draw_terrain_overlay.run_if(in_state(GameState::Playing)),
-        );
+        app.add_systems(Startup, (spawn_camera, spawn_grid, spawn_metabolism_shapes))
+            .init_resource::<EnvironmentOverlay>()
+            .add_systems(
+                Update,
+                (
+                    sync_grid_colors.run_if(in_state(GameState::Playing)),
+                    toggle_environment_overlay,
+                    apply_environment_overlay
+                        .after(sync_grid_colors)
+                        .run_if(in_state(GameState::Playing)),
+                ),
+            )
+            .add_systems(
+                EguiPrimaryContextPass,
+                terrain_overlay::draw_terrain_overlay.run_if(in_state(GameState::Playing)),
+            );
         #[cfg(debug_assertions)]
         {
             app.init_resource::<debug_view::DebugView>()
@@ -695,181 +682,6 @@ fn spawn_metabolism_shapes(mut commands: Commands, mut images: ResMut<Assets<Ima
     });
 }
 
-/// Side length, in texels, of the generated background texture. Coarser
-/// than `SHAPE_TEXTURE_SIZE` on purpose — the background is stretched over a
-/// sprite orders of magnitude larger than one grid cell (see
-/// `BACKGROUND_SIZE_MULTIPLIER`), so a low-frequency field reads as smooth
-/// atmospheric variation rather than a repeating tile pattern.
-const BACKGROUND_TEXTURE_SIZE: u32 = 128;
-
-/// How many grid-pixel-widths the background sprite's side spans, relative
-/// to the larger of the grid's own width/height in pixels. `AutoMin`
-/// scaling (`spawn_camera`) never shows *less* than the grid, but a window
-/// wider or taller than the grid's aspect ratio letterboxes into extra
-/// visible space on one axis; this margin keeps the background covering
-/// that space too without needing to react to window resizes.
-const BACKGROUND_SIZE_MULTIPLIER: f32 = 3.0;
-
-/// Z depth for the background sprite, strictly behind every grid cell
-/// sprite (`cell_position` spawns cells at `z = 0.0`) — an explicit z rather
-/// than relying on spawn order, per Bevy 2D's tie-break behavior.
-const BACKGROUND_Z: f32 = -1.0;
-
-/// How many sine waves are summed into the background's noise field.
-/// Few enough to stay cheap per-pixel at `Startup`/world-change time, many
-/// enough that the result doesn't read as a single visible gradient band.
-const BACKGROUND_WAVE_COUNT: usize = 5;
-
-/// Lightness range the background field is mapped into: dim enough that it
-/// never competes with the grid's occupied-cell colors (`cell_color`'s
-/// darkest organism tone starts at lightness `0.15`).
-const BACKGROUND_MIN_LIGHTNESS: f32 = 0.015;
-const BACKGROUND_LIGHTNESS_RANGE: f32 = 0.04;
-
-/// Fixed low saturation and a per-pixel hue swing (in degrees) around the
-/// seed's base hue, so the field reads as color drift, not a value-noise
-/// greyscale cloud.
-const BACKGROUND_SATURATION: f32 = 0.25;
-const BACKGROUND_HUE_SWING: f32 = 30.0;
-
-/// One term of the background's noise field: a plane wave traveling in
-/// direction `(dir_x, dir_y)` with the given spatial frequency and phase.
-/// Summing a handful of these (`background_field`) is a cheap, dependency-free
-/// stand-in for value/Perlin noise — plenty smooth at the coarse texture
-/// resolution this renders at.
-struct BackgroundWave {
-    dir_x: f32,
-    dir_y: f32,
-    freq: f32,
-    phase: f32,
-}
-
-/// Draws `BACKGROUND_WAVE_COUNT` waves with random direction, a low
-/// frequency (so the field stays smooth, not noisy), and random phase, all
-/// from `rng` — the sole source of randomness, so the same seed always
-/// produces the same waves.
-fn background_waves(rng: &mut StdRng) -> Vec<BackgroundWave> {
-    (0..BACKGROUND_WAVE_COUNT)
-        .map(|_| {
-            let angle = rng.random_range(0.0..TAU);
-            BackgroundWave {
-                dir_x: angle.cos(),
-                dir_y: angle.sin(),
-                freq: rng.random_range(1.0..3.5),
-                phase: rng.random_range(0.0..TAU),
-            }
-        })
-        .collect()
-}
-
-/// Sums `waves` at normalized coordinates `(nx, ny)`, normalized to `[0, 1]`.
-fn background_field(waves: &[BackgroundWave], nx: f32, ny: f32) -> f32 {
-    let sum: f32 = waves
-        .iter()
-        .map(|wave| (wave.freq * (nx * wave.dir_x + ny * wave.dir_y) + wave.phase).sin())
-        .sum();
-    (sum / waves.len() as f32 + 1.0) * 0.5
-}
-
-/// Builds the procedural background texture for `seed`: a dim, low-contrast
-/// color field derived purely from the world's seed (task 062 — variant
-/// derivation was scoped as optional; a fixed look per world would satisfy
-/// the acceptance criteria too, but seeding the field's base hue and wave
-/// directions from `world.seed` was no more complex and gives every world a
-/// visually distinct atmosphere for free, without reading `WorldParams` at
-/// all — `WorldParams` isn't stored on `SimWorld` past `new_for_world`, so
-/// using it here would need new plumbing this task doesn't otherwise need).
-/// Deterministic: same seed always produces the same image (GDD §5.7).
-fn background_image(seed: u64) -> Image {
-    let mut rng = StdRng::seed_from_u64(seed);
-    let base_hue = rng.random_range(0.0..360.0);
-    let waves = background_waves(&mut rng);
-
-    let size = BACKGROUND_TEXTURE_SIZE;
-    let mut data = Vec::with_capacity((size * size * 4) as usize);
-    for row in 0..size {
-        for col in 0..size {
-            let nx = (col as f32 + 0.5) / size as f32 * 2.0 - 1.0;
-            let ny = (row as f32 + 0.5) / size as f32 * 2.0 - 1.0;
-            let field = background_field(&waves, nx, ny);
-
-            let hue = (base_hue + (field - 0.5) * BACKGROUND_HUE_SWING).rem_euclid(360.0);
-            let lightness = BACKGROUND_MIN_LIGHTNESS + field * BACKGROUND_LIGHTNESS_RANGE;
-            let srgba = Color::hsl(hue, BACKGROUND_SATURATION, lightness).to_srgba();
-            data.extend_from_slice(&[
-                (srgba.red * 255.0) as u8,
-                (srgba.green * 255.0) as u8,
-                (srgba.blue * 255.0) as u8,
-                255,
-            ]);
-        }
-    }
-    Image::new(
-        Extent3d {
-            width: size,
-            height: size,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        data,
-        TextureFormat::Rgba8UnormSrgb,
-        RenderAssetUsages::RENDER_WORLD,
-    )
-}
-
-/// Holds the handle to the background sprite's generated texture, so
-/// `sync_background` can regenerate it in place (`Assets<Image>::get_mut`)
-/// without touching the sprite entity itself.
-#[derive(Resource)]
-struct BackgroundTexture(Handle<Image>);
-
-/// Spawns the background sprite behind the grid at a fixed seed (`0`) so it
-/// isn't blank before `SimWorld` exists (task 044: `Playing` starts later);
-/// `sync_background` regenerates it for the real world seed once play
-/// begins. Sized generously past the grid's own footprint
-/// (`BACKGROUND_SIZE_MULTIPLIER`) so `AutoMin`-scaled letterboxing on a
-/// wide/tall window never shows bare space past the sprite's edge, and
-/// placed at `BACKGROUND_Z`, strictly behind every grid cell sprite.
-fn spawn_background(
-    mut commands: Commands,
-    config: Res<SimConfig>,
-    mut images: ResMut<Assets<Image>>,
-) {
-    let side =
-        config.grid.width.max(config.grid.height) as f32 * CELL_SIZE * BACKGROUND_SIZE_MULTIPLIER;
-    let handle = images.add(background_image(0));
-    commands.insert_resource(BackgroundTexture(handle.clone()));
-    commands.spawn((
-        Sprite {
-            image: handle,
-            custom_size: Some(Vec2::splat(side)),
-            ..default()
-        },
-        Transform::from_xyz(0.0, 0.0, BACKGROUND_Z),
-    ));
-}
-
-/// Regenerates the background texture in place whenever `SimWorld::seed`
-/// changes (`start_world` mutates `SimWorld` rather than re-inserting it, so
-/// there's no `Added`/`Changed` component event to key off — same reactive
-/// pattern `sync_grid_colors` already uses by simply re-reading `SimWorld`
-/// every frame, but gated on a `Local` so this one only pays the
-/// regeneration cost on an actual seed change, not every frame).
-fn sync_background(
-    world: Res<SimWorld>,
-    texture: Res<BackgroundTexture>,
-    mut images: ResMut<Assets<Image>>,
-    mut last_seed: Local<Option<u64>>,
-) {
-    if *last_seed == Some(world.seed) {
-        return;
-    }
-    if let Some(mut image) = images.get_mut(&texture.0) {
-        *image = background_image(world.seed);
-    }
-    *last_seed = Some(world.seed);
-}
-
 fn spawn_grid(mut commands: Commands, config: Res<SimConfig>) {
     let width = config.grid.width as usize;
     let height = config.grid.height as usize;
@@ -999,37 +811,6 @@ fn toxicity_tint(base: Color, toxicity: f32) -> Color {
 mod tests {
     use super::*;
     use abiogenesis::world::{Cell, Organism, SpeciesId, TerrainKind};
-
-    #[test]
-    fn background_image_is_deterministic_and_varies_with_seed() {
-        let a = background_image(42);
-        let b = background_image(42);
-        assert_eq!(
-            a.data, b.data,
-            "same seed must produce pixel-identical images"
-        );
-
-        let c = background_image(43);
-        assert_ne!(
-            a.data, c.data,
-            "different seeds must produce different images"
-        );
-    }
-
-    #[test]
-    fn background_image_stays_dim_and_low_saturation() {
-        let image = background_image(7);
-        let data = image.data.expect("background image must have pixel data");
-        for pixel in data.chunks_exact(4) {
-            let [r, g, b, _] = [pixel[0], pixel[1], pixel[2], pixel[3]];
-            let max = r.max(g).max(b);
-            // Lightness range (`BACKGROUND_MIN_LIGHTNESS` +
-            // `BACKGROUND_LIGHTNESS_RANGE`) caps every channel well below
-            // full brightness, keeping the field visually secondary to the
-            // grid's occupied-cell colors.
-            assert!(max < 40, "background pixel too bright: {max}");
-        }
-    }
 
     #[test]
     fn heat_color_pins_the_blue_cold_to_red_hot_endpoints() {
