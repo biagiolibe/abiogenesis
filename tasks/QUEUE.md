@@ -50,8 +50,22 @@ footprint 1:1, including gaps — should render smaller and uniformly filled).
 |-------|----|--------|------------|------|
 | `[ ]` | 078 | Overview heatmap blob shape correction (playtest correction to 076: blobs must render smaller/abstracted and uniformly filled, not a 1:1 trace of the real occupied-cell footprint with its gaps) | 076 | [078](078-overview-heatmap-blob-shape-correction.md) |
 
+**Onboarding & engagement rollout** (2026-08-09, from `redesign/abiogenesis-engagement-design.md`, full rationale in `PROJECT_PLAN.md`'s "Onboarding & engagement rollout"): 5 onboarding-foundation proposals scoped after a multi-round discussion. 080 first (diagnostic value for playtesting the rest); 082/083 are numerically coupled — tune together, not in isolation.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[ ]` | 080 | Interaction spark: instant visual feedback on first-seen relations | 018, 075, 076 | [080](080-interaction-spark-visual-feedback.md) |
+| `[ ]` | 081 | The world breathes: subtle ambient tint on unoccupied cells | 016, 066 | [081](081-ambient-diffusion-visible-on-empty-grid.md) |
+| `[ ]` | 082 | Shorter eras during world 0's opening | 079 | [082](082-shorter-onboarding-eras.md) |
+| `[ ]` | 083 | Newborn incubation: reproduction delayed to the following era | 009 | [083](083-newborn-incubation-reproduction-delay.md) |
+
+084 (guaranteed "first light" relation in world 0's matrix) is scoped
+(`tasks/084-first-light-guaranteed-relation-world0.md`) but deliberately
+**excluded from this queue** — blocked on the "Meta-progression persistence"
+proposal (`PROJECT_PLAN.md` §1), not available to pick up yet.
+
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) beyond what's already expanded into task files here.
 
 ---
 
-*Last updated: 2026-08-09 (task 079, onboarding grace period + softened first-world objective, completed and its section moved to `QUEUE_ARCHIVE.md`. 078 is the only open work.)*
+*Last updated: 2026-08-09 (080-084 scoped from the onboarding & engagement proposals; 084 intentionally kept out of the queue as blocked. 078 and 080-083 are open work.)*
