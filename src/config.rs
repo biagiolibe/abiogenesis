@@ -40,8 +40,8 @@ pub struct GridConfig {
 impl Default for GridConfig {
     fn default() -> Self {
         Self {
-            width: 48,
-            height: 32,
+            width: 128,
+            height: 80,
             neighborhood_size: 8,
         }
     }
@@ -84,8 +84,10 @@ impl Default for EnvironmentConfig {
             temperature_gradient_left: 0.2,
             temperature_gradient_right: 0.8,
             toxic_zone_value: 0.7,
-            toxic_zone_width: 8,
-            toxic_zone_height: 6,
+            // Scaled with grid size (task 074, 48x32 -> 128x80): kept the
+            // same relative footprint as the original 8x6 (~3.1% of cells).
+            toxic_zone_width: 21,
+            toxic_zone_height: 15,
             stress_delta: 0.3,
         }
     }
@@ -316,8 +318,10 @@ impl Default for DifficultyConfig {
     fn default() -> Self {
         Self {
             ramp_worlds: 3,
-            toxic_zone_width_late: 16,
-            toxic_zone_height_late: 12,
+            // Scaled with grid size (task 074, 48x32 -> 128x80), same
+            // relative footprint as the original 16x12 (~12.5% of cells).
+            toxic_zone_width_late: 43,
+            toxic_zone_height_late: 30,
             temperature_spread_late: 1.0,
             matrix_density_late: 0.6,
             objective_severity_early: 1.0,

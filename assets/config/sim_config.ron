@@ -5,8 +5,8 @@
 // need Bevy's asset machinery, and the two are kept in sync by hand.
 (
     grid: (
-        width: 48,
-        height: 32,
+        width: 128,
+        height: 80,
         neighborhood_size: 8,
     ),
     environment: (
@@ -16,8 +16,8 @@
         temperature_gradient_left: 0.2,
         temperature_gradient_right: 0.8,
         toxic_zone_value: 0.7,
-        toxic_zone_width: 8,
-        toxic_zone_height: 6,
+        toxic_zone_width: 21,
+        toxic_zone_height: 15,
         stress_delta: 0.3,
     ),
     time: (
@@ -68,8 +68,8 @@
     ),
     difficulty: (
         ramp_worlds: 3,
-        toxic_zone_width_late: 16,
-        toxic_zone_height_late: 12,
+        toxic_zone_width_late: 43,
+        toxic_zone_height_late: 30,
         temperature_spread_late: 1.0,
         matrix_density_late: 0.6,
         objective_severity_early: 1.0,

@@ -634,17 +634,24 @@ mod tests {
         // under test (toxicity leaking via diffusion) from organism
         // dynamics (growth/reproduction) that would otherwise risk
         // legitimately placing a species-0 organism inside the real zone
-        // and confounding the assertion below.
-        for _ in 0..500 {
+        // and confounding the assertion below. The corner-to-corner
+        // distance (and so the number of ticks diffusion needs to leak
+        // measurable toxicity all the way to (0, 0)) scales with grid size
+        // (task 074), so this runs diffusion until it actually happens
+        // instead of a fixed tick count tuned for one grid size.
+        let idx = world.index(0, 0);
+        let max_ticks = 20 * (world.width + world.height);
+        let mut ticks_run = 0;
+        while world.cells[idx].toxicity <= 0.0 && ticks_run < max_ticks {
             world.scratch.copy_from_slice(&world.cells);
             world.diffuse_environment(&config);
             std::mem::swap(&mut world.cells, &mut world.scratch);
+            ticks_run += 1;
         }
 
-        let idx = world.index(0, 0);
         assert!(
             world.cells[idx].toxicity > 0.0,
-            "diffusion should have leaked some toxicity to (0, 0) after 500 ticks — \
+            "diffusion should have leaked some toxicity to (0, 0) within {max_ticks} ticks — \
              otherwise this test isn't actually exercising the bug it's meant to catch"
         );
         assert!(

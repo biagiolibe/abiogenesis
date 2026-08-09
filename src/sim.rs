@@ -657,7 +657,13 @@ mod tests {
     fn photolithic_in_the_dark_eventually_dies() {
         // GDD §5.9: gain 0.4 < upkeep 0.5 ⇒ net -0.1/tick, doesn't survive.
         // Starting energy is 5.0, so death takes ~50 ticks, not the first one.
-        let (mut world, config) = world_with_one_organism(0.2, 0.5, 5.0);
+        // Diffusion disabled (task 074): otherwise this cell's forced-dark
+        // light blends back toward the ambient gradient over the run, which
+        // eventually turns the net gain positive and lets the organism
+        // survive/reproduce — a diffusion-timing artifact, not the light
+        // niche this test means to isolate.
+        let (mut world, mut config) = world_with_one_organism(0.2, 0.5, 5.0);
+        config.environment.diffusion_rate = 0.0;
         let (cx, cy) = (world.width / 2, world.height / 2);
 
         step(&mut world, &config);

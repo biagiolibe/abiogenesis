@@ -27,31 +27,50 @@ criteria, not by guessing analytically.
 
 ## 📋 Acceptance Criteria
 
-- [ ] At least 2-3 candidate grid sizes (including the current 48×32)
+- [x] At least 2-3 candidate grid sizes (including the current 48×32)
       are actually played, not just reasoned about — each for enough ticks/
       eras to judge population dynamics, not just the opening state.
-- [ ] The choice is written down with its rationale in `PROJECT_PLAN.md`'s
+- [x] The choice is written down with its rationale in `PROJECT_PLAN.md`'s
       Final tuning entry (or a short note in this task file if more
       detail is useful), referencing what was compared and why the winner
       won — not just a bare number change.
-- [ ] Whatever size is chosen becomes `GridConfig::width`/`height`'s value
+- [x] Whatever size is chosen becomes `GridConfig::width`/`height`'s value
       (via the RON asset from task 073, if that's done first — editing the
       value should not require touching `config.rs`'s Rust source at all
       once 073 is in place).
-- [ ] Existing tests that assume specific grid dimensions (search for
+- [x] Existing tests that assume specific grid dimensions (search for
       `48`/`32`/`world.width`/`world.height` literals in test code, e.g.
       `balance.rs`, `world.rs`'s terrain tests, any test hardcoding a cell
       index or toxic-zone position) are checked and updated if the new
       size breaks an assumption baked into a test rather than into the
       simulation itself.
-- [ ] `min_placeable_fraction`, toxic zone sizing
+- [x] `min_placeable_fraction`, toxic zone sizing
       (`WorldParams::toxic_zone_width`/`height`), and any other
       size-relative `TerrainConfig`/`DifficultyConfig` values are
       re-checked at the new grid size — a fixed toxic-zone footprint or
       placeable-fraction floor tuned for 48×32 may behave differently at a
       different total cell count.
-- [ ] `cargo test` and `cargo clippy -- -D warnings` clean at the final
+- [x] `cargo test` and `cargo clippy -- -D warnings` clean at the final
       chosen size.
+
+---
+
+## ✅ Resolution (2026-08-09)
+
+Final size: **128×80** (10240 cells, up from 1536). Full rationale, the
+headless comparison across 6 candidate sizes, the test fixes required, and
+the config values rescaled with it are recorded in `PROJECT_PLAN.md`'s
+Final tuning entry. Short version: population dynamics and per-tick
+performance were never the constraint (all candidates up to 160×100 stayed
+healthy and fast); 128×80 was the largest size visually confirmed live via
+`cargo run` to still read well under the current fixed-camera setup.
+
+A real follow-up surfaced during that visual check and is intentionally
+**not** addressed here (out of this task's scope per its own constraints):
+at 128×80, individual organism dots and some species colors are hard to
+read at a glance. The user wants a proper design discussion (a two-tier
+zoomed-out/zoomed-in rendering scheme, not just a zoom control) before this
+becomes a task file — noted in `PROJECT_PLAN.md` next to this entry.
 
 ---
 
