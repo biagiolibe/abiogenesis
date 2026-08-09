@@ -49,7 +49,9 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 
 Diagnosis: turn zero is a blank world with no signal there's anything to discover; reproduction (start energy `5.0`, threshold `10.0`, ~`+0.9`/tick photolithic gain) outruns a `25`-tick era before the player sees anything happen; matrix `interaction_delta` applies invisibly, read only after evidence accumulates. Full diagnosis and rationale in the linked doc.
 
-**Onboarding foundations:** scoped into tasks 080-084, see SECTION 2's "Onboarding & engagement rollout (2026-08-09)".
+**Onboarding foundations:** scoped into tasks 080-084, see SECTION 2's "Onboarding & engagement rollout (2026-08-09)". While scoping 1.E specifically, the proposal itself shrank to a small task (081), but raised a larger, separate idea — see next entry.
+
+- `[?]` **Environment as sources, not fixed axes** — replace the current fixed left-right temperature / top-bottom light gradients (GDD §5.2) with per-world heat sources (+ wind bias, + `Sea` cells as passive coolant) and a per-world "sun" direction (+ `Mountain` shading) — full mechanics, open questions, and blast-radius analysis in `redesign/abiogenesis-environment-sources.md`. Same class of change as the terrain redesign (task 066-072): touches worldgen and downstream balance (`env_fit`, `DifficultyConfig`'s temperature-spread ramp), not just rendering. Not scoped into task files yet — expect a multi-task split once approved, not a single task.
 
 **"Epic" mechanics — subito, da approfondire:**
 
