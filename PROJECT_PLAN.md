@@ -45,6 +45,30 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 
 > The other three ideas from this session — decomposer sustainability, a notebook presentation-refinement bundle, and a procedural background layer — were scoped into tasks 060/061/062 (§2).
 
+### Onboarding & engagement (2026-08-09, from `redesign/abiogenesis-engagement-design.md`)
+
+Diagnosis: turn zero is a blank world with no signal there's anything to discover; reproduction (start energy `5.0`, threshold `10.0`, ~`+0.9`/tick photolithic gain) outruns a `25`-tick era before the player sees anything happen; matrix `interaction_delta` applies invisibly, read only after evidence accumulates. Full diagnosis and rationale in the linked doc.
+
+**Onboarding foundations:**
+
+- `[?]` **1.A — Instant visual "spark" on interaction**: a one-frame flash/pulse on any cell whose `interaction_delta` fires, so the hidden matrix reads as an observed event instead of a deduced one. Presentation-only, no balance change — likely highest impact-to-cost of the whole set.
+- `[?]` **1.B — Guaranteed "first light" in world 0's worldgen**: no auto-placed species (stays banned), but a world-0-only generation constraint guaranteeing a strong (`±2`) matrix relation is reachable and visible within era 1-2, near the player's first seed.
+- `[?]` **1.C — Newborn incubation**: an organism born this era can't itself reproduce until the next era — slows the initial swarm without touching `repro_threshold` or existing energy economy.
+- `[?]` **1.D — Shorter eras at game start**: world 0's first 2-3 eras advance in smaller blocks (e.g. `8` ticks vs `25`), onboarding-only exception in the spirit of task 079's grace period — more checkpoints while the player is still learning to read the system.
+- `[?]` **1.E — The world breathes before the player seeds**: environmental diffusion (already speced, Phase 1+, GDD §5.2) rendered from tick 0 on an empty grid — near-zero cost, data already exists, signals the world has its own chemistry independent of the player.
+
+**"Epic" mechanics — subito, da approfondire:**
+
+- `[?]` **2.2 — The Precursor**: a single fixed anomalous cell per world (not an auto-placed species, stays banned) with a constant chemistry that affects the matrix regardless of which tag the player brings near it — a narrative attractor discoverable purely by observation.
+- `[?]` **2.4 — Epochal events**: rare procedural global shocks built on existing environmental scalars (`temperature`, `light`, `toxicity`) — a toxicity spike, a light flare, a thermal collapse — giving each run a natural growth → shock → adapt/collapse arc with no new data system.
+- `[?]` **2.6 — The revelation moment**: on closing a world, algorithmically synthesize one sentence from the confirmed-relationship graph (e.g. "in this biochemistry, decomposition generates vitality") — zero art, zero hand-written text, derived entirely from data the game already has.
+
+**"Epic" mechanics — futuro:**
+
+- `[?]` **2.1 — The stratigraphic record**: per-cell persistent death log (who died where, when, how concentrated), "core-sampleable" by the player — more data-modeling work (per-cell vs. global log) than the rest of this set.
+- `[?]` **2.3 — Prior-expedition data**: some worlds start with a few matrix cells pre-filled as "unverified prior readings," some correct, some wrong — stays consistent with "unlock capabilities, not answers" (GDD §10), but needs careful design of credible-yet-sometimes-false testimony that doesn't break trust in the notebook as a tool.
+- `[?]` **2.5 — The hidden grammar between worlds**: a deeper structural regularity under each world's shuffled matrix, perceptible only across many runs (e.g. certain glyph patterns statistically skew catalyst vs. poison) — a meta second layer of mystery for veterans; the most ambitious and most delicate to balance without introducing exploitable real patterns.
+
 ---
 
 ## 🔵 SECTION 2 — BACKLOG (Operational)
