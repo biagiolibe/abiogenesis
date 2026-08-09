@@ -120,6 +120,14 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 | `[x]` | 073 | Migrate `SimConfig` to a hot-reloadable RON asset | none | [073](done/073-ron-config-hot-reload.md) |
 | `[x]` | 074 | Final grid size (empirical tuning) | 073 (soft) | [074](done/074-final-grid-size-tuning.md) |
 
+**Two-tier map view** (2026-08-09, design discussion held right after task 074's visual check surfaced an organism-legibility gap at 128×80 — full decision record in `redesign/abiogenesis-two-tier-view.md`): a continuous-zoom camera with a hard-threshold switch between the current per-cell rendering (Detail) and an aggregated per-species cluster heatmap (Overview), plus gating Stress/Cull to Detail while Seed/Splice stay available in both.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[ ]` | 075 | Zoom camera and Overview/Detail render-mode switch | 074 | [075](075-zoom-camera-overview-detail-switch.md) |
+| `[ ]` | 076 | Overview mode: per-species cluster heatmap rendering | 075 | [076](076-overview-cluster-heatmap-rendering.md) |
+| `[ ]` | 077 | Gate Stress/Cull to Detail mode; Overview placement indicator for Seed/Splice | 075 | [077](077-action-gating-by-view-mode.md) |
+
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) and expands into task files after Phase 3.
