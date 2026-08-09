@@ -135,7 +135,7 @@ These are the foundation of the **observation log** from GDD §7: the notebook i
 
 No art assets: cells are colored square sprites (GDD, pillar 3). No need for a centralized `GameAssets` in Phase 0.
 
-**Hot-reloadable config:** GDD §5.6 asks for coefficients *"ideally hot-reloadable"* — with `bevy_asset` this is nearly free. In Phase 0, `SimConfig` is built from constants in `config.rs`; during the tuning phase it migrates to a RON asset with hot-reload. The structure should be set up now (a single `Resource`, read and never duplicated), the implementation not.
+**Hot-reloadable config (task 073, landed):** GDD §5.6's *"ideally hot-reloadable"* is implemented. `SimConfig` and every nested config struct derive `serde::{Serialize, Deserialize}`; the values live in `assets/config/sim_config.ron`, loaded via `bevy_common_assets::ron::RonAssetPlugin<SimConfig>` (`bevy`'s `file_watcher` feature, enabled in `Cargo.toml`, powers the on-disk watch). `ConfigPlugin` keeps a `SimConfigHandle` resource and a `sync_sim_config_on_reload` system that copies the loaded/reloaded asset into the live `SimConfig` resource — still `Res<SimConfig>` everywhere, a single source of truth, never duplicated. `impl Default for SimConfig` (and every nested struct) is kept as a hand-written mirror of the RON file's values, specifically so unit tests can build a `SimConfig` without spinning up Bevy's asset machinery; the two must be kept in sync by hand when tuning either one. Editing `assets/config/sim_config.ron` while `cargo run` is active updates the running simulation without a restart.
 
 ### Style
 

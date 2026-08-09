@@ -113,6 +113,13 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 | `[x]` | 071 | Ambient residue trickle hid terrain colors grid-wide after the first era advance | 060, 068, 070 | [071](done/071-ambient-residue-trickle-hides-terrain-color.md) |
 | `[x]` | 072 | Terrain sea/land balance correction (playtest correction to 069, matching `terrain-map-elevation.svg`) | 069 | [072](done/072-terrain-sea-balance-correction.md) |
 
+**Final tuning kickoff** (2026-08-09, from `PROJECT_PLAN.md`'s Final tuning backlog): the user chose to tackle grid size and the RON config migration next. RON migration goes first since it's what makes iterating on grid size (and every other tuning task after it) fast without recompiling.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[x]` | 073 | Migrate `SimConfig` to a hot-reloadable RON asset | none | [073](done/073-ron-config-hot-reload.md) |
+| `[ ]` | 074 | Final grid size (empirical tuning) | 073 (soft) | [074](074-final-grid-size-tuning.md) |
+
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) and expands into task files after Phase 3.
@@ -187,4 +194,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-09 (task 072 complete: a direct playtest correction to 069 — the user compared generated worlds against `terrain-map-elevation.svg` and found Sea almost never appeared; `generate_terrain` now min-max normalizes its own elevation field before classification, since raw threshold comparisons swung wildly seed-to-seed with only 3 continent waves, and all four classification thresholds plus `min_placeable_fraction` were retuned against the normalized field to get a consistent, visibly-larger Sea share matching the mockup; also fixed an incidental test regression in `sim.rs`'s shared energy-formula test helper, which had been unknowingly depending on the generated terrain's incidental placeability)*
+*Last updated: 2026-08-09 (task 073 complete: `SimConfig` and every nested config struct now derive `serde::{Serialize, Deserialize}`, loaded from `assets/config/sim_config.ron` via `bevy_common_assets`' `RonAssetPlugin` with `bevy`'s `file_watcher` feature enabled; a sync system keeps the live `SimConfig` resource current on every reload — verified hot-reload live via `cargo run`, no restart needed. 074 — final grid size — is next, now unblocked for fast iteration)*

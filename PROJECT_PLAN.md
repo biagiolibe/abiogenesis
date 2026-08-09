@@ -223,8 +223,8 @@ The redesign doc originally proposed elevation bands as a visual-only overlay wi
 
 - `[ ]` Tuning of the three anti-degeneration levers: cyclicity, environmental heterogeneity, carrying capacity (GDD §5.8)
 - `[ ]` Tuning of tick coefficients and the notebook confirmation threshold (GDD §5.6, §5.9, §7)
-- `[ ]` Final grid size (remains empirical, GDD §5.1)
-- `[ ]` Migrate config to RON with hot-reload, to shorten the tuning cycle
+- `[/]` Final grid size (remains empirical, GDD §5.1) — scoped into task 074, unblocked now that 073 is done → [074](tasks/074-final-grid-size-tuning.md)
+- `[x]` Migrate config to RON with hot-reload, to shorten the tuning cycle — task 073 → [073](tasks/done/073-ron-config-hot-reload.md)
 
 ---
 
@@ -253,4 +253,4 @@ The redesign doc originally proposed elevation bands as a visual-only overlay wi
 
 ---
 
-*Last updated: 2026-08-09 (task 072 complete: `generate_terrain` now min-max normalizes its own elevation field before classification, fixing both a land-heavy bias in the resample loop and wild seed-to-seed sea/land inconsistency; Sea now reads as a substantial, visible share of the map matching `terrain-map-elevation.svg`, confirmed via a real `cargo run` window)*
+*Last updated: 2026-08-09 (task 073 complete: `SimConfig` migrated to a hot-reloadable RON asset at `assets/config/sim_config.ron` via `bevy_common_assets`, verified live on the user's machine — editing the file while `cargo run` is active updates the running simulation with no restart; 074, final grid-size tuning, is next and now unblocked)*

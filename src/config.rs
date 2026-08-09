@@ -3,10 +3,17 @@
 #![allow(dead_code)]
 
 use bevy::prelude::*;
+use bevy_common_assets::ron::RonAssetPlugin;
+use serde::{Deserialize, Serialize};
 
-/// Every simulation coefficient in one place (GDD §5.9). Read-only at runtime;
-/// hot-reload is a later-phase concern (TECH_DESIGN.md §4).
-#[derive(Resource, Debug, Clone, Default)]
+/// Every simulation coefficient in one place (GDD §5.9). Loaded from
+/// `assets/config/sim_config.ron` (task 073) with hot-reload: editing that
+/// file while `cargo run` is active updates the live resource without a
+/// restart, via `sync_sim_config_on_reload` below. `impl Default` still
+/// hand-mirrors the RON file's values, so tests can build a `SimConfig`
+/// without spinning up Bevy's asset machinery — keep the two in sync by
+/// hand when tuning either one.
+#[derive(Asset, Resource, TypePath, Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SimConfig {
     pub grid: GridConfig,
     pub environment: EnvironmentConfig,
@@ -20,7 +27,7 @@ pub struct SimConfig {
     pub terrain: TerrainConfig,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GridConfig {
     /// Grid width in cells (GDD §5.9).
     pub width: u32,
@@ -40,7 +47,7 @@ impl Default for GridConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnvironmentConfig {
     /// Environmental diffusion rate, fraction per tick (Phase 1+, GDD §5.9).
     pub diffusion_rate: f32,
@@ -84,7 +91,7 @@ impl Default for EnvironmentConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeConfig {
     /// Ticks per era (GDD §5.9).
     pub era_ticks: u32,
@@ -115,7 +122,7 @@ impl Default for TimeConfig {
 }
 
 /// Action point cost per player action (GDD §5.9).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActionCosts {
     pub seed: u32,
     pub stress: u32,
@@ -135,7 +142,7 @@ impl Default for ActionCosts {
 }
 
 /// Per-organism energy and metabolism coefficients (GDD §5.9).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnergyConfig {
     /// Energy an organism starts with when seeded.
     pub seed_energy: f32,
@@ -204,7 +211,7 @@ impl Default for EnergyConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TagConfig {
     /// Total number of tags available across the whole game (GDD §5.9).
     pub global_tag_pool: u32,
@@ -246,7 +253,7 @@ impl Default for TagConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotebookConfig {
     /// Cumulative evidence needed to confirm a matrix cell (GDD §7).
     pub confirmation_threshold: f32,
@@ -271,7 +278,7 @@ impl Default for NotebookConfig {
 /// endpoint declared here, over `ramp_worlds` worlds, then holds steady —
 /// the run is endless-until-failure (GDD §8), so there is no "final" world
 /// to hit an exact late value at.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DifficultyConfig {
     /// Number of worlds over which every axis ramps from its early to its
     /// late endpoint. `3` is the smallest value that reproduces GDD §16's
@@ -325,7 +332,7 @@ impl Default for DifficultyConfig {
 /// species"). Kept separate from `TagConfig`/`EnergyConfig` since it governs
 /// *how many* species `worldgen::generate_starting_palette` creates, not a
 /// per-species genome coefficient.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorldgenConfig {
     /// Species pre-placed on the grid when a world starts. Always generated
     /// as `Metabolism::Photolithic` — the only metabolism that's
@@ -369,7 +376,7 @@ impl Default for WorldgenConfig {
 /// `2.0`, see `DifficultyConfig`) can still land on a non-exact era count
 /// for intermediate severities — expected, `eras_progress` ceils the
 /// requirement rather than truncating it.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectiveConfig {
     /// `Objective::Coexistence`'s `min_species` at severity 1.0.
     pub coexistence_min_species_base: u32,
@@ -398,7 +405,7 @@ impl Default for ObjectiveConfig {
 /// numbers). `Sea` is deliberately not called out as "impassable" anywhere in
 /// this config — that's a placement-gating decision (task 067), kept
 /// separate so a future aquatic species doesn't require touching generation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerrainConfig {
     /// How many low-frequency plane waves shape the macro-continent scale
     /// of the elevation field (task 069) — same dependency-free noise
@@ -475,10 +482,55 @@ impl Default for TerrainConfig {
     }
 }
 
+/// Holds the handle to the loaded `SimConfig` RON asset (task 073) so
+/// `sync_sim_config_on_reload` can tell, on every `AssetEvent`, whether the
+/// event is about *this* config file rather than some other asset.
+#[derive(Resource)]
+struct SimConfigHandle(Handle<SimConfig>);
+
 pub struct ConfigPlugin;
 
 impl Plugin for ConfigPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<SimConfig>();
+        // `SimConfig::default()` hand-mirrors `assets/config/sim_config.ron`
+        // (see the struct's doc comment), so the resource has a correct
+        // value immediately — the async asset load below then overwrites it
+        // once the file is actually read, and again on every hot-reload.
+        app.init_resource::<SimConfig>()
+            .add_plugins(RonAssetPlugin::<SimConfig>::new(&["ron"]))
+            .add_systems(Startup, load_sim_config)
+            .add_systems(Update, sync_sim_config_on_reload);
+    }
+}
+
+fn load_sim_config(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let handle = asset_server.load("config/sim_config.ron");
+    commands.insert_resource(SimConfigHandle(handle));
+}
+
+/// Keeps the live `SimConfig` resource in sync with the loaded RON asset:
+/// fires once when the initial load completes, then again every time the
+/// file changes on disk while `cargo run` is active (`file_watcher`
+/// feature, enabled in `Cargo.toml`) — hot-reload with no restart needed.
+fn sync_sim_config_on_reload(
+    mut events: MessageReader<AssetEvent<SimConfig>>,
+    handle: Option<Res<SimConfigHandle>>,
+    assets: Res<Assets<SimConfig>>,
+    mut config: ResMut<SimConfig>,
+) {
+    let Some(handle) = handle else {
+        return;
+    };
+    for event in events.read() {
+        let is_this_config = match event {
+            AssetEvent::Added { id } | AssetEvent::Modified { id } => *id == handle.0.id(),
+            _ => false,
+        };
+        if !is_this_config {
+            continue;
+        }
+        if let Some(loaded) = assets.get(handle.0.id()) {
+            *config = loaded.clone();
+        }
     }
 }
