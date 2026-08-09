@@ -30,34 +30,70 @@ task introduces, but ship their own rendering/gating logic separately.
 
 ## 📋 Acceptance Criteria
 
-- [ ] `spawn_camera`'s fixed `ScalingMode::AutoMin` (`src/render.rs:577`) is
+- [x] `spawn_camera`'s fixed `ScalingMode::AutoMin` (`src/render.rs:577`) is
       replaced with a projection that supports zooming — scrolling the mouse
       wheel changes zoom level, centered on the cursor's world position (the
       point under the cursor stays under the cursor as you zoom, standard
       map-zoom behavior).
-- [ ] A new resource (e.g. `MapViewMode { Overview, Detail }`) tracks the
+- [x] A new resource (e.g. `MapViewMode { Overview, Detail }`) tracks the
       current mode, derived from the camera's current zoom level against a
       configured threshold (`SimConfig`/RON — no magic number). Crossing the
       threshold flips the mode; there is no interpolated/blended state.
-- [ ] The mode is observable by other systems (`Res<MapViewMode>` or
+- [x] The mode is observable by other systems (`Res<MapViewMode>` or
       equivalent) — this task doesn't need to consume it itself beyond maybe
       a debug indicator, but 076/077 will.
-- [ ] Zoom range is bounded sensibly: can't zoom out past seeing the whole
+- [x] Zoom range is bounded sensibly: can't zoom out past seeing the whole
       grid (the current `AutoMin` behavior becomes the zoomed-out floor, not
       something you can zoom past into empty space), and can't zoom in
       absurdly far past single-cell resolution.
-- [ ] Panning: at any zoom level, the visible region is just whatever the
+- [x] Panning: at any zoom level, the visible region is just whatever the
       camera frustum currently shows — no separate "detail window" pan
       mechanic. Confirm existing click-to-cell mapping
       (`world_to_cell`, `src/render.rs:741`) still resolves correctly once
       the camera can be zoomed and (if in scope) panned — it currently
       assumes a camera at a fixed transform.
-- [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
-- [ ] Verified live via `cargo run`: zooming in with the mouse wheel crosses
+- [x] `cargo test` and `cargo clippy -- -D warnings` clean.
+- [x] Verified live via `cargo run`: zooming in with the mouse wheel crosses
       the threshold and the mode resource flips (a debug print or temporary
       on-screen label is fine for verification, doesn't need to ship).
 
 ---
+
+## ✅ Resolution (2026-08-09)
+
+Implemented as designed: `CameraConfig` (`zoom_min`/`zoom_max`/`zoom_threshold`/
+`zoom_speed`) added to `SimConfig`, mouse-wheel zoom centered on the cursor
+via the standard "keep the point under the cursor fixed" translation formula
+derived from `OrthographicProjection::area`'s dependence on `scale`, and a
+`MapViewMode` resource synced from the current scale against the threshold.
+
+Two real bugs surfaced during live playtesting on this machine, both fixed:
+
+1. **Pan drift at the zoomed-out floor.** The cursor-centered zoom formula
+   alone doesn't guarantee the camera returns to translation `(0, 0)` when
+   scale returns to `zoom_max` — any residual pan from an earlier zoom-in
+   persisted, so at "fully zoomed out" the grid was no longer centered and
+   part of it fell outside the viewport (reported as "the map shifts and
+   scrolls under the sidebar"). Fixed with a general pan clamp: on any axis
+   where the visible world-space span at the current scale is `>=` the
+   grid's own extent, the only valid translation is `0`; otherwise it's
+   bounded to keep the viewport fully inside the grid. Derived from
+   `ortho.area`'s existing pre-mutation value (`area.size() / old_scale`
+   recovers `AutoMin`'s unscaled projection dimensions) rather than
+   duplicating `AutoMin`'s own width/height math.
+2. **Terrain overlay bleeding into the sidebar.** `terrain_overlay::
+   draw_terrain_overlay` and the debug-only `energy_overlay` project world
+   positions via `Camera::world_to_viewport`, which doesn't clip to the
+   camera's actual (HUD-cropped) viewport bounds — invisible at the old
+   fixed `scale = 1.0` (the whole grid always projected inside the cropped
+   viewport by construction), it became visible once zoom let players view
+   a sub-region: an off-frame cell's projected pixel position could land
+   inside the sidebar's screen area, drawing boundary/toxic-zone lines
+   there. Fixed by clipping both painters to `Camera::logical_viewport_rect()`.
+
+Both fixes verified live via `cargo run` on the user's machine after each
+fix (zoom-in/zoom-out round trips, Seed-click precision while zoomed).
+`cargo test`/`clippy -- -D warnings` clean; `cargo fmt` applied.
 
 ## 📁 Relevant Files
 

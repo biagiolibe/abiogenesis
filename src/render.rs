@@ -2,6 +2,7 @@ use bevy::asset::RenderAssetUsages;
 use bevy::camera::ScalingMode;
 use bevy::color::Mix;
 use bevy::image::Image;
+use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy_egui::egui;
@@ -174,6 +175,7 @@ impl Plugin for GridRenderPlugin {
         // (task 044: `SimWorld` doesn't exist before then).
         app.add_systems(Startup, (spawn_camera, spawn_grid, spawn_metabolism_shapes))
             .init_resource::<EnvironmentOverlay>()
+            .init_resource::<MapViewMode>()
             .add_systems(
                 Update,
                 (
@@ -181,6 +183,10 @@ impl Plugin for GridRenderPlugin {
                     toggle_environment_overlay,
                     apply_environment_overlay
                         .after(sync_grid_colors)
+                        .run_if(in_state(GameState::Playing)),
+                    zoom_camera.run_if(in_state(GameState::Playing)),
+                    update_map_view_mode
+                        .after(zoom_camera)
                         .run_if(in_state(GameState::Playing)),
                 ),
             )
@@ -333,6 +339,16 @@ mod energy_overlay {
         };
         let ctx = contexts.ctx_mut()?;
         let painter = ctx.layer_painter(egui::LayerId::background());
+        // See `terrain_overlay::draw_terrain_overlay`'s identical clip: task
+        // 075's zoom means `world_to_viewport` can project an off-frame
+        // cell into the HUD sidebar's screen area otherwise.
+        let painter = match camera.logical_viewport_rect() {
+            Some(viewport_rect) => painter.with_clip_rect(egui::Rect::from_min_max(
+                egui::pos2(viewport_rect.min.x, viewport_rect.min.y),
+                egui::pos2(viewport_rect.max.x, viewport_rect.max.y),
+            )),
+            None => painter,
+        };
 
         // `Camera::world_to_viewport` already returns logical (window-point)
         // coordinates — the same space `Window::cursor_position()` uses, per
@@ -418,6 +434,21 @@ mod terrain_overlay {
         };
         let ctx = contexts.ctx_mut()?;
         let painter = ctx.layer_painter(egui::LayerId::background());
+        // `Camera::world_to_viewport` doesn't clip to the viewport's actual
+        // bounds — a cell just outside the camera's cropped viewport (task
+        // 075's zoom can put most of the grid off-frame) still projects to
+        // *some* pixel position, which without this clip can land inside
+        // the HUD sidebar's screen area and bleed boundary/toxic-zone lines
+        // into it. Restricting the painter to the camera's own logical
+        // viewport rect matches what the Bevy-rendered sprites already show
+        // (the renderer clips those to `Camera::viewport` for free).
+        let painter = match camera.logical_viewport_rect() {
+            Some(viewport_rect) => painter.with_clip_rect(egui::Rect::from_min_max(
+                egui::pos2(viewport_rect.min.x, viewport_rect.min.y),
+                egui::pos2(viewport_rect.max.x, viewport_rect.max.y),
+            )),
+            None => painter,
+        };
 
         let project = |pos: Vec3| -> Option<egui::Pos2> {
             camera
@@ -574,6 +605,21 @@ mod terrain_overlay {
     }
 }
 
+/// Which representation the organism layer renders in — the hard-threshold
+/// switch task 075 introduces (`redesign/abiogenesis-two-tier-view.md`):
+/// `Overview` (default, matches the un-zoomed `scale == 1.0` whole-grid
+/// framing) shows the per-species cluster heatmap (task 076); `Detail`
+/// shows today's per-cell organism sprites, unchanged. Driven by
+/// `update_map_view_mode` from the camera's current zoom (`CameraConfig::
+/// zoom_threshold`), consumed here only for a debug indicator — task 076
+/// reads it to pick a rendering path, task 077 to gate Stress/Cull.
+#[derive(Resource, Default, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MapViewMode {
+    #[default]
+    Overview,
+    Detail,
+}
+
 fn spawn_camera(mut commands: Commands, config: Res<SimConfig>) {
     let width = config.grid.width as f32 * CELL_SIZE;
     let height = config.grid.height as f32 * CELL_SIZE;
@@ -582,7 +628,9 @@ fn spawn_camera(mut commands: Commands, config: Res<SimConfig>) {
         GridCamera,
         Projection::Orthographic(OrthographicProjection {
             // Never smaller than the grid, so it never clips on resize; a
-            // wider/taller window just shows more letterboxed space.
+            // wider/taller window just shows more letterboxed space. Zoom
+            // (task 075) multiplies on top of this via `scale`, `1.0` being
+            // exactly this whole-grid framing (`CameraConfig::zoom_max`).
             scaling_mode: ScalingMode::AutoMin {
                 min_width: width,
                 min_height: height,
@@ -590,6 +638,109 @@ fn spawn_camera(mut commands: Commands, config: Res<SimConfig>) {
             ..OrthographicProjection::default_2d()
         }),
     ));
+}
+
+/// Mouse-wheel zoom, centered on the cursor's world position (task 075):
+/// scrolling in keeps the point under the cursor fixed on screen, standard
+/// map-zoom behavior. Multiplicative per scroll unit (`CameraConfig::
+/// zoom_speed`) rather than additive, so it feels equally responsive at any
+/// zoom level; clamped to `[zoom_min, zoom_max]`.
+///
+/// Cursor-centered zoom math: for a camera with a centered viewport_origin
+/// and no rotation, `OrthographicProjection::scale` uniformly scales the
+/// world-space area shown around the camera's own translation. Keeping a
+/// world point `p` fixed under the cursor while `scale` changes from `old`
+/// to `new` requires shifting the camera translation `t` by
+/// `(p - t) * (1 - new/old)` — derived directly from `scale`'s effect on
+/// `OrthographicProjection::area` (bevy_camera's `update`), not empirically
+/// tuned, so it holds at any zoom level without re-deriving per frame.
+fn zoom_camera(
+    mut wheel: MessageReader<MouseWheel>,
+    windows: Query<&Window>,
+    config: Res<SimConfig>,
+    mut cameras: Query<
+        (&Camera, &GlobalTransform, &mut Projection, &mut Transform),
+        With<GridCamera>,
+    >,
+) {
+    let scroll: f32 = wheel.read().map(|event| event.y).sum();
+    if scroll == 0.0 {
+        return;
+    }
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let Some(cursor) = window.cursor_position() else {
+        return;
+    };
+    let Ok((camera, camera_transform, mut projection, mut transform)) = cameras.single_mut() else {
+        return;
+    };
+    let Projection::Orthographic(ortho) = projection.as_mut() else {
+        return;
+    };
+    let Ok(world_pos_before) = camera.viewport_to_world_2d(camera_transform, cursor) else {
+        return;
+    };
+
+    let cam_cfg = &config.camera;
+    // Scrolling in (positive `y`) zooms in: `zoom_speed < 1.0` shrinks
+    // `scale`, and smaller `scale` means less world-space area per pixel.
+    let factor = cam_cfg.zoom_speed.powf(scroll);
+    let old_scale = ortho.scale;
+    let new_scale = (old_scale * factor).clamp(cam_cfg.zoom_min, cam_cfg.zoom_max);
+    if new_scale == old_scale {
+        return;
+    }
+
+    // `ortho.area`'s size is `scale * (AutoMin's unscaled projection dims)`
+    // (bevy_camera's `update`) — dividing out `old_scale` recovers those
+    // dims without duplicating `AutoMin`'s own width/height math, so the
+    // pan clamp below stays correct regardless of window/grid aspect ratio.
+    let unscaled_area = ortho.area.size() / old_scale;
+    ortho.scale = new_scale;
+
+    let ratio = new_scale / old_scale;
+    let translation = transform.translation.truncate();
+    let shifted = translation + (world_pos_before - translation) * (1.0 - ratio);
+
+    // Clamp panning so the viewport never shows area outside the grid: on
+    // an axis where the visible span at `new_scale` is already >= the
+    // grid's own extent (e.g. `zoom_max`'s whole-grid floor, or an axis
+    // `AutoMin` over-extends to match the window's aspect), the only valid
+    // translation is `0` — any pan there would clip grid content on one
+    // side while revealing empty space on the other, exactly the "map
+    // scrolls under the sidebar" bug this fixes.
+    let visible = unscaled_area * new_scale;
+    let grid_extent = Vec2::new(
+        config.grid.width as f32 * CELL_SIZE,
+        config.grid.height as f32 * CELL_SIZE,
+    );
+    let max_pan = ((grid_extent - visible) / 2.0).max(Vec2::ZERO);
+    let clamped = shifted.clamp(-max_pan, max_pan);
+
+    transform.translation.x = clamped.x;
+    transform.translation.y = clamped.y;
+}
+
+/// Syncs `MapViewMode` from the camera's current zoom (task 075) — a hard
+/// threshold, not a blend, per `redesign/abiogenesis-two-tier-view.md`.
+fn update_map_view_mode(
+    config: Res<SimConfig>,
+    cameras: Query<&Projection, With<GridCamera>>,
+    mut mode: ResMut<MapViewMode>,
+) {
+    let Ok(Projection::Orthographic(ortho)) = cameras.single() else {
+        return;
+    };
+    let new_mode = if ortho.scale < config.camera.zoom_threshold {
+        MapViewMode::Detail
+    } else {
+        MapViewMode::Overview
+    };
+    if *mode != new_mode {
+        *mode = new_mode;
+    }
 }
 
 /// Side length, in texels, of a generated shape mask (task 032). Independent

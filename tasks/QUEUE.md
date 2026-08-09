@@ -124,7 +124,7 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 075 | Zoom camera and Overview/Detail render-mode switch | 074 | [075](075-zoom-camera-overview-detail-switch.md) |
+| `[x]` | 075 | Zoom camera and Overview/Detail render-mode switch | 074 | [075](done/075-zoom-camera-overview-detail-switch.md) |
 | `[ ]` | 076 | Overview mode: per-species cluster heatmap rendering | 075 | [076](076-overview-cluster-heatmap-rendering.md) |
 | `[ ]` | 077 | Gate Stress/Cull to Detail mode; Overview placement indicator for Seed/Splice | 075 | [077](077-action-gating-by-view-mode.md) |
 
@@ -202,4 +202,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-09 (task 074 complete: grid size raised from 48×32 to 128×80, chosen from a 6-candidate headless comparison plus a live visual check via `cargo run`; toxic zone footprints rescaled to match, three grid-size-relative test assumptions fixed, `cargo test`/`clippy` clean. A real organism-legibility gap surfaced during the visual check — small/dark-colored dots hard to read at this scale — deliberately left as an open follow-up needing its own design discussion, not folded into this task, see `PROJECT_PLAN.md`'s Final tuning entry)*
+*Last updated: 2026-08-09 (task 075 complete: mouse-wheel zoom centered on the cursor, plus the `MapViewMode` resource other systems read to switch between Overview and Detail. Two real bugs surfaced during live playtesting on the user's machine and were fixed: pan drift left the grid off-center at the zoomed-out floor (fixed with a general pan clamp), and the terrain/toxic-zone overlay bled into the HUD sidebar once zoom let players view a sub-region (fixed by clipping the overlay painters to the camera's actual viewport). `cargo test`/`clippy` clean, Seed-click precision reverified while zoomed. 076 (cluster heatmap) and 077 (action gating) are next, both unblocked)*

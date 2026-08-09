@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Asset, Resource, TypePath, Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SimConfig {
     pub grid: GridConfig,
+    pub camera: CameraConfig,
     pub environment: EnvironmentConfig,
     pub time: TimeConfig,
     pub energy: EnergyConfig,
@@ -43,6 +44,44 @@ impl Default for GridConfig {
             width: 128,
             height: 80,
             neighborhood_size: 8,
+        }
+    }
+}
+
+/// Zoom camera tuning (task 075, `redesign/abiogenesis-two-tier-view.md`).
+/// Applies to `OrthographicProjection::scale`: `1.0` is the un-zoomed
+/// `ScalingMode::AutoMin` framing that exactly fits the whole grid (task
+/// 074's zoomed-out floor), smaller values zoom in. Kept here rather than a
+/// `render.rs` constant (unlike `CELL_SIZE`) because these need iterative
+/// playtesting to feel right, the exact reason `SimConfig` moved to a
+/// hot-reloadable RON asset in task 073.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CameraConfig {
+    /// Smallest allowed `scale` (furthest zoom-in, most detail).
+    pub zoom_min: f32,
+    /// Largest allowed `scale` (furthest zoom-out); `1.0` matches the
+    /// whole-grid `AutoMin` framing, so this also caps zoom-out at "see the
+    /// whole grid," never past it into empty space.
+    pub zoom_max: f32,
+    /// `scale` threshold below which `MapViewMode` switches to `Detail`
+    /// (individual organism rendering); at or above it, `Overview` (cluster
+    /// heatmap, task 076) is active. A hard cutoff, not a blend
+    /// (`redesign/abiogenesis-two-tier-view.md`).
+    pub zoom_threshold: f32,
+    /// Multiplicative zoom step per unit of mouse-wheel scroll: each scroll
+    /// unit multiplies `scale` by `zoom_speed` (scrolling in) or divides by
+    /// it (scrolling out), so zoom feels equally responsive at any current
+    /// zoom level rather than a fixed additive step.
+    pub zoom_speed: f32,
+}
+
+impl Default for CameraConfig {
+    fn default() -> Self {
+        Self {
+            zoom_min: 0.1,
+            zoom_max: 1.0,
+            zoom_threshold: 0.4,
+            zoom_speed: 0.9,
         }
     }
 }

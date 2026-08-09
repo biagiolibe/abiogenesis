@@ -9,6 +9,12 @@
         height: 80,
         neighborhood_size: 8,
     ),
+    camera: (
+        zoom_min: 0.1,
+        zoom_max: 1.0,
+        zoom_threshold: 0.4,
+        zoom_speed: 0.9,
+    ),
     environment: (
         diffusion_rate: 0.05,
         light_gradient_high: 0.9,
