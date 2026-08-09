@@ -5,7 +5,6 @@ use bevy::image::Image;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy_egui::egui;
-#[cfg(debug_assertions)]
 use bevy_egui::EguiPrimaryContextPass;
 use rand::rngs::StdRng;
 use rand::RngExt;
@@ -14,7 +13,7 @@ use std::f32::consts::TAU;
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::state::GameState;
-use abiogenesis::world::{Metabolism, SimWorld, SpeciesId};
+use abiogenesis::world::{Metabolism, SimWorld, SpeciesId, TerrainKind};
 
 /// Pixel size of one grid cell on screen. Presentation-only, not a
 /// simulation coefficient, so it stays local instead of living in
@@ -126,7 +125,11 @@ fn toggle_environment_overlay(
 /// active, same shape as `debug_view::apply_debug_view` — the two overlays
 /// are independent features (one dev-only and covers all raw scalars incl.
 /// `toxicity`, this one is player-facing and only ever shows temperature or
-/// light) that happen to share `heat_color`.
+/// light) that happen to share `heat_color`. Skips unplaceable cells (task
+/// 068): painting the whole grid as a heatmap would erase the terrain read
+/// (Sea/peaks) the player just learned at baseline, and organisms can never
+/// occupy those cells anyway, so there's no environmental reading there
+/// that matters to the player.
 fn apply_environment_overlay(
     world: Res<SimWorld>,
     overlay: Res<EnvironmentOverlay>,
@@ -136,6 +139,9 @@ fn apply_environment_overlay(
         return;
     }
     for (cell, mut sprite) in &mut cells {
+        if !world.is_placeable(cell.x, cell.y) {
+            continue;
+        }
         let scalar = match *overlay {
             EnvironmentOverlay::Off => unreachable!(),
             EnvironmentOverlay::Temperature => world.get(cell.x, cell.y).temperature,
@@ -190,6 +196,10 @@ impl Plugin for GridRenderPlugin {
                     .run_if(in_state(GameState::Playing)),
                 sync_background.run_if(in_state(GameState::Playing)),
             ),
+        )
+        .add_systems(
+            EguiPrimaryContextPass,
+            terrain_overlay::draw_terrain_overlay.run_if(in_state(GameState::Playing)),
         );
         #[cfg(debug_assertions)]
         {
@@ -364,6 +374,216 @@ mod energy_overlay {
             }
         }
         Ok(())
+    }
+}
+
+/// Renders the terrain data from task 066 that the grid's flat cell colors
+/// alone can't show (task 068, `redesign/abiogenesis-terrain-map.md`):
+/// boundaries between differently-classed neighbours, sparse peak glyphs,
+/// and the toxic zone's dashed outline. Same background-layer egui painter
+/// technique as `energy_overlay::draw_energy_overlay` — the grid has no
+/// other mechanism for a shared-cell-edge hairline or a text glyph — but
+/// always on, not a debug/dev toggle: this is the terrain itself made
+/// visible, not an instrument reading.
+mod terrain_overlay {
+    use super::{cell_position, GridCamera, CELL_SIZE};
+    use abiogenesis::world::{SimWorld, TerrainKind};
+    use bevy::prelude::*;
+    use bevy_egui::{egui, EguiContexts};
+
+    const BOUNDARY_INTERNAL_WIDTH: f32 = 0.6;
+    const BOUNDARY_COASTLINE_WIDTH: f32 = 1.4;
+
+    /// Internal band-to-band boundary (e.g. Plain/Hill): thin and low-alpha
+    /// — "present but secondary" per the design doc. Not a `const`:
+    /// `Color32::from_rgba_unmultiplied` isn't a `const fn`.
+    fn boundary_internal_color() -> egui::Color32 {
+        egui::Color32::from_rgba_unmultiplied(190, 190, 178, 70)
+    }
+
+    /// Sea↔land boundary ("coastline"): thicker and brighter, read as the
+    /// limit of the explorable world.
+    fn boundary_coastline_color() -> egui::Color32 {
+        egui::Color32::from_rgba_unmultiplied(220, 220, 208, 210)
+    }
+
+    const PEAK_GLYPH: &str = "^";
+    const PEAK_GLYPH_FONT_SIZE: f32 = 9.0;
+    const PEAK_GLYPH_COLOR: egui::Color32 = egui::Color32::from_gray(225);
+
+    /// Matches the reference mockup's `#7F77DD` — a deliberate new color for
+    /// "toxic/hazardous," not yet used elsewhere in the codebase (the
+    /// notebook's zero-evidence dashed ring is gray, not purple, despite the
+    /// design doc's claim of cross-screen reuse — the dash *technique* is
+    /// what's actually shared, per `draw_dashed_line` below).
+    const TOXIC_ZONE_OUTLINE_COLOR: egui::Color32 = egui::Color32::from_rgb(127, 119, 221);
+    const TOXIC_ZONE_OUTLINE_WIDTH: f32 = 1.4;
+    const TOXIC_ZONE_DASH_LENGTH: f32 = 4.0;
+    const TOXIC_ZONE_GAP_LENGTH: f32 = 3.0;
+
+    pub fn draw_terrain_overlay(
+        world: Res<SimWorld>,
+        cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
+        mut contexts: EguiContexts,
+    ) -> Result {
+        let Ok((camera, camera_transform)) = cameras.single() else {
+            return Ok(());
+        };
+        let ctx = contexts.ctx_mut()?;
+        let painter = ctx.layer_painter(egui::LayerId::background());
+
+        let project = |pos: Vec3| -> Option<egui::Pos2> {
+            camera
+                .world_to_viewport(camera_transform, pos)
+                .ok()
+                .map(|p| egui::pos2(p.x, p.y))
+        };
+
+        draw_boundaries(&world, &project, &painter);
+        draw_peaks(&world, &project, &painter);
+        draw_toxic_zone(&world, &project, &painter);
+        Ok(())
+    }
+
+    /// World-space corners of cell `(x, y)`, `(top_left, top_right,
+    /// bottom_right, bottom_left)` — `cell_position` gives the center, this
+    /// offsets by half a cell in each direction.
+    fn cell_corners(x: usize, y: usize, width: usize, height: usize) -> (Vec3, Vec3, Vec3, Vec3) {
+        let center = cell_position(x, y, width, height);
+        let half = CELL_SIZE / 2.0;
+        (
+            center + Vec3::new(-half, half, 0.0),
+            center + Vec3::new(half, half, 0.0),
+            center + Vec3::new(half, -half, 0.0),
+            center + Vec3::new(-half, -half, 0.0),
+        )
+    }
+
+    /// Compares each cell against its right and bottom neighbours only
+    /// (task doc: "sufficient to avoid drawing every shared edge twice").
+    fn draw_boundaries(
+        world: &SimWorld,
+        project: &impl Fn(Vec3) -> Option<egui::Pos2>,
+        painter: &egui::Painter,
+    ) {
+        for y in 0..world.height {
+            for x in 0..world.width {
+                let here = world.get(x, y).terrain;
+                if x + 1 < world.width {
+                    let right = world.get(x + 1, y).terrain;
+                    if right != here {
+                        let (_, top_right, bottom_right, _) =
+                            cell_corners(x, y, world.width, world.height);
+                        draw_edge(project, painter, top_right, bottom_right, here, right);
+                    }
+                }
+                if y + 1 < world.height {
+                    let below = world.get(x, y + 1).terrain;
+                    if below != here {
+                        let (_, _, bottom_right, bottom_left) =
+                            cell_corners(x, y, world.width, world.height);
+                        draw_edge(project, painter, bottom_left, bottom_right, here, below);
+                    }
+                }
+            }
+        }
+    }
+
+    fn draw_edge(
+        project: &impl Fn(Vec3) -> Option<egui::Pos2>,
+        painter: &egui::Painter,
+        from: Vec3,
+        to: Vec3,
+        a: TerrainKind,
+        b: TerrainKind,
+    ) {
+        let (Some(p0), Some(p1)) = (project(from), project(to)) else {
+            return;
+        };
+        let is_coastline = a == TerrainKind::Sea || b == TerrainKind::Sea;
+        let (color, width) = if is_coastline {
+            (boundary_coastline_color(), BOUNDARY_COASTLINE_WIDTH)
+        } else {
+            (boundary_internal_color(), BOUNDARY_INTERNAL_WIDTH)
+        };
+        painter.line_segment([p0, p1], egui::Stroke::new(width, color));
+    }
+
+    /// One glyph per stored peak cell (task 066 decides peaks at generation
+    /// time; this reads that directly, no render-time local-maximum scan).
+    fn draw_peaks(
+        world: &SimWorld,
+        project: &impl Fn(Vec3) -> Option<egui::Pos2>,
+        painter: &egui::Painter,
+    ) {
+        for y in 0..world.height {
+            for x in 0..world.width {
+                if !world.get(x, y).is_peak {
+                    continue;
+                }
+                let Some(pos) = project(cell_position(x, y, world.width, world.height)) else {
+                    continue;
+                };
+                painter.text(
+                    pos,
+                    egui::Align2::CENTER_CENTER,
+                    PEAK_GLYPH,
+                    egui::FontId::monospace(PEAK_GLYPH_FONT_SIZE),
+                    PEAK_GLYPH_COLOR,
+                );
+            }
+        }
+    }
+
+    fn draw_toxic_zone(
+        world: &SimWorld,
+        project: &impl Fn(Vec3) -> Option<egui::Pos2>,
+        painter: &egui::Painter,
+    ) {
+        let zone = world.toxic_zone;
+        if zone.width == 0 || zone.height == 0 {
+            return;
+        }
+        let (top_left, _, _, _) = cell_corners(zone.x0, zone.y0, world.width, world.height);
+        let (_, _, bottom_right, _) = cell_corners(
+            zone.x0 + zone.width - 1,
+            zone.y0 + zone.height - 1,
+            world.width,
+            world.height,
+        );
+        let (Some(p0), Some(p1)) = (project(top_left), project(bottom_right)) else {
+            return;
+        };
+        let top_right = egui::pos2(p1.x, p0.y);
+        let bottom_left = egui::pos2(p0.x, p1.y);
+        draw_dashed_line(painter, p0, top_right);
+        draw_dashed_line(painter, top_right, p1);
+        draw_dashed_line(painter, p1, bottom_left);
+        draw_dashed_line(painter, bottom_left, p0);
+    }
+
+    /// Approximates a dashed line the same way `notebook.rs`'s
+    /// `draw_dashed_ring` approximates a dashed circle — alternating short
+    /// straight segments — adapted from a ring to a rectangle's four edges.
+    fn draw_dashed_line(painter: &egui::Painter, from: egui::Pos2, to: egui::Pos2) {
+        let delta = to - from;
+        let length = delta.length();
+        if length < f32::EPSILON {
+            return;
+        }
+        let dir = delta / length;
+        let step = TOXIC_ZONE_DASH_LENGTH + TOXIC_ZONE_GAP_LENGTH;
+        let mut travelled = 0.0;
+        while travelled < length {
+            let dash_end = (travelled + TOXIC_ZONE_DASH_LENGTH).min(length);
+            let p0 = from + dir * travelled;
+            let p1 = from + dir * dash_end;
+            painter.line_segment(
+                [p0, p1],
+                egui::Stroke::new(TOXIC_ZONE_OUTLINE_WIDTH, TOXIC_ZONE_OUTLINE_COLOR),
+            );
+            travelled += step;
+        }
     }
 }
 
@@ -721,9 +941,10 @@ pub fn world_to_cell(world_pos: Vec2, width: usize, height: usize) -> Option<(us
 
 /// The single place that decides a cell's color (GDD §11): occupied cells by
 /// species hue and energy, cells with leftover residue by a neutral hue
-/// scaled by how much is left, empty cells by a faint shading of `light`,
-/// then a toxicity tint (task 033) composited on top of whichever of the
-/// three applies.
+/// scaled by how much is left, empty cells by their terrain band (task 066,
+/// `redesign/abiogenesis-terrain-map.md` — flat color, no longer a
+/// continuous `light` shading), then a toxicity tint (task 033) composited
+/// on top of whichever of the three applies.
 fn cell_color(world: &SimWorld, config: &SimConfig, x: usize, y: usize) -> Color {
     let cell = world.get(x, y);
 
@@ -736,10 +957,26 @@ fn cell_color(world: &SimWorld, config: &SimConfig, x: usize, y: usize) -> Color
         let intensity = (cell.residue / config.energy.residue_on_death).clamp(0.0, 1.0);
         Color::hsl(30.0, 0.2, 0.08 + intensity * 0.22)
     } else {
-        Color::hsl(0.0, 0.0, 0.03 + cell.light * 0.12)
+        terrain_color(cell.terrain)
     };
 
     toxicity_tint(base, cell.toxicity)
+}
+
+/// Flat per-band terrain color (task 068 — the mockup's "no gradient, one
+/// flat color per elevation band" rule): `Sea` stays near-black, close to
+/// the grid's own background, so it still reads as "void" the way the
+/// pre-terrain empty cell did, even though it's now real data rather than
+/// an absence of one. `Plain`/`Hill`/`Mountain` are desaturated tones from
+/// the same console/lab palette family as the rest of the HUD, not a new
+/// palette.
+fn terrain_color(kind: TerrainKind) -> Color {
+    match kind {
+        TerrainKind::Sea => Color::hsl(0.0, 0.0, 0.02),
+        TerrainKind::Plain => Color::hsl(130.0, 0.20, 0.09),
+        TerrainKind::Hill => Color::hsl(125.0, 0.22, 0.14),
+        TerrainKind::Mountain => Color::hsl(30.0, 0.10, 0.19),
+    }
 }
 
 /// A warning-magenta hue to blend toward as `toxicity` rises (GDD §5.2's
@@ -761,7 +998,7 @@ fn toxicity_tint(base: Color, toxicity: f32) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use abiogenesis::world::{Cell, Organism, SpeciesId};
+    use abiogenesis::world::{Cell, Organism, SpeciesId, TerrainKind};
 
     #[test]
     fn background_image_is_deterministic_and_varies_with_seed() {
@@ -832,12 +1069,49 @@ mod tests {
         };
         assert!(residue.saturation < occupied.saturation);
 
+        // Task 068: empty cells render by terrain band (flat color), not a
+        // continuous grayscale `light` shading — pin the terrain so the
+        // assertion doesn't depend on whatever this seed's generator drew
+        // for (0, 0).
         world.cells[idx].residue = 0.0;
+        world.cells[idx].terrain = TerrainKind::Plain;
         let Color::Hsla(empty) = cell_color(&world, &config, x, y) else {
             panic!("expected an HSL color");
         };
-        assert_eq!(empty.saturation, 0.0);
+        assert_eq!(empty, terrain_hsla(TerrainKind::Plain));
         assert!(empty.lightness < residue.lightness);
+    }
+
+    fn terrain_hsla(kind: TerrainKind) -> bevy::color::Hsla {
+        let Color::Hsla(hsla) = terrain_color(kind) else {
+            panic!("expected an HSL color");
+        };
+        hsla
+    }
+
+    #[test]
+    fn each_terrain_band_has_a_distinct_flat_color() {
+        let colors = [
+            TerrainKind::Sea,
+            TerrainKind::Plain,
+            TerrainKind::Hill,
+            TerrainKind::Mountain,
+        ]
+        .map(terrain_hsla);
+        for i in 0..colors.len() {
+            for j in (i + 1)..colors.len() {
+                assert_ne!(colors[i], colors[j], "bands {i} and {j} share a color");
+            }
+        }
+    }
+
+    #[test]
+    fn sea_stays_near_black() {
+        let sea = terrain_hsla(TerrainKind::Sea);
+        assert!(
+            sea.lightness < 0.05,
+            "Sea must read as close to the grid's black background, not a water fill"
+        );
     }
 
     #[test]

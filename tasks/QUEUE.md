@@ -107,7 +107,7 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 |-------|----|--------|------------|------|
 | `[x]` | 066 | Terrain field + procedural elevation generation | none | [066](done/066-terrain-field-procedural-elevation-generation.md) |
 | `[x]` | 067 | Placement gating on terrain | 066 | [067](done/067-placement-gating-on-terrain.md) |
-| `[ ]` | 068 | Terrain rendering: elevation bands, boundaries, peak glyphs, toxic-zone overlay | 066, 067 | [068](068-terrain-rendering-bands-boundaries-glyphs.md) |
+| `[x]` | 068 | Terrain rendering: elevation bands, boundaries, peak glyphs, toxic-zone overlay | 066, 067 | [068](done/068-terrain-rendering-bands-boundaries-glyphs.md) |
 
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
@@ -183,4 +183,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-09 (task 067 complete: `SimWorld::is_placeable`/`is_placeable_index` centralize terrain gating, wired into Seed and reproduction; 068 — rendering — next)*
+*Last updated: 2026-08-09 (task 068 complete: terrain-band flat colors, boundary/coastline lines, peak glyphs, and dashed toxic-zone outline all painted via egui over the grid; T/L overlays now skip unplaceable cells instead of erasing the terrain read — terrain map redesign (066-068) fully done)*

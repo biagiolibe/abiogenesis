@@ -22,15 +22,15 @@ function.
 
 ## 📋 Acceptance Criteria
 
-- [ ] The code compiles without errors; `cargo clippy -- -D warnings` is clean.
-- [ ] `cell_color`'s empty-cell branch (`render.rs:727-743`) is replaced/extended with flat per-terrain-band colors — desaturated tones consistent with the existing console/lab palette, no new palette family introduced.
-- [ ] Sea renders near-black, close to the grid's background — not as a blue "water" fill — preserving the original doc's "void" reading even though Sea is now real simulation data, not an absence of cell.
-- [ ] Boundary lines are drawn between differently-classed adjacent cells: thin/dark for internal band transitions (e.g. Plain/Hill), thicker/lighter for Sea↔land transitions (coastline reading). Implemented via an egui immediate-mode painter (`ctx.layer_painter(egui::LayerId::background())`, same pattern as `draw_energy_overlay`, `render.rs:325-338`) drawn over the grid sprites — not per-edge sprite entities.
-- [ ] Peak glyphs (`^` or equivalent) are drawn via the same painter, one per stored peak cell from task 066 — no render-time local-maximum re-derivation.
-- [ ] The toxic zone gets a dashed border around its (now variable) bounds, drawn via the same painter, reusing the dash-segment approach/constants from `draw_dashed_ring` (`notebook.rs:679`) adapted to a rectangle outline, for visual consistency with the existing "unconfirmed/hazardous" treatment.
-- [ ] `apply_environment_overlay` (`render.rs:130-146`, T/L heatmap toggles) makes a deliberate decision about Sea/unplaceable cells — at minimum, doesn't silently erase the terrain read the player just learned; implementer's call on the exact treatment, but it must be explicit, not an oversight.
-- [ ] Verified visually via `cargo run`: seed a world, confirm bands/boundaries/peaks/toxic-zone outline render distinctly from organisms/residue, in both a normal view and with T/L overlays toggled.
-- [ ] `render.rs`'s existing `cell_color`-adjacent unit tests (around line 727+) are updated/extended for the new terrain-based branch.
+- [x] The code compiles without errors; `cargo clippy -- -D warnings` is clean.
+- [x] `cell_color`'s empty-cell branch (`render.rs:727-743`) is replaced/extended with flat per-terrain-band colors — desaturated tones consistent with the existing console/lab palette, no new palette family introduced.
+- [x] Sea renders near-black, close to the grid's background — not as a blue "water" fill — preserving the original doc's "void" reading even though Sea is now real simulation data, not an absence of cell.
+- [x] Boundary lines are drawn between differently-classed adjacent cells: thin/dark for internal band transitions (e.g. Plain/Hill), thicker/lighter for Sea↔land transitions (coastline reading). Implemented via an egui immediate-mode painter (`ctx.layer_painter(egui::LayerId::background())`, same pattern as `draw_energy_overlay`, `render.rs:325-338`) drawn over the grid sprites — not per-edge sprite entities.
+- [x] Peak glyphs (`^` or equivalent) are drawn via the same painter, one per stored peak cell from task 066 — no render-time local-maximum re-derivation.
+- [x] The toxic zone gets a dashed border around its (now variable) bounds, drawn via the same painter, reusing the dash-segment approach/constants from `draw_dashed_ring` (`notebook.rs:679`) adapted to a rectangle outline, for visual consistency with the existing "unconfirmed/hazardous" treatment.
+- [x] `apply_environment_overlay` (`render.rs:130-146`, T/L heatmap toggles) makes a deliberate decision about Sea/unplaceable cells — at minimum, doesn't silently erase the terrain read the player just learned; implementer's call on the exact treatment, but it must be explicit, not an oversight.
+- [x] Verified visually via `cargo run`: seed a world, confirm bands/boundaries/peaks/toxic-zone outline render distinctly from organisms/residue, in both a normal view and with T/L overlays toggled.
+- [x] `render.rs`'s existing `cell_color`-adjacent unit tests (around line 727+) are updated/extended for the new terrain-based branch.
 
 ---
 
