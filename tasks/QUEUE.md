@@ -55,7 +55,7 @@ footprint 1:1, including gaps — should render smaller and uniformly filled).
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
 | `[ ]` | 080 | Interaction spark: instant visual feedback on first-seen relations | 018, 075, 076 | [080](080-interaction-spark-visual-feedback.md) |
-| `[ ]` | 081 | The world breathes: subtle ambient tint on unoccupied cells | 016, 066 | [081](081-ambient-diffusion-visible-on-empty-grid.md) |
+| `[ ]` | 081 | The world breathes: toxic zone pulse + diffusion drift check (rescoped down after discussion) | 033, 072 | [081](081-ambient-diffusion-visible-on-empty-grid.md) |
 | `[ ]` | 082 | Shorter eras during world 0's opening | 079 | [082](082-shorter-onboarding-eras.md) |
 | `[ ]` | 083 | Newborn incubation: reproduction delayed to the following era | 009 | [083](083-newborn-incubation-reproduction-delay.md) |
 

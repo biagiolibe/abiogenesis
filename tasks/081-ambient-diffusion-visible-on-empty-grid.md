@@ -1,53 +1,65 @@
-# Task 081 — The world breathes: subtle ambient tint on unoccupied cells
+# Task 081 — The world breathes: toxic zone pulse + diffusion drift check
 
 > **ID**: `081`
 > **Category**: Feature / Presentation / Onboarding
 > **Priority**: 🟢 P3
 > **Estimate**: ~1h
 > **Assigned to**: unassigned
-> **Session**: 2026-08-09 (scoped from `redesign/abiogenesis-engagement-design.md`, proposal 1.E)
+> **Session**: 2026-08-09 (scoped from `redesign/abiogenesis-engagement-design.md`,
+> proposal 1.E — rescoped down after discussion, see below)
 
 ---
 
 ## 🎯 Objective
 
-Environmental diffusion (GDD §5.2) already runs unconditionally every tick,
-including on a completely empty grid before the player's first `Seed` —
-`SimWorld::diffuse_environment` (`src/world.rs:439`) has no gating on
-population. But nothing shows it: unoccupied, residue-free cells render as a
-flat, static `terrain_color(cell.terrain)` (`src/render.rs:1113`) — task 066
-deliberately removed continuous `light`-based shading from the base map. The
-data the whole diagnosis in the design doc leans on ("the world has its own
-chemistry independent of the player") already exists and is already
-computing; it's just never drawn.
+Source proposal 1.E's exact wording: *"un gradiente che si muove
+impercettibilmente, una zona tossica che pulsa piano"* (a gradient that
+moves imperceptibly, a toxic zone that pulses slowly) — two **localized,
+animated** cues, not a uniform tint painted over every empty cell. An
+earlier scoping pass for this task proposed exactly that uniform tint
+(blending `terrain_color` toward `heat_color(temperature)` on every
+unoccupied cell); on review that was rejected as reading like "filling
+every empty cell with a tint" rather than "a few things here and there,"
+which is what the source doc actually asked for. Rescoped to two much
+smaller, literal pieces:
 
-Add a very subtle tint to unoccupied cells derived from their diffusing
-`temperature`/`light` values, without reverting task 066's decision or
-touching occupied-cell rendering at all.
+1. **Toxic zone pulses** — animate `toxicity_tint`'s blend strength with a
+   slow oscillation over time, instead of the current fixed `0.45`. Reads
+   directly as "the toxic zone pulses slowly," and stays localized by
+   construction (only visible where `toxicity > 0`).
+2. **Gradient movement check** — `diffuse_environment` (`src/world.rs:439`)
+   already runs unconditionally every tick, eroding the initial
+   temperature/light gradients over time (a real, slow spatial change). No
+   new rendering needed *if* that drift is actually perceptible within a
+   normal run's timeframe — verify it is, on the base map, without opening
+   the `T`/`L` overlay. If it isn't perceptible at default `diffusion_rate`
+   (`0.05`), this task file's job is to say so, not to invent a new visual
+   effect to compensate — the broader idea of making the environment feel
+   dynamic-by-design is picked up separately in
+   `redesign/abiogenesis-environment-sources.md`, not here.
 
 ---
 
 ## 📋 Acceptance Criteria
 
-- [ ] A new tunable `SimConfig` coefficient (e.g.
-      `visual.ambient_tint_strength: f32`, default small, e.g. `0.08`) caps
-      how much the tint can shift the base `terrain_color` — no magic
-      numbers per `CLAUDE.md`.
-- [ ] `cell_color`'s unoccupied/residue-free branch (`src/render.rs:1113`)
-      blends `terrain_color(cell.terrain)` with a slight shift derived from
-      `cell.temperature`/`cell.light`, scaled by
-      `visual.ambient_tint_strength`, instead of returning the flat color
-      unmodified.
-- [ ] The shift stays clearly below the existing `T`/`L` overlay's
-      legibility (`apply_environment_overlay`, `src/render.rs:131`) — this
-      is ambience, not a replacement for the opt-in overlay's precision.
-      Verify visually side-by-side.
-- [ ] Occupied-cell rendering and the residue-tint branch are untouched.
+- [ ] `toxicity_tint` (`src/render.rs:1150-1153`) takes a time input (e.g. a
+      new parameter, or reads `Res<Time>` at its call site in `cell_color`'s
+      caller) and oscillates its blend strength slowly around the current
+      `0.45` (e.g. `0.45 * (0.85 + 0.15 * (elapsed * FREQUENCY).sin())`) —
+      exact amplitude/frequency are a first-pass guess, tune visually.
+      `FREQUENCY` is slow enough to read as "pulsing," not flickering.
+- [ ] The pulse is visible only on cells with `toxicity > 0` — no change to
+      cells outside the toxic zone's influence.
+- [ ] No changes to `terrain_color`, the empty-cell branch, or any other
+      part of `cell_color` — this task does not touch the earlier tint idea.
+- [ ] A short live-verification note (in this file or the commit) on
+      whether the base map's temperature/light gradient erosion is
+      perceptible over a normal-length run without the `T`/`L` overlay. If
+      it's not, say so explicitly rather than silently adding scope to
+      compensate.
 - [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
-- [ ] Verified live via `cargo run`: on a fresh world 0 before any seed,
-      the map shows a faint, slowly-shifting tint instead of a fully static
-      terrain color; pressing `T`/`L` still shows the existing, more legible
-      overlay on top/instead as today.
+- [ ] Verified live via `cargo run`: the toxic zone visibly pulses at a slow,
+      calm rate; nothing else on the map changed.
 
 ---
 
@@ -55,61 +67,62 @@ touching occupied-cell rendering at all.
 
 | File | Role |
 |------|------|
-| `src/render.rs` | `cell_color` (line ~1071-1116), specifically the unoccupied-cell fallback at line 1113. |
-| `src/world.rs` | `diffuse_environment` (line 439) — read-only reference, no changes expected here. |
-| `src/config.rs` + `assets/config/sim_config.ron` | New `ambient_tint_strength` coefficient. |
+| `src/render.rs` | `toxicity_tint` (line 1150-1153) — add the time-based oscillation. |
+| `src/world.rs` | `diffuse_environment` (line 439) — read-only reference for the drift-perceptibility check. |
 
 ---
 
 ## 🧩 Technical Context
 
-- **Current behavior**: `diffuse_environment` computes and updates
-  `temperature`/`light` every tick regardless of population
-  (`src/sim.rs:135` calls it unconditionally inside `step`). `cell_color`
-  ignores these values for empty cells and returns a static
-  `terrain_color(cell.terrain)` (task 066 explicitly chose this over
-  continuous shading).
-- **Desired behavior**: empty cells still read as visually calm (pillar 3:
-  "the fun is in the system, not the graphics" — no new assets, no loud
-  effect) but show a faint, moving signal that the environment has its own
-  independent state.
-- Related but distinct open proposal already in SECTION 1 ("Extend the
-  procedural background layer (task 062) into the map's interior") — that
-  one is about a background *sprite layer* showing through partially
-  transparent empty cells; this task is about *tinting* the existing flat
-  color with diffusion data. Don't conflate the two while implementing.
+- **Current behavior**: `toxicity_tint(base, toxicity)` blends toward a
+  fixed warning hue at a constant `toxicity.clamp(0.0, 1.0) * 0.45` strength
+  — static, no time dependency.
+- **Desired behavior**: that strength oscillates slowly over real time, so
+  the toxic zone visibly "breathes" without changing its average intensity
+  much (the oscillation should be small enough that the zone doesn't flicker
+  distractingly or misrepresent the underlying `toxicity` value).
+- Rejected direction (kept here for record, do not resurrect without a new
+  discussion): a uniform ambient tint blended into every unoccupied cell's
+  `terrain_color` from `cell.temperature`/`cell.light`. The bigger idea
+  behind wanting the environment to feel alive-by-design, not just tinted,
+  is now its own design doc,
+  `redesign/abiogenesis-environment-sources.md` — read it before proposing
+  any further empty-cell tinting work, to avoid duplicating that effort.
 
 ---
 
 ## 🔨 Suggested Implementation
 
-1. `config.rs` + `sim_config.ron`: add `ambient_tint_strength` under
-   whichever config struct governs presentation coefficients (create one if
-   none exists yet for visual-only tuning).
-2. `render.rs`: in `cell_color`'s unoccupied branch, compute a small color
-   shift from `cell.temperature`/`cell.light` (e.g. a slight hue/brightness
-   nudge) scaled by `ambient_tint_strength`, blended into
-   `terrain_color(cell.terrain)`.
-3. `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt`.
-4. Live verification via `cargo run` on a fresh world 0, comparing against
-   the `T`/`L` overlay.
+1. `render.rs`: thread a time value into `toxicity_tint` (or compute the
+   oscillating strength at its call site and pass it in instead of the
+   fixed `0.45`).
+2. Tune amplitude/frequency visually via `cargo run`.
+3. Separately, run the game for several real-time minutes on a fresh world
+   with no overlay active, and note whether the base terrain colors visibly
+   shift due to diffusion. Record the finding in this file's acceptance
+   checklist or the commit message.
+4. `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt`.
 
 ---
 
 ## ⚠️ Constraints and Caveats
 
-- Keep the shift small enough that it doesn't reopen task 066's decision —
-  if it starts looking like continuous shading again, the strength constant
-  is too high; tune down, don't redesign.
-- No new assets, no shader work — a color-math blend in the existing
-  `cell_color` function is sufficient (pillar 3).
+- Do not touch `terrain_color` or the empty-cell branch of `cell_color` —
+  that idea was explicitly rejected for this task; see Technical Context.
+- Keep the oscillation subtle — this is ambience, not a new gameplay signal
+  (toxicity's mechanical effect on the tick, or lack thereof, is unrelated
+  and out of scope here, same caveat `toxicity_tint`'s own doc comment
+  already makes).
 
 ---
 
 ## 🔗 Dependencies
 
-- **Depends on**: 016 (environmental diffusion), 066 (terrain-color
-  rendering this modifies).
+- **Depends on**: 033 (`toxicity_tint`'s origin), 072 (toxic-zone placement
+  this pulses).
+- **Related, not a dependency**: `redesign/abiogenesis-environment-sources.md`
+  — a separate, larger environment-model redesign raised during this task's
+  scoping; not required for 081, but read it before extending 081's scope.
 - **Blocks**: none.
 
 ---
