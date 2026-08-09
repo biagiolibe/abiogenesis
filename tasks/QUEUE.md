@@ -108,9 +108,10 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 | `[x]` | 066 | Terrain field + procedural elevation generation | none | [066](done/066-terrain-field-procedural-elevation-generation.md) |
 | `[x]` | 067 | Placement gating on terrain | 066 | [067](done/067-placement-gating-on-terrain.md) |
 | `[x]` | 068 | Terrain rendering: elevation bands, boundaries, peak glyphs, toxic-zone overlay | 066, 067 | [068](done/068-terrain-rendering-bands-boundaries-glyphs.md) |
-| `[ ]` | 069 | Multi-octave terrain noise (macro-continents + small islands) | 066, 067, 068 | [069](069-multi-octave-terrain-noise.md) |
+| `[x]` | 069 | Multi-octave terrain noise (macro-continents + small islands) | 066, 067, 068 | [069](done/069-multi-octave-terrain-noise.md) |
 | `[x]` | 070 | Remove task 062's decorative background layer (superseded by terrain colors, leaked through organism shape masks) | 062, 066, 067, 068 | [070](done/070-remove-decorative-background-layer.md) |
 | `[x]` | 071 | Ambient residue trickle hid terrain colors grid-wide after the first era advance | 060, 068, 070 | [071](done/071-ambient-residue-trickle-hides-terrain-color.md) |
+| `[x]` | 072 | Terrain sea/land balance correction (playtest correction to 069, matching `terrain-map-elevation.svg`) | 069 | [072](done/072-terrain-sea-balance-correction.md) |
 
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
@@ -186,4 +187,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-09 (task 071 complete: `cell_color`'s residue branch now requires residue above task 060's ambient trickle floor before painting brown — the trickle was settling every cell grid-wide after the first era advance and hiding terrain colors entirely; user confirmed 070's icon-halo fix but caught this second, unrelated regression from the same screenshot thread)*
+*Last updated: 2026-08-09 (task 072 complete: a direct playtest correction to 069 — the user compared generated worlds against `terrain-map-elevation.svg` and found Sea almost never appeared; `generate_terrain` now min-max normalizes its own elevation field before classification, since raw threshold comparisons swung wildly seed-to-seed with only 3 continent waves, and all four classification thresholds plus `min_placeable_fraction` were retuned against the normalized field to get a consistent, visibly-larger Sea share matching the mockup; also fixed an incidental test regression in `sim.rs`'s shared energy-formula test helper, which had been unknowingly depending on the generated terrain's incidental placeability)*

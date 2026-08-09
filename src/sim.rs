@@ -551,6 +551,17 @@ mod tests {
     fn world_with_one_organism(light: f32, temperature: f32, energy: f32) -> (SimWorld, SimConfig) {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
+        // These are pure energy-formula tests, not terrain tests: force
+        // every cell to plain, unpeaked terrain so reproduction's placement
+        // gating (task 067) never depends on the generated map's incidental
+        // sea/mountain layout for this seed — otherwise a terrain retune
+        // (e.g. task 069's follow-up sea-balance correction) can silently
+        // change these tests' outcomes by blocking or enabling reproduction
+        // spread near the organism under test.
+        for cell in world.cells.iter_mut() {
+            cell.terrain = TerrainKind::Plain;
+            cell.is_peak = false;
+        }
         world.species.push(Species {
             metabolism: Metabolism::Photolithic,
             temp_optimum: temperature,

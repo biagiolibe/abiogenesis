@@ -257,15 +257,33 @@ impl SimWorld {
 
         let mut best: Option<(Vec<TerrainKind>, Vec<bool>, f32)> = None;
         for _ in 0..terrain_cfg.max_generation_attempts.max(1) {
-            let waves = terrain_waves(&mut rng, terrain_cfg.noise_wave_count as usize);
-            let elevations: Vec<f32> = (0..self.height)
+            let continent_waves = terrain_waves(
+                &mut rng,
+                terrain_cfg.continent_wave_count as usize,
+                terrain_cfg.continent_freq_min,
+                terrain_cfg.continent_freq_max,
+            );
+            let island_waves = terrain_waves(
+                &mut rng,
+                terrain_cfg.island_wave_count as usize,
+                terrain_cfg.island_freq_min,
+                terrain_cfg.island_freq_max,
+            );
+            let mut elevations: Vec<f32> = (0..self.height)
                 .flat_map(|y| (0..self.width).map(move |x| (x, y)))
                 .map(|(x, y)| {
                     let nx = x as f32 / (self.width - 1).max(1) as f32;
                     let ny = y as f32 / (self.height - 1).max(1) as f32;
-                    terrain_elevation(&waves, nx, ny)
+                    terrain_elevation(
+                        &continent_waves,
+                        &island_waves,
+                        terrain_cfg.island_blend_weight,
+                        nx,
+                        ny,
+                    )
                 })
                 .collect();
+            normalize_elevations(&mut elevations);
             let kinds: Vec<TerrainKind> = elevations
                 .iter()
                 .map(|&e| classify_elevation(e, terrain_cfg))
@@ -526,32 +544,74 @@ struct TerrainWave {
     phase: f32,
 }
 
-/// Draws `count` waves with random direction, a low frequency (so the
-/// field stays smooth and organic, not noisy), and random phase, all from
-/// `rng` — the sole source of randomness, so the same seed always produces
-/// the same terrain.
-fn terrain_waves(rng: &mut StdRng, count: usize) -> Vec<TerrainWave> {
+/// Draws `count` waves with random direction, frequency uniform in
+/// `freq_min..freq_max`, and random phase, all from `rng` — the sole
+/// source of randomness, so the same seed always produces the same
+/// terrain. Called once per frequency band (task 069): a low-frequency
+/// range shapes macro-continents, a higher-frequency range layered on top
+/// adds island/coastline detail.
+fn terrain_waves(rng: &mut StdRng, count: usize, freq_min: f32, freq_max: f32) -> Vec<TerrainWave> {
     (0..count.max(1))
         .map(|_| {
             let angle = rng.random_range(0.0..TAU);
             TerrainWave {
                 dir_x: angle.cos(),
                 dir_y: angle.sin(),
-                freq: rng.random_range(1.0..3.5),
+                freq: rng.random_range(freq_min..freq_max),
                 phase: rng.random_range(0.0..TAU),
             }
         })
         .collect()
 }
 
-/// Sums `waves` at normalized coordinates `(nx, ny)` into an elevation
-/// value in `[0, 1]`.
-fn terrain_elevation(waves: &[TerrainWave], nx: f32, ny: f32) -> f32 {
+/// Sums a wave band at normalized coordinates `(nx, ny)`, averaged over the
+/// band's wave count, into a value in `[-1, 1]`.
+fn wave_band_sum(waves: &[TerrainWave], nx: f32, ny: f32) -> f32 {
     let sum: f32 = waves
         .iter()
         .map(|wave| (wave.freq * (nx * wave.dir_x + ny * wave.dir_y) + wave.phase).sin())
         .sum();
-    (sum / waves.len() as f32 + 1.0) * 0.5
+    sum / waves.len() as f32
+}
+
+/// Blends the continent band (macro-continent shape) with the island band
+/// (small island/coastline detail, weighted down by `island_weight`) at
+/// normalized coordinates `(nx, ny)` into an elevation value in `[0, 1]`.
+fn terrain_elevation(
+    continent_waves: &[TerrainWave],
+    island_waves: &[TerrainWave],
+    island_weight: f32,
+    nx: f32,
+    ny: f32,
+) -> f32 {
+    let continent = wave_band_sum(continent_waves, nx, ny);
+    let island = wave_band_sum(island_waves, nx, ny);
+    let blended = continent + island * island_weight;
+    let max_amplitude = 1.0 + island_weight;
+    (blended / max_amplitude + 1.0) * 0.5
+}
+
+/// Rescales `elevations` in place so its own min and max span the full
+/// `[0, 1]` range (task 069's follow-up correction, 2026-08-09): a low
+/// wave count on the continent band means each world's raw amplitude
+/// varies a lot by chance, so a fixed threshold against the raw `[0, 1]`
+/// output produced wildly inconsistent sea/land ratios across seeds — some
+/// worlds almost all land, others almost all sea, instead of the "compact
+/// organic landmass in a much larger sea" read the terrain-map redesign
+/// calls for. Stretching every world's own elevation range to fill `[0, 1]`
+/// makes `TerrainConfig`'s thresholds land in the same *relative* place in
+/// every world's distribution, regardless of the random draw's raw
+/// amplitude. A degenerate all-equal field (max == min) is left untouched.
+fn normalize_elevations(elevations: &mut [f32]) {
+    let min = elevations.iter().copied().fold(f32::INFINITY, f32::min);
+    let max = elevations.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let range = max - min;
+    if range <= f32::EPSILON {
+        return;
+    }
+    for e in elevations.iter_mut() {
+        *e = (*e - min) / range;
+    }
 }
 
 /// Elevation → `TerrainKind` band, per `TerrainConfig`'s thresholds.

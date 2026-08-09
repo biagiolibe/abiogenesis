@@ -400,10 +400,26 @@ impl Default for ObjectiveConfig {
 /// separate so a future aquatic species doesn't require touching generation.
 #[derive(Debug, Clone)]
 pub struct TerrainConfig {
-    /// How many summed plane waves shape the elevation field (task 066) —
-    /// same dependency-free noise technique as `render.rs`'s decorative
-    /// background layer, but this field is real simulation data.
-    pub noise_wave_count: u32,
+    /// How many low-frequency plane waves shape the macro-continent scale
+    /// of the elevation field (task 069) — same dependency-free noise
+    /// technique as `render.rs`'s decorative background layer, but this
+    /// field is real simulation data.
+    pub continent_wave_count: u32,
+    /// Lower bound of the continent band's spatial frequency range.
+    pub continent_freq_min: f32,
+    /// Upper bound of the continent band's spatial frequency range.
+    pub continent_freq_max: f32,
+    /// How many higher-frequency plane waves layer small island/coastline
+    /// detail on top of the continent band (task 069).
+    pub island_wave_count: u32,
+    /// Lower bound of the island band's spatial frequency range.
+    pub island_freq_min: f32,
+    /// Upper bound of the island band's spatial frequency range.
+    pub island_freq_max: f32,
+    /// Weight applied to the island band's contribution before summing it
+    /// with the continent band and normalizing — kept small so the island
+    /// band adds detail without swamping the continent-scale shape.
+    pub island_blend_weight: f32,
     /// Elevation below this becomes `TerrainKind::Sea`.
     pub sea_threshold: f32,
     /// Elevation at/above `sea_threshold` and below this becomes `Plain`.
@@ -440,12 +456,18 @@ pub struct TerrainConfig {
 impl Default for TerrainConfig {
     fn default() -> Self {
         Self {
-            noise_wave_count: 4,
-            sea_threshold: 0.32,
-            hill_threshold: 0.55,
-            mountain_threshold: 0.78,
+            continent_wave_count: 3,
+            continent_freq_min: 0.8,
+            continent_freq_max: 1.6,
+            island_wave_count: 6,
+            island_freq_min: 12.0,
+            island_freq_max: 18.0,
+            island_blend_weight: 0.45,
+            sea_threshold: 0.42,
+            hill_threshold: 0.62,
+            mountain_threshold: 0.8,
             peak_elevation_threshold: 0.88,
-            min_placeable_fraction: 0.55,
+            min_placeable_fraction: 0.4,
             max_generation_attempts: 8,
             min_toxic_zone_placeable_fraction: 0.5,
             max_toxic_zone_placement_attempts: 24,
