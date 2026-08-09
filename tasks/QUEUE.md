@@ -110,6 +110,7 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 | `[x]` | 068 | Terrain rendering: elevation bands, boundaries, peak glyphs, toxic-zone overlay | 066, 067 | [068](done/068-terrain-rendering-bands-boundaries-glyphs.md) |
 | `[ ]` | 069 | Multi-octave terrain noise (macro-continents + small islands) | 066, 067, 068 | [069](069-multi-octave-terrain-noise.md) |
 | `[x]` | 070 | Remove task 062's decorative background layer (superseded by terrain colors, leaked through organism shape masks) | 062, 066, 067, 068 | [070](done/070-remove-decorative-background-layer.md) |
+| `[x]` | 071 | Ambient residue trickle hid terrain colors grid-wide after the first era advance | 060, 068, 070 | [071](done/071-ambient-residue-trickle-hides-terrain-color.md) |
 
 Phase 0 (001-009) and Phase 1 (010-017) are complete, archived below. Phase 2's breakdown came from the 2026-08-03 planning session (see `PROJECT_PLAN.md`'s Phase 2 section for the same list with GDD references). Two independent tracks: 018 → {019, 020} → 021 (notebook/deduction), and 022 → {023, 024, 025} (actions) — both finished. Task 026 was raised by a 2026-08-03 playtest session (see the task file for the specific scenario that surfaced the gap).
 
@@ -185,4 +186,4 @@ Tasks that take < 15 min and don't need a detailed briefing.
 
 ---
 
-*Last updated: 2026-08-09 (task 070 complete: task 062's decorative background layer removed — it leaked through organism shape-mask transparency now that terrain (068) has distinct flat colors; user confirmed the fix visually, no compositing redesign needed)*
+*Last updated: 2026-08-09 (task 071 complete: `cell_color`'s residue branch now requires residue above task 060's ambient trickle floor before painting brown — the trickle was settling every cell grid-wide after the first era advance and hiding terrain colors entirely; user confirmed 070's icon-halo fix but caught this second, unrelated regression from the same screenshot thread)*

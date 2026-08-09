@@ -765,7 +765,16 @@ fn cell_color(world: &SimWorld, config: &SimConfig, x: usize, y: usize) -> Color
         // Energy can exceed repro_threshold right before reproduction; clamp.
         let fill = (organism.energy / config.energy.repro_threshold).clamp(0.0, 1.0);
         Color::hsl(hue, 0.75, 0.15 + fill * 0.35)
-    } else if cell.residue > 0.0 {
+    } else if cell.residue > config.energy.residue_ambient_trickle {
+        // `sim::step` settles every cell's residue at exactly
+        // `residue_ambient_trickle` once no death has happened nearby (task
+        // 060's ambient trickle, so an isolated Decomposer stays readable) —
+        // that floor is present grid-wide, not just where something died.
+        // Task 068's terrain colors made this visible for the first time:
+        // treating any `residue > 0.0` as "there's a corpse here" painted
+        // every single cell brown once the trickle established, hiding the
+        // terrain underneath. Only residue *above* the ambient floor is a
+        // real death's leftover worth showing.
         let intensity = (cell.residue / config.energy.residue_on_death).clamp(0.0, 1.0);
         Color::hsl(30.0, 0.2, 0.08 + intensity * 0.22)
     } else {
@@ -861,6 +870,28 @@ mod tests {
         };
         assert_eq!(empty, terrain_hsla(TerrainKind::Plain));
         assert!(empty.lightness < residue.lightness);
+    }
+
+    #[test]
+    fn ambient_residue_trickle_does_not_hide_the_terrain_color() {
+        // Task 060's ambient trickle settles every cell's residue at exactly
+        // `residue_ambient_trickle` grid-wide, not just where something
+        // died — `cell_color` must not treat that floor as "there's a
+        // corpse here" (task 070 regression: it did, painting the whole map
+        // brown once the trickle established after the first tick).
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        let (x, y) = (0, 0);
+        let idx = world.index(x, y);
+        world.cells[idx].organism = None;
+        world.cells[idx].residue = config.energy.residue_ambient_trickle;
+        world.cells[idx].terrain = TerrainKind::Plain;
+        world.cells[idx].toxicity = 0.0;
+
+        assert_eq!(
+            cell_color(&world, &config, x, y),
+            terrain_color(TerrainKind::Plain)
+        );
     }
 
     fn terrain_hsla(kind: TerrainKind) -> bevy::color::Hsla {
