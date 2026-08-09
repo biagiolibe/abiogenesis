@@ -190,6 +190,7 @@ Initial values that are mutually coherent (conceptually verified so that a photo
 | Era budget / world | `60` (early) → `45` (late) | finite: gives roguelike tension. Retuned twice in playtest (tasks 049, 059) — most recently to absorb the cost of worlds now posing 2–3 sequential objectives (§8) instead of one |
 | Point budget / era | `3` | |
 | Action costs | seed `1`, stress `1`, cull `1`, splice `2` | splice tunable up to `3` |
+| Grace period / world | `3` eras, adaptively extended | task 079; suppresses total-extinction failure only (§8) |
 
 **Energy and metabolism** (per organism)
 
@@ -278,6 +279,8 @@ Each world poses a **sequence of explicit requirements**, resolved in order: **2
 - **Total extinction** → immediate failure of the current world, not the run (`GameState::WorldFailed`, task 051): the world is retried, not the whole run.
 - **Era budget per world** generous but **finite** (baseline: 60 eras in early worlds, dropping toward 45 in late worlds — retuned from the original 40/25 to absorb the cost of multi-objective worlds, see §5.9): a stuck player fails instead of grinding forever. This is what gives the roguelike tension.
 
+**Onboarding grace period [DECIDED, task 079]:** total-extinction failure is suppressed at the start of every world — for a fixed `grace_eras` window (§5.9), then *adaptively extended* past it until the player has kept a population alive for a full era (`era_ticks` consecutive ticks) at least once. A fixed window alone would still let a world fail instantly and without warning the moment it expires on an empty grid; the extension removes that cliff, guaranteeing every world gives the player at least one real look at a living ecosystem before extinction can end it. Once that foothold is reached, it's spent — a later extinction in the same world fails normally. The era-budget-exhaustion failure condition is deliberately untouched by grace (its magnitude is always far smaller than the budget).
+
 **Bonus objectives [DECIDED as direction / low priority]:** planned in principle (grant meta-progression currency), but **after** the clean "primary objective → advance" core. Not in the minimal MVP.
 
 ---
@@ -290,6 +293,8 @@ Each world is generated procedurally:
 - **Environment** (gradients, extreme zones) with increasing hostility.
 - **Active tags** (subset of the pool) and a pool of **available starting species**. *(Task 050: none of them are auto-placed — the player seeds every organism in the world manually, including the first ones. Worldgen only decides what's available to seed, not what's on the grid.)*
 - World **objective(s)**, resolved in sequence (§8).
+
+**First-world softening [DECIDED, task 079]:** world 0's opening objective is always forced to the gentlest possible requirement — `Coexistence` with `min_species = 2` — rather than the normal random draw, which could otherwise open a run with a demanding `SurviveIn` (a hostile zone the player hasn't even seen yet) or a `Coexistence` requiring every generated species including a harder-to-keep-alive Decomposer.
 
 **Curve [DECIDED direction]:** the first worlds with **5 active tags** and a mild environment; gradually up to **~8 active tags**, matrices with more "nasty" relationships, more extreme environments (large toxic zones, harsh thermal gradients), stricter objectives, and shorter era budgets.
 

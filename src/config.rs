@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 pub struct SimConfig {
     pub grid: GridConfig,
     pub camera: CameraConfig,
+    pub cluster: ClusterConfig,
     pub environment: EnvironmentConfig,
     pub time: TimeConfig,
     pub energy: EnergyConfig,
@@ -86,6 +87,29 @@ impl Default for CameraConfig {
     }
 }
 
+/// Overview mode's per-species cluster heatmap (task 076,
+/// `redesign/abiogenesis-two-tier-view.md`, `cluster::compute_cluster_density`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClusterConfig {
+    /// Cluster cell count at which a blob's density (and therefore
+    /// brightness) saturates to `1.0`; population above this reads as
+    /// equally maximal, not brighter still. Chosen so a real, established
+    /// colony (tens of cells) reads as a clear hot spot while a lone
+    /// organism — a one-cell cluster — sits well below saturation and stays
+    /// visibly dimmer, the opposite of scoring it as "fully dense" the way
+    /// a compactness-only formula (occupied cells / bounding-box area)
+    /// would.
+    pub density_saturation: f32,
+}
+
+impl Default for ClusterConfig {
+    fn default() -> Self {
+        Self {
+            density_saturation: 20.0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnvironmentConfig {
     /// Environmental diffusion rate, fraction per tick (Phase 1+, GDD §5.9).
@@ -147,6 +171,13 @@ pub struct TimeConfig {
     /// changing it must never change simulation outcomes (invariant 1); it
     /// only changes how fast the same `era_ticks` play back.
     pub era_tick_hz: f32,
+    /// Onboarding grace period (task 079, GDD §8): total-extinction failure
+    /// is suppressed while `world.era < grace_eras`, and adaptively extended
+    /// past that until the player has kept a population alive for a full
+    /// era at least once — see `objectives::is_grace_active`. Deliberately
+    /// far smaller than `era_budget_early`/`era_budget_late`, since it only
+    /// ever gates total-extinction, never era-budget exhaustion.
+    pub grace_eras: u32,
 }
 
 impl Default for TimeConfig {
@@ -158,6 +189,7 @@ impl Default for TimeConfig {
             point_budget_per_era: 3,
             action_costs: ActionCosts::default(),
             era_tick_hz: 8.0,
+            grace_eras: 3,
         }
     }
 }

@@ -6,10 +6,12 @@ use bevy_egui::{
 };
 
 use crate::notebook::{tag_glyph, EverSeeded, NotebookEverOpened, NotebookHasUnseenConfirmation};
-use crate::render::{metabolism_glyph, species_color, species_label, GridCamera};
+use crate::render::{metabolism_glyph, species_color, species_label, GridCamera, MapViewMode};
 use crate::text;
 use abiogenesis::config::SimConfig;
-use abiogenesis::objectives::{CurrentObjective, Objective, ObjectiveProgress};
+use abiogenesis::objectives::{
+    is_grace_active, CurrentObjective, GraceProgress, Objective, ObjectiveProgress,
+};
 use abiogenesis::sim::{ActionBudget, EraCompleted};
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{SimWorld, SpeciesId, TagSlot};
@@ -307,8 +309,10 @@ fn hud_panel(
     config: Res<SimConfig>,
     objective: Res<CurrentObjective>,
     objective_progress: Res<ObjectiveProgress>,
+    grace: Res<GraceProgress>,
     unseen_confirmation: Res<NotebookHasUnseenConfirmation>,
     trends: Res<PopulationTrends>,
+    mode: Res<MapViewMode>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     let mut viewport_ui = egui::Ui::new(
@@ -339,10 +343,13 @@ fn hud_panel(
             ui.heading(text::HEADING_TITLE);
             ui.label(text::era_tick_line(world.era, world.tick));
             ui.label(text::state_line(era_state.get()));
+            if is_grace_active(world.era, config.time.grace_eras, &grace) {
+                ui.weak(text::GRACE_PERIOD_LINE);
+            }
 
             hairline(ui);
             ui.strong(text::HEADING_ACTION);
-            action_icon_row(ui, &mut selected_action, &config);
+            action_icon_row(ui, &mut selected_action, &config, *mode);
 
             let total = config.time.point_budget_per_era;
             dot_row(ui, budget.points_remaining, total, DotShape::Tick)
@@ -738,18 +745,44 @@ const ACTION_GLYPHS: [(ActionMode, &str); 4] = [
 /// same role `ui.radio_value` did, just rendered as a compact glyph with a
 /// hover tooltip carrying the name, cost, and a one-line description
 /// instead of inline text.
-fn action_icon_row(ui: &mut egui::Ui, selected_action: &mut SelectedAction, config: &SimConfig) {
+fn action_icon_row(
+    ui: &mut egui::Ui,
+    selected_action: &mut SelectedAction,
+    config: &SimConfig,
+    view_mode: MapViewMode,
+) {
     ui.horizontal(|ui| {
-        for (mode, glyph) in ACTION_GLYPHS {
-            let cost = action_cost(mode, config);
-            let response = ui.selectable_label(
-                selected_action.0 == mode,
-                egui::RichText::new(glyph).size(20.0),
-            );
+        for (action_mode, glyph) in ACTION_GLYPHS {
+            let cost = action_cost(action_mode, config);
+            // Stress/Cull need per-organism precision Overview's
+            // cluster-heatmap aggregation (task 076) doesn't preserve, so
+            // they're disabled outside Detail (task 077) — same
+            // `add_enabled_ui` pattern `splice_panel` already uses for its
+            // tag-cap gating, rather than leaving a clickable button that
+            // silently does nothing.
+            let detail_only = matches!(action_mode, ActionMode::Stress | ActionMode::Cull);
+            let enabled = !detail_only || view_mode == MapViewMode::Detail;
+            let response = ui
+                .add_enabled_ui(enabled, |ui| {
+                    ui.selectable_label(
+                        selected_action.0 == action_mode,
+                        egui::RichText::new(glyph).size(20.0),
+                    )
+                })
+                .inner;
             if response.clicked() {
-                selected_action.0 = mode;
+                selected_action.0 = action_mode;
             }
-            response.on_hover_text(text::action_tooltip(mode, cost));
+            let tooltip = if enabled {
+                text::action_tooltip(action_mode, cost)
+            } else {
+                format!(
+                    "{}{}",
+                    text::action_tooltip(action_mode, cost),
+                    text::DETAIL_MODE_ONLY_HINT
+                )
+            };
+            response.on_hover_text(tooltip);
         }
     });
 }

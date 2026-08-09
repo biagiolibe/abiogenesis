@@ -27,40 +27,84 @@ still visible, not absorbed into anything.
 
 ## 📋 Acceptance Criteria
 
-- [ ] When `MapViewMode::Overview` is active, occupied cells are not drawn as
+- [x] When `MapViewMode::Overview` is active, occupied cells are not drawn as
       individual organism sprites; instead, per-species clusters (connected
       components of contiguous same-species occupied cells, standard
       4- or 8-connected flood-fill — decide against `neighborhood_size`
       already used for the sim's own Moore neighborhood, `GridConfig`) are
       computed and each rendered as a single blob covering its footprint.
-- [ ] Blob color: the cluster's species hue (reuse `species_color`,
+      Implemented as `cluster::compute_cluster_density` (8-connected, reusing
+      `SimWorld::moore_neighbours`), consumed by the existing per-cell
+      sprites rather than new blob entities — see "Technical decisions"
+      below.
+- [x] Blob color: the cluster's species hue (reuse `species_color`,
       `src/render.rs:54`, for consistency with the sidebar/notebook). Blob
       brightness/intensity: reflects local population density within the
       cluster (e.g. occupied-cell fraction of the cluster's bounding
       region, or a per-cell density falloff — pick something legible and
       testable, document the formula chosen).
-- [ ] A one-cell cluster (isolated organism) renders as a small but clearly
+      Formula: cluster cell count normalized against `ClusterConfig::
+      density_saturation` (default `20.0`), clamped to `[0, 1]` — a
+      population-mass reading, not compactness. A compactness formula
+      (occupied cells / bounding-box area) was tried first and rejected
+      after `advisor` review: it scored a lone organism (1x1 bbox, always
+      100% full) as *maximally* dense, brighter than a real sprawling
+      colony — backwards for a population heatmap.
+- [x] A one-cell cluster (isolated organism) renders as a small but clearly
       visible blob — verify this specifically, it's the scenario task 074's
       follow-up discussion called out by name.
-- [ ] Terrain rendering (elevation bands, boundaries, peak glyphs, toxic-zone
+      Verified live (see below): a lone organism renders as a single bright
+      dot at a `0.20` lightness floor (above every terrain band's own
+      lightness), clearly visible but dimmer than a saturated colony.
+- [x] Terrain rendering (elevation bands, boundaries, peak glyphs, toxic-zone
       outline — tasks 066-072) is untouched by this task; only the organism
       layer's representation changes in Overview mode.
-- [ ] Two adjacent/overlapping clusters of different species (interleaved
+- [x] Two adjacent/overlapping clusters of different species (interleaved
       cells in the same area) render without one silently hiding the other —
       decide and document a simple z-order or blend rule.
-- [ ] Cluster computation does not run every render frame — recompute only
+      Rule: none needed. `Cell::organism` is single-occupancy, so no cell
+      ever has to choose between two species' colors — each cell always
+      renders whichever species (if any) actually occupies it, exactly like
+      Detail mode. Documented in `cluster.rs`.
+- [x] Cluster computation does not run every render frame — recompute only
       on population-changing events (tick advance, action resolution),
       matching the note in `redesign/abiogenesis-two-tier-view.md` about
       not re-running connected-component analysis unconditionally on a
       ~10000+ cell grid every frame.
-- [ ] Switching between `Overview` and `Detail` (task 075's threshold) shows
+      `update_cluster_density` gates on `Res<SimWorld>::is_changed()` (true
+      exactly on ticks/actions that mutate the world) OR `MapViewMode`
+      switching into `Overview`, and only while `Overview` is active.
+- [x] Switching between `Overview` and `Detail` (task 075's threshold) shows
       the right representation immediately, no stale frame from the other
       mode.
-- [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
-- [ ] Verified live via `cargo run`: seed a few species in different
+      Verified live via zoom in/out over a grown cluster.
+- [x] `cargo test` and `cargo clippy -- -D warnings` clean.
+- [x] Verified live via `cargo run`: seed a few species in different
       configurations (clustered, scattered, one isolated organism), zoom out
       past the threshold, confirm each population reads clearly as a
       distinct, appropriately-shaped/colored blob.
+      Live-tested the release binary with screenshots: a 13-cell Nyx
+      population rendered as a bright, irregularly-shaped red blob
+      (footprint, not a bounding box) next to a single-cell Kael organism
+      rendered as a small dim green dot — the colony read unambiguously
+      brighter. Zooming past the Detail threshold and back confirmed no
+      stale frame either direction; terrain (bands/boundaries) unaffected
+      throughout.
+
+### Technical decisions (beyond the suggested implementation)
+
+- **No new blob entities.** The suggested implementation sketch proposed
+  spawning/despawning blob entities; instead, `Overview` mode reuses the
+  same per-cell sprites `spawn_grid` already creates (one per grid cell),
+  recoloring occupied cells by their cluster's density in `cell_color`.
+  Coloring every cell in a cluster the same value makes the *union* of
+  those sprites read as one blob whose shape is the cluster's exact
+  footprint — simpler than bbox math, and gets click/viewport handling
+  (`world_to_cell`, the zoom camera, HUD-viewport clipping) for free since
+  it's the same entities Detail mode already uses.
+- **`ClusterConfig::density_saturation`** (new `SimConfig` field, `20.0`
+  default) is the only new tunable, mirrored in
+  `assets/config/sim_config.ron` per the hot-reload convention (task 073).
 
 ---
 

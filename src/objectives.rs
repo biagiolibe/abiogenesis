@@ -86,6 +86,47 @@ pub struct ObjectiveProgress {
     pub satisfied: bool,
 }
 
+/// Onboarding grace period (task 079, GDD §8): tracks whether the player has
+/// ever kept a population alive for a full era (`config.time.era_ticks`
+/// consecutive ticks with at least one living organism) since the current
+/// world began. `foothold_reached` is sticky — once true it stays true for
+/// the rest of the world's life, even if the population later dies out
+/// again; a world only gets this leniency once.
+#[derive(Resource, Debug, Clone, Copy, Default)]
+pub struct GraceProgress {
+    consecutive_alive_ticks: u32,
+    pub foothold_reached: bool,
+}
+
+/// Advances (or resets) `grace`'s alive-streak for one simulated tick.
+/// No-ops once `foothold_reached` is already set — the streak no longer
+/// matters at that point, so there's nothing to keep counting.
+fn update_grace_progress(world: &SimWorld, grace: &mut GraceProgress, foothold_ticks: u32) {
+    if grace.foothold_reached {
+        return;
+    }
+    let alive = world.cells.iter().any(|cell| cell.organism.is_some());
+    if alive {
+        grace.consecutive_alive_ticks += 1;
+    } else {
+        grace.consecutive_alive_ticks = 0;
+    }
+    if grace.consecutive_alive_ticks >= foothold_ticks {
+        grace.foothold_reached = true;
+    }
+}
+
+/// Whether total-extinction failure should be suppressed right now (task
+/// 079): true for the fixed `grace_eras` window regardless of `grace`, and
+/// — the anti-cliff extension — also true past that window for as long as
+/// the player still hasn't reached a foothold. A fixed window alone would
+/// let a world that's still empty right when `grace_eras` elapses fail
+/// instantly with nothing ever having been observed; this keeps extending
+/// protection until there's actually been something to watch.
+pub fn is_grace_active(world_era: u32, grace_eras: u32, grace: &GraceProgress) -> bool {
+    world_era < grace_eras || !grace.foothold_reached
+}
+
 /// The current world's objective sequence (task 059, GDD §8/§9): worlds pose
 /// 2-3 objectives in order, not just one — clearing `objectives[index]`
 /// advances `index` rather than ending the world, until the last one clears.
@@ -192,17 +233,20 @@ pub fn evaluate(
 /// Total extinction is checked unconditionally, every call — the caller
 /// (task 041's driving system) runs this once per simulated tick, not just
 /// at era boundaries, so a mid-era wipeout fails the world in the same tick
-/// it happens rather than up to `era_ticks` ticks later. The era-budget
-/// check only matters once the objective hasn't already cleared it, since
-/// clearing on the exact tick the budget would otherwise expire is still a
-/// win, not a loss.
+/// it happens rather than up to `era_ticks` ticks later — *unless*
+/// `grace_active` (task 079) is set, in which case total-extinction is
+/// suppressed entirely (the outcome falls through to `Ongoing`). The
+/// era-budget check is never gated by grace — it only matters once the
+/// objective hasn't already cleared it, since clearing on the exact tick the
+/// budget would otherwise expire is still a win, not a loss.
 pub fn evaluate_world(
     objective: Option<&Objective>,
     world: &SimWorld,
     progress: &mut ObjectiveProgress,
     era_budget: u32,
+    grace_active: bool,
 ) -> WorldOutcome {
-    if is_total_extinction(world) {
+    if is_total_extinction(world) && !grace_active {
         return WorldOutcome::Failed(FailureReason::TotalExtinction);
     }
 
@@ -312,6 +356,7 @@ impl Plugin for ObjectivesPlugin {
         app.init_resource::<CurrentObjective>()
             .init_resource::<ObjectiveProgress>()
             .init_resource::<CurrentWorldOutcome>()
+            .init_resource::<GraceProgress>()
             .add_message::<ObjectiveAdvanced>()
             .add_systems(
                 FixedUpdate,
@@ -352,6 +397,7 @@ pub struct ObjectiveOutcomeParams<'w> {
     pub meta: ResMut<'w, MetaProgress>,
     pub next_game_state: ResMut<'w, NextState<GameState>>,
     pub advanced: MessageWriter<'w, ObjectiveAdvanced>,
+    pub grace: ResMut<'w, GraceProgress>,
 }
 
 pub fn apply_tick_outcome(
@@ -360,12 +406,15 @@ pub fn apply_tick_outcome(
     params: &mut ObjectiveOutcomeParams,
 ) {
     let era_budget = world_params(params.run_progress.world_index, config).era_budget;
+    update_grace_progress(world, &mut params.grace, config.time.era_ticks);
+    let grace_active = is_grace_active(world.era, config.time.grace_eras, &params.grace);
     let previous_outcome = params.outcome.0;
     let new_outcome = evaluate_world(
         params.objective.current(),
         world,
         &mut params.progress,
         era_budget,
+        grace_active,
     );
     params.outcome.0 = new_outcome;
 
@@ -741,7 +790,7 @@ mod tests {
         let mut progress = ObjectiveProgress::default();
 
         assert_eq!(
-            evaluate_world(Some(&objective), &world, &mut progress, 40),
+            evaluate_world(Some(&objective), &world, &mut progress, 40, false),
             WorldOutcome::Failed(FailureReason::EraBudgetExhausted)
         );
     }
@@ -759,7 +808,7 @@ mod tests {
         let mut progress = ObjectiveProgress::default();
 
         assert_eq!(
-            evaluate_world(Some(&objective), &world, &mut progress, 40),
+            evaluate_world(Some(&objective), &world, &mut progress, 40, false),
             WorldOutcome::Ongoing
         );
     }
@@ -778,7 +827,7 @@ mod tests {
         let mut progress = ObjectiveProgress::default();
 
         assert_eq!(
-            evaluate_world(Some(&objective), &world, &mut progress, 40),
+            evaluate_world(Some(&objective), &world, &mut progress, 40, false),
             WorldOutcome::Cleared,
             "the objective clears on this very tick, so the world should not fail instead"
         );
@@ -796,7 +845,7 @@ mod tests {
 
         // Still alive: ongoing (and would clear next call if it stayed alive).
         assert_eq!(
-            evaluate_world(Some(&objective), &world, &mut progress, 40),
+            evaluate_world(Some(&objective), &world, &mut progress, 40, false),
             WorldOutcome::Cleared
         );
 
@@ -805,7 +854,7 @@ mod tests {
         let idx = world.index(0, 0);
         world.cells[idx].organism = None;
         assert_eq!(
-            evaluate_world(Some(&objective), &world, &mut progress, 40),
+            evaluate_world(Some(&objective), &world, &mut progress, 40, false),
             WorldOutcome::Failed(FailureReason::TotalExtinction),
             "total extinction must override an already-cleared outcome, not be masked by it"
         );
@@ -822,7 +871,7 @@ mod tests {
         let mut progress = ObjectiveProgress::default();
 
         assert_eq!(
-            evaluate_world(None, &world, &mut progress, 40),
+            evaluate_world(None, &world, &mut progress, 40, false),
             WorldOutcome::Ongoing,
             "an empty grid before any species exists must not read as total extinction"
         );
@@ -845,7 +894,7 @@ mod tests {
         let mut progress = ObjectiveProgress::default();
 
         assert_eq!(
-            evaluate_world(None, &world, &mut progress, 40),
+            evaluate_world(None, &world, &mut progress, 40, false),
             WorldOutcome::Ongoing,
             "species existing without any having ever been placed must not read as total extinction"
         );
@@ -861,7 +910,7 @@ mod tests {
         let mut progress = ObjectiveProgress::default();
 
         assert_eq!(
-            evaluate_world(None, &world, &mut progress, 40),
+            evaluate_world(None, &world, &mut progress, 40, false),
             WorldOutcome::Failed(FailureReason::TotalExtinction),
             "an empty grid after life has existed must still fail the world"
         );
@@ -875,9 +924,137 @@ mod tests {
         let mut progress = ObjectiveProgress::default();
 
         assert_eq!(
-            evaluate_world(None, &world, &mut progress, 40),
+            evaluate_world(None, &world, &mut progress, 40, false),
             WorldOutcome::Failed(FailureReason::EraBudgetExhausted),
             "failure conditions apply even while task 042's worldgen hasn't assigned an objective"
+        );
+    }
+
+    /// Task 079: with grace active, a would-be-extinct world stays `Ongoing`
+    /// instead of failing — the whole point of the onboarding grace period.
+    #[test]
+    fn grace_active_suppresses_total_extinction_failure() {
+        let mut world = world_with_species(1);
+        world.ever_populated = true;
+        let mut progress = ObjectiveProgress::default();
+
+        assert_eq!(
+            evaluate_world(None, &world, &mut progress, 40, true),
+            WorldOutcome::Ongoing,
+            "total-extinction failure must be suppressed while grace is active"
+        );
+    }
+
+    /// Task 079: grace never touches the era-budget-exhaustion check —
+    /// dropped from scope deliberately (grace_eras is always far smaller
+    /// than era_budget, so gating it would be dead code).
+    #[test]
+    fn grace_active_does_not_suppress_era_budget_exhaustion() {
+        let mut world = world_with_species(1);
+        place(&mut world, 0, 0, SpeciesId(0));
+        world.era = 40;
+        let mut progress = ObjectiveProgress::default();
+
+        assert_eq!(
+            evaluate_world(None, &world, &mut progress, 40, true),
+            WorldOutcome::Failed(FailureReason::EraBudgetExhausted),
+            "grace must not suppress era-budget exhaustion, only total extinction"
+        );
+    }
+
+    #[test]
+    fn is_grace_active_within_the_fixed_window_regardless_of_foothold() {
+        let grace = GraceProgress::default();
+        assert!(is_grace_active(0, 3, &grace));
+        assert!(is_grace_active(2, 3, &grace));
+
+        let foothold_grace = GraceProgress {
+            foothold_reached: true,
+            ..Default::default()
+        };
+        assert!(
+            is_grace_active(2, 3, &foothold_grace),
+            "the fixed window protects even once a foothold has already been reached"
+        );
+    }
+
+    #[test]
+    fn is_grace_active_extends_past_the_fixed_window_without_a_foothold() {
+        let grace = GraceProgress::default();
+        assert!(
+            is_grace_active(10, 3, &grace),
+            "no cliff: past grace_eras, grace stays active until a foothold is reached"
+        );
+    }
+
+    #[test]
+    fn is_grace_active_ends_past_the_fixed_window_once_a_foothold_is_reached() {
+        let grace = GraceProgress {
+            foothold_reached: true,
+            ..Default::default()
+        };
+        assert!(!is_grace_active(10, 3, &grace));
+    }
+
+    #[test]
+    fn update_grace_progress_reaches_foothold_after_a_full_era_alive() {
+        let mut world = world_with_species(1);
+        place(&mut world, 0, 0, SpeciesId(0));
+        let mut grace = GraceProgress::default();
+
+        for _ in 0..24 {
+            update_grace_progress(&world, &mut grace, 25);
+            assert!(
+                !grace.foothold_reached,
+                "not yet — needs 25 consecutive ticks"
+            );
+        }
+        update_grace_progress(&world, &mut grace, 25);
+        assert!(
+            grace.foothold_reached,
+            "25th consecutive alive tick reaches the foothold"
+        );
+    }
+
+    #[test]
+    fn update_grace_progress_resets_the_streak_when_the_grid_goes_empty() {
+        let mut world = world_with_species(1);
+        place(&mut world, 0, 0, SpeciesId(0));
+        let mut grace = GraceProgress::default();
+
+        for _ in 0..10 {
+            update_grace_progress(&world, &mut grace, 25);
+        }
+        let idx = world.index(0, 0);
+        world.cells[idx].organism = None;
+        update_grace_progress(&world, &mut grace, 25);
+
+        for _ in 0..24 {
+            update_grace_progress(&world, &mut grace, 25);
+            assert!(
+                !grace.foothold_reached,
+                "the streak must have restarted from the empty tick, not carried over"
+            );
+        }
+    }
+
+    #[test]
+    fn update_grace_progress_stays_sticky_once_the_foothold_is_reached() {
+        let mut world = world_with_species(1);
+        place(&mut world, 0, 0, SpeciesId(0));
+        let mut grace = GraceProgress::default();
+        for _ in 0..25 {
+            update_grace_progress(&world, &mut grace, 25);
+        }
+        assert!(grace.foothold_reached);
+
+        let idx = world.index(0, 0);
+        world.cells[idx].organism = None;
+        update_grace_progress(&world, &mut grace, 25);
+
+        assert!(
+            grace.foothold_reached,
+            "once reached, the foothold must stay true even after a later extinction"
         );
     }
 }

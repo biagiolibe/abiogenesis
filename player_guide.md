@@ -103,6 +103,8 @@ Clearing one objective moves you straight to the next in the same world — the 
 - **Total extinction** — every organism dies. This retries the *same* world (same difficulty, fresh random draw), not your whole run — one bad world doesn't end everything you've built.
 - **Running out of eras** — each world gives you a generous but finite number of eras. Exhaust it without meeting the objective, and the *run* ends: you're returned to the main menu, keeping whatever meta-progression you earned.
 
+Every world also opens with a **grace period**: total extinction can't end it until you've kept a population alive for a full era at least once. If your first placement dies before then, nothing is lost — just reseed and keep watching. The HUD shows a "Grace period" line while it's active; it disappears the moment you've earned your first foothold, and doesn't come back for the rest of that world.
+
 You don't need to decode the whole matrix to win a world — only the part relevant to the species you're actually using and the objective in front of you.
 
 ---
@@ -115,6 +117,7 @@ Progress between runs is deliberately light: clearing worlds unlocks a few extra
 
 ## Tips for your first run
 
+- Your very first world always opens with the gentlest possible goal: get any 2 species coexisting. Later worlds can ask for more.
 - Your very first placement of the run gets a one-time hint telling you whether it was isolated — pay attention to it, it's teaching you the core deduction trick.
 - Don't crowd your first few placements. A lone organism (or an isolated pair) gives you the cleanest possible read on what's actually happening.
 - Watch for deaths in the observation log, not just population totals — a death tells you *something* interacted badly, even before you know what.

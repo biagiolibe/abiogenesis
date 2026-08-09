@@ -3,6 +3,7 @@
 // `tests/` exercise it exactly as `main.rs` does, without building a Bevy
 // `App` — proof, not assertion, that the sim is render-independent.
 
+pub mod cluster;
 pub mod config;
 pub mod objectives;
 pub mod run;

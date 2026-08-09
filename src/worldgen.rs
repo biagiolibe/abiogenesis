@@ -228,7 +228,7 @@ pub fn build_world(
     generate_starting_palette(&mut world, config);
     add_bonus_species(&mut world, config, bonus_available_species);
     let params = world_params(world_index, config);
-    let objectives = generate_objectives(&mut world, &params, config);
+    let objectives = generate_objectives(&mut world, &params, config, world_index);
     (world, objectives)
 }
 
@@ -247,19 +247,50 @@ pub fn build_world(
 /// actually available (e.g. fewer than 2 species and no toxic zone, so only
 /// `TriggerBloom` is coherent at all), the exclusion is skipped rather than
 /// leaving an empty candidate list.
+///
+/// `world_index == 0`'s very first slot (task 079) skips the random draw
+/// entirely: a brand-new run's opening objective is always the gentlest
+/// possible `Coexistence{min_species: 2}`, rather than whatever the RNG
+/// picks — which can otherwise land on `SurviveIn` (survive in a hostile
+/// zone the player hasn't even seen yet) or a `Coexistence` requiring every
+/// generated species including a harder-to-keep-alive Decomposer.
 pub fn generate_objectives(
     world: &mut SimWorld,
     params: &WorldParams,
     config: &SimConfig,
+    world_index: u32,
 ) -> Vec<Objective> {
     let mut objectives = Vec::with_capacity(params.objective_count as usize);
     let mut previous_kind = None;
-    for _ in 0..params.objective_count {
-        let (objective, kind) = generate_one_objective(world, params, config, previous_kind);
+    for i in 0..params.objective_count {
+        let (objective, kind) = if i == 0 && world_index == 0 && world.species.len() as u32 >= 2 {
+            opening_world_objective(params, config)
+        } else {
+            generate_one_objective(world, params, config, previous_kind)
+        };
         objectives.push(objective);
         previous_kind = Some(kind);
     }
     objectives
+}
+
+/// The forced opening objective for `world_index == 0` (task 079): a gentle
+/// 2-species `Coexistence`, deterministic (no RNG draw) so it's identical
+/// across every seed's very first world. `ticks` still scales with
+/// `objective_severity` like any other objective — only `min_species` is
+/// hardcoded, overriding the usual `scale_severity(...).clamp(2,
+/// species_count)` which can reach 3 at world 0's own severity/species pool.
+fn opening_world_objective(params: &WorldParams, config: &SimConfig) -> (Objective, ObjectiveKind) {
+    (
+        Objective::Coexistence {
+            min_species: 2,
+            ticks: scale_severity(
+                config.objectives.coexistence_ticks_base,
+                params.objective_severity,
+            ),
+        },
+        ObjectiveKind::Coexistence,
+    )
 }
 
 /// Coherence (task 042's acceptance criteria) is enforced by construction,
@@ -520,11 +551,11 @@ mod tests {
 
         let mut a = SimWorld::new(42, &config);
         generate_starting_palette(&mut a, &config);
-        let objectives_a = generate_objectives(&mut a, &params, &config);
+        let objectives_a = generate_objectives(&mut a, &params, &config, 0);
 
         let mut b = SimWorld::new(42, &config);
         generate_starting_palette(&mut b, &config);
-        let objectives_b = generate_objectives(&mut b, &params, &config);
+        let objectives_b = generate_objectives(&mut b, &params, &config, 0);
 
         assert_eq!(objectives_a, objectives_b);
     }
@@ -553,7 +584,8 @@ mod tests {
             // otherwise a run of repeats could be the *only* coherent
             // sequence rather than evidence of a missing exclusion.
             let params = world_params(config.difficulty.ramp_worlds, &config);
-            let objectives = generate_objectives(&mut world, &params, &config);
+            let objectives =
+                generate_objectives(&mut world, &params, &config, config.difficulty.ramp_worlds);
 
             for pair in objectives.windows(2) {
                 assert_ne!(
@@ -641,7 +673,7 @@ mod tests {
             let params = world_params(0, &config);
             let species_count = world.species.len() as u32;
 
-            for objective in generate_objectives(&mut world, &params, &config) {
+            for objective in generate_objectives(&mut world, &params, &config, 0) {
                 if let Objective::Coexistence { min_species, .. } = objective {
                     assert!(
                         min_species <= species_count,
@@ -662,7 +694,7 @@ mod tests {
             params.toxic_zone_width = 0;
             params.toxic_zone_height = 0;
 
-            for objective in generate_objectives(&mut world, &params, &config) {
+            for objective in generate_objectives(&mut world, &params, &config, 0) {
                 assert!(
                     !matches!(objective, Objective::SurviveIn { .. }),
                     "seed {seed}: SurviveIn picked despite no toxic zone: {objective:?}"
@@ -680,7 +712,7 @@ mod tests {
             let params = world_params(0, &config);
             let species_count = world.species.len() as u32;
 
-            for objective in generate_objectives(&mut world, &params, &config) {
+            for objective in generate_objectives(&mut world, &params, &config, 0) {
                 match objective {
                     Objective::SurviveIn { species, .. }
                     | Objective::TriggerBloom { species, .. } => {
@@ -692,6 +724,30 @@ mod tests {
                     Objective::Coexistence { .. } => {}
                 }
             }
+        }
+    }
+
+    /// Task 079: world 0's opening objective is always the gentlest possible
+    /// `Coexistence`, and — unlike every other slot — deterministic across
+    /// every seed, since the forced branch consumes no RNG.
+    #[test]
+    fn world_zero_first_objective_is_always_gentle_coexistence() {
+        let config = SimConfig::default();
+        let expected_ticks = scale_severity(
+            config.objectives.coexistence_ticks_base,
+            config.difficulty.objective_severity_early,
+        );
+
+        for seed in 0..30u64 {
+            let (_, objectives) = build_world(seed, 0, &config, 0);
+            assert_eq!(
+                objectives[0],
+                Objective::Coexistence {
+                    min_species: 2,
+                    ticks: expected_ticks,
+                },
+                "seed {seed}: world 0's first objective must always be a gentle 2-species coexistence"
+            );
         }
     }
 }

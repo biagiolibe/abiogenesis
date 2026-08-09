@@ -10,7 +10,9 @@
 // that live in `input.rs`/`screens.rs`, no `Plugin` or systems of its own.
 
 use abiogenesis::config::SimConfig;
-use abiogenesis::objectives::{CurrentObjective, CurrentWorldOutcome, ObjectiveProgress};
+use abiogenesis::objectives::{
+    CurrentObjective, CurrentWorldOutcome, GraceProgress, ObjectiveProgress,
+};
 #[cfg(test)]
 use abiogenesis::objectives::{FailureReason, WorldOutcome};
 use abiogenesis::run::RunProgress;
@@ -46,6 +48,7 @@ pub struct WorldResetParams<'w> {
     pub objective: ResMut<'w, CurrentObjective>,
     pub objective_progress: ResMut<'w, ObjectiveProgress>,
     pub outcome: ResMut<'w, CurrentWorldOutcome>,
+    pub grace: ResMut<'w, GraceProgress>,
     pub population_trends: ResMut<'w, PopulationTrends>,
     pub birth_tally: ResMut<'w, BirthTally>,
 }
@@ -97,6 +100,7 @@ pub fn start_world(
     *reset.objective = CurrentObjective::new(new_objectives);
     *reset.objective_progress = ObjectiveProgress::default();
     *reset.outcome = CurrentWorldOutcome::default();
+    *reset.grace = GraceProgress::default();
     // Both keyed by `SpeciesId`, which the new world's species registry
     // restarts from 0 with entirely different species — without this reset,
     // a stale trend/tally from the previous world would show up mislabeled
@@ -194,6 +198,7 @@ mod tests {
         ecs_world.insert_resource(CurrentObjective::new(objectives));
         ecs_world.insert_resource(objective_progress);
         ecs_world.insert_resource(outcome);
+        ecs_world.insert_resource(GraceProgress::default());
         ecs_world.insert_resource(PopulationTrends::default());
         ecs_world.insert_resource(BirthTally::default());
         ecs_world
@@ -319,6 +324,43 @@ mod tests {
         );
 
         assert!(!reset.unseen_confirmation.0);
+    }
+
+    /// Task 079's onboarding grace period must not carry a "foothold already
+    /// reached" flag over from the world just left — every new world gets
+    /// its own fresh chance to acclimate, not inherit the previous world's.
+    #[test]
+    fn advancing_to_the_next_world_clears_a_stale_grace_foothold() {
+        let config = SimConfig::default();
+        let (mut world, objectives) = build_world(11, 0, &config, 0);
+        let mut run_progress = RunProgress {
+            run_seed: 11,
+            world_index: 0,
+            world_seed: 11,
+            worlds_cleared: 0,
+            unlocks: Default::default(),
+        };
+        let mut era_progress = EraProgress::default();
+        let mut era_next_state = NextState::default();
+        let mut ecs_world = resource_world(
+            objectives,
+            ObjectiveProgress::default(),
+            CurrentWorldOutcome::default(),
+        );
+        ecs_world.resource_mut::<GraceProgress>().foothold_reached = true;
+        let mut state = SystemState::<WorldResetParams>::new(&mut ecs_world);
+        let mut reset = state.get_mut(&mut ecs_world).unwrap();
+
+        advance_to_next_world(
+            &mut world,
+            &mut run_progress,
+            &config,
+            &mut era_progress,
+            &mut era_next_state,
+            &mut reset,
+        );
+
+        assert!(!reset.grace.foothold_reached);
     }
 
     /// Task 055's isolation hint self-dismisses by comparing `world.tick`

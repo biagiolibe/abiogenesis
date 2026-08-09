@@ -80,7 +80,8 @@ pub const HOW_TO_PLAY_SECTIONS: &[(&str, &str)] = &[
         "Each world sets a sequence of 2-3 goals (coexistence, surviving a hostile zone, or \
          triggering a bloom), cleared one after another. Total extinction retries the same \
          world; running out of eras ends the run. You only need to decode the part of the \
-         matrix relevant to your objectives.",
+         matrix relevant to your objectives. Every world also grants a grace period: it can't \
+         end from extinction until you've kept a population alive for a full era at least once.",
     ),
 ];
 
@@ -138,6 +139,12 @@ pub fn state_line(state: impl std::fmt::Debug) -> String {
     format!("State: {state:?}")
 }
 
+/// Shown while `objectives::is_grace_active` is true (task 079's onboarding
+/// grace period). No countdown number: the window is adaptive, not a fixed
+/// length, so a number would go stale/misleading once it's extended past
+/// `grace_eras`.
+pub const GRACE_PERIOD_LINE: &str = "Grace period — this world can't fail from extinction yet";
+
 // --- HUD — action group ---
 
 /// "Moves" (task 064's sidebar redesign — diegetic relabeling of the four
@@ -175,6 +182,10 @@ pub fn action_description(mode: ActionMode) -> &'static str {
         }
     }
 }
+
+/// Appended to `action_tooltip`'s output when Stress/Cull are disabled
+/// outside `MapViewMode::Detail` (task 077).
+pub const DETAIL_MODE_ONLY_HINT: &str = "\n(Detail mode only — zoom in to use)";
 
 pub fn action_tooltip(mode: ActionMode, cost: u32) -> String {
     let name = action_name(mode);

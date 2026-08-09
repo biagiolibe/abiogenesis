@@ -15,6 +15,9 @@
         zoom_threshold: 0.4,
         zoom_speed: 0.9,
     ),
+    cluster: (
+        density_saturation: 20.0,
+    ),
     environment: (
         diffusion_rate: 0.05,
         light_gradient_high: 0.9,
@@ -38,6 +41,7 @@
             splice: 2,
         ),
         era_tick_hz: 8.0,
+        grace_eras: 3,
     ),
     energy: (
         seed_energy: 5.0,

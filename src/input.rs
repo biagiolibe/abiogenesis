@@ -9,7 +9,7 @@ use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::{apply_tick_outcome, ObjectiveOutcomeParams};
 #[cfg(test)]
 use abiogenesis::objectives::{
-    CurrentObjective, CurrentWorldOutcome, ObjectiveAdvanced, ObjectiveProgress,
+    CurrentObjective, CurrentWorldOutcome, GraceProgress, ObjectiveAdvanced, ObjectiveProgress,
 };
 use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::{
@@ -20,7 +20,7 @@ use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{Organism, SimWorld, SpeciesId};
 
 use crate::notebook::{EverSeeded, LogEntry, ObservationLog, PlayerPlacedCells};
-use crate::render::{species_label, world_to_cell, GridCamera};
+use crate::render::{species_label, world_to_cell, GridCamera, MapViewMode, PlacementIndicator};
 use crate::run_flow::{start_world, WorldResetParams};
 use crate::text;
 use crate::ui::{
@@ -244,6 +244,8 @@ fn seed_organism_on_click(
     mut ever_seeded: ResMut<EverSeeded>,
     mut meta: ResMut<MetaProgress>,
     mut isolation_hint: ResMut<IsolationHint>,
+    mode: Res<MapViewMode>,
+    mut placement_indicator: ResMut<PlacementIndicator>,
 ) {
     if selected_action.0 != ActionMode::Seed {
         return;
@@ -264,6 +266,14 @@ fn seed_organism_on_click(
         y,
     ) {
         return;
+    }
+
+    // Overview's cluster-heatmap aggregation (task 076) doesn't show
+    // individual cells, so a placement there gets a transient ring marking
+    // exactly which cell it landed on (task 077) — Detail already shows the
+    // organism sprite directly, no indicator needed.
+    if *mode == MapViewMode::Overview {
+        placement_indicator.show(x, y);
     }
 
     if !ever_seeded.0 && !meta.seen_isolation_hint {
@@ -308,11 +318,21 @@ fn stress_on_click(
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
     mut budget: ResMut<ActionBudget>,
+    mode: Res<MapViewMode>,
 ) {
     if selected_action.0 != ActionMode::Stress {
         return;
     }
     if *era_state.get() == EraState::Advancing {
+        return;
+    }
+    // Stress needs per-cell precision Overview's cluster-heatmap aggregation
+    // (task 076) doesn't preserve — gated to Detail (task 077). The HUD
+    // (`ui.rs`) also disables the Stress button in Overview so the player
+    // never reaches a click that silently does nothing; this check is
+    // defense-in-depth against a `SelectedAction` left on Stress from before
+    // zooming out.
+    if *mode != MapViewMode::Detail {
         return;
     }
     let Some((x, y)) = clicked_cell(&buttons, &windows, &cameras, world.width, world.height) else {
@@ -354,11 +374,18 @@ fn cull_on_click(
     config: Res<SimConfig>,
     mut budget: ResMut<ActionBudget>,
     mut placed: ResMut<PlayerPlacedCells>,
+    mode: Res<MapViewMode>,
 ) {
     if selected_action.0 != ActionMode::Cull {
         return;
     }
     if *era_state.get() == EraState::Advancing {
+        return;
+    }
+    // Same Detail-only gating as `stress_on_click` (task 077) — culling a
+    // specific organism needs per-cell precision Overview's aggregated
+    // heatmap doesn't offer.
+    if *mode != MapViewMode::Detail {
         return;
     }
     let Some((x, y)) = clicked_cell(&buttons, &windows, &cameras, world.width, world.height) else {
@@ -750,6 +777,7 @@ mod tests {
         app.insert_resource(CurrentObjective::default());
         app.insert_resource(ObjectiveProgress::default());
         app.insert_resource(CurrentWorldOutcome::default());
+        app.insert_resource(GraceProgress::default());
         app.insert_resource(crate::ui::PopulationTrends::default());
         app.insert_resource(crate::notebook::BirthTally::default());
         app.add_systems(Update, reseed_world);
@@ -805,6 +833,7 @@ mod tests {
         app.insert_resource(CurrentObjective::default());
         app.insert_resource(ObjectiveProgress::default());
         app.insert_resource(CurrentWorldOutcome::default());
+        app.insert_resource(GraceProgress::default());
         app.insert_resource(RunProgress::default());
         app.insert_resource(MetaProgress::default());
         app.insert_resource(NextState::<GameState>::default());

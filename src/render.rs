@@ -8,6 +8,7 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy_egui::egui;
 use bevy_egui::EguiPrimaryContextPass;
 
+use abiogenesis::cluster::compute_cluster_density;
 use abiogenesis::config::SimConfig;
 use abiogenesis::state::GameState;
 use abiogenesis::world::{Metabolism, SimWorld, SpeciesId, TerrainKind};
@@ -176,23 +177,36 @@ impl Plugin for GridRenderPlugin {
         app.add_systems(Startup, (spawn_camera, spawn_grid, spawn_metabolism_shapes))
             .init_resource::<EnvironmentOverlay>()
             .init_resource::<MapViewMode>()
+            .init_resource::<ClusterDensity>()
+            .init_resource::<placement_indicator::PlacementIndicator>()
             .add_systems(
                 Update,
                 (
-                    sync_grid_colors.run_if(in_state(GameState::Playing)),
+                    zoom_camera.run_if(in_state(GameState::Playing)),
+                    update_map_view_mode
+                        .after(zoom_camera)
+                        .run_if(in_state(GameState::Playing)),
+                    update_cluster_density
+                        .after(update_map_view_mode)
+                        .run_if(in_state(GameState::Playing)),
+                    sync_grid_colors
+                        .after(update_cluster_density)
+                        .run_if(in_state(GameState::Playing)),
                     toggle_environment_overlay,
                     apply_environment_overlay
                         .after(sync_grid_colors)
                         .run_if(in_state(GameState::Playing)),
-                    zoom_camera.run_if(in_state(GameState::Playing)),
-                    update_map_view_mode
-                        .after(zoom_camera)
+                    placement_indicator::tick_placement_indicator
                         .run_if(in_state(GameState::Playing)),
                 ),
             )
             .add_systems(
                 EguiPrimaryContextPass,
-                terrain_overlay::draw_terrain_overlay.run_if(in_state(GameState::Playing)),
+                (
+                    terrain_overlay::draw_terrain_overlay,
+                    placement_indicator::draw_placement_indicator,
+                )
+                    .run_if(in_state(GameState::Playing)),
             );
         #[cfg(debug_assertions)]
         {
@@ -605,6 +619,104 @@ mod terrain_overlay {
     }
 }
 
+/// A brief on-map ring marking exactly where a Seed placement landed while
+/// `MapViewMode::Overview` is active (task 077): Overview's cluster-heatmap
+/// aggregation (task 076) doesn't show individual cells, so without this the
+/// player has no way to tell which cell of a blob they just placed into —
+/// the cluster blob then carries visibility forward on its own once it grows
+/// large enough to render (`redesign/abiogenesis-two-tier-view.md`). Uses
+/// real (`Res<Time>`) rather than sim-tick duration: `SimWorld::tick` only
+/// advances on era ticks, so a tick-based flash could linger a whole era if
+/// the player doesn't advance time right away. Same egui-painter/
+/// `world_to_viewport` overlay technique as `terrain_overlay` and
+/// `energy_overlay` above.
+pub use placement_indicator::PlacementIndicator;
+
+mod placement_indicator {
+    use super::{cell_position, GridCamera, CELL_SIZE};
+    use abiogenesis::world::SimWorld;
+    use bevy::prelude::*;
+    use bevy_egui::{egui, EguiContexts};
+
+    const DURATION_SECS: f32 = 0.6;
+    const RING_RADIUS: f32 = CELL_SIZE * 0.6;
+    const RING_WIDTH: f32 = 2.0;
+    const RING_COLOR: egui::Color32 = egui::Color32::from_rgb(255, 220, 90);
+
+    /// Set by `input.rs`'s `seed_organism_on_click` on a successful Seed
+    /// resolved in Overview mode; ticks down and self-clears in
+    /// `tick_placement_indicator` — purely cosmetic, never read by `sim`/
+    /// `world`/`input.rs`'s action logic itself.
+    #[derive(Resource, Default)]
+    pub struct PlacementIndicator(pub Option<PlacementIndicatorState>);
+
+    pub struct PlacementIndicatorState {
+        pub x: usize,
+        pub y: usize,
+        remaining_secs: f32,
+    }
+
+    impl PlacementIndicator {
+        pub fn show(&mut self, x: usize, y: usize) {
+            self.0 = Some(PlacementIndicatorState {
+                x,
+                y,
+                remaining_secs: DURATION_SECS,
+            });
+        }
+    }
+
+    pub fn tick_placement_indicator(time: Res<Time>, mut indicator: ResMut<PlacementIndicator>) {
+        let Some(state) = indicator.0.as_mut() else {
+            return;
+        };
+        state.remaining_secs -= time.delta_secs();
+        if state.remaining_secs <= 0.0 {
+            indicator.0 = None;
+        }
+    }
+
+    /// Same viewport-clip and `world_to_viewport` projection as
+    /// `terrain_overlay::draw_terrain_overlay` — see that function's comment
+    /// for why the clip is needed once task 075's zoom can put a cell
+    /// off-frame.
+    pub fn draw_placement_indicator(
+        indicator: Res<PlacementIndicator>,
+        world: Res<SimWorld>,
+        cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
+        mut contexts: EguiContexts,
+    ) -> Result {
+        let Some(state) = indicator.0.as_ref() else {
+            return Ok(());
+        };
+        let Ok((camera, camera_transform)) = cameras.single() else {
+            return Ok(());
+        };
+        let ctx = contexts.ctx_mut()?;
+        let painter = ctx.layer_painter(egui::LayerId::background());
+        let painter = match camera.logical_viewport_rect() {
+            Some(viewport_rect) => painter.with_clip_rect(egui::Rect::from_min_max(
+                egui::pos2(viewport_rect.min.x, viewport_rect.min.y),
+                egui::pos2(viewport_rect.max.x, viewport_rect.max.y),
+            )),
+            None => painter,
+        };
+
+        let world_pos = cell_position(state.x, state.y, world.width, world.height);
+        let Ok(viewport_pos) = camera.world_to_viewport(camera_transform, world_pos) else {
+            return Ok(());
+        };
+        // Fades out over the ring's lifetime rather than a hard cut.
+        let alpha = (state.remaining_secs / DURATION_SECS).clamp(0.0, 1.0);
+        painter.circle_stroke(
+            egui::pos2(viewport_pos.x, viewport_pos.y),
+            RING_RADIUS,
+            egui::Stroke::new(RING_WIDTH, RING_COLOR.gamma_multiply(alpha)),
+        );
+        Ok(())
+    }
+}
+
 /// Which representation the organism layer renders in — the hard-threshold
 /// switch task 075 introduces (`redesign/abiogenesis-two-tier-view.md`):
 /// `Overview` (default, matches the un-zoomed `scale == 1.0` whole-grid
@@ -743,6 +855,39 @@ fn update_map_view_mode(
     }
 }
 
+/// Per-cell cluster density (task 076, `cluster::compute_cluster_density`),
+/// consumed by `cell_color` when `MapViewMode::Overview` is active. Indexed
+/// like `SimWorld::cells` (`world.index(x, y)`); `0.0` for any cell with no
+/// organism.
+#[derive(Resource, Default)]
+struct ClusterDensity(Vec<f32>);
+
+/// Recomputes `ClusterDensity` only when there's something new to show: a
+/// population-changing event (tick advance, action resolution) mutates
+/// `SimWorld` via `ResMut` elsewhere, which is exactly what `Res<SimWorld>::
+/// is_changed` reports here — connected-component clustering is O(cells) and
+/// the task doc calls out not re-running it unconditionally every render
+/// frame on a ~10000+ cell grid. Also recomputes on entering `Overview`
+/// (`mode.is_changed()`) so switching from `Detail` never shows a stale
+/// frame even if the population hasn't changed since the last time
+/// `Overview` was active — recomputing then is cheap (it happens once per
+/// mode switch, not per frame) and guarantees freshness without tracking a
+/// separate "was this ever computed" flag.
+fn update_cluster_density(
+    world: Res<SimWorld>,
+    config: Res<SimConfig>,
+    mode: Res<MapViewMode>,
+    mut density: ResMut<ClusterDensity>,
+) {
+    if *mode != MapViewMode::Overview {
+        return;
+    }
+    if !world.is_changed() && !mode.is_changed() {
+        return;
+    }
+    density.0 = compute_cluster_density(&world, &config);
+}
+
 /// Side length, in texels, of a generated shape mask (task 032). Independent
 /// of `CELL_SIZE` — `Sprite::custom_size` stretches whatever texture
 /// resolution to the on-screen cell, so this only controls how smooth the
@@ -851,15 +996,29 @@ fn spawn_grid(mut commands: Commands, config: Res<SimConfig>) {
 /// `Sprite::color` and `Sprite::image` (task 032 — shape by metabolism),
 /// read-only against `SimWorld` (never `ResMut` here — rendering must not
 /// mutate simulation state).
+/// `MapViewMode::Overview` (task 076) reuses these same per-cell sprites for
+/// the cluster heatmap instead of spawning separate blob entities: coloring
+/// every cell in a cluster by that cluster's shared density makes the
+/// sprite union read as one blob whose shape is the cluster's real
+/// footprint, and it comes with the click/viewport math (`world_to_cell`,
+/// the zoom camera) already solved for free.
 fn sync_grid_colors(
     world: Res<SimWorld>,
     config: Res<SimConfig>,
     shapes: Res<MetabolismShapes>,
+    mode: Res<MapViewMode>,
+    density: Res<ClusterDensity>,
     mut cells: Query<(&GridCell, &mut Sprite)>,
 ) {
     for (cell, mut sprite) in &mut cells {
-        sprite.color = cell_color(&world, &config, cell.x, cell.y);
-        sprite.image = cell_shape(&world, &shapes, cell.x, cell.y);
+        sprite.color = cell_color(&world, &config, cell.x, cell.y, *mode, &density);
+        sprite.image = match *mode {
+            MapViewMode::Detail => cell_shape(&world, &shapes, cell.x, cell.y),
+            // Metabolism shapes are a Detail-only precision affordance
+            // (task 032); Overview's aggregated blobs don't carry per-cell
+            // identity, so cells fall back to the plain solid-square shape.
+            MapViewMode::Overview => Handle::default(),
+        };
     }
 }
 
@@ -903,19 +1062,45 @@ pub fn world_to_cell(world_pos: Vec2, width: usize, height: usize) -> Option<(us
 }
 
 /// The single place that decides a cell's color (GDD §11): occupied cells by
-/// species hue and energy, cells with leftover residue by a neutral hue
-/// scaled by how much is left, empty cells by their terrain band (task 066,
+/// species hue and energy (`Detail`) or cluster density (`Overview`, task
+/// 076), cells with leftover residue by a neutral hue scaled by how much is
+/// left, empty cells by their terrain band (task 066,
 /// `redesign/abiogenesis-terrain-map.md` — flat color, no longer a
 /// continuous `light` shading), then a toxicity tint (task 033) composited
 /// on top of whichever of the three applies.
-fn cell_color(world: &SimWorld, config: &SimConfig, x: usize, y: usize) -> Color {
+fn cell_color(
+    world: &SimWorld,
+    config: &SimConfig,
+    x: usize,
+    y: usize,
+    mode: MapViewMode,
+    density: &ClusterDensity,
+) -> Color {
     let cell = world.get(x, y);
 
     let base = if let Some(organism) = cell.organism {
         let hue = species_hue(organism.species);
-        // Energy can exceed repro_threshold right before reproduction; clamp.
-        let fill = (organism.energy / config.energy.repro_threshold).clamp(0.0, 1.0);
-        Color::hsl(hue, 0.75, 0.15 + fill * 0.35)
+        let lightness = match mode {
+            // Energy can exceed repro_threshold right before reproduction;
+            // clamp.
+            MapViewMode::Detail => {
+                let fill = (organism.energy / config.energy.repro_threshold).clamp(0.0, 1.0);
+                0.15 + fill * 0.35
+            }
+            // `compute_cluster_density` is a population-mass reading (large,
+            // established colonies saturate toward `1.0`; a one-cell cluster
+            // sits near the bottom), not Detail's per-organism energy fill,
+            // so it gets its own lightness range rather than reusing
+            // Detail's: a higher floor (`0.20`, above every `terrain_color`
+            // band's lightness so a lone organism never blends into the
+            // ground beneath it) keeps even a barely-above-zero density
+            // "clearly visible" per the task's acceptance criteria, while
+            // still reading strictly dimmer than a saturated colony's `0.50`
+            // ceiling. Same hue formula as Detail either way, so the sidebar/
+            // notebook swatches (`species_color`) still agree with the grid.
+            MapViewMode::Overview => 0.20 + density.0[world.index(x, y)] * 0.30,
+        };
+        Color::hsl(hue, 0.75, lightness)
     } else if cell.residue > config.energy.residue_ambient_trickle {
         // `sim::step` settles every cell's residue at exactly
         // `residue_ambient_trickle` once no death has happened nearby (task
@@ -972,6 +1157,20 @@ mod tests {
     use super::*;
     use abiogenesis::world::{Cell, Organism, SpeciesId, TerrainKind};
 
+    /// `cell_color` in `Detail` mode, exactly as it behaved before task 076
+    /// added the `Overview` branch — the density argument is unused on this
+    /// path, so an empty `ClusterDensity` is fine for every test below.
+    fn detail_color(world: &SimWorld, config: &SimConfig, x: usize, y: usize) -> Color {
+        cell_color(
+            world,
+            config,
+            x,
+            y,
+            MapViewMode::Detail,
+            &ClusterDensity::default(),
+        )
+    }
+
     #[test]
     fn heat_color_pins_the_blue_cold_to_red_hot_endpoints() {
         let Color::Hsla(cold) = heat_color(0.0) else {
@@ -998,14 +1197,14 @@ mod tests {
             }),
             ..world.cells[idx]
         };
-        let Color::Hsla(occupied) = cell_color(&world, &config, x, y) else {
+        let Color::Hsla(occupied) = detail_color(&world, &config, x, y) else {
             panic!("expected an HSL color");
         };
         assert!(occupied.saturation > 0.5);
 
         world.cells[idx].organism = None;
         world.cells[idx].residue = config.energy.residue_on_death;
-        let Color::Hsla(residue) = cell_color(&world, &config, x, y) else {
+        let Color::Hsla(residue) = detail_color(&world, &config, x, y) else {
             panic!("expected an HSL color");
         };
         assert!(residue.saturation < occupied.saturation);
@@ -1016,7 +1215,7 @@ mod tests {
         // for (0, 0).
         world.cells[idx].residue = 0.0;
         world.cells[idx].terrain = TerrainKind::Plain;
-        let Color::Hsla(empty) = cell_color(&world, &config, x, y) else {
+        let Color::Hsla(empty) = detail_color(&world, &config, x, y) else {
             panic!("expected an HSL color");
         };
         assert_eq!(empty, terrain_hsla(TerrainKind::Plain));
@@ -1040,7 +1239,7 @@ mod tests {
         world.cells[idx].toxicity = 0.0;
 
         assert_eq!(
-            cell_color(&world, &config, x, y),
+            detail_color(&world, &config, x, y),
             terrain_color(TerrainKind::Plain)
         );
     }
@@ -1084,10 +1283,10 @@ mod tests {
         let (x, y) = (0, 0);
         let idx = world.index(x, y);
         world.cells[idx].toxicity = 0.0;
-        let clean = cell_color(&world, &config, x, y);
+        let clean = detail_color(&world, &config, x, y);
 
         world.cells[idx].toxicity = 1.0;
-        let toxic = cell_color(&world, &config, x, y);
+        let toxic = detail_color(&world, &config, x, y);
 
         assert_ne!(clean, toxic);
     }

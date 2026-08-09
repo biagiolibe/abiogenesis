@@ -25,30 +25,47 @@ guessing which cell of a cluster their action actually hit.
 
 ## 📋 Acceptance Criteria
 
-- [ ] `stress_on_click` (`src/input.rs:302`) and `cull_on_click`
-      (`src/input.rs:347`) are inert (or the action buttons themselves
-      disabled/greyed in the HUD) when `MapViewMode::Overview` is active —
-      decide which (inert click vs. disabled button) and document why;
-      disabling the button is probably the more legible choice for the
-      player.
-- [ ] `attempt_seed`/`seed_organism_on_click` (`src/input.rs:203-233`) and
+- [x] **Decision**: disabled button, not inert click. (`ui.rs`'s
+      `action_icon_row` wraps Stress/Cull in `add_enabled_ui`, mirroring
+      `splice_panel`'s tag-cap gating; verified live via `cargo run` — icons
+      visibly dim in Overview and brighten in Detail.) `stress_on_click`
+      (`src/input.rs:302`) and `cull_on_click` (`src/input.rs:347`) also gain
+      a `MapViewMode` guard as defense-in-depth (stale `SelectedAction` from
+      before a zoom-out shouldn't act), but the HUD button itself is greyed
+      in Overview so the player never gets to click-and-nothing-happens —
+      same legibility bar as the existing budget-gated buttons in `ui.rs`'s
+      Moves panel.
+- [x] `attempt_seed`/`seed_organism_on_click` (`src/input.rs:203-233`) and
       `apply_splice` (`src/input.rs:394`) remain functional in both
       `Overview` and `Detail`.
-- [ ] A Seed or Splice resolved while in `Overview` mode triggers a brief,
-      non-blocking visual indicator at the exact cell that was affected
-      (flash, ring, or similar — reuse whatever pattern task 054 already
-      established for its confirmation celebration rather than inventing a
-      new one).
-- [ ] The indicator is purely cosmetic/transient — it doesn't block input,
+- [x] **Correction**: the placement indicator applies to `Seed` only, not
+      `Splice`. Per the design doc (`redesign/abiogenesis-two-tier-view.md`,
+      "Placement always resolves to one exact cell") the indicator is about
+      *placement* — `apply_splice` never calls `clicked_cell` and has no
+      target cell at all (it appends a new entry to `world.species`, driven
+      by an egui dropdown, not a grid click), so there is no cell to point
+      an indicator at. A Seed resolved while in `Overview` mode triggers a
+      brief, non-blocking visual indicator at the exact cell that was
+      affected (flash, ring, or similar). Task 054 turned out not to
+      establish a reusable spatial-indicator mechanism (it ended up as an
+      observation-log line + HUD badge, nothing drawn on the grid) — the
+      closer existing precedent is `render.rs`'s `terrain_overlay` module
+      (egui `Painter` + `camera.world_to_viewport` projection, same
+      technique `notebook.rs`'s `draw_dashed_ring` uses for a ring), reused
+      here for a new transient ring drawn for a short real-time duration.
+- [x] The indicator is purely cosmetic/transient — it doesn't block input,
       doesn't persist once task 076's cluster blob naturally makes the
-      population visible, and has no effect on `sim`/`world` state.
-- [ ] HUD (`Moves` panel, `src/ui.rs`) reflects the gating — e.g. Stress/Cull
+      population visible, and has no effect on `sim`/`world` state. (Real-time
+      `Res<Time>` countdown in `render.rs`'s `placement_indicator` module,
+      read-only against `SimWorld`.)
+- [x] HUD (`Moves` panel, `src/ui.rs`) reflects the gating — e.g. Stress/Cull
       buttons show as unavailable in Overview, consistent with how other
       budget/precondition-gated actions are already presented.
-- [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
-- [ ] Verified live via `cargo run`: confirm Stress/Cull are blocked in
-      Overview and work normally in Detail; confirm Seed/Splice work in
-      both and the placement indicator appears correctly in Overview.
+- [x] `cargo test` and `cargo clippy -- -D warnings` clean.
+- [x] Verified live via `cargo run`: confirmed Stress/Cull icons visibly dim
+      in Overview and brighten in Detail (screenshot diff of the Moves icon
+      row across a zoom-in); confirmed Seed placement in Overview draws a
+      yellow ring exactly on the newly seeded cell.
 
 ---
 
