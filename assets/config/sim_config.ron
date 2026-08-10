@@ -73,7 +73,6 @@
         effect_intensity_min: -2,
         effect_intensity_max: 2,
         matrix_density: 0.4,
-        max_self_conflict_draws: 20,
     ),
     notebook: (
         confirmation_threshold: 3.0,

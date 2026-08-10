@@ -17,7 +17,7 @@ use abiogenesis::sim::{
     OrganismBorn, OrganismDied, SpeciesExtinct,
 };
 use abiogenesis::state::{EraState, GameState};
-use abiogenesis::world::{Organism, SimWorld, SpeciesId};
+use abiogenesis::world::{net_self_interaction, Organism, SimWorld, SpeciesId};
 use abiogenesis::worldgen::era_ticks_for;
 
 use crate::notebook::{EverSeeded, LogEntry, ObservationLog, PlayerPlacedCells};
@@ -424,7 +424,11 @@ fn cull_on_click(
 /// identity otherwise stays stable for a run (GDD §5.6 step 7 only floats
 /// child-genome mutation as a *future* idea). Silently does nothing if the
 /// draft is incomplete (no source picked, or a `SwapTag` missing either
-/// tag) rather than partially applying it.
+/// tag), or if the resulting tag set has a nonzero `net_self_interaction`
+/// (task 089) — an unseen matrix combination that would make the spliced
+/// species self-reinforce or self-drain, the exact invariant
+/// `draw_species_tags` already enforces for worldgen-created species (task
+/// 088) — rather than partially applying it.
 fn apply_splice(
     era_state: Res<State<EraState>>,
     mut draft: ResMut<SpliceDraft>,
@@ -456,6 +460,9 @@ fn apply_splice(
                 return;
             };
             new_species.tags[pos] = new;
+            if net_self_interaction(&world.matrix, &new_species.tags) != 0 {
+                return;
+            }
         }
         SpliceEditChoice::AddTag { tag: Some(tag) } => {
             // Defense-in-depth against a stale draft (e.g. picked before
@@ -466,6 +473,9 @@ fn apply_splice(
                 return;
             }
             new_species.tags.push(tag);
+            if net_self_interaction(&world.matrix, &new_species.tags) != 0 {
+                return;
+            }
         }
         SpliceEditChoice::ShiftTempOptimum { warmer } => {
             let delta = if warmer {
@@ -505,17 +515,22 @@ fn quit(keys: Res<ButtonInput<KeyCode>>, mut exit: MessageWriter<AppExit>) {
 mod tests {
     use super::*;
     use crate::notebook::{MatrixKnowledge, NotebookHasUnseenConfirmation};
-    use abiogenesis::world::{Species, TagId, TagSlot, TerrainKind};
+    use abiogenesis::world::{Species, TagId, TagMatrix, TagSlot, TerrainKind};
     use abiogenesis::worldgen::generate_starting_palette;
     use bevy::state::state::State;
 
     /// A world with two active tags and one species carrying only tag 0,
     /// enough to exercise both `SpliceEditChoice` variants without needing
-    /// the full RNG-driven world generation.
+    /// the full RNG-driven world generation. The matrix is forced to all
+    /// zeros (rather than whatever seed 42 happens to generate) so every
+    /// splice test's outcome is deterministic for a stated reason — a
+    /// neutral matrix — not by luck of the seed, now that `apply_splice`
+    /// itself checks `net_self_interaction` (task 089).
     fn world_with_one_taggable_species() -> (SimWorld, SimConfig) {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
         world.active_tags = vec![TagId(0), TagId(1)];
+        world.matrix = TagMatrix::from_values(2, vec![0, 0, 0, 0]);
         world.species.push(Species {
             metabolism: abiogenesis::world::Metabolism::Photolithic,
             temp_optimum: 0.5,
@@ -583,6 +598,165 @@ mod tests {
             draft.source, None,
             "the draft resets after a successful splice"
         );
+    }
+
+    /// `SwapTag` only replaces one tag in place — a source with just one
+    /// tag would always land on a still-single-tag (trivially self-neutral)
+    /// result, so these three tests need a 3-tag active pool and a 2-tag
+    /// source to make `SwapTag`'s self-interaction check meaningful:
+    /// `[TagSlot(0), TagSlot(2)]`, swapping `TagSlot(2)` for `TagSlot(1)`,
+    /// leaves `[TagSlot(0), TagSlot(1)]` — the pair the matrix override
+    /// below actually tests.
+    fn world_with_one_two_tagged_species() -> (SimWorld, SimConfig) {
+        let (mut world, config) = world_with_one_taggable_species();
+        world.active_tags.push(TagId(2));
+        world.matrix = TagMatrix::from_values(3, vec![0; 9]);
+        world.species[0].tags = vec![TagSlot(0), TagSlot(2)];
+        (world, config)
+    }
+
+    /// Task 089: a `SwapTag` whose result nets a positive self-interaction
+    /// (a hidden, unseen combination that would make the spliced species
+    /// self-reinforce every time it reproduces next to itself) must be
+    /// rejected outright, the same invariant `draw_species_tags` already
+    /// enforces for worldgen-created species (task 088).
+    #[test]
+    fn swap_tag_splice_is_rejected_when_the_result_self_reinforces() {
+        let (mut world, config) = world_with_one_two_tagged_species();
+        #[rustfmt::skip]
+        let values = vec![
+            0, 1, 0,
+            1, 0, 0,
+            0, 0, 0,
+        ];
+        world.matrix = TagMatrix::from_values(3, values);
+        let mut app = app_with(
+            world,
+            config,
+            SpliceDraft {
+                source: Some(SpeciesId(0)),
+                edit: SpliceEditChoice::SwapTag {
+                    old: Some(TagSlot(2)),
+                    new: Some(TagSlot(1)),
+                },
+                apply_requested: true,
+            },
+        );
+        app.update();
+
+        let world = app.world().resource::<SimWorld>();
+        assert_eq!(world.species.len(), 1, "no species should be appended");
+        assert_eq!(
+            world.species[0].tags,
+            vec![TagSlot(0), TagSlot(2)],
+            "the source species must stay unchanged"
+        );
+
+        let budget = app.world().resource::<ActionBudget>();
+        assert_eq!(
+            budget.points_remaining, 3,
+            "a rejected splice costs nothing"
+        );
+
+        let log = app.world().resource::<ObservationLog>();
+        assert!(log.entries.is_empty(), "nothing should be logged");
+
+        let draft = app.world().resource::<SpliceDraft>();
+        assert!(
+            !draft.apply_requested,
+            "the intent is still consumed even on rejection"
+        );
+    }
+
+    /// Regression guard for the design choice to reject `!= 0`, not just
+    /// `> 0`: net-negative self-interaction is just as real a failure (the
+    /// spliced species would die the instant it reproduces next to itself)
+    /// and the player has no way to see the hidden matrix that caused it.
+    #[test]
+    fn swap_tag_splice_is_rejected_when_the_result_self_drains() {
+        let (mut world, config) = world_with_one_two_tagged_species();
+        #[rustfmt::skip]
+        let values = vec![
+            0, -1, 0,
+            -1, 0, 0,
+            0, 0, 0,
+        ];
+        world.matrix = TagMatrix::from_values(3, values);
+        let mut app = app_with(
+            world,
+            config,
+            SpliceDraft {
+                source: Some(SpeciesId(0)),
+                edit: SpliceEditChoice::SwapTag {
+                    old: Some(TagSlot(2)),
+                    new: Some(TagSlot(1)),
+                },
+                apply_requested: true,
+            },
+        );
+        app.update();
+
+        let world = app.world().resource::<SimWorld>();
+        assert_eq!(world.species.len(), 1, "no species should be appended");
+    }
+
+    /// The gate must only block a nonzero *net* self-interaction, not every
+    /// matrix with nonzero individual entries.
+    #[test]
+    fn swap_tag_splice_is_applied_when_the_result_is_self_neutral() {
+        let (mut world, config) = world_with_one_two_tagged_species();
+        #[rustfmt::skip]
+        let values = vec![
+            0, 1, 0,
+            -1, 0, 0,
+            0, 0, 0,
+        ];
+        world.matrix = TagMatrix::from_values(3, values);
+        let mut app = app_with(
+            world,
+            config,
+            SpliceDraft {
+                source: Some(SpeciesId(0)),
+                edit: SpliceEditChoice::SwapTag {
+                    old: Some(TagSlot(2)),
+                    new: Some(TagSlot(1)),
+                },
+                apply_requested: true,
+            },
+        );
+        app.update();
+
+        let world = app.world().resource::<SimWorld>();
+        assert_eq!(world.species.len(), 2, "a self-neutral splice must apply");
+        assert_eq!(world.species[1].tags, vec![TagSlot(0), TagSlot(1)]);
+
+        let budget = app.world().resource::<ActionBudget>();
+        assert_eq!(budget.points_remaining, 1, "splice costs 2 points");
+    }
+
+    /// Regression guard for gating only the tag-mutating arms: a
+    /// `ShiftTempOptimum` splice off a source that is already
+    /// self-reinforcing (for a reason unrelated to this edit) must still
+    /// apply — the check must not fire for edits that never touch `tags`.
+    #[test]
+    fn shift_temp_splice_is_unaffected_by_a_self_reinforcing_source() {
+        let (mut world, config) = world_with_one_taggable_species();
+        world.matrix = TagMatrix::from_values(2, vec![0, 1, 1, 0]);
+        world.species[0].tags = vec![TagSlot(0), TagSlot(1)];
+        let mut app = app_with(
+            world,
+            config,
+            SpliceDraft {
+                source: Some(SpeciesId(0)),
+                edit: SpliceEditChoice::ShiftTempOptimum { warmer: true },
+                apply_requested: true,
+            },
+        );
+        app.update();
+
+        let world = app.world().resource::<SimWorld>();
+        assert_eq!(world.species.len(), 2, "the shift must still apply");
+        assert_eq!(world.species[1].temp_optimum, 0.65);
     }
 
     #[test]
@@ -665,6 +839,34 @@ mod tests {
             world.species[1].tags,
             vec![TagSlot(0), TagSlot(1)],
             "the new species should carry the original tag plus the added one"
+        );
+    }
+
+    /// Mirrors `swap_tag_splice_is_rejected_when_the_result_self_reinforces`
+    /// via the `AddTag` arm instead of `SwapTag`.
+    #[test]
+    fn add_tag_splice_is_rejected_when_the_result_self_reinforces() {
+        let (mut world, config) = world_with_one_taggable_species();
+        world.matrix = TagMatrix::from_values(2, vec![0, 1, 1, 0]);
+        let mut app = app_with(
+            world,
+            config,
+            SpliceDraft {
+                source: Some(SpeciesId(0)),
+                edit: SpliceEditChoice::AddTag {
+                    tag: Some(TagSlot(1)),
+                },
+                apply_requested: true,
+            },
+        );
+        app.update();
+
+        let world = app.world().resource::<SimWorld>();
+        assert_eq!(world.species.len(), 1, "no species should be appended");
+        assert_eq!(
+            world.species[0].tags,
+            vec![TagSlot(0)],
+            "the source species must stay unchanged"
         );
     }
 

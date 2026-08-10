@@ -8,6 +8,15 @@ it only when you need the history/rationale behind a specific past phase.
 
 ---
 
+**Self-interaction balance bug** (2026-08-10, user-reported live: starting species growing explosively despite task 083's incubation). Root cause traced to `draw_species_tags`'s task-048 mitigation being combinatorially unable to reach `net_self_interaction == 0` in ~15% of worlds given the default 5-tag active pool at world 0 (not a rare edge case — a guaranteed outcome whenever no zero-net 3-tag combination exists at all). 088 fixed the worldgen path with an exhaustive deterministic search (always terminates at exact zero); 089 closed the same gap on the separate Splice path (`apply_splice` never checked this at all).
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[x]` | 088 | Exhaustive search in `draw_species_tags` to guarantee zero self-interaction | 048 | [088](done/088-exhaustive-self-neutral-species-tags.md) |
+| `[x]` | 089 | Reject Splice edits that create a nonzero same-species self-interaction | 048 | [089](done/089-splice-self-interaction-gate.md) |
+
+---
+
 **Camera pan** (2026-08-10): zoom was already done (075-076); pan was the remaining open half of the old "camera zoom and pan" backlog item. Revisited an earlier explicit design call ("no separate pan mechanic needed") now that the grid is `128×80` and Detail zoom alone made navigation impractical.
 
 | Status | ID | Title | Depends on | File |

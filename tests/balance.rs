@@ -63,7 +63,13 @@ const MAX_UNSTABLE_RATE: f32 = 0.3;
 /// `draw_species_tags` was fixed to reject net-*positive* self-interaction,
 /// not just net-negative — see the module doc on `population_never_
 /// saturates_the_grid_across_seeds` for why a residual minority is expected
-/// rather than eliminated outright).
+/// rather than eliminated outright). Task 088 made that rejection
+/// exhaustive rather than best-effort (the prior random-retry search could
+/// provably fail to find a zero-net combination for ~15% of worlds' 3-tag
+/// pool at world 0's default 5 active tags), so same-species
+/// self-interaction is now eliminated exactly, not just reduced — any
+/// residual saturation this test tolerates is now attributable entirely to
+/// cross-species reinforcement, not a same-species leak.
 const MAX_SATURATION_RATE: f32 = 0.3;
 
 fn population(world: &SimWorld) -> usize {

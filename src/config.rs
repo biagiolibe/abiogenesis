@@ -309,7 +309,13 @@ pub struct TagConfig {
     pub active_tags_early: u32,
     /// Active tags in the world at the end of the run.
     pub active_tags_late: u32,
-    /// Minimum number of tags a species can carry.
+    /// Minimum number of tags a species can carry — a floor on
+    /// `draw_species_tags`'s *initial roll* only, not a guarantee on the
+    /// tag set it returns: if no zero-net combination exists at this size
+    /// in the active pool, the search keeps descending below this minimum,
+    /// down to 1 tag if necessary, since the zero-self-interaction
+    /// invariant takes precedence (task 088). Invisible under the shipped
+    /// default (`1`).
     pub tags_per_species_min: u32,
     /// Maximum number of tags a species can carry.
     pub tags_per_species_max: u32,
@@ -319,12 +325,6 @@ pub struct TagConfig {
     pub effect_intensity_max: i8,
     /// Fraction of tag-pair cells in the hidden matrix that are non-zero (~40%).
     pub matrix_density: f32,
-    /// How many times `draw_species_tags` redraws a candidate tag set that
-    /// nets a negative self-interaction (playtest finding: a species whose
-    /// own tags drain each other dies as soon as it reproduces, since a
-    /// child always spawns adjacent to a parent with the identical genome)
-    /// before giving up and accepting the least-bad draw seen.
-    pub max_self_conflict_draws: u32,
 }
 
 impl Default for TagConfig {
@@ -338,7 +338,6 @@ impl Default for TagConfig {
             effect_intensity_min: -2,
             effect_intensity_max: 2,
             matrix_density: 0.4,
-            max_self_conflict_draws: 20,
         }
     }
 }

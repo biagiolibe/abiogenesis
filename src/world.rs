@@ -63,6 +63,16 @@ impl TagMatrix {
     pub fn get(&self, exerter: TagSlot, receiver: TagSlot) -> i8 {
         self.values[exerter.0 as usize * self.size + receiver.0 as usize]
     }
+
+    /// Builds a matrix from a row-major `size x size` grid of effect values.
+    /// Public so cross-crate callers (e.g. the binary's `input.rs`, which
+    /// can't see `TagMatrix`'s `pub(crate)` fields) can hand-craft a known
+    /// matrix for tests, the same way this crate's own tests do via the
+    /// fields directly.
+    pub fn from_values(size: usize, values: Vec<i8>) -> Self {
+        assert_eq!(values.len(), size * size, "matrix values must be size*size");
+        Self { size, values }
+    }
 }
 
 /// A species' genome (GDD §5.3): metabolism and environmental range are
@@ -729,11 +739,14 @@ fn nonzero_intensity(config: &TagConfig, rng: &mut StdRng) -> i8 {
 /// (task 036), since `Species.tags` is keyed by position in the world's
 /// active subset, not global pool identity.
 ///
-/// Rejects a candidate whose tags net-drain *or* net-reinforce each other
-/// and redraws, up to `max_self_conflict_draws` times, keeping the
-/// closest-to-zero candidate seen if none lands exactly on it — this only
-/// ever narrows the outcome space, so it stays deterministic for a given
-/// seed.
+/// Exhaustively searches for a tag set with exactly zero
+/// `net_self_interaction`, starting at the rolled tag count and descending
+/// to smaller sets if the pool has no safe combination at that size —
+/// guaranteed to terminate at 1 tag, which is trivially always safe (a
+/// single tag has no pairs to net against itself). Landing on exactly `0`
+/// is what keeps a same-species neighbour perfectly neutral, leaving the
+/// crowding penalty as the only thing that caps local density — the
+/// assumption every carrying-capacity test relies on.
 ///
 /// Net-negative self-interaction was the original playtest finding: such a
 /// species dies as soon as it reproduces, because the child spawns adjacent
@@ -745,38 +758,70 @@ fn nonzero_intensity(config: &TagConfig, rng: &mut StdRng) -> i8 {
 /// `±2`) — so *any* species whose own tags reinforce each other even
 /// slightly turns clustering into unbounded growth the moment it
 /// reproduces next to itself, the exact scenario that saturated the whole
-/// grid before this fix. Landing on exactly `0` is what keeps a same-species
-/// neighbour perfectly neutral, leaving the crowding penalty as the only
-/// thing that caps local density — the assumption every carrying-capacity
-/// test already relies on.
+/// grid before this fix.
+///
+/// This used to be a random-sample-with-retry search (up to
+/// `max_self_conflict_draws` tries), which could fail to find an exact zero
+/// even after every retry — not from bad luck, but because a small active
+/// tag pool (5 tags at world 0) only has `C(5,3) = 10` possible 3-tag
+/// combinations, and roughly 15% of randomly-generated matrices have *none*
+/// of those 10 net exactly zero (task 088). Exhaustive search removes that
+/// gap entirely: it either finds every zero-net candidate at the rolled
+/// size, or proves none exists and tries a smaller size instead, so the
+/// result is always exactly zero, never "closest to zero".
 pub fn draw_species_tags(world: &mut SimWorld, config: &SimConfig) -> Vec<TagSlot> {
-    let n = world
+    let rolled_n = world
         .rng
         .random_range(config.tags.tags_per_species_min..=config.tags.tags_per_species_max)
         as usize;
-    let slot_count = world.active_tags.len() as u8;
-    let slots: Vec<TagSlot> = (0..slot_count).map(TagSlot).collect();
+    let slot_count = world.active_tags.len();
+    let slots: Vec<TagSlot> = (0..slot_count as u8).map(TagSlot).collect();
 
-    let mut best: Option<Vec<TagSlot>> = None;
-    let mut best_abs_self_interaction = i32::MAX;
-    for _ in 0..config.tags.max_self_conflict_draws.max(1) {
-        let candidate: Vec<TagSlot> = slots.sample(&mut world.rng, n).copied().collect();
-        let self_interaction = net_self_interaction(&world.matrix, &candidate);
-        if self_interaction == 0 {
-            return candidate;
+    let mut n = rolled_n.min(slot_count);
+    loop {
+        let candidates: Vec<Vec<TagSlot>> = combinations(&slots, n)
+            .into_iter()
+            .filter(|candidate| net_self_interaction(&world.matrix, candidate) == 0)
+            .collect();
+        if let Some(chosen) = candidates.choose(&mut world.rng) {
+            return chosen.clone();
         }
-        if self_interaction.abs() < best_abs_self_interaction {
-            best_abs_self_interaction = self_interaction.abs();
-            best = Some(candidate);
+        if n == 0 {
+            // Only reachable if the active tag pool itself is empty — not a
+            // real world state today, but avoids an infinite loop if it
+            // ever were.
+            return Vec::new();
+        }
+        n -= 1;
+    }
+}
+
+/// Every `k`-sized combination of `slots`, in lexicographic order. Hand-rolled
+/// rather than pulling in `itertools` (not a direct dependency of this
+/// project) — the search space here is tiny (at most `C(8,3) = 56` given the
+/// game's own tag-pool/tags-per-species bounds), so a small recursive
+/// generator is simpler than adding a crate for one call site.
+fn combinations(slots: &[TagSlot], k: usize) -> Vec<Vec<TagSlot>> {
+    if k == 0 {
+        return vec![Vec::new()];
+    }
+    if k > slots.len() {
+        return Vec::new();
+    }
+    let mut result = Vec::new();
+    for i in 0..=slots.len() - k {
+        for mut rest in combinations(&slots[i + 1..], k - 1) {
+            rest.insert(0, slots[i]);
+            result.push(rest);
         }
     }
-    best.expect("the loop above runs at least once")
+    result
 }
 
 /// Sum of the matrix effect every tag in `tags` exerts on every other tag in
 /// `tags` — what a species feels from a same-species neighbour carrying an
 /// identical tag set, the case reproduction always produces.
-fn net_self_interaction(matrix: &TagMatrix, tags: &[TagSlot]) -> i32 {
+pub fn net_self_interaction(matrix: &TagMatrix, tags: &[TagSlot]) -> i32 {
     let mut total = 0i32;
     for &a in tags {
         for &b in tags {
@@ -1187,9 +1232,9 @@ mod tests {
                 successes += 1;
             }
         }
-        assert!(
-            successes >= trials * 9 / 10,
-            "expected the redraw to find the safe pair almost every time, got {successes}/{trials}"
+        assert_eq!(
+            successes, trials,
+            "exhaustive search must find the safe pair every time, got {successes}/{trials}"
         );
     }
 
@@ -1227,19 +1272,23 @@ mod tests {
                 successes += 1;
             }
         }
-        assert!(
-            successes >= trials * 9 / 10,
-            "expected the redraw to find the neutral pair almost every time, got {successes}/{trials}"
+        assert_eq!(
+            successes, trials,
+            "exhaustive search must find the neutral pair every time, got {successes}/{trials}"
         );
     }
 
+    /// Task 088: when no combination at the rolled tag count is self-neutral
+    /// (here, the only possible 2-tag pair nets -3), the search must
+    /// gracefully degrade to a smaller tag set rather than accepting a
+    /// nonzero "closest to zero" result — a 1-tag set is always safe since
+    /// it has no pairs to net against itself.
     #[test]
-    fn draw_species_tags_never_panics_when_every_combination_is_self_destructive() {
+    fn draw_species_tags_falls_back_to_a_smaller_tag_set_when_no_combination_is_neutral() {
         let mut config = test_config();
         config.tags.active_tags_early = 2;
         config.tags.tags_per_species_min = 2;
         config.tags.tags_per_species_max = 2;
-        config.tags.max_self_conflict_draws = 5;
 
         let matrix = TagMatrix {
             size: 2,
@@ -1250,8 +1299,31 @@ mod tests {
         world.matrix = matrix;
         let tags = draw_species_tags(&mut world, &config);
 
-        assert_eq!(tags.len(), 2);
-        assert_eq!(net_self_interaction(&world.matrix, &tags), -3);
+        assert_eq!(tags.len(), 1);
+        assert_eq!(net_self_interaction(&world.matrix, &tags), 0);
+    }
+
+    /// Task 088's direct regression test: under the REAL default config
+    /// (`active_tags_early = 5`, matching world 0's actual starting-species
+    /// generation), `draw_species_tags` must always return an exactly
+    /// self-neutral tag set. Combinatorial analysis found that ~15% of
+    /// randomly-generated matrices have no zero-net 3-tag combination among
+    /// the only `C(5,3) = 10` possible — the old random-retry search could
+    /// silently fail there; exhaustive search must not.
+    #[test]
+    fn draw_species_tags_is_always_exactly_self_neutral_under_default_config() {
+        let config = test_config();
+        for seed in 0..300u64 {
+            let mut world = SimWorld::new(seed, &config);
+            for _ in 0..5 {
+                let tags = draw_species_tags(&mut world, &config);
+                assert_eq!(
+                    net_self_interaction(&world.matrix, &tags),
+                    0,
+                    "seed {seed}: expected exact self-neutrality, got tags {tags:?}"
+                );
+            }
+        }
     }
 
     #[test]

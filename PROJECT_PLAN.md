@@ -260,6 +260,30 @@ Zoom was already done (075-076); pan was the remaining open half of the old "cam
 
 - `[x]` 087 — Camera pan → [087](tasks/done/087-camera-pan.md)
 
+### 🐛 Self-interaction balance bug (2026-08-10, user-reported live)
+
+User reported starting species growing explosively (energy + population)
+despite task 083's incubation. Diagnosed via two rounds of exploration +
+plan agents: the incubation gate itself is correct — the actual cause is
+`draw_species_tags`'s task-048 mitigation (retry up to 20 random candidates
+for `net_self_interaction == 0`, falling back to "closest to zero, possibly
+still nonzero") being combinatorially unable to succeed in ~15% of worlds
+given the real default 5-tag active pool at world 0 (`C(5,3) = 10` possible
+3-tag combinations; roughly 15% of randomly-generated matrices have none of
+those 10 net exactly zero — not a rare retry failure, a guaranteed outcome
+whenever the search space itself has no solution). With only 3 species
+generated per world, this reads as "often", matching the report exactly.
+088 fixes this properly: exhaustive deterministic search at decreasing tag-set
+size, always terminating at an exact-zero result (1-tag sets are trivially
+always safe). A separate, independently-diagnosed gap — `apply_splice`
+(player-driven species creation) never applied this check at all — is 089;
+it wasn't the cause of what the user saw (their case was a starting/worldgen
+species, confirmed explicitly), but is a real, consistent-with-048 fix worth
+doing regardless.
+
+- `[x]` 088 — Exhaustive search in `draw_species_tags` to guarantee zero self-interaction: replaced the random-sample-with-retry search with a deterministic enumeration at decreasing tag-set size (3→2→1 tags), guaranteed to always terminate at an exact `net_self_interaction == 0` result (a 1-tag set is trivially always safe). Removed the now-unnecessary `config.tags.max_self_conflict_draws`. New 300-seed property test under the real default config confirms the invariant directly; `tests/balance.rs` re-run clean with no threshold changes needed → [088](tasks/done/088-exhaustive-self-neutral-species-tags.md)
+- `[ ]` 089 — Reject Splice edits that create a nonzero same-species self-interaction → [089](tasks/089-splice-self-interaction-gate.md)
+
 ### 🎚️ Final tuning — *the real art*
 
 **Goal:** *interesting and readable* emergence, avoiding "everything dies" and "one dominates" (GDD §13, §14).
@@ -308,4 +332,4 @@ Zoom was already done (075-076); pan was the remaining open half of the old "cam
 
 ---
 
-*Last updated: 2026-08-10 (task 087, camera pan, completed and archived to `tasks/QUEUE_ARCHIVE.md`)*
+*Last updated: 2026-08-10 (088-089, user-reported self-interaction balance bug fix (worldgen + Splice paths), completed. Task 087, camera pan, completed and archived to `tasks/QUEUE_ARCHIVE.md`)*

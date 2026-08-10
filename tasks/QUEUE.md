@@ -78,4 +78,4 @@ Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN
 
 ---
 
-*Last updated: 2026-08-10 (082 and 083, tuned jointly, completed and archived to `tasks/done/`. 084 stays intentionally out of the queue as blocked. 078 on hold. 081, 085-086 are open work.)*
+*Last updated: 2026-08-10 (088-089, self-interaction balance bug fix, completed and archived to `QUEUE_ARCHIVE.md`. 082 and 083, tuned jointly, completed and archived to `tasks/done/`. 084 stays intentionally out of the queue as blocked. 078 on hold. 081, 085-086 are open work.)*
