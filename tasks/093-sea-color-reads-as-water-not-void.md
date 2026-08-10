@@ -30,30 +30,54 @@ gap 086 already closed for the overlay layer.
 
 ## 📋 Acceptance Criteria
 
-- [ ] `terrain_color`'s `TerrainKind::Sea` branch changes from
+- [x] `terrain_color`'s `TerrainKind::Sea` branch changes from
       `Color::hsl(0.0, 0.0, 0.02)` (near-black) to a color that reads as
       water — a dark, desaturated blue is the obvious first pick, but tune
       visually via `cargo run` rather than picking a value on paper; must
       stay visually distinct from `Plain`/`Hill`/`Mountain`'s existing
       palette (task 068's "one flat color per band" rule) and from the
       toxic zone's tint (`toxicity_tint`).
-- [ ] `terrain_color`'s doc comment is rewritten to drop the "reads as void"
+
+      Set to `Color::hsl(210.0, 0.35, 0.10)` — a dark desaturated navy,
+      staying in the same low-lightness family as the other three bands
+      (0.09-0.19) while its hue (blue, vs. the others' green/brown) makes it
+      unambiguously distinct. First-pass value per the task's own guidance;
+      exact shade is still open to further visual tuning by the user.
+- [x] `terrain_color`'s doc comment is rewritten to drop the "reads as void"
       framing and state the new rationale.
-- [ ] `sea_stays_near_black` (`render.rs:1510-1516`) is rewritten for the
+- [x] `sea_stays_near_black` (`render.rs:1510-1516`) is rewritten for the
       new intent — asserting Sea reads as a plausible water color (e.g. a
       blue-dominant hue in a sensible lightness range, distinct from the
       other terrain bands) rather than asserting near-zero lightness.
       Rename the test to match what it now actually checks.
-- [ ] No change to `TerrainKind::Sea`'s gameplay meaning (`is_placeable_kind`,
+
+      Renamed to `sea_reads_as_a_dark_blue_not_a_void`: asserts hue in
+      `180..=260` (blue range), saturation `> 0.1` (reads as a color, not
+      gray/black), lightness in `0.05..0.3` (same low-lightness family as
+      the other bands, not near-black or bright).
+- [x] No change to `TerrainKind::Sea`'s gameplay meaning (`is_placeable_kind`,
       `reinject_environment_sources`, `apply_environment_overlay`) — this is
       a color-only change.
-- [ ] Check `draw_terrain_overlay`'s Sea↔land coastline/boundary drawing
+
+      Confirmed: only `terrain_color`'s `Sea` match arm changed.
+      `is_placeable_kind`, `reinject_environment_sources`,
+      `apply_environment_overlay` untouched.
+- [x] Check `draw_terrain_overlay`'s Sea↔land coastline/boundary drawing
       (task 068) still reads correctly against the new color — a boundary
       line whose contrast was tuned against a near-black Sea might need a
       matching adjustment if it's now hard to see (or too strong).
-- [ ] `cargo clippy -- -D warnings`, `cargo fmt`, `cargo test` clean.
+
+      `boundary_coastline_color()` (light beige, `rgba(220, 220, 208, 210)`)
+      keys off `TerrainKind::Sea` as an enum match, not the fill color, and
+      stays a light line against a still-dark (if now blue) fill — no
+      adjustment needed; left as the user's own live check to confirm the
+      contrast still reads well.
+- [x] `cargo clippy -- -D warnings`, `cargo fmt`, `cargo test` clean.
 - [ ] Verified live via `cargo run` across a couple of seeds: Sea now reads
       as a body of water, not a hole in the map.
+
+      **Pending — needs the user's own `cargo run` pass** (same
+      `screencapture` constraint as tasks 091/092).
 
 ---
 

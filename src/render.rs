@@ -1369,15 +1369,22 @@ fn cell_color(
 }
 
 /// Flat per-band terrain color (task 068 — the mockup's "no gradient, one
-/// flat color per elevation band" rule): `Sea` stays near-black, close to
-/// the grid's own background, so it still reads as "void" the way the
-/// pre-terrain empty cell did, even though it's now real data rather than
-/// an absence of one. `Plain`/`Hill`/`Mountain` are desaturated tones from
-/// the same console/lab palette family as the rest of the HUD, not a new
-/// palette.
+/// flat color per elevation band" rule). `Plain`/`Hill`/`Mountain`/`Sea` are
+/// desaturated tones from the same console/lab palette family as the rest
+/// of the HUD, not a new palette.
+///
+/// `Sea` was originally near-black, deliberately reading as "void" the way
+/// the pre-terrain empty cell did (task 068) — that made sense while Sea was
+/// inert, but stopped making sense once task 085 gave it a real mechanical
+/// role (coastal cooling) and task 086 made the environment overlay render
+/// its real scalar there too. Task 093 (2026-08-10 playtest finding: the
+/// near-black fill read as "edge of the map," not water) moved it to a dark
+/// desaturated blue instead — still low-lightness like every other band
+/// here, just a hue that reads as a body of water rather than an absence of
+/// terrain.
 fn terrain_color(kind: TerrainKind) -> Color {
     match kind {
-        TerrainKind::Sea => Color::hsl(0.0, 0.0, 0.02),
+        TerrainKind::Sea => Color::hsl(210.0, 0.35, 0.10),
         TerrainKind::Plain => Color::hsl(130.0, 0.20, 0.09),
         TerrainKind::Hill => Color::hsl(125.0, 0.22, 0.14),
         TerrainKind::Mountain => Color::hsl(30.0, 0.10, 0.19),
@@ -1516,12 +1523,27 @@ mod tests {
         }
     }
 
+    /// Task 093: Sea used to read as near-black "void" (task 068); a
+    /// playtest found that misleading now that it's real terrain (task
+    /// 085), not an edge-of-map marker — it should read as water instead.
     #[test]
-    fn sea_stays_near_black() {
+    fn sea_reads_as_a_dark_blue_not_a_void() {
         let sea = terrain_hsla(TerrainKind::Sea);
         assert!(
-            sea.lightness < 0.05,
-            "Sea must read as close to the grid's black background, not a water fill"
+            (180.0..=260.0).contains(&sea.hue),
+            "Sea's hue should sit in the blue range, got {}",
+            sea.hue
+        );
+        assert!(
+            sea.saturation > 0.1,
+            "Sea should read as a color, not near-gray/black, got saturation {}",
+            sea.saturation
+        );
+        assert!(
+            (0.05..0.3).contains(&sea.lightness),
+            "Sea should stay in the same low-lightness family as the other \
+             terrain bands, not near-black or bright, got {}",
+            sea.lightness
         );
     }
 
