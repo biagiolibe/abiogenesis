@@ -192,8 +192,11 @@ impl Plugin for GridRenderPlugin {
                 Update,
                 (
                     zoom_camera.run_if(in_state(GameState::Playing)),
-                    update_map_view_mode
+                    pan_camera
                         .after(zoom_camera)
+                        .run_if(in_state(GameState::Playing)),
+                    update_map_view_mode
+                        .after(pan_camera)
                         .run_if(in_state(GameState::Playing)),
                     update_cluster_density
                         .after(update_map_view_mode)
@@ -980,20 +983,87 @@ fn zoom_camera(
     let translation = transform.translation.truncate();
     let shifted = translation + (world_pos_before - translation) * (1.0 - ratio);
 
-    // Clamp panning so the viewport never shows area outside the grid: on
-    // an axis where the visible span at `new_scale` is already >= the
-    // grid's own extent (e.g. `zoom_max`'s whole-grid floor, or an axis
-    // `AutoMin` over-extends to match the window's aspect), the only valid
-    // translation is `0` — any pan there would clip grid content on one
-    // side while revealing empty space on the other, exactly the "map
-    // scrolls under the sidebar" bug this fixes.
-    let visible = unscaled_area * new_scale;
-    let grid_extent = Vec2::new(
+    let grid_extent = grid_extent(&config);
+    let clamped = clamp_camera_pan(shifted, new_scale, unscaled_area, grid_extent);
+
+    transform.translation.x = clamped.x;
+    transform.translation.y = clamped.y;
+}
+
+/// The grid's total extent in world units, for pan/zoom clamping — shared so
+/// `zoom_camera` and `pan_camera` never drift out of sync on how it's derived.
+fn grid_extent(config: &SimConfig) -> Vec2 {
+    Vec2::new(
         config.grid.width as f32 * CELL_SIZE,
         config.grid.height as f32 * CELL_SIZE,
-    );
+    )
+}
+
+/// Clamps a candidate camera translation so the viewport never shows area
+/// outside the grid (task 087, factored out of `zoom_camera`'s original pan
+/// clamp so `pan_camera` reuses the exact same rule instead of duplicating
+/// it). On an axis where the visible span at `scale` is already >= the
+/// grid's own extent (e.g. `zoom_max`'s whole-grid floor, or an axis
+/// `AutoMin` over-extends to match the window's aspect), the only valid
+/// translation is `0` — any pan there would clip grid content on one side
+/// while revealing empty space on the other, exactly the "map scrolls under
+/// the sidebar" bug task 075 fixed.
+fn clamp_camera_pan(translation: Vec2, scale: f32, unscaled_area: Vec2, grid_extent: Vec2) -> Vec2 {
+    let visible = unscaled_area * scale;
     let max_pan = ((grid_extent - visible) / 2.0).max(Vec2::ZERO);
-    let clamped = shifted.clamp(-max_pan, max_pan);
+    translation.clamp(-max_pan, max_pan)
+}
+
+/// Arrow-key/`WASD` camera pan (task 087), complementing `zoom_camera`'s
+/// incidental translation shift with a dedicated way to reach any part of
+/// the grid at a fixed zoom level. `input::single_tick` was moved off `KeyS`
+/// onto `KeyN` (task 087 follow-up) precisely so `WASD` could be bound here
+/// without colliding with it. Speed is in grid cells/second at `scale ==
+/// 1.0` (`CameraConfig::pan_speed`), scaled by the camera's current `scale`
+/// so panning feels equally responsive at any zoom level, same intent as
+/// `zoom_speed`. Clamped through `clamp_camera_pan`, identical to zoom's
+/// edge-of-grid guarantee.
+fn pan_camera(
+    keys: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+    config: Res<SimConfig>,
+    mut cameras: Query<(&Projection, &mut Transform), With<GridCamera>>,
+) {
+    let mut direction = Vec2::ZERO;
+    if keys.pressed(KeyCode::ArrowLeft) || keys.pressed(KeyCode::KeyA) {
+        direction.x -= 1.0;
+    }
+    if keys.pressed(KeyCode::ArrowRight) || keys.pressed(KeyCode::KeyD) {
+        direction.x += 1.0;
+    }
+    if keys.pressed(KeyCode::ArrowUp) || keys.pressed(KeyCode::KeyW) {
+        direction.y += 1.0;
+    }
+    if keys.pressed(KeyCode::ArrowDown) || keys.pressed(KeyCode::KeyS) {
+        direction.y -= 1.0;
+    }
+    if direction == Vec2::ZERO {
+        return;
+    }
+
+    let Ok((projection, mut transform)) = cameras.single_mut() else {
+        return;
+    };
+    let Projection::Orthographic(ortho) = projection else {
+        return;
+    };
+
+    let speed = config.camera.pan_speed * CELL_SIZE * ortho.scale;
+    let translation =
+        transform.translation.truncate() + direction.normalize() * speed * time.delta_secs();
+
+    let unscaled_area = ortho.area.size() / ortho.scale;
+    let clamped = clamp_camera_pan(
+        translation,
+        ortho.scale,
+        unscaled_area,
+        grid_extent(&config),
+    );
 
     transform.translation.x = clamped.x;
     transform.translation.y = clamped.y;
@@ -1487,6 +1557,44 @@ mod tests {
             cell_position(0, 0, 48, 32).x,
             -cell_position(47, 0, 48, 32).x
         );
+    }
+
+    #[test]
+    fn clamp_camera_pan_leaves_in_bounds_translation_untouched() {
+        let unscaled_area = Vec2::new(2048.0, 1280.0);
+        let grid_extent = Vec2::new(2048.0, 1280.0);
+        // At `scale == 0.1`, the visible area is a small fraction of the
+        // grid, so a modest translation stays well within bounds.
+        let translation = Vec2::new(50.0, -20.0);
+        assert_eq!(
+            clamp_camera_pan(translation, 0.1, unscaled_area, grid_extent),
+            translation
+        );
+    }
+
+    #[test]
+    fn clamp_camera_pan_stops_at_the_grid_edge() {
+        let unscaled_area = Vec2::new(2048.0, 1280.0);
+        let grid_extent = Vec2::new(2048.0, 1280.0);
+        let max_pan = ((grid_extent - unscaled_area * 0.1) / 2.0).max(Vec2::ZERO);
+        // A translation far beyond the grid's own extent clamps to the
+        // computed edge, on both axes, in both directions (task 087).
+        let clamped = clamp_camera_pan(Vec2::splat(10_000.0), 0.1, unscaled_area, grid_extent);
+        assert_eq!(clamped, max_pan);
+        let clamped_neg = clamp_camera_pan(Vec2::splat(-10_000.0), 0.1, unscaled_area, grid_extent);
+        assert_eq!(clamped_neg, -max_pan);
+    }
+
+    #[test]
+    fn clamp_camera_pan_locks_to_zero_at_whole_grid_zoom() {
+        let unscaled_area = Vec2::new(2048.0, 1280.0);
+        let grid_extent = Vec2::new(2048.0, 1280.0);
+        // At `scale == zoom_max == 1.0`, the visible area already equals
+        // the grid extent, so no pan is ever valid — this is what makes
+        // Overview's "whole grid visible" guarantee hold even with the
+        // pan system active.
+        let clamped = clamp_camera_pan(Vec2::new(500.0, -500.0), 1.0, unscaled_area, grid_extent);
+        assert_eq!(clamped, Vec2::ZERO);
     }
 
     #[test]

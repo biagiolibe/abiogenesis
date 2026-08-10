@@ -75,7 +75,7 @@ fn clicked_cell(
 /// advancing (acceptance criterion: advancement inputs are ignored during
 /// `Advancing`). Only resets `EraProgress` to a full `era_ticks` if no era is
 /// currently in flight — if the player already stepped some ticks manually
-/// via `s` (`single_tick`), `space` auto-plays whatever ticks remain rather
+/// via `n` (`single_tick`), `space` auto-plays whatever ticks remain rather
 /// than discarding that progress and restarting the era from zero.
 fn start_era(
     keys: Res<ButtonInput<KeyCode>>,
@@ -95,14 +95,15 @@ fn start_era(
     }
 }
 
-/// `s`: advances a single tick directly, with no `EraState` transition —
+/// `n`: advances a single tick directly, with no `EraState` transition —
 /// useful for fine observation and debugging (GDD §11). Starts a fresh era
 /// (`EraProgress`) if none is in flight, and shares `advance_tick`'s
 /// era-completion bookkeeping and objective evaluation via
 /// `tick_and_complete_era`/`apply_tick_outcome` — a player who only ever
-/// presses `s` must still see eras complete, the action budget refill, and
+/// presses `n` must still see eras complete, the action budget refill, and
 /// objectives/failure conditions evaluate exactly as they would under
-/// `space`, since both paths advance the same ticks.
+/// `space`, since both paths advance the same ticks. Bound to `n` rather
+/// than `s` (task 087 follow-up) so `WASD` is free for camera pan.
 #[allow(clippy::too_many_arguments)]
 fn single_tick(
     keys: Res<ButtonInput<KeyCode>>,
@@ -121,7 +122,7 @@ fn single_tick(
     if *era_state.get() == EraState::Advancing {
         return;
     }
-    if !keys.just_pressed(KeyCode::KeyS) {
+    if !keys.just_pressed(KeyCode::KeyN) {
         return;
     }
     if progress.remaining() == 0 {
@@ -843,11 +844,11 @@ mod tests {
         for _ in 0..config.time.era_ticks {
             app.world_mut()
                 .resource_mut::<ButtonInput<KeyCode>>()
-                .press(KeyCode::KeyS);
+                .press(KeyCode::KeyN);
             app.update();
             app.world_mut()
                 .resource_mut::<ButtonInput<KeyCode>>()
-                .release(KeyCode::KeyS);
+                .release(KeyCode::KeyN);
         }
 
         let world = app.world().resource::<SimWorld>();

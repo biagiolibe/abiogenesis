@@ -45,8 +45,8 @@ pub const HOW_TO_PLAY_SECTIONS: &[(&str, &str)] = &[
     (
         "Controls",
         "Left click: perform the selected action on a cell. Space: advance one era. \
-         S: advance a single tick. Tab: open your notebook. R: reseed the current world. \
-         Esc: quit.",
+         N: advance a single tick. Arrow keys or WASD: pan the camera. Tab: open your notebook. \
+         R: reseed the current world. Esc: quit.",
     ),
     (
         "The loop",
@@ -227,7 +227,7 @@ pub const SEED_PALETTE_HOVER: &str = "Click an empty cell to place the selected 
 /// room at `ui::HUD_WIDTH`) rather than relying on `egui`'s label wrap, which
 /// broke mid-word ("t/l temp/light · E" / "quit") instead of at a natural
 /// boundary once the combined text got too long.
-pub const KEYBOARD_HINT_PRIMARY: &str = "space era · s tick · r reseed";
+pub const KEYBOARD_HINT_PRIMARY: &str = "space era · n tick · r reseed · wasd pan";
 pub const KEYBOARD_HINT_SECONDARY: &str = "t/l temp/light · Esc quit";
 
 // --- Viewport onboarding hints (task 053) ---

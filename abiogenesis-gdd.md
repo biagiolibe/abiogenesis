@@ -327,8 +327,9 @@ Progression *between* runs, deliberately **light**:
 ### Controls **[PROPOSED]**
 
 - `space` — advance one era (*N* ticks).
-- `s` — advance a single tick (fine observation / debug).
-- (Phase 2+) keys to enter action mode: seed, stress, cull, splice; **mouse cell selection** (arrow keys as a keyboard alternative).
+- `n` — advance a single tick (fine observation / debug).
+- `wasd` / arrow keys — pan the camera (task 087).
+- (Phase 2+) keys to enter action mode: seed, stress, cull, splice; **mouse cell selection**.
 - `tab` — open/close notebook.
 - `r` — reset / reseed the world.
 - `Esc` — quit.

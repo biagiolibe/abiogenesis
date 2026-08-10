@@ -12,7 +12,8 @@ There are two mysteries running at once: **what will happen** — the ecosystem 
 |---|---|
 | Left click | Perform the selected action (Seed / Stress / Cull) on the clicked cell |
 | `space` | Advance one full era (a block of ticks, animated) |
-| `s` | Advance a single tick (fine-grained observation) |
+| `n` | Advance a single tick (fine-grained observation) |
+| `wasd` / arrow keys | Pan the camera |
 | `tab` | Open / close your notebook |
 | `r` | Reseed the current world (same difficulty, fresh random state) |
 | `t` | Toggle a temperature heatmap over the grid (blue = cold, red = hot) |

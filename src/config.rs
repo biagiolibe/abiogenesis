@@ -74,6 +74,11 @@ pub struct CameraConfig {
     /// it (scrolling out), so zoom feels equally responsive at any current
     /// zoom level rather than a fixed additive step.
     pub zoom_speed: f32,
+    /// Keyboard pan speed, in grid cells per second at `scale == 1.0` (task
+    /// 087). Scaled by the camera's current `scale` at use, so panning
+    /// covers the same screen-space distance per second at any zoom level,
+    /// the same "feels equally responsive" intent as `zoom_speed`.
+    pub pan_speed: f32,
 }
 
 impl Default for CameraConfig {
@@ -83,6 +88,7 @@ impl Default for CameraConfig {
             zoom_max: 1.0,
             zoom_threshold: 0.4,
             zoom_speed: 0.9,
+            pan_speed: 120.0,
         }
     }
 }

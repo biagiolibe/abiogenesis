@@ -31,19 +31,13 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 - `[?]` **Additional metabolisms** beyond the three base ones, e.g. a chemolithotroph tied to `toxicity`, as unlockable content (GDD §5.4).
 - `[?]` **Final title** — "Abiogenesis" is a placeholder (GDD §14).
 
-### Born from the move to Bevy (v0.4)
+### Camera, pacing & menu features
 
-- `[?]` **Config in RON with hot-reload** via `bevy_asset` — GDD §5.6 asks for coefficients "ideally hot-reloadable"; with Bevy this costs little. To be done during the tuning phase, when actually needed.
-- `[?]` **Camera zoom and pan** — useful for grids larger than 48×32.
+**Camera pan:** scoped into task 087 (2026-08-10), see SECTION 2's "Camera pan" entry.
+
+- `[?]` **Cap camera zoom-out independent of grid size** — today `zoom_max` (`CameraConfig`, `src/config.rs`) auto-scales via `ScalingMode::AutoMin` (`spawn_camera`, `src/render.rs:899-917`) to always show 100% of `config.grid` at max zoom-out, however large the grid becomes — a deliberate property task 075/076 built Overview mode around ("don't lose the whole-world read," `abiogenesis-two-tier-view.md`). If the grid grows substantially beyond `128×80` in the future, revisit whether that "always see everything" guarantee should still hold, or whether max zoom-out should instead be capped (e.g. by a minimum legible cell-pixel-size floor) so a much larger world requires panning even in Overview. Task 087's pan system already works correctly under either model (its clamp math reads `config.grid` live, not a cached whole-grid assumption), so this doesn't block or get blocked by 087 — purely about `spawn_camera`/`CameraConfig`'s zoom-out semantics. Revisits 075/076's stated design rationale, not just a mechanical camera tweak — needs its own discussion when picked up.
 - `[?]` **Real-time mode** as an option — GDD §4 noted it "costs little to add later"; with Bevy it's nearly free (just don't stop at the end of an era).
 - `[?]` **Real main menu** with seed selection and sharing — determinism (GDD §5.7) makes sharing interesting seeds worthwhile.
-
-### Raised from playtesting (2026-08-08)
-
-- `[?]` **Always-on discrete temperature/light background tint** — surfaced while reviewing `abiogenesis-ui-redesign.md`; needs its own discussion before scoping: it would make the map always show banded temp/light tint by default, which cuts against task 058's explicit choice to keep temperature/light legibility an opt-in `T`/`L` toggle (kept deliberately distinct from the hidden-matrix mystery). Adopting it means reversing or narrowing that opt-in design, not just adding a layer.
-- `[?]` **Extend the procedural background layer (task 062) into the map's interior** — task 062 shipped exactly the mechanism its task file specified (a dim sprite strictly behind the grid), verified by a manual playtest with a temporary brightness/saturation bump: the layer is real and correctly regenerates per-seed, but the grid's opaque, exactly-tiled cell sprites fully occlude it everywhere except the thin `AutoMin` letterbox margin a non-3:2 window shows past the grid's edge (near-zero on a window cropped to the grid's own 3:2 aspect). It never reaches the interior "empty black background" that originally motivated the task. Reaching the interior means giving empty cells partial alpha so the layer shows through — task 062 explicitly walled that off ("don't let it creep into organism/cell rendering itself," `cell_color`), so it needs its own scoping discussion: how much alpha, whether it stays legible against `cell.light`'s existing shading (`dark_rows_stay_uninhabited_across_seeds` depends on that gradient reading correctly), and whether the tradeoff against pillar 3 is still worth it once it touches actual cell rendering, not just a layer behind it.
-
-> The other three ideas from this session — decomposer sustainability, a notebook presentation-refinement bundle, and a procedural background layer — were scoped into tasks 060/061/062 (§2).
 
 ### Onboarding & engagement (2026-08-09, from `redesign/abiogenesis-engagement-design.md`)
 
@@ -51,7 +45,7 @@ Diagnosis: turn zero is a blank world with no signal there's anything to discove
 
 **Onboarding foundations:** scoped into tasks 080-084, see SECTION 2's "Onboarding & engagement rollout (2026-08-09)". While scoping 1.E specifically, the proposal itself shrank to a small task (081), but raised a larger, separate idea — see next entry.
 
-- `[?]` **Environment as sources, not fixed axes** — replace the current fixed left-right temperature / top-bottom light gradients (GDD §5.2) with per-world heat sources (+ wind bias, + `Sea` cells as passive coolant) and a per-world "sun" direction (+ `Mountain` shading) — full mechanics, open questions, and blast-radius analysis in `redesign/abiogenesis-environment-sources.md`. Same class of change as the terrain redesign (task 066-072): touches worldgen and downstream balance (`env_fit`, `DifficultyConfig`'s temperature-spread ramp), not just rendering. Not scoped into task files yet — expect a multi-task split once approved, not a single task.
+**Environment as sources:** scoped into tasks 085-086 (2026-08-10), see SECTION 2's "Environment as sources" entry. Full mechanics, open questions, and blast-radius analysis in `redesign/abiogenesis-environment-sources.md`.
 
 **"Epic" mechanics — subito, da approfondire:**
 
@@ -253,6 +247,19 @@ explicitly blocked — see its file.
 
 > The "epic" mechanics (2.2/2.4/2.6 subito, 2.1/2.3/2.5 futuro) remain `[?]` in §1 — not scoped this round.
 
+### 🌡️ Environment as sources (2026-08-10, from `redesign/abiogenesis-environment-sources.md`)
+
+Replaces the fixed left-right temperature / top-bottom light gradients with per-world heat sources (+ wind bias, + `Sea` cells as passive coolant, + reinjection to counter diffusion erosion) and a per-world sun direction (+ `Mountain` shading). Same class of change as the terrain redesign (066-072): worldgen + downstream balance, not just rendering. 085 is the combined temperature+light generation task (Sea/Mountain coupling folded into its acceptance criteria rather than split out); 086 is a legibility check on the existing T/L overlays once 085 lands. Follow-ups deliberately not pre-planned — filed individually if playtest surfaces them, mirroring 069-072. GDD §5.2's "2D niche via crossed axes" framing is explicitly not preserved and gets rewritten after implementation + playtest, not before.
+
+- `[ ]` 085 — Source-driven temperature and light → [085](tasks/085-source-driven-temperature-and-light.md)
+- `[ ]` 086 — Environment overlay legibility check → [086](tasks/086-environment-overlay-legibility-check.md)
+
+### 🗺️ Camera pan (2026-08-10)
+
+Zoom was already done (075-076); pan was the remaining open half of the old "camera zoom and pan" backlog item. Deliberately revisited an earlier explicit design call (the now-deleted `abiogenesis-two-tier-view.md` and task 075's own acceptance criteria both concluded "no separate pan mechanic needed") now that the grid is `128×80` (task 074) and Detail-zoom navigation via zoom-drift alone was impractical. Arrow-key pan added; the existing zoom clamp was factored into a shared `clamp_camera_pan` helper both systems now call, covered by 3 new unit tests. Live-verified via `cargo run` driven headlessly with `cliclick`/`screencapture`/`osascript` System Events (`cliclick`'s own synthetic keyboard events didn't reach the app — likely an Accessibility/Input Monitoring gap — `osascript`'s System Events did); pan direction/continuity confirmed via a temporary debug log rather than by eye, since screenshot pixel-comparison was ambiguous. **Same-day follow-up**: playtest feedback found the pan too slow (retuned `24 → 60 → 120` cells/s) and wanted `WASD` too — `input::single_tick` was rebound `KeyS → KeyN` to free up `S`, and `WASD` added alongside the arrow keys. See task file's "Follow-up tuning" addendum.
+
+- `[x]` 087 — Camera pan → [087](tasks/done/087-camera-pan.md)
+
 ### 🎚️ Final tuning — *the real art*
 
 **Goal:** *interesting and readable* emergence, avoiding "everything dies" and "one dominates" (GDD §13, §14).
@@ -301,4 +308,4 @@ explicitly blocked — see its file.
 
 ---
 
-*Last updated: 2026-08-09 (task 073 complete: `SimConfig` migrated to a hot-reloadable RON asset at `assets/config/sim_config.ron` via `bevy_common_assets`, verified live on the user's machine — editing the file while `cargo run` is active updates the running simulation with no restart; 074, final grid-size tuning, is next and now unblocked)*
+*Last updated: 2026-08-10 (task 087, camera pan, completed and archived to `tasks/QUEUE_ARCHIVE.md`)*

@@ -8,6 +8,14 @@ it only when you need the history/rationale behind a specific past phase.
 
 ---
 
+**Camera pan** (2026-08-10): zoom was already done (075-076); pan was the remaining open half of the old "camera zoom and pan" backlog item. Revisited an earlier explicit design call ("no separate pan mechanic needed") now that the grid is `128×80` and Detail zoom alone made navigation impractical.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[x]` | 087 | Camera pan | 075 | [087](done/087-camera-pan.md) |
+
+---
+
 **Phase 2 — Deduction** is fully **complete**: core scope (018–025, both tracks), every playtest-driven follow-up (026–028, 030–033), and the localization-prep task (034).
 
 **Phase 3 — The run** is fully **complete**: all 12 task files (035–046), from the 2026-08-04 planning session (see `PROJECT_PLAN.md`'s Phase 3 section for the full dependency graph). The game now has a real main menu, procedurally generated worlds with objectives, world-cleared/defeat transitions, and light meta-progression.
