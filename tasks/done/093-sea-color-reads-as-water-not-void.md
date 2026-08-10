@@ -73,11 +73,10 @@ gap 086 already closed for the overlay layer.
       adjustment needed; left as the user's own live check to confirm the
       contrast still reads well.
 - [x] `cargo clippy -- -D warnings`, `cargo fmt`, `cargo test` clean.
-- [ ] Verified live via `cargo run` across a couple of seeds: Sea now reads
+- [x] Verified live via `cargo run` across a couple of seeds: Sea now reads
       as a body of water, not a hole in the map.
 
-      **Pending — needs the user's own `cargo run` pass** (same
-      `screencapture` constraint as tasks 091/092).
+      Confirmed by the user (2026-08-10): "funziona."
 
 ---
 

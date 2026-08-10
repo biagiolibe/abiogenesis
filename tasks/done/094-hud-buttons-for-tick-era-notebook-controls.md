@@ -79,12 +79,11 @@ other) — same pattern the action icon row already establishes for
       establishing it consistently across both rows if not — a player
       using the buttons should still discover the shortcut.
 - [x] `cargo clippy -- -D warnings`, `cargo fmt`, `cargo test` clean.
-- [ ] Verified live via `cargo run`: each new button produces the exact
+- [x] Verified live via `cargo run`: each new button produces the exact
       same effect as its keyboard shortcut, and pressing the shortcut still
       works normally alongside the buttons.
 
-      **Pending — needs the user's own `cargo run` pass** (same
-      `screencapture` constraint as tasks 091-093).
+      Confirmed by the user (2026-08-10): "funziona."
 
 ---
 
