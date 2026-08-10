@@ -26,6 +26,14 @@ it only when you need the history/rationale behind a specific past phase.
 
 ---
 
+**Terrain island-band retune** (2026-08-10, surfaced during the same live playtest session as 085/086): user-reported `Sea` generated "in quantità eccessiva e in forme non troppo credibili" — several same-sized, perfectly isolated near-circular `Sea` blobs scattered inland ("polka-dot lakes"), diluting task 085's heat-source visibility too (more sea meant `sea_coolant_radius` reached more of the map). A throwaway ASCII-dump + 30-seed histogram diagnostic (same technique task 069 itself used) isolated the cause to the island wave band (`island_blend_weight: 0.0` made the pattern vanish entirely) — few summed waves interfere into a regular periodic pattern rather than organic noise. 090 raised `island_wave_count` (6→16) and `island_blend_weight` (0.45→0.55, compensating for the smaller per-wave amplitude at higher count) and lowered `sea_threshold` (0.42→0.34), re-verified against the same histogram technique task 069 used to avoid silently collapsing Mountain/peak reachability.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[x]` | 090 | Terrain island-band retune: organic coastlines, less sea | 069, 085 | [090](done/090-terrain-island-band-retune.md) |
+
+---
+
 **Camera pan** (2026-08-10): zoom was already done (075-076); pan was the remaining open half of the old "camera zoom and pan" backlog item. Revisited an earlier explicit design call ("no separate pan mechanic needed") now that the grid is `128×80` and Detail zoom alone made navigation impractical.
 
 | Status | ID | Title | Depends on | File |

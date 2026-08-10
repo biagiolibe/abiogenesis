@@ -519,7 +519,12 @@ pub struct TerrainConfig {
     /// Upper bound of the continent band's spatial frequency range.
     pub continent_freq_max: f32,
     /// How many higher-frequency plane waves layer small island/coastline
-    /// detail on top of the continent band (task 069).
+    /// detail on top of the continent band (task 069; raised 6→16 by a
+    /// 2026-08-10 playtest follow-up — a small wave count makes a handful of
+    /// sine waves interfere into a regular, periodic "polka-dot lakes"
+    /// pattern instead of organic coastline detail; more waves average
+    /// toward a proper noise-like field, per the central-limit argument
+    /// `wave_band_sum`'s own `/waves.len()` normalization relies on).
     pub island_wave_count: u32,
     /// Lower bound of the island band's spatial frequency range.
     pub island_freq_min: f32,
@@ -527,9 +532,22 @@ pub struct TerrainConfig {
     pub island_freq_max: f32,
     /// Weight applied to the island band's contribution before summing it
     /// with the continent band and normalizing — kept small so the island
-    /// band adds detail without swamping the continent-scale shape.
+    /// band adds detail without swamping the continent-scale shape. Raised
+    /// alongside `island_wave_count` (task 085 sea-cooling playtest
+    /// follow-up, 2026-08-10) to compensate for more waves' smaller typical
+    /// per-band amplitude (each `wave_band_sum` averages over more terms),
+    /// so the island band's visual weight stays comparable to before.
     pub island_blend_weight: f32,
-    /// Elevation below this becomes `TerrainKind::Sea`.
+    /// Elevation below this becomes `TerrainKind::Sea`. Lowered 0.42→0.34
+    /// (2026-08-10 playtest follow-up) alongside the island-band retune
+    /// above: the same fixed threshold captured excessive sea coverage
+    /// (~33-35% of the grid) once real-world playtesting surfaced it as
+    /// implausible, especially now that `Sea` is a real coastal-cooling
+    /// source (task 085) — more sea than intended meant more of the map
+    /// running cold. Re-verified against `min_placeable_fraction` (the
+    /// generation floor, unaffected — placeable land actually rose) and a
+    /// 30-seed Sea/Plain/Hill/Mountain/peak histogram (peaks unaffected:
+    /// 78 vs 81 baseline over 30 seeds, no collapse).
     pub sea_threshold: f32,
     /// Elevation at/above `sea_threshold` and below this becomes `Plain`.
     pub hill_threshold: f32,
@@ -568,11 +586,11 @@ impl Default for TerrainConfig {
             continent_wave_count: 3,
             continent_freq_min: 0.8,
             continent_freq_max: 1.6,
-            island_wave_count: 6,
+            island_wave_count: 16,
             island_freq_min: 12.0,
             island_freq_max: 18.0,
-            island_blend_weight: 0.45,
-            sea_threshold: 0.42,
+            island_blend_weight: 0.55,
+            sea_threshold: 0.34,
             hill_threshold: 0.62,
             mountain_threshold: 0.8,
             peak_elevation_threshold: 0.88,
