@@ -80,7 +80,7 @@ the five, pick up in any order.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 091 | Gate map input (zoom/click/Tab) behind egui's own input capture | none | [091](091-egui-input-capture-gating.md) |
+| `[/]` | 091 | Gate map input (zoom/click/Tab) behind egui's own input capture — code done, pending user's live `cargo run` verification | none | [091](091-egui-input-capture-gating.md) |
 | `[ ]` | 092 | Isolation hint duration should scale with era length | 082, 055 | [092](092-isolation-hint-duration-scales-with-era.md) |
 | `[ ]` | 093 | Sea should read as water, not "end of the world" | 068, 085 | [093](093-sea-color-reads-as-water-not-void.md) |
 | `[ ]` | 094 | On-screen buttons for tick/era/notebook controls | 030 | [094](094-hud-buttons-for-tick-era-notebook-controls.md) |

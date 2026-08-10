@@ -6,6 +6,7 @@ use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy_egui::egui;
+use bevy_egui::input::EguiWantsInput;
 use bevy_egui::EguiPrimaryContextPass;
 
 use abiogenesis::cluster::compute_cluster_density;
@@ -941,6 +942,7 @@ fn zoom_camera(
     mut wheel: MessageReader<MouseWheel>,
     windows: Query<&Window>,
     config: Res<SimConfig>,
+    egui_wants_input: Res<EguiWantsInput>,
     mut cameras: Query<
         (&Camera, &GlobalTransform, &mut Projection, &mut Transform),
         With<GridCamera>,
@@ -948,6 +950,14 @@ fn zoom_camera(
 ) {
     let scroll: f32 = wheel.read().map(|event| event.y).sum();
     if scroll == 0.0 {
+        return;
+    }
+    // Task 091: a notebook window open over the map otherwise still lets
+    // scrolling over it zoom the camera underneath — `EguiWantsInput` (task
+    // 091, `bevy_egui` 0.41's own per-frame input-capture resource) is true
+    // whenever egui itself wants this frame's pointer input, notebook
+    // scrolling included.
+    if egui_wants_input.wants_pointer_input() {
         return;
     }
     let Ok(window) = windows.single() else {

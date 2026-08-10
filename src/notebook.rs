@@ -18,6 +18,7 @@ use abiogenesis::world::{SimWorld, SpeciesId, TagId, TagSlot};
 
 use crate::render::{species_color, species_label};
 use crate::text;
+use crate::ui::hud_panel;
 
 /// One curated log line, tagged with the era it happened in. `text`
 /// describes the event only; the window prepends the era. `species` is the
@@ -218,7 +219,8 @@ impl Plugin for NotebookPlugin {
             )
             .add_systems(
                 EguiPrimaryContextPass,
-                notebook_window.run_if(in_state(GameState::Playing)),
+                (notebook_window, clear_stray_tab_focus.after(hud_panel))
+                    .run_if(in_state(GameState::Playing)),
             );
     }
 }
@@ -279,6 +281,31 @@ fn toggle_notebook(
             unseen_confirmation.0 = false;
         }
     }
+}
+
+/// Task 091: `Tab` is meant to be exclusively "toggle the notebook," but
+/// egui's own keyboard navigation *also* treats `Tab` as "focus the next
+/// widget" — with nothing telling it otherwise, the same keypress that
+/// opens/closes the notebook (`toggle_notebook`, `Update`) also leaves
+/// keyboard focus sitting on whichever sidebar action button
+/// (`ui::hud_panel`'s `action_icon_row`) egui's navigation landed on this
+/// frame. Runs in `EguiPrimaryContextPass`, ordered `.after(hud_panel)` so
+/// it observes focus *after* the sidebar's buttons have had their chance to
+/// claim it via egui's own `Tab` handling that frame, then surrenders
+/// whatever ended up focused — this app has no keyboard-editable widget
+/// during `GameState::Playing` (menu.rs's seed `TextEdit` is a different
+/// screen), so clearing focus here can never interrupt real text input.
+fn clear_stray_tab_focus(keys: Res<ButtonInput<KeyCode>>, mut contexts: EguiContexts) -> Result {
+    if !keys.just_pressed(KeyCode::Tab) {
+        return Ok(());
+    }
+    let ctx = contexts.ctx_mut()?;
+    ctx.memory_mut(|memory| {
+        if let Some(focused) = memory.focused() {
+            memory.surrender_focus(focused);
+        }
+    });
+    Ok(())
 }
 
 /// Appends salient events to the log. Species extinctions always log.

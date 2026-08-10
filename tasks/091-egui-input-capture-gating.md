@@ -37,17 +37,27 @@ conditions `egui_wants_any_pointer_input` / `egui_wants_any_keyboard_input`
 
 ## 📋 Acceptance Criteria
 
-- [ ] `render.rs::zoom_camera` (mouse-wheel zoom) and `pan_camera` (if
+- [x] `render.rs::zoom_camera` (mouse-wheel zoom) and `pan_camera` (if
       pointer-driven) no longer act while `EguiWantsInput::
       wants_pointer_input()` is true (or via a `.run_if(not(
       egui_wants_any_pointer_input))` system-ordering gate — implementer's
       call on exactly where the check lives, as long as it's not duplicated
       ad hoc per system).
-- [ ] `input.rs::seed_organism_on_click`, `stress_on_click`, `cull_on_click`
+
+      Done for `zoom_camera` (early-returns on `wants_pointer_input()`, right
+      after draining `MouseWheel` for the frame). `pan_camera` left
+      ungated — it's `WASD`/arrow-key driven, not pointer-driven, and this
+      app has no keyboard-editable widget during `GameState::Playing` for it
+      to steal input from (menu.rs's seed `TextEdit` is a different screen).
+- [x] `input.rs::seed_organism_on_click`, `stress_on_click`, `cull_on_click`
       (and any other pointer-driven map action) are gated the same way, so
       clicking a notebook widget never also triggers a map action on the
       cell underneath.
-- [ ] `notebook.rs::toggle_notebook`'s `Tab` handling coexists cleanly with
+
+      Gated in one place: `clicked_cell`, the shared helper all three call,
+      now takes `&EguiWantsInput` and returns `None` when
+      `wants_pointer_input()` is true — no per-system duplication.
+- [x] `notebook.rs::toggle_notebook`'s `Tab` handling coexists cleanly with
       egui's own keyboard navigation: pressing `Tab` opens/closes the
       notebook and does *not* leave focus sitting on an HUD action button
       afterward. Concrete mechanism is an implementation decision (e.g.
@@ -57,20 +67,45 @@ conditions `egui_wants_any_pointer_input` / `egui_wants_any_keyboard_input`
       two don't fight over the same keypress) — verify empirically via
       `cargo run`, this is exactly the kind of egui-internals interaction
       that doesn't resolve from reading docs alone.
-- [ ] System ordering respects `EguiWantsInput`'s own documented update
+
+      Implemented as a new system, `clear_stray_tab_focus`, scheduled in
+      `EguiPrimaryContextPass` and ordered `.after(hud_panel)` (`hud_panel`
+      made `pub(crate)` for this) — runs *after* the sidebar's action
+      buttons have had their chance to claim keyboard focus via egui's own
+      `Tab` navigation this frame, then unconditionally surrenders whatever
+      ended up focused, whenever `Tab` was just pressed.
+      **Not independently live-verified by the agent** — this session's
+      `screencapture` is unavailable (macOS Screen Recording permission not
+      granted to the shell), so the actual on-screen focus behavior needs
+      the user's own `cargo run` pass before this box is fully trusted; the
+      reasoning above (schedule/ordering) is sound but egui's internals are
+      exactly the kind of thing task 091 itself flagged as unverifiable from
+      docs alone.
+- [x] System ordering respects `EguiWantsInput`'s own documented update
       point (`EguiInputSet::WriteEguiEvents`, i.e. it reflects the
       *current* frame's UI layout only after egui has laid it out) — reading
       it too early would gate against last frame's UI state instead of this
       frame's.
-- [ ] No change to any action's actual effect (`attempt_seed`, `apply_splice`,
+
+      `zoom_camera`/`clicked_cell` read `Res<EguiWantsInput>` from plain
+      `Update` systems, same schedule position every other input system in
+      this codebase already runs in — `EguiWantsInput` itself is written
+      during `EguiInputSet::WriteEguiEvents` (a `PreUpdate`-time set, ahead
+      of `Update`), so by the time these systems run this frame's value is
+      already current; no explicit `.after(...)` needed beyond the default
+      `PreUpdate` → `Update` ordering Bevy already guarantees.
+- [x] No change to any action's actual effect (`attempt_seed`, `apply_splice`,
       etc.) — this task only gates *whether* the system runs, not what it
       does.
-- [ ] `cargo clippy -- -D warnings`, `cargo fmt`, `cargo test` clean.
+- [x] `cargo clippy -- -D warnings`, `cargo fmt`, `cargo test` clean.
 - [ ] Verified live via `cargo run`: with the notebook open, scrolling over
       it zooms the notebook's own content (or does nothing), never the map
       camera; clicking a notebook widget never seeds/stresses/culls a cell;
       pressing `Tab` toggles the notebook without stray focus landing on a
       sidebar action button.
+
+      **Pending — needs the user's own `cargo run` pass**, see the note
+      under the `Tab`-focus criterion above.
 
 ---
 

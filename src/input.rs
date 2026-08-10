@@ -4,6 +4,7 @@
 
 use bevy::camera::Camera;
 use bevy::prelude::*;
+use bevy_egui::input::EguiWantsInput;
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::{apply_tick_outcome, ObjectiveOutcomeParams};
@@ -54,15 +55,23 @@ impl Plugin for InputPlugin {
 /// 017 worked out for `Seed`, factored out so every click action (task 023
 /// onward) reuses it instead of re-deriving the same edge cases. Returns
 /// `None` for anything from "no click this frame" to "clicked outside the
-/// grid" — callers don't need to distinguish why.
+/// grid" — callers don't need to distinguish why. Also returns `None`
+/// whenever egui wants this frame's pointer input (task 091): the one
+/// place every map-click action funnels through, so a click on a notebook
+/// widget never also registers as a `Seed`/`Stress`/`Cull` click on the
+/// cell underneath it.
 fn clicked_cell(
     buttons: &ButtonInput<MouseButton>,
     windows: &Query<&Window>,
     cameras: &Query<(&Camera, &GlobalTransform), With<GridCamera>>,
     width: usize,
     height: usize,
+    egui_wants_input: &EguiWantsInput,
 ) -> Option<(usize, usize)> {
     if !buttons.just_pressed(MouseButton::Left) {
+        return None;
+    }
+    if egui_wants_input.wants_pointer_input() {
         return None;
     }
     let window = windows.single().ok()?;
@@ -253,6 +262,7 @@ fn seed_organism_on_click(
     mut isolation_hint: ResMut<IsolationHint>,
     mode: Res<MapViewMode>,
     mut placement_indicator: ResMut<PlacementIndicator>,
+    egui_wants_input: Res<EguiWantsInput>,
 ) {
     if selected_action.0 != ActionMode::Seed {
         return;
@@ -260,7 +270,14 @@ fn seed_organism_on_click(
     if *era_state.get() == EraState::Advancing {
         return;
     }
-    let Some((x, y)) = clicked_cell(&buttons, &windows, &cameras, world.width, world.height) else {
+    let Some((x, y)) = clicked_cell(
+        &buttons,
+        &windows,
+        &cameras,
+        world.width,
+        world.height,
+        &egui_wants_input,
+    ) else {
         return;
     };
     if !attempt_seed(
@@ -326,6 +343,7 @@ fn stress_on_click(
     config: Res<SimConfig>,
     mut budget: ResMut<ActionBudget>,
     mode: Res<MapViewMode>,
+    egui_wants_input: Res<EguiWantsInput>,
 ) {
     if selected_action.0 != ActionMode::Stress {
         return;
@@ -342,7 +360,14 @@ fn stress_on_click(
     if *mode != MapViewMode::Detail {
         return;
     }
-    let Some((x, y)) = clicked_cell(&buttons, &windows, &cameras, world.width, world.height) else {
+    let Some((x, y)) = clicked_cell(
+        &buttons,
+        &windows,
+        &cameras,
+        world.width,
+        world.height,
+        &egui_wants_input,
+    ) else {
         return;
     };
     if budget.points_remaining < config.time.action_costs.stress {
@@ -382,6 +407,7 @@ fn cull_on_click(
     mut budget: ResMut<ActionBudget>,
     mut placed: ResMut<PlayerPlacedCells>,
     mode: Res<MapViewMode>,
+    egui_wants_input: Res<EguiWantsInput>,
 ) {
     if selected_action.0 != ActionMode::Cull {
         return;
@@ -395,7 +421,14 @@ fn cull_on_click(
     if *mode != MapViewMode::Detail {
         return;
     }
-    let Some((x, y)) = clicked_cell(&buttons, &windows, &cameras, world.width, world.height) else {
+    let Some((x, y)) = clicked_cell(
+        &buttons,
+        &windows,
+        &cameras,
+        world.width,
+        world.height,
+        &egui_wants_input,
+    ) else {
         return;
     };
 

@@ -298,7 +298,11 @@ fn reserve_hud_viewport(
 /// Side panel with the numeric readout of GDD §11. Reads `SimWorld`
 /// read-only: the UI never writes simulation state (TECH_DESIGN.md §3.3).
 #[allow(clippy::too_many_arguments)]
-fn hud_panel(
+/// `pub(crate)` (task 091) so `notebook.rs` can order its stray-focus-clear
+/// system `.after(hud_panel)` — the sidebar action buttons this draws are
+/// what egui's own `Tab` keyboard-navigation grabs focus onto, so the fix
+/// must run after they've had their chance to claim it this frame.
+pub(crate) fn hud_panel(
     mut contexts: EguiContexts,
     world: Res<SimWorld>,
     era_state: Res<State<EraState>>,
