@@ -91,6 +91,16 @@ pacing. This needs its own dedicated design pass — including whether drift
 should be visible/telegraphed at all — before it's scoped as a task, not an
 assumption that it layers cleanly on top of the current notebook mechanic.
 
+**Resolved direction (2026-08-11)**: `redesign/abiogenesis-evolution-xenotypes.md`
+answers this risk directly — evolution never mutates an existing,
+already-tested species in place; it always produces a new descendant
+species (speciation), reusing `Splice`'s genome-editing plumbing and
+triggered by an accumulated "selection pressure" threshold (mirroring the
+notebook's own evidence-then-confirm shape). Since nothing the player has
+already tested ever changes, the staleness risk above doesn't apply — this
+supersedes the "drift" framing this phase originally assumed. See the doc
+for the full model and open questions before scoping.
+
 ---
 
 ## Phase D — Biochemistry flavor
@@ -107,6 +117,16 @@ relationships would quietly undercut the deduction pillar the whole game is
 built around. Any naming/flavor pass needs a explicit check: would a
 first-time player be able to guess this trait's mechanical effect from its
 name alone? If yes, the name is too on-the-nose.
+
+**Direction agreed, execution deferred (2026-08-11)**:
+`redesign/abiogenesis-evolution-xenotypes.md` sets the principle to apply
+whenever this is picked up — describe what a trait *is* (its biochemical
+nature/mechanism), never how it interacts with others; real microbiology
+already keeps those two facts separate (knowing a microbe's metabolism
+class doesn't tell you its net effect on a specific neighbor without
+testing it). The user explicitly wants this held until after the game
+stabilizes — nearer-term work adds more *metabolisms* (GDD §5.4's
+chemolithotroph) without redesigning the tag/archetype pool itself.
 
 ---
 

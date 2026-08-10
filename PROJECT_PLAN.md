@@ -28,7 +28,7 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 
 - `[?]` **Bonus objectives** granting meta-progression currency — planned in principle, but **after** the clean "primary objective → advance" core (GDD §8).
 - `[?]` **Meta-progression persistence** (profile/save of unlocks) — deliberately deferred: decided only after verifying the loop is fun (GDD §10).
-- `[?]` **Additional metabolisms** beyond the three base ones, e.g. a chemolithotroph tied to `toxicity`, as unlockable content (GDD §5.4).
+- `[?]` **Additional metabolisms** beyond the three base ones, e.g. a chemolithotroph tied to `toxicity`, as unlockable content (GDD §5.4). **Linked to "Evolution & xenotypes" below** (2026-08-11): the chemolithotroph is the first candidate for both an authored starting metabolism and an evolution outcome (a lineage evolving into one under repeated toxicity exposure) — the two tracks can share design work.
 - `[?]` **Final title** — "Abiogenesis" is a placeholder (GDD §14).
 
 ### Camera, pacing & menu features
@@ -49,7 +49,7 @@ Diagnosis: turn zero is a blank world with no signal there's anything to discove
 
 **"Epic" mechanics — subito, da approfondire:**
 
-- `[?]` **2.2 — The Precursor**: a single fixed anomalous cell per world (not an auto-placed species, stays banned) with a constant chemistry that affects the matrix regardless of which tag the player brings near it — a narrative attractor discoverable purely by observation. **Decided to implement by reusing the existing tag/matrix system** (a phantom organism/tag that participates in `interaction_delta` like any other), not as a separate hard-coded effect — consistent with the project's no-parallel-systems convention.
+- `[?]` **2.2 — The Precursor**: a single fixed anomalous cell per world (not an auto-placed species, stays banned) with a constant chemistry that affects the matrix regardless of which tag the player brings near it — a narrative attractor discoverable purely by observation. **Decided to implement by reusing the existing tag/matrix system** (a phantom organism/tag that participates in `interaction_delta` like any other), not as a separate hard-coded effect — consistent with the project's no-parallel-systems convention. **Linked to the "Mondo vivo" proposal below** (2026-08-10): its transient-residue mechanic is the same "phantom tag entity" pattern, procedural/recurring instead of fixed/singular — the two should share an implementation shape when either is scoped.
 - `[?]` **2.4 — Epochal events**: rare procedural global shocks built on existing environmental scalars (`temperature`, `light`, `toxicity`) — a toxicity spike, a light flare, a thermal collapse — giving each run a natural growth → shock → adapt/collapse arc with no new data system. **Frequency criterion decided**: no events before an onboarding-window era threshold, then a per-era probability that increases over time, parameterized in `SimConfig` — not a fixed-point guaranteed event, not a constant probability from the start. Sequence last among the "subito" set: an epochal shock during the onboarding window would undermine the stability 1.B/1.C/1.D are meant to build.
 - `[?]` **2.6 — The revelation moment**: on closing a world, algorithmically synthesize one sentence from the confirmed-relationship graph (e.g. "in this biochemistry, decomposition generates vitality") — zero art, zero hand-written text, derived entirely from data the game already has. **Empty-graph fallback decided**: when `MatrixKnowledge` has no confirmed relations at world close, pick randomly among several varied neutral phrases (not one fixed line, not silence) — keeps a sense of dynamism/mystery even when nothing was confirmed.
 
@@ -58,6 +58,64 @@ Diagnosis: turn zero is a blank world with no signal there's anything to discove
 - `[?]` **2.1 — The stratigraphic record**: per-cell persistent death log (who died where, when, how concentrated), "core-sampleable" by the player — more data-modeling work (per-cell vs. global log) than the rest of this set. **Retention decided**: capped per cell, oldest entries compress into an aggregate summary (e.g. per-species counts) rather than growing unbounded — the real cost here is the retention policy, not the logging itself; "no new simulation" only holds once this is bounded.
 - `[?]` **2.3 — Prior-expedition data**: some worlds start with a few matrix cells pre-filled as "unverified prior readings," some correct, some wrong — stays consistent with "unlock capabilities, not answers" (GDD §10), but needs careful design of credible-yet-sometimes-false testimony that doesn't break trust in the notebook as a tool. **Data model decided**: lives as a separate "unverified" layer, visually distinct, never merged into `MatrixKnowledge`'s real-evidence weighting (task 020, `1/(1+n_confounders)`) — the player promotes a testimony to a real hypothesis only by testing it themselves. Falsification needs a procedural (not hand-authored) rule, seeded deterministically per world.
 - `[?]` **2.5 — The hidden grammar between worlds**: a deeper structural regularity under each world's shuffled matrix, perceptible only across many runs (e.g. certain glyph patterns statistically skew catalyst vs. poison) — a meta second layer of mystery for veterans; the most ambitious and most delicate to balance without introducing exploitable real patterns. **Note**: unlike 2.1/2.3, this touches the shared matrix generator itself (task 011, cyclicity constraint), not a downstream system — the exploitability risk is cross-run (a veteran who cracks it knows it on every future world, not just within one session), higher stakes than 1.B's within-session repetition risk. Stays purely conceptual until defined.
+
+### Mondo vivo (2026-08-10, from `redesign/abiogenesis-living-world.md`)
+
+Raised directly by the user as a follow-up to the onboarding/engagement work
+(all of 080-086 landed): the opening turns should feel like discovering
+*where* a species can live and evolve, not just picking tags and watching
+numbers move. Full mechanics, rejected alternatives, and open questions in
+the linked doc.
+
+- `[?]` **Conditional tags (zone↔matrix)**: a minority of species tags gain an optional expression condition (`TerrainKind`) — the tag only participates in `interaction_delta` while the organism occupies a matching zone. **Decided**: not a per-terrain intensity multiplier, not a separate matrix per biome — the matrix stays single/world-global; only which tags are active changes. Biochemical grounding: conditional gene expression/operon regulation (trait exists in the genome, only expressed under specific environmental conditions). Main open risk: the notebook has no "terrain-conditioned" axis today (§7's confounder weighting) — needs its own legibility pass before scoping.
+- `[?]` **Wild, pre-existing species**: small non-player-seeded populations placed in not-immediately-reachable zones at world-gen, reusing the `Species`/tag/matrix system as-is. First contact (a player species reaching interaction range) is the discovery trigger — reuses the interaction-spark trigger (task 080) and the unconfirmed→confirmed notebook event (task 054).
+- `[?]` **Reveal-on-first-zone-entry**: same mechanism as conditional tags — a player species occupying a `TerrainKind` for the first time in a run, while carrying a tag conditioned on it, logs a notebook discovery event. No separate system from the conditional-tags mechanic above.
+- `[?]` **Transient world features (e.g. low-decay residue)**: a lighter-weight instance of the Precursor's (2.2) "phantom tag entity" pattern — procedural/recurring instead of fixed/singular, decaying over time to give species a limited discovery window.
+
+**Real-time mode** (already a `[?]` above, "Camera, pacing & menu features") was raised again in this same discussion and **explicitly deferred**: the user agreed to keep it independent, revisited only after these mechanics are scoped, implemented, and playtested — stacking it now would add a second, simultaneous source of reduced legibility on top of these.
+
+### Notebook UX redesign (2026-08-10, from `redesign/abiogenesis-notebook-redesign.md`)
+
+Spun out of the "Mondo vivo" discussion above (conditional tags need *some*
+notebook surface) into its own, independent track: a live screenshot review
+confirmed the current notebook has standing legibility problems of its own,
+unrelated to any new mechanic. Full findings, decisions, and open questions
+in the linked doc; intersects with "Mondo vivo" only at the conditional-tags
+catalog badge.
+
+- `[?]` **Observation log**: strip raw per-tick "observed" noise entirely — keep only narrative events (births/deaths/extinctions, `★` confirmations). Evidence accumulation moves to the hypothesis grid instead of spamming text.
+- `[?]` **Hypothesis grid — visibility & layout**: zero-evidence tags don't render at all until first touched; layout stays simple/static (not full force-directed physics — a deliberate complexity/ROI call, not a legibility objection to physics in principle).
+- `[?]` **Hypothesis grid — edge grammar**: numeric `±N` labels replaced by line thickness for magnitude; partial-evidence dots replaced by dashed lines (semantically apt — sign/magnitude genuinely unknown pre-confirmation); bidirectional pairs drawn as offset/curved arcs instead of overlapping straight lines.
+- `[?]` **Visual polish pass**: palette, background, spacing, and typography across all three panels — not yet specified, needs its own mini design pass before scoping.
+- `[?]` **Catalog cleanup**: dedupe repeated per-metabolism boilerplate into a one-time legend; trim species rows to parameters only — raised as uncontroversial but not yet formally confirmed.
+
+### Death/failure legibility (2026-08-11, from `redesign/abiogenesis-death-legibility.md`)
+
+Companion topic spun out of the notebook redesign discussion: bad
+temperature fit, no nearby prey/resource, etc. are largely invisible today
+beyond a raw-number death breakdown for player-placed organisms only
+(`text.rs:389-408`). **Key framing**: GDD §7 already declares metabolisms
+and environmental ranges "always readable as anchors" — so being fully
+direct about these causes costs zero discovery value; only the matrix
+(`interaction_delta`) term must stay deliberately vague, per §11.
+
+- `[?]` **Anchor-cause plain language**: rewrite the existing player-placed death message from a 5-number dump into one qualitative sentence per death (poor temperature fit / no resource / overcrowded / eaten / harmed by a nearby species for the matrix case) — requires a small `OrganismDied` (`sim.rs:16-31`) schema addition to distinguish "poor temperature fit" from "resource genuinely absent," both of which collapse into the same `gain` value today.
+- `[?]` **Matrix-cause number removed**: when `interaction_delta` dominates, drop the exact number from the message (consistent with the hypothesis-grid decision above to stop showing raw numbers) — still says *that* a species harmed it, never which tag/sign/magnitude.
+- `[?]` **Aggregate Biosphere trend diagnosis**: for population-wide cases (e.g. a predator population quietly starving from lack of prey, not player-placed), attach a short dominant-cause label to the HUD's existing ▼ trend indicator instead of adding per-organism log spam for untracked organisms.
+
+### Evolution & xenotypes (2026-08-11, from `redesign/abiogenesis-evolution-xenotypes.md`)
+
+Raised directly by the user: the matrix "aha" has no real payoff today
+beyond knowledge itself. Two proposals, resolved against tensions already
+flagged (unresolved) in `VISION.md` Phase C (Evolution) and Phase D
+(Biochemistry flavor) — full reasoning, corrected assumptions, and open
+questions in the linked doc.
+
+- `[?]` **Evolution via speciation, never in-place mutation**: crossing an accumulated "selection pressure" threshold (stimuli: `interaction_delta` sign/magnitude experienced, terrain occupancy, toxicity exposure — mirrors `MatrixKnowledge`'s evidence-then-confirm shape) spawns a new descendant species, reusing `Splice`'s existing genome-editing plumbing (`SpliceEditChoice`, `input.rs:531-565`) and procedural naming (`draw_species_name`, task 095). Never mutates an existing, already-tested species in place — this is what fully resolves `VISION.md` §C's "evidence going stale" risk, not a mitigation of it.
+- `[?]` **Evolution can touch tags, not just the anchor layer** — corrected from an initially more cautious anchor-only stance: since speciation never changes the world's fixed matrix values and descendants only draw from tags already active in that world, a new tag on a descendant exposes an already-fixed relationship rather than adding a new mystery axis.
+- `[?]` **Bigger authored starting roster** (not just emergent via evolution) — independent, near-term want.
+- `[?]` **More metabolisms, near-term** — first candidate is the chemolithotroph already named in GDD §5.4 (linked above), ahead of any full xenotype/archetype redesign.
+- `[?]` **Xenotype/archetype naming redesign: deferred** until after the game stabilizes. Design principle to carry forward: describe what a trait *is* (its biochemical nature), never how it interacts — real microbiology already separates those two facts. `VISION.md` §D's litmus test ("could a first-time player guess the matrix effect from the name alone?") applies whenever this is picked up.
 
 ---
 
