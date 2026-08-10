@@ -32,34 +32,59 @@ other) — same pattern the action icon row already establishes for
 
 ## 📋 Acceptance Criteria
 
-- [ ] The HUD (`hud_panel`, `ui.rs`) gains buttons for: advance one tick
+- [x] The HUD (`hud_panel`, `ui.rs`) gains buttons for: advance one tick
       (`N`), start/resume an era (`Space`), toggle the notebook (`Tab`).
       Whether "reseed" (`R`) also gets a button is the implementer's call —
       it's destructive (throws away the current world) and easy to
       misclick, so consider a confirmation affordance or leaving it
       keyboard-only if a button reads as too easy to trigger by accident;
       document whichever choice is made and why.
-- [ ] Each button calls the *same* underlying logic its keyboard shortcut
+
+      Tick/Era/Notebook got buttons; `R` stayed keyboard-only, documented on
+      `reseed_world`'s own doc comment — a stray click is a much easier
+      accident than a stray keypress on a dedicated letter key, and this
+      codebase has no "are you sure?" affordance to add as a safety net. If
+      a reseed button is ever added, it should come with a confirmation
+      dialog, not reuse the bare-button pattern the other three use.
+- [x] Each button calls the *same* underlying logic its keyboard shortcut
       already triggers — no duplicated action logic between the button
       handler and `start_era`/`single_tick`/`toggle_notebook`. Prefer
       extracting the shared body into a plain function both the key-check
       system and the button click call, over two independent code paths
       that could drift.
-- [ ] Buttons respect the same guards their keyboard equivalents already
+
+      Implemented via a shared momentary-flag resource, `HudControlIntents`
+      (`advance_era`/`advance_tick`/`toggle_notebook`), rather than
+      extracting free functions: the HUD button (in `EguiPrimaryContextPass`)
+      sets the relevant flag, and `start_era`/`single_tick`/
+      `toggle_notebook` (already the sole owners of their respective logic,
+      in `Update`) check `keys.just_pressed(...) || intents.<field>` and
+      clear the flag — literally the same system, two ways to trigger it,
+      not two implementations.
+- [x] Buttons respect the same guards their keyboard equivalents already
       have (e.g. `single_tick`/`start_era` both no-op while
       `EraState::Advancing` — the button must too, ideally disabled/greyed
       out during that state rather than silently doing nothing on click).
-- [ ] Keyboard shortcuts keep working unchanged — this is additive, not a
+
+      Tick/Era buttons are wrapped in `add_enabled_ui(!advancing, ...)`
+      (same pattern `action_icon_row` uses for Stress/Cull outside Detail),
+      greyed out and inert while `EraState::Advancing`, with a tooltip
+      explaining why. The underlying systems still guard independently too
+      (defense in depth, same as the click-actions' Detail-only checks).
+- [x] Keyboard shortcuts keep working unchanged — this is additive, not a
       replacement. No existing `input.rs`/`notebook.rs` key-handling test
       changes behavior.
-- [ ] Buttons show their keyboard shortcut on hover (tooltip), matching
+- [x] Buttons show their keyboard shortcut on hover (tooltip), matching
       `action_icon_row`'s existing pattern (if it already does this) or
       establishing it consistently across both rows if not — a player
       using the buttons should still discover the shortcut.
-- [ ] `cargo clippy -- -D warnings`, `cargo fmt`, `cargo test` clean.
+- [x] `cargo clippy -- -D warnings`, `cargo fmt`, `cargo test` clean.
 - [ ] Verified live via `cargo run`: each new button produces the exact
       same effect as its keyboard shortcut, and pressing the shortcut still
       works normally alongside the buttons.
+
+      **Pending — needs the user's own `cargo run` pass** (same
+      `screencapture` constraint as tasks 091-093).
 
 ---
 

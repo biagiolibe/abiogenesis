@@ -145,6 +145,24 @@ pub fn state_line(state: impl std::fmt::Debug) -> String {
 /// `grace_eras`.
 pub const GRACE_PERIOD_LINE: &str = "Grace period — this world can't fail from extinction yet";
 
+// --- HUD — time control row (task 094) ---
+//
+// On-screen equivalents of the keyboard-only tick/era/notebook shortcuts —
+// additive, the shortcuts keep working unchanged. `disabled` variants
+// append a reason when `EraState::Advancing` already has the disabled
+// button greyed out, same "why is this not clickable" affordance
+// `DETAIL_MODE_ONLY_HINT` gives the action icon row.
+
+pub const TICK_BUTTON_LABEL: &str = "⏵ Tick";
+pub const ERA_BUTTON_LABEL: &str = "⏩ Era";
+pub const NOTEBOOK_BUTTON_LABEL: &str = "📓 Notebook";
+
+pub const TICK_BUTTON_TOOLTIP: &str = "Advance one tick (N)";
+pub const ERA_BUTTON_TOOLTIP: &str = "Start/resume this era (Space)";
+pub const NOTEBOOK_BUTTON_TOOLTIP: &str = "Open/close the notebook (Tab)";
+
+pub const ADVANCING_DISABLED_HINT: &str = "\n(era already advancing)";
+
 // --- HUD — action group ---
 
 /// "Moves" (task 064's sidebar redesign — diegetic relabeling of the four

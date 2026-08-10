@@ -83,7 +83,7 @@ the five, pick up in any order.
 | `[x]` | 091 | Gate map input (zoom/click/Tab) behind egui's own input capture | none | [091](done/091-egui-input-capture-gating.md) |
 | `[x]` | 092 | Isolation hint duration should scale with era length | 082, 055 | [092](done/092-isolation-hint-duration-scales-with-era.md) |
 | `[/]` | 093 | Sea should read as water, not "end of the world" — code done, pending user's live `cargo run` verification | 068, 085 | [093](093-sea-color-reads-as-water-not-void.md) |
-| `[ ]` | 094 | On-screen buttons for tick/era/notebook controls | 030 | [094](094-hud-buttons-for-tick-era-notebook-controls.md) |
+| `[/]` | 094 | On-screen buttons for tick/era/notebook controls — code done, pending user's live `cargo run` verification | 030 | [094](094-hud-buttons-for-tick-era-notebook-controls.md) |
 | `[ ]` | 095 | Procedural per-world species names + readable descriptions | 029 | [095](095-procedural-species-names-and-descriptions.md) |
 
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) beyond what's already expanded into task files here.

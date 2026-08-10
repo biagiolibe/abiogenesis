@@ -18,7 +18,7 @@ use abiogenesis::world::{SimWorld, SpeciesId, TagId, TagSlot};
 
 use crate::render::{species_color, species_label};
 use crate::text;
-use crate::ui::hud_panel;
+use crate::ui::{hud_panel, HudControlIntents};
 
 /// One curated log line, tagged with the era it happened in. `text`
 /// describes the event only; the window prepends the era. `species` is the
@@ -264,17 +264,22 @@ fn accumulate_evidence(
     }
 }
 
-/// `tab`: opens/closes the notebook window, mirroring `input.rs`'s
-/// `keys.just_pressed(...)` key-handling pattern. Opening also latches
-/// `NotebookEverOpened` (task 053) and clears the confirmation badge (task
-/// 054) — the player has now seen whatever the badge was pointing at.
+/// `tab` (or the HUD's Notebook button, task 094 — `HudControlIntents::
+/// toggle_notebook`, consumed here so the button and the shortcut share this
+/// one implementation): opens/closes the notebook window, mirroring
+/// `input.rs`'s `keys.just_pressed(...)` key-handling pattern. Opening also
+/// latches `NotebookEverOpened` (task 053) and clears the confirmation badge
+/// (task 054) — the player has now seen whatever the badge was pointing at.
 fn toggle_notebook(
     keys: Res<ButtonInput<KeyCode>>,
     mut open: ResMut<NotebookWindowOpen>,
     mut ever_opened: ResMut<NotebookEverOpened>,
     mut unseen_confirmation: ResMut<NotebookHasUnseenConfirmation>,
+    mut intents: ResMut<HudControlIntents>,
 ) {
-    if keys.just_pressed(KeyCode::Tab) {
+    let triggered = keys.just_pressed(KeyCode::Tab) || intents.toggle_notebook;
+    intents.toggle_notebook = false;
+    if triggered {
         open.0 = !open.0;
         if open.0 {
             ever_opened.0 = true;

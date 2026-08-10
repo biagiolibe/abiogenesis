@@ -5,7 +5,9 @@ use bevy_egui::{
     egui, EguiContexts, EguiGlobalSettings, EguiPrimaryContextPass, PrimaryEguiContext,
 };
 
-use crate::notebook::{tag_glyph, EverSeeded, NotebookEverOpened, NotebookHasUnseenConfirmation};
+use crate::notebook::{
+    tag_glyph, EverSeeded, NotebookEverOpened, NotebookHasUnseenConfirmation, NotebookWindowOpen,
+};
 use crate::render::{metabolism_glyph, species_color, species_label, GridCamera, MapViewMode};
 use crate::text;
 use abiogenesis::config::SimConfig;
@@ -43,6 +45,22 @@ pub struct IsolationHint {
     pub text: Option<&'static str>,
     pub shown_at_tick: u64,
     pub duration_ticks: u64,
+}
+
+/// Momentary "the player clicked a HUD button for this" flags (task 094),
+/// read and cleared by the same systems that already act on the matching
+/// keyboard shortcut (`input.rs::start_era`/`single_tick`,
+/// `notebook.rs::toggle_notebook`) — one action, two ways to trigger it,
+/// never two independent implementations that could drift apart. Written by
+/// `hud_panel`'s new time-control button row, in `EguiPrimaryContextPass`
+/// (`PostUpdate`); read by `Update`-scheduled systems, so a button click is
+/// consumed on the *next* frame's `Update` pass, not the same frame it was
+/// clicked in — an imperceptible one-frame delay, not a functional gap.
+#[derive(Resource, Default)]
+pub struct HudControlIntents {
+    pub advance_era: bool,
+    pub advance_tick: bool,
+    pub toggle_notebook: bool,
 }
 
 /// The species the seed action (task 017) places on click. A UI intent, not
@@ -212,6 +230,7 @@ impl Plugin for UiPlugin {
             .init_resource::<SpliceDraft>()
             .init_resource::<IsolationHint>()
             .init_resource::<PopulationTrends>()
+            .init_resource::<HudControlIntents>()
             .add_systems(Startup, spawn_hud_camera)
             .add_systems(
                 Update,
@@ -327,6 +346,8 @@ pub(crate) fn hud_panel(
     unseen_confirmation: Res<NotebookHasUnseenConfirmation>,
     trends: Res<PopulationTrends>,
     mode: Res<MapViewMode>,
+    mut intents: ResMut<HudControlIntents>,
+    notebook_open: Res<NotebookWindowOpen>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     let mut viewport_ui = egui::Ui::new(
@@ -360,6 +381,12 @@ pub(crate) fn hud_panel(
             if is_grace_active(world.era, config.time.grace_eras, &grace) {
                 ui.weak(text::GRACE_PERIOD_LINE);
             }
+            time_control_row(
+                ui,
+                &mut intents,
+                *era_state.get() == EraState::Advancing,
+                notebook_open.0,
+            );
 
             hairline(ui);
             ui.strong(text::HEADING_ACTION);
@@ -746,6 +773,63 @@ fn species_row(ui: &mut egui::Ui, species: SpeciesId, world: &SimWorld, selected
     if ui.selectable_label(is_selected, text).clicked() {
         *selected = species;
     }
+}
+
+/// On-screen equivalents of the tick/era/notebook keyboard shortcuts (task
+/// 094), coexisting with them — clicking a button here only sets a
+/// `HudControlIntents` flag, the same `input.rs::start_era`/`single_tick`/
+/// `notebook.rs::toggle_notebook` systems that already handle the matching
+/// key act on it, so there is exactly one implementation of each action
+/// regardless of which input triggered it. Tick/Era grey out while an era
+/// is already advancing, mirroring their keyboard equivalents' own
+/// early-return guard rather than leaving a clickable button that silently
+/// does nothing (same pattern `action_icon_row` uses for Stress/Cull
+/// outside Detail).
+fn time_control_row(
+    ui: &mut egui::Ui,
+    intents: &mut HudControlIntents,
+    advancing: bool,
+    notebook_open: bool,
+) {
+    ui.horizontal(|ui| {
+        let tick_response = ui
+            .add_enabled_ui(!advancing, |ui| ui.button(text::TICK_BUTTON_LABEL))
+            .inner;
+        if tick_response.clicked() {
+            intents.advance_tick = true;
+        }
+        tick_response.on_hover_text(if advancing {
+            format!(
+                "{}{}",
+                text::TICK_BUTTON_TOOLTIP,
+                text::ADVANCING_DISABLED_HINT
+            )
+        } else {
+            text::TICK_BUTTON_TOOLTIP.to_string()
+        });
+
+        let era_response = ui
+            .add_enabled_ui(!advancing, |ui| ui.button(text::ERA_BUTTON_LABEL))
+            .inner;
+        if era_response.clicked() {
+            intents.advance_era = true;
+        }
+        era_response.on_hover_text(if advancing {
+            format!(
+                "{}{}",
+                text::ERA_BUTTON_TOOLTIP,
+                text::ADVANCING_DISABLED_HINT
+            )
+        } else {
+            text::ERA_BUTTON_TOOLTIP.to_string()
+        });
+
+        let notebook_response = ui.selectable_label(notebook_open, text::NOTEBOOK_BUTTON_LABEL);
+        if notebook_response.clicked() {
+            intents.toggle_notebook = true;
+        }
+        notebook_response.on_hover_text(text::NOTEBOOK_BUTTON_TOOLTIP);
+    });
 }
 
 /// One glyph per `ActionMode`, in selector order. Names/descriptions/costs

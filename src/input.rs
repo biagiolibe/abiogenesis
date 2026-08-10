@@ -27,7 +27,8 @@ use crate::render::{species_label, world_to_cell, GridCamera, MapViewMode, Place
 use crate::run_flow::{start_world, WorldResetParams};
 use crate::text;
 use crate::ui::{
-    ActionMode, IsolationHint, SelectedAction, SelectedSpecies, SpliceDraft, SpliceEditChoice,
+    ActionMode, HudControlIntents, IsolationHint, SelectedAction, SelectedSpecies, SpliceDraft,
+    SpliceEditChoice,
 };
 
 pub struct InputPlugin;
@@ -82,12 +83,16 @@ fn clicked_cell(
     world_to_cell(world_pos, width, height)
 }
 
-/// `space`: starts (or resumes auto-playing) an era, unless one is already
-/// advancing (acceptance criterion: advancement inputs are ignored during
-/// `Advancing`). Only resets `EraProgress` to a full `era_ticks` if no era is
-/// currently in flight — if the player already stepped some ticks manually
-/// via `n` (`single_tick`), `space` auto-plays whatever ticks remain rather
-/// than discarding that progress and restarting the era from zero.
+/// `space` (or the HUD's Era button, task 094 — `HudControlIntents::
+/// advance_era`, consumed here so the button and the shortcut share this one
+/// implementation): starts (or resumes auto-playing) an era, unless one is
+/// already advancing (acceptance criterion: advancement inputs are ignored
+/// during `Advancing`). Only resets `EraProgress` to a full `era_ticks` if no
+/// era is currently in flight — if the player already stepped some ticks
+/// manually via `n` (`single_tick`), `space` auto-plays whatever ticks
+/// remain rather than discarding that progress and restarting the era from
+/// zero.
+#[allow(clippy::too_many_arguments)]
 fn start_era(
     keys: Res<ButtonInput<KeyCode>>,
     era_state: Res<State<EraState>>,
@@ -96,11 +101,14 @@ fn start_era(
     config: Res<SimConfig>,
     run_progress: Res<RunProgress>,
     world: Res<SimWorld>,
+    mut intents: ResMut<HudControlIntents>,
 ) {
     if *era_state.get() == EraState::Advancing {
         return;
     }
-    if keys.just_pressed(KeyCode::Space) {
+    let triggered = keys.just_pressed(KeyCode::Space) || intents.advance_era;
+    intents.advance_era = false;
+    if triggered {
         if progress.remaining() == 0 {
             progress.start(era_ticks_for(run_progress.world_index, world.era, &config));
         }
@@ -108,10 +116,12 @@ fn start_era(
     }
 }
 
-/// `n`: advances a single tick directly, with no `EraState` transition —
-/// useful for fine observation and debugging (GDD §11). Starts a fresh era
-/// (`EraProgress`) if none is in flight, and shares `advance_tick`'s
-/// era-completion bookkeeping and objective evaluation via
+/// `n` (or the HUD's Tick button, task 094 — `HudControlIntents::
+/// advance_tick`, consumed here so the button and the shortcut share this
+/// one implementation): advances a single tick directly, with no `EraState`
+/// transition — useful for fine observation and debugging (GDD §11). Starts
+/// a fresh era (`EraProgress`) if none is in flight, and shares
+/// `advance_tick`'s era-completion bookkeeping and objective evaluation via
 /// `tick_and_complete_era`/`apply_tick_outcome` — a player who only ever
 /// presses `n` must still see eras complete, the action budget refill, and
 /// objectives/failure conditions evaluate exactly as they would under
@@ -132,11 +142,14 @@ fn single_tick(
     mut born: MessageWriter<OrganismBorn>,
     mut objective_outcome: ObjectiveOutcomeParams,
     run_progress: Res<RunProgress>,
+    mut intents: ResMut<HudControlIntents>,
 ) {
     if *era_state.get() == EraState::Advancing {
         return;
     }
-    if !keys.just_pressed(KeyCode::KeyN) {
+    let triggered = keys.just_pressed(KeyCode::KeyN) || intents.advance_tick;
+    intents.advance_tick = false;
+    if !triggered {
         return;
     }
     if progress.remaining() == 0 {
@@ -163,6 +176,15 @@ fn single_tick(
 /// implementation, not two that can drift apart. Allowed even
 /// mid-`Advancing`: a full world reset legitimately invalidates whatever
 /// animation was playing.
+///
+/// Deliberately keyboard-only, no HUD button (task 094 considered and
+/// rejected one): this discards the entire current world — every organism,
+/// every era of progress — with no confirmation step. A stray click is a
+/// much easier accident than a stray keypress on a dedicated letter key, and
+/// this codebase has no "are you sure?" affordance to add a safety net with.
+/// If a button is ever added here, it should come with a confirmation
+/// dialog, not reuse the bare-button pattern the other three time controls
+/// use.
 fn reseed_world(
     keys: Res<ButtonInput<KeyCode>>,
     mut world: ResMut<SimWorld>,
@@ -1105,6 +1127,7 @@ mod tests {
         });
         app.insert_resource(MetaProgress::default());
         app.insert_resource(NextState::<GameState>::default());
+        app.init_resource::<HudControlIntents>();
         app.add_systems(Update, single_tick);
 
         for _ in 0..config.time.era_ticks {
