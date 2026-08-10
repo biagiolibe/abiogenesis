@@ -67,27 +67,8 @@ cancelled and not blocked by another task.
 **excluded from this queue** — blocked on the "Meta-progression persistence"
 proposal (`PROJECT_PLAN.md` §1), not available to pick up yet.
 
-**Bugfixing & UX follow-ups** (2026-08-10, user-reported live during a
-debugging/planning discussion held after tasks 085-090): three bugs plus
-three improvements, investigated and scoped in one session. 091 merges the
-two input bugs that share a root cause (nothing in the codebase checks
-`bevy_egui`'s own input-capture state before the map's own input systems
-run). 092 is a task-082 side effect (a fixed-tick hint duration no longer
-tracks the shortened onboarding eras). 093 reverses a stale task-068
-decision now that Sea carries real mechanical meaning (task 085). 094 and
-095 are real feature additions, not fixes — no dependency between any of
-the five, pick up in any order.
-
-| Status | ID | Title | Depends on | File |
-|-------|----|--------|------------|------|
-| `[x]` | 091 | Gate map input (zoom/click/Tab) behind egui's own input capture | none | [091](done/091-egui-input-capture-gating.md) |
-| `[x]` | 092 | Isolation hint duration should scale with era length | 082, 055 | [092](done/092-isolation-hint-duration-scales-with-era.md) |
-| `[x]` | 093 | Sea should read as water, not "end of the world" | 068, 085 | [093](done/093-sea-color-reads-as-water-not-void.md) |
-| `[x]` | 094 | On-screen buttons for tick/era/notebook controls | 030 | [094](done/094-hud-buttons-for-tick-era-notebook-controls.md) |
-| `[/]` | 095 | Procedural per-world species names + readable descriptions — code done, pending user's live `cargo run` verification | 029 | [095](095-procedural-species-names-and-descriptions.md) |
-
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) beyond what's already expanded into task files here.
 
 ---
 
-*Last updated: 2026-08-10 (088-089, self-interaction balance bug fix, completed and archived to `QUEUE_ARCHIVE.md`. 082 and 083, tuned jointly, completed and archived to `tasks/done/`. 084 stays intentionally out of the queue as blocked. 078 and 081 on hold. 085-086, "Environment as sources," fully closed and archived to `QUEUE_ARCHIVE.md`. 090, terrain island-band retune, completed and archived. 091, egui input-capture gating, completed and moved to `tasks/done/` (live-verified by the user). 092-095, the rest of the bugfixing/UX batch, are open work.)*
+*Last updated: 2026-08-10 (088-089, self-interaction balance bug fix, completed and archived to `QUEUE_ARCHIVE.md`. 082 and 083, tuned jointly, completed and archived to `tasks/done/`. 084 stays intentionally out of the queue as blocked. 078 and 081 on hold. 085-086, "Environment as sources," fully closed and archived to `QUEUE_ARCHIVE.md`. 090, terrain island-band retune, completed and archived. 091-095, the bugfixing/UX batch, fully closed and archived to `QUEUE_ARCHIVE.md`.)*

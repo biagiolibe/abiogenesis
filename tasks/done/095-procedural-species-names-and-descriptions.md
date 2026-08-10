@@ -132,8 +132,11 @@ Two related presentation gaps in how a species is identified/read:
       different seed changes species names; the notebook catalog shows a
       readable description per species alongside its stat line.
 
-      **Pending — needs the user's own `cargo run` pass** (same
-      `screencapture` constraint as tasks 091-094).
+      Confirmed by the user (2026-08-10): "funziona." Follow-up noted: the
+      description reads as flat/repetitive across species (the phrasing is
+      fixed per metabolism, only the plugged-in numbers vary) — a real
+      finding, deliberately not addressed here; revisit in a future task if
+      picked up.
 
 ---
 

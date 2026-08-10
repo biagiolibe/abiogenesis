@@ -34,6 +34,18 @@ it only when you need the history/rationale behind a specific past phase.
 
 ---
 
+**Bugfixing & UX follow-ups** (2026-08-10, user-reported live during a debugging/planning discussion held after tasks 085-090): three bugs plus three improvements, investigated and scoped in one session. 091 merges two input bugs sharing one root cause — nothing in the codebase checked `bevy_egui`'s own input-capture state (`EguiWantsInput`) before the map's own zoom/click/`Tab` systems ran, so the notebook window didn't block map interaction underneath it and `Tab` fought egui's own keyboard-navigation focus-cycling. 092 is a task-082 side effect: a fixed 30-tick isolation-hint duration no longer tracked the shortened onboarding eras (8 ticks), so it outlived the era it was shown in. 093 reversed a stale task-068 decision — `Sea` deliberately near-black to read as "void" — now that task 085 gave it a real mechanical role. 094 added on-screen buttons for tick/era/notebook controls, coexisting with their keyboard shortcuts via a shared `HudControlIntents` flag resource (reseed stayed keyboard-only, deliberately — destructive, no confirmation affordance). 095 replaced the fixed id-indexed species name scheme with a per-world RNG draw (`world::draw_species_name`, pool 16→49 names) plus a new narrative description alongside the existing stat line — user follow-up noted the description reads flat/repetitive across species, left for a future task if picked up.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[x]` | 091 | Gate map input (zoom/click/Tab) behind egui's own input capture | none | [091](done/091-egui-input-capture-gating.md) |
+| `[x]` | 092 | Isolation hint duration should scale with era length | 082, 055 | [092](done/092-isolation-hint-duration-scales-with-era.md) |
+| `[x]` | 093 | Sea should read as water, not "end of the world" | 068, 085 | [093](done/093-sea-color-reads-as-water-not-void.md) |
+| `[x]` | 094 | On-screen buttons for tick/era/notebook controls | 030 | [094](done/094-hud-buttons-for-tick-era-notebook-controls.md) |
+| `[x]` | 095 | Procedural per-world species names + readable descriptions | 029 | [095](done/095-procedural-species-names-and-descriptions.md) |
+
+---
+
 **Camera pan** (2026-08-10): zoom was already done (075-076); pan was the remaining open half of the old "camera zoom and pan" backlog item. Revisited an earlier explicit design call ("no separate pan mechanic needed") now that the grid is `128×80` and Detail zoom alone made navigation impractical.
 
 | Status | ID | Title | Depends on | File |

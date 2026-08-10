@@ -310,7 +310,7 @@ dependency between the five — pick up in any order.
 - `[x]` 092 — Isolation hint duration should scale with era length → [092](tasks/done/092-isolation-hint-duration-scales-with-era.md)
 - `[x]` 093 — Sea should read as water, not "end of the world" → [093](tasks/done/093-sea-color-reads-as-water-not-void.md)
 - `[x]` 094 — On-screen buttons for tick/era/notebook controls → [094](tasks/done/094-hud-buttons-for-tick-era-notebook-controls.md)
-- `[ ]` 095 — Procedural per-world species names + readable descriptions → [095](tasks/095-procedural-species-names-and-descriptions.md)
+- `[x]` 095 — Procedural per-world species names + readable descriptions (follow-up noted: the description reads flat/repetitive across species, phrasing fixed per metabolism — left for a future task if picked up) → [095](tasks/done/095-procedural-species-names-and-descriptions.md)
 
 ### 🎚️ Final tuning — *the real art*
 
