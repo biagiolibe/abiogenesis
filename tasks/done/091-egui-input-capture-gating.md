@@ -98,14 +98,13 @@ conditions `egui_wants_any_pointer_input` / `egui_wants_any_keyboard_input`
       etc.) — this task only gates *whether* the system runs, not what it
       does.
 - [x] `cargo clippy -- -D warnings`, `cargo fmt`, `cargo test` clean.
-- [ ] Verified live via `cargo run`: with the notebook open, scrolling over
+- [x] Verified live via `cargo run`: with the notebook open, scrolling over
       it zooms the notebook's own content (or does nothing), never the map
       camera; clicking a notebook widget never seeds/stresses/culls a cell;
       pressing `Tab` toggles the notebook without stray focus landing on a
       sidebar action button.
 
-      **Pending — needs the user's own `cargo run` pass**, see the note
-      under the `Tab`-focus criterion above.
+      Confirmed by the user (2026-08-10): "ok funziona."
 
 ---
 
