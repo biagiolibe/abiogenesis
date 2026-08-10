@@ -127,6 +127,7 @@
         reinjection_strength: 0.15,
         sea_coolant_strength: 0.05,
         sea_coolant_value: 0.1,
+        sea_coolant_radius: 12.0,
         mountain_shade_radius: 8.0,
         mountain_shade_strength: 0.3,
     ),

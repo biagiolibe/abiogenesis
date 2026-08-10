@@ -618,21 +618,31 @@ pub struct SourceConfig {
     /// falling back to the best candidate seen.
     pub max_heat_source_placement_attempts: u32,
     /// Per-tick pull-back strength toward `EnvironmentConfig::
-    /// source_temperature` for heat source cells, and toward
-    /// `sea_coolant_value` for cells neighbouring `TerrainKind::Sea` —
-    /// counteracts `diffuse_environment`'s erosion so both features persist
-    /// as standing terrain rather than fading to the field mean. Must
-    /// exceed `EnvironmentConfig::diffusion_rate`, or the pull-back loses to
-    /// diffusion's own erosion every tick.
+    /// source_temperature` for heat source cells, and (weighted by
+    /// closeness within `sea_coolant_radius`) toward `sea_coolant_value` for
+    /// cells near `TerrainKind::Sea` — counteracts `diffuse_environment`'s
+    /// erosion so both features persist as standing terrain rather than
+    /// fading to the field mean. Must exceed `EnvironmentConfig::
+    /// diffusion_rate`, or the pull-back loses to diffusion's own erosion
+    /// every tick.
     pub reinjection_strength: f32,
     /// Passive-coolant pull strength applied to a cell's temperature toward
-    /// `sea_coolant_value`, proportional to the fraction of its Moore
-    /// neighbours that are `TerrainKind::Sea` (task 085's "Sea as a passive
-    /// heat sink"). Deliberately weaker than `reinjection_strength`: this is
-    /// ambient coastal cooling, not a pinned source.
+    /// `sea_coolant_value`, weighted by how close the cell is to the nearest
+    /// `TerrainKind::Sea` cell within `sea_coolant_radius` (task 085's "Sea
+    /// as a passive heat sink", widened from a single-cell Moore ring to a
+    /// real coastal band per task 086's playtest — a 1-cell-only pull read
+    /// as "the sea isn't influencing anything" at the heatmap's scale).
+    /// Deliberately weaker than `reinjection_strength`: this is ambient
+    /// coastal cooling, not a pinned source.
     pub sea_coolant_strength: f32,
     /// Fixed cold target temperature Sea's coastal cooling pulls toward.
     pub sea_coolant_value: f32,
+    /// Falloff radius (cells, grid/Chebyshev distance) within which
+    /// `TerrainKind::Sea`'s coastal cooling blends into the heat-source
+    /// field — same falloff shape as `heat_source_radius_*`, applied both at
+    /// generation time (`apply_environment_sources`) and every tick
+    /// (`reinject_environment_sources`) via `SimWorld::sea_distance`.
+    pub sea_coolant_radius: f32,
     /// Mountain/peak light-dimming falloff radius (cells).
     pub mountain_shade_radius: f32,
     /// Maximum light reduction at a peak's own cell, fading to `0` at
@@ -654,6 +664,7 @@ impl Default for SourceConfig {
             reinjection_strength: 0.15,
             sea_coolant_strength: 0.05,
             sea_coolant_value: 0.1,
+            sea_coolant_radius: 12.0,
             mountain_shade_radius: 8.0,
             mountain_shade_strength: 0.3,
         }

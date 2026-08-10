@@ -1186,8 +1186,20 @@ mod tests {
         // to a small residue supply and survives to tick 100 — well past the
         // GDD §5.9 ~7-tick "obviously starving" baseline, without becoming
         // self-sufficient (it still dies eventually, unlike Photolithic).
-        let (mut world, config) = world_with_one_decomposer(0.5, config_seed_energy());
+        let (mut world, mut config) = world_with_one_decomposer(0.5, config_seed_energy());
         let (cx, cy) = (world.width / 2, world.height / 2);
+        // 150 ticks is long enough for task 085's environment (diffusion,
+        // sea coastal cooling) to drift this cell's temperature away from
+        // the `temp_optimum` match `world_with_one_decomposer` set up,
+        // confounding the trickle-survival measurement this test isolates —
+        // freeze both so the cell's temperature stays exactly where the
+        // helper put it, same isolation principle
+        // `decomposer_adjacent_to_residue_gains_and_residue_shrinks` already
+        // applies to `residue_ambient_trickle`. Heat-source reinjection is
+        // left as-is: with only 2-4 sources across 10240 cells it's not
+        // going to coincide with this fixed test cell.
+        config.environment.diffusion_rate = 0.0;
+        config.source.sea_coolant_strength = 0.0;
 
         let mut ticks_survived = 0;
         for _ in 0..150 {

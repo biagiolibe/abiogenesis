@@ -191,6 +191,15 @@ pub struct SimWorld {
     /// `diffuse_environment`'s erosion — the same reason `toxic_zone` is
     /// kept as a stable reference alongside the diffusing scalar it seeded.
     pub heat_sources: Vec<usize>,
+    /// Grid (Chebyshev) distance from each cell to its nearest `Sea` cell
+    /// (task 086 playtest follow-up), computed once at generation time via
+    /// multi-source BFS and reused both to bake the initial coastal-cooling
+    /// falloff in `apply_environment_sources` and to weight
+    /// `reinject_environment_sources`' ongoing pull toward
+    /// `SourceConfig::sea_coolant_value` — a single source of truth for "how
+    /// close is this cell to the sea" instead of two independent
+    /// computations drifting apart.
+    sea_distance: Vec<f32>,
     /// Whether any organism has ever occupied a cell in this world (task
     /// 050): set by `sim::step` the first time its population scan finds
     /// one. Worlds start with nothing placed (the player seeds them via
@@ -245,6 +254,7 @@ impl SimWorld {
             matrix,
             toxic_zone: ToxicZoneBounds::default(),
             heat_sources: Vec::new(),
+            sea_distance: Vec::new(),
             ever_populated: false,
             rng,
         };
@@ -427,15 +437,21 @@ impl SimWorld {
     /// Replaces the old fixed left-right/top-bottom lerps (task 085,
     /// `redesign/abiogenesis-environment-sources.md`): temperature comes
     /// from distance to the nearest of `params.heat_source_count` wind-biased
-    /// point sources, light from a per-world sun-direction projection dimmed
-    /// near `Mountain` peaks. Draws two independent RNG streams
+    /// point sources, then blended toward `SourceConfig::sea_coolant_value`
+    /// by proximity to `TerrainKind::Sea` (task 086 playtest follow-up —
+    /// baking a real coastal falloff in here, not just a per-tick nudge on
+    /// the coastline itself, is what makes the sea's cooling legible at
+    /// world start rather than only after many ticks of diffusion). Light
+    /// comes from a per-world sun-direction projection dimmed near
+    /// `Mountain` peaks. Draws two independent RNG streams
     /// (`TEMPERATURE_SOURCE_SEED_OFFSET`, `SUN_DIRECTION_SEED_OFFSET`) —
     /// never `self.rng` — so this generation step doesn't shift any other
     /// draw for a given seed, same discipline as `generate_terrain`/
     /// `place_toxic_zone`. Must run after `generate_terrain` (heat source
-    /// placement needs real terrain to search against via `is_placeable`)
-    /// and before `place_toxic_zone` (unchanged ordering requirement).
-    /// Toxicity is not set here (task 066: `place_toxic_zone` owns it).
+    /// placement, and the sea-distance field, both need real terrain to
+    /// search against) and before `place_toxic_zone` (unchanged ordering
+    /// requirement). Toxicity is not set here (task 066: `place_toxic_zone`
+    /// owns it).
     fn apply_environment_sources(&mut self, config: &SimConfig, params: &WorldParams) {
         let env = &config.environment;
         let source_cfg = &config.source;
@@ -464,17 +480,63 @@ impl SimWorld {
             .map(|(idx, _)| (idx % self.width, idx / self.width))
             .collect();
 
+        let sea_distance = self.sea_distance_field();
+
         for y in 0..self.height {
             for x in 0..self.width {
                 let idx = self.index(x, y);
-                let temperature =
+                let heat_temperature =
                     self.temperature_at(x, y, &heat_sources, wind, env, params.heat_source_radius);
                 let base_light = self.sun_light_at(x, y, sun_dir, sun_bounds, env);
-                self.cells[idx].temperature = temperature;
+                // A heat source cell itself stays pinned to the heat model
+                // even right at the coast: `reinject_environment_sources`
+                // guarantees this every tick afterward anyway (its own pull
+                // outweighs `sea_coolant_strength`), so blending it toward
+                // `sea_coolant_value` here would only produce a cold-then-
+                // reheating flicker on the very first ticks.
+                self.cells[idx].temperature = if heat_sources.contains(&idx) {
+                    heat_temperature
+                } else {
+                    let sea_t = (sea_distance[idx]
+                        / source_cfg.sea_coolant_radius.max(f32::EPSILON))
+                    .clamp(0.0, 1.0);
+                    lerp(source_cfg.sea_coolant_value, heat_temperature, sea_t)
+                };
                 self.cells[idx].light = mountain_shaded_light(base_light, x, y, &peaks, source_cfg);
             }
         }
         self.heat_sources = heat_sources;
+        self.sea_distance = sea_distance;
+    }
+
+    /// Grid distance from every cell to its nearest `TerrainKind::Sea` cell
+    /// (task 086 playtest follow-up), via multi-source BFS seeded from every
+    /// `Sea` cell at once — `O(cells)`, not `O(cells * sea_cells)` a
+    /// point-by-point nearest-search would cost with a large sea. Distance
+    /// is in Moore-neighbour steps (matching `diffuse_environment`'s own
+    /// 8-connectivity), so it composes directly with
+    /// `SourceConfig::sea_coolant_radius`, a cell count like
+    /// `heat_source_radius`.
+    fn sea_distance_field(&self) -> Vec<f32> {
+        let mut distance = vec![f32::INFINITY; self.cells.len()];
+        let mut queue: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
+        for (idx, cell) in self.cells.iter().enumerate() {
+            if cell.terrain == TerrainKind::Sea {
+                distance[idx] = 0.0;
+                queue.push_back(idx);
+            }
+        }
+        while let Some(idx) = queue.pop_front() {
+            let (x, y) = (idx % self.width, idx / self.width);
+            let next = distance[idx] + 1.0;
+            for n in self.moore_neighbours(x, y) {
+                if next < distance[n] {
+                    distance[n] = next;
+                    queue.push_back(n);
+                }
+            }
+        }
+        distance
     }
 
     /// Places `params.heat_source_count` point sources via bounded-retry
@@ -620,16 +682,17 @@ impl SimWorld {
     /// Counters `diffuse_environment`'s erosion of the two standing
     /// temperature features it doesn't otherwise preserve (task 085):
     /// `heat_sources` are pulled back toward `source_temperature`, and every
-    /// cell neighbouring `TerrainKind::Sea` gets a smaller pull toward
-    /// `sea_coolant_value` proportional to its Sea-neighbour fraction (the
-    /// "passive heat sink" effect — applied to the Sea's *neighbours*, since
-    /// Sea itself is never placeable and so never read by `env_fit`).
-    /// Deliberately a separate method from `diffuse_environment`, called
-    /// right after it from `sim::step` and operating on `self.scratch` (the
-    /// write side diffusion just populated) — folding this into the blend
-    /// loop would perturb `diffuse_environment`'s own fixed-point tests,
-    /// which build a hand-crafted uniform field and expect diffusion alone
-    /// to leave it untouched.
+    /// cell within `sea_coolant_radius` of the sea gets a pull toward
+    /// `sea_coolant_value` weighted by `self.sea_distance` (task 086: widened
+    /// from a single Moore-ring nudge to the same radius-based falloff
+    /// `apply_environment_sources` bakes in at generation, so the coastal
+    /// band both starts and stays visible instead of only the literal
+    /// coastline). Deliberately a separate method from `diffuse_environment`,
+    /// called right after it from `sim::step` and operating on
+    /// `self.scratch` (the write side diffusion just populated) — folding
+    /// this into the blend loop would perturb `diffuse_environment`'s own
+    /// fixed-point tests, which build a hand-crafted uniform field and
+    /// expect diffusion alone to leave it untouched.
     pub fn reinject_environment_sources(&mut self, config: &SimConfig) {
         let source_cfg = &config.source;
         debug_assert!(
@@ -643,26 +706,15 @@ impl SimWorld {
                 source_cfg.reinjection_strength * (config.environment.source_temperature - current);
         }
 
-        for y in 0..self.height {
-            for x in 0..self.width {
-                let neighbours: Vec<usize> = self.moore_neighbours(x, y).collect();
-                if neighbours.is_empty() {
-                    continue;
-                }
-                let sea_fraction = neighbours
-                    .iter()
-                    .filter(|&&n| self.cells[n].terrain == TerrainKind::Sea)
-                    .count() as f32
-                    / neighbours.len() as f32;
-                if sea_fraction <= 0.0 {
-                    continue;
-                }
-                let idx = self.index(x, y);
-                let current = self.scratch[idx].temperature;
-                self.scratch[idx].temperature += source_cfg.sea_coolant_strength
-                    * sea_fraction
-                    * (source_cfg.sea_coolant_value - current);
+        let radius = source_cfg.sea_coolant_radius.max(f32::EPSILON);
+        for (idx, &distance) in self.sea_distance.iter().enumerate() {
+            let weight = (1.0 - distance / radius).clamp(0.0, 1.0);
+            if weight <= 0.0 {
+                continue;
             }
+            let current = self.scratch[idx].temperature;
+            self.scratch[idx].temperature +=
+                source_cfg.sea_coolant_strength * weight * (source_cfg.sea_coolant_value - current);
         }
     }
 
