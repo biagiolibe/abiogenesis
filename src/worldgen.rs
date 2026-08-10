@@ -9,7 +9,9 @@ use rand::RngExt;
 
 use crate::config::SimConfig;
 use crate::objectives::{Objective, ZoneKind};
-use crate::world::{draw_species_tags, Metabolism, SimWorld, Species, SpeciesId};
+use crate::world::{
+    draw_species_name, draw_species_tags, Metabolism, SimWorld, Species, SpeciesId,
+};
 
 /// Concrete generation parameters for one world, derived from its position
 /// in the run (`world_index`, 0-based: the first world is `0`). Every field
@@ -164,7 +166,9 @@ pub fn generate_starting_palette(world: &mut SimWorld, config: &SimConfig) {
         };
         let temp_optimum = cold + (hot - cold) * weight;
         let tags = draw_species_tags(world, config);
+        let name = draw_species_name(world);
         world.species.push(Species {
+            name,
             metabolism: Metabolism::Photolithic,
             temp_optimum,
             temp_tolerance: config.energy.default_temp_tolerance,
@@ -205,7 +209,9 @@ pub fn add_bonus_species(world: &mut SimWorld, config: &SimConfig, count: u32) {
         let weight: f32 = world.rng_mut().random_range(0.0..=1.0);
         let temp_optimum = cold + (hot - cold) * weight;
         let tags = draw_species_tags(world, config);
+        let name = draw_species_name(world);
         world.species.push(Species {
+            name,
             metabolism,
             temp_optimum,
             temp_tolerance: config.energy.default_temp_tolerance,
@@ -508,6 +514,30 @@ mod tests {
         assert_eq!(a.species, b.species);
     }
 
+    /// Task 095: species names are drawn from the world's own seeded RNG,
+    /// not derived from `SpeciesId` alone — two different seeds must be able
+    /// to produce different names for "species 0" (the old id-indexed
+    /// scheme always picked the same name here, every world, every seed).
+    #[test]
+    fn starting_species_names_vary_across_seeds() {
+        let config = SimConfig::default();
+        let mut saw_a_difference = false;
+        for seed in 0..20u64 {
+            let mut a = SimWorld::new(seed, &config);
+            let mut b = SimWorld::new(seed + 1000, &config);
+            generate_starting_palette(&mut a, &config);
+            generate_starting_palette(&mut b, &config);
+            if a.species[0].name != b.species[0].name {
+                saw_a_difference = true;
+                break;
+            }
+        }
+        assert!(
+            saw_a_difference,
+            "species 0's name should vary across at least some seeds"
+        );
+    }
+
     /// Task 050: no world starts with an organism already on the grid — the
     /// player seeds it themselves via `Seed`.
     #[test]
@@ -696,6 +726,7 @@ mod tests {
         let build = |severity: f32| {
             let mut world = SimWorld::new(42, &config);
             world.species.push(Species {
+                name: "Test".to_string(),
                 metabolism: Metabolism::Photolithic,
                 temp_optimum: 0.5,
                 temp_tolerance: config.energy.default_temp_tolerance,

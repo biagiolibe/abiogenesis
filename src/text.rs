@@ -11,6 +11,7 @@
 
 use crate::ui::ActionMode;
 use abiogenesis::objectives::ZoneKind;
+use abiogenesis::world::Metabolism;
 
 // --- Main menu (`menu.rs::main_menu_ui`) ---
 
@@ -461,9 +462,47 @@ pub fn species_catalog_line(
     )
 }
 
+/// A short natural-language description of a species' genome (task 095),
+/// alongside — not replacing — `species_catalog_line`'s precise stat line
+/// above (`Splice`'s `ShiftTempOptimum` math still needs the exact numbers
+/// visible somewhere). A pure function of the same readable fields
+/// `species_catalog_line` already takes (`temp_label` is
+/// `notebook.rs::temperature_label`'s existing cold/temperate/hot band), so
+/// it stays deterministic and unit-testable without touching `SimWorld`.
+pub fn species_description(
+    metabolism: Metabolism,
+    temp_label: &str,
+    repro_threshold: f32,
+) -> String {
+    let diet = match metabolism {
+        Metabolism::Photolithic => "draws its energy from light",
+        Metabolism::Predator => "hunts adjacent organisms for energy",
+        Metabolism::Decomposer => "feeds on residue left behind by the dead",
+    };
+    format!(
+        "A {temp_label}-adapted species that {diet}, reproducing once its energy reaches {repro_threshold:.1}."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Task 095: the description must actually reflect which metabolism it
+    /// was given, not a generic sentence — a player reading three different
+    /// species' catalog entries should see three different diets.
+    #[test]
+    fn species_description_mentions_the_right_diet_per_metabolism() {
+        let photolithic = species_description(Metabolism::Photolithic, "temperate", 10.0);
+        let predator = species_description(Metabolism::Predator, "temperate", 10.0);
+        let decomposer = species_description(Metabolism::Decomposer, "temperate", 10.0);
+
+        assert!(photolithic.contains("light"), "got: {photolithic}");
+        assert!(predator.contains("hunts"), "got: {predator}");
+        assert!(decomposer.contains("residue"), "got: {decomposer}");
+        assert_ne!(photolithic, predator);
+        assert_ne!(predator, decomposer);
+    }
 
     #[test]
     fn death_message_shows_costs_as_negative_net_contributions() {

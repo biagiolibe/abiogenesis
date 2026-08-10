@@ -416,7 +416,7 @@ pub(crate) fn hud_panel(
                         ui.horizontal(|ui| {
                             ui.colored_label(species_color(*species), SPECIES_GLYPH);
                             ui.label(text::population_line(
-                                &species_label(*species),
+                                &species_label(&world, *species),
                                 *population,
                                 *avg_energy,
                             ));
@@ -448,6 +448,7 @@ pub(crate) fn hud_panel(
             ui.strong(text::HEADING_OBJECTIVE);
             objective_panel(
                 ui,
+                &world,
                 objective.current(),
                 objective.index,
                 objective.total(),
@@ -567,6 +568,7 @@ fn viewport_hint(
 /// own (task 034's constraint).
 fn objective_panel(
     ui: &mut egui::Ui,
+    world: &SimWorld,
     objective: Option<&Objective>,
     index: usize,
     total: usize,
@@ -585,12 +587,14 @@ fn objective_panel(
     let description = match *objective {
         Objective::Coexistence { min_species, .. } => text::coexistence_objective_line(min_species),
         Objective::SurviveIn { species, zone, .. } => {
-            text::survive_in_objective_line(&species_label(species), text::zone_label(zone))
+            text::survive_in_objective_line(&species_label(world, species), text::zone_label(zone))
         }
         Objective::TriggerBloom {
             species,
             population_threshold,
-        } => text::trigger_bloom_objective_line(&species_label(species), population_threshold),
+        } => {
+            text::trigger_bloom_objective_line(&species_label(world, species), population_threshold)
+        }
     };
     // The redesign's one deliberate break from the panel-wide monospace
     // style (task 064 §5, "da usare con parsimonia" — used sparingly,
@@ -767,7 +771,7 @@ fn species_row(ui: &mut egui::Ui, species: SpeciesId, world: &SimWorld, selected
     let text = egui::RichText::new(format!(
         "{} {}",
         metabolism_glyph(metabolism),
-        species_label(species)
+        species_label(world, species)
     ))
     .color(species_color(species));
     if ui.selectable_label(is_selected, text).clicked() {
@@ -913,7 +917,7 @@ fn splice_panel(ui: &mut egui::Ui, world: &SimWorld, draft: &mut SpliceDraft) {
         ui.radio_value(
             &mut draft.source,
             Some(SpeciesId(i)),
-            species_label(SpeciesId(i)),
+            species_label(world, SpeciesId(i)),
         );
     }
 

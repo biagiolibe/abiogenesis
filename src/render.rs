@@ -24,23 +24,15 @@ const CELL_SIZE: f32 = 16.0;
 /// hues without any per-species color configuration.
 const SPECIES_HUE_STEP: f32 = 137.5;
 
-/// Fixed, unordered word list for `species_label` (task 029). Species carry
-/// no design secrecy constraint (unlike tags, GDD §11), so a generated name
-/// is purely a legibility upgrade over bare "species N" — deterministic
-/// from `SpeciesId`, no stored/editable state, same "derive from id"
-/// approach as `SPECIES_HUE_STEP`/`TAG_HUE_STEP`.
-const SPECIES_NAMES: [&str; 16] = [
-    "Nyx", "Kael", "Sable", "Rook", "Vesk", "Lira", "Thorn", "Onyx", "Fenn", "Skye", "Brakk",
-    "Cass", "Drys", "Elm", "Fira", "Grix",
-];
-
-/// A species' display label: a stable generated name plus its numeric id,
+/// A species' display label: its stored, per-world-random `Species::name`
+/// (task 095 — drawn once at construction from the world's own seeded RNG,
+/// `world::draw_species_name`; no longer derived from `SpeciesId` alone, so
+/// "species 0" is a different name in every world/seed) plus its numeric id,
 /// e.g. "Nyx (species 0)" — legible without requiring the player to
-/// memorize raw indices, while keeping the number for disambiguation once
-/// `Splice` (task 025) pushes the species count past the word list's length.
-pub fn species_label(id: SpeciesId) -> String {
-    let name = SPECIES_NAMES[id.0 as usize % SPECIES_NAMES.len()];
-    format!("{name} (species {})", id.0)
+/// memorize raw indices, while keeping the number for disambiguation
+/// whenever two species happen to draw the same name.
+pub fn species_label(world: &SimWorld, id: SpeciesId) -> String {
+    format!("{} (species {})", world.species[id.0 as usize].name, id.0)
 }
 
 /// Hue for a species' identity color, shared by `cell_color`'s grid

@@ -573,6 +573,7 @@ mod tests {
             cell.is_peak = false;
         }
         world.species.push(Species {
+            name: "Test".to_string(),
             metabolism: Metabolism::Photolithic,
             temp_optimum: temperature,
             temp_tolerance: config.energy.default_temp_tolerance,
@@ -826,6 +827,7 @@ mod tests {
         world.matrix = matrix;
         for tags in [tags_a, tags_b] {
             world.species.push(Species {
+                name: "Test".to_string(),
                 metabolism: Metabolism::Photolithic,
                 temp_optimum: temperature,
                 temp_tolerance: config.energy.default_temp_tolerance,
@@ -930,6 +932,7 @@ mod tests {
         let mut world = SimWorld::new(42, &config);
         world.matrix = matrix;
         world.species.push(Species {
+            name: "Test".to_string(),
             metabolism: Metabolism::Photolithic,
             temp_optimum: 0.5,
             temp_tolerance: config.energy.default_temp_tolerance,
@@ -937,6 +940,7 @@ mod tests {
             tags: vec![TagSlot(0)],
         });
         world.species.push(Species {
+            name: "Test".to_string(),
             metabolism: Metabolism::Photolithic,
             temp_optimum: 0.5,
             temp_tolerance: config.energy.default_temp_tolerance,
@@ -973,6 +977,7 @@ mod tests {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
         world.species.push(Species {
+            name: "Test".to_string(),
             metabolism: Metabolism::Predator,
             temp_optimum: temperature,
             temp_tolerance: config.energy.default_temp_tolerance,
@@ -1022,6 +1027,7 @@ mod tests {
         let (cx, cy) = (world.width / 2, world.height / 2);
 
         world.species.push(Species {
+            name: "Test".to_string(),
             metabolism: Metabolism::Photolithic,
             temp_optimum: 0.5,
             temp_tolerance: config.energy.default_temp_tolerance,
@@ -1055,6 +1061,7 @@ mod tests {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
         world.species.push(Species {
+            name: "Test".to_string(),
             metabolism: Metabolism::Predator,
             temp_optimum: 0.5,
             temp_tolerance: config.energy.default_temp_tolerance,
@@ -1062,6 +1069,7 @@ mod tests {
             tags: Vec::new(),
         });
         world.species.push(Species {
+            name: "Test".to_string(),
             metabolism: Metabolism::Photolithic,
             temp_optimum: 0.5,
             temp_tolerance: config.energy.default_temp_tolerance,
@@ -1126,6 +1134,7 @@ mod tests {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
         world.species.push(Species {
+            name: "Test".to_string(),
             metabolism: Metabolism::Decomposer,
             temp_optimum: temperature,
             temp_tolerance: config.energy.default_temp_tolerance,
@@ -1253,6 +1262,7 @@ mod tests {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
         world.species.push(Species {
+            name: "Test".to_string(),
             metabolism: Metabolism::Decomposer,
             temp_optimum: 0.5,
             temp_tolerance: config.energy.default_temp_tolerance,
@@ -1319,6 +1329,7 @@ mod tests {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
         world.species.push(Species {
+            name: "Test".to_string(),
             metabolism: Metabolism::Photolithic,
             temp_optimum: 0.5,
             temp_tolerance: config.energy.default_temp_tolerance,
@@ -1461,6 +1472,7 @@ mod tests {
             vec![TagSlot(4)],
         ] {
             world.species.push(Species {
+                name: "Test".to_string(),
                 metabolism: Metabolism::Photolithic,
                 temp_optimum: 0.5,
                 temp_tolerance: config.energy.default_temp_tolerance,

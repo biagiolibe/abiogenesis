@@ -337,7 +337,7 @@ fn record_events(
         log.entries.push(LogEntry {
             era: world.era,
             species: Some(event.species),
-            text: text::extinction_message(&species_label(event.species)),
+            text: text::extinction_message(&species_label(&world, event.species)),
             evidence_quality: None,
         });
     }
@@ -358,7 +358,7 @@ fn record_events(
                 era: world.era,
                 species: Some(event.species),
                 text: text::player_organism_death_message(
-                    &species_label(event.species),
+                    &species_label(&world, event.species),
                     x,
                     y,
                     event.gain,
@@ -382,6 +382,7 @@ fn record_events(
 /// `accumulate_evidence`'s per-observation logging (task 061): a zero-birth
 /// species gets no line, keeping this a once-per-era summary, not a flood.
 fn tally_births(
+    world: Res<SimWorld>,
     mut born: MessageReader<OrganismBorn>,
     mut era_completed: MessageReader<EraCompleted>,
     mut tally: ResMut<BirthTally>,
@@ -411,7 +412,7 @@ fn tally_births(
         log.entries.push(LogEntry {
             era,
             species: Some(species),
-            text: text::birth_log_message(&species_label(species), count),
+            text: text::birth_log_message(&species_label(&world, species), count),
             evidence_quality: None,
         });
     }
@@ -818,14 +819,21 @@ fn catalog_panel(ui: &mut egui::Ui, world: &SimWorld, config: &SimConfig) {
     for (id, species) in world.species.iter().enumerate() {
         ui.horizontal(|ui| {
             ui.colored_label(species_color(SpeciesId(id as u8)), TAG_GLYPH);
-            ui.label(text::species_catalog_line(
-                &species_label(SpeciesId(id as u8)),
-                species.metabolism,
-                species.temp_optimum,
-                species.temp_tolerance,
-                temperature_label(species.temp_optimum, &config.environment),
-                config.energy.repro_threshold,
-            ));
+            ui.vertical(|ui| {
+                ui.label(text::species_catalog_line(
+                    &species_label(world, SpeciesId(id as u8)),
+                    species.metabolism,
+                    species.temp_optimum,
+                    species.temp_tolerance,
+                    temperature_label(species.temp_optimum, &config.environment),
+                    config.energy.repro_threshold,
+                ));
+                ui.weak(text::species_description(
+                    species.metabolism,
+                    temperature_label(species.temp_optimum, &config.environment),
+                    species.repro_threshold,
+                ));
+            });
             for &slot in &species.tags {
                 let tag = world.active_tags[slot.0 as usize];
                 ui.colored_label(tag_color(tag), format!("{TAG_GLYPH} {}", tag_glyph(tag)));
@@ -855,7 +863,21 @@ mod tests {
         assert_eq!(temperature_label(0.85, &env), "hot");
     }
 
-    fn app_for_record_events(world: SimWorld) -> App {
+    fn app_for_record_events(mut world: SimWorld) -> App {
+        // Dummy species covering every `SpeciesId` these tests reference
+        // (up to 2) — `species_label` (task 095) indexes `world.species` by
+        // id, so events naming a species need a real entry there.
+        let config = SimConfig::default();
+        for _ in 0..3 {
+            world.species.push(abiogenesis::world::Species {
+                name: "Test".to_string(),
+                metabolism: abiogenesis::world::Metabolism::Photolithic,
+                temp_optimum: 0.5,
+                temp_tolerance: config.energy.default_temp_tolerance,
+                repro_threshold: config.energy.repro_threshold,
+                tags: Vec::new(),
+            });
+        }
         let mut app = App::new();
         app.insert_resource(world);
         app.init_resource::<ObservationLog>();
@@ -1204,7 +1226,23 @@ mod tests {
     }
 
     fn app_for_tally_births() -> App {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        // Two dummy species (tests below reference `SpeciesId(0)`/`(1)`) —
+        // `species_label` (task 095) indexes `world.species` by id, so it
+        // needs real entries here, not just the id numbers.
+        for _ in 0..2 {
+            world.species.push(abiogenesis::world::Species {
+                name: "Test".to_string(),
+                metabolism: abiogenesis::world::Metabolism::Photolithic,
+                temp_optimum: 0.5,
+                temp_tolerance: config.energy.default_temp_tolerance,
+                repro_threshold: config.energy.repro_threshold,
+                tags: Vec::new(),
+            });
+        }
         let mut app = App::new();
+        app.insert_resource(world);
         app.init_resource::<BirthTally>();
         app.init_resource::<ObservationLog>();
         app.add_message::<OrganismBorn>();

@@ -486,6 +486,7 @@ mod tests {
         let mut world = SimWorld::new(42, &config);
         for _ in 0..count {
             world.species.push(Species {
+                name: "Test".to_string(),
                 metabolism: Metabolism::Photolithic,
                 temp_optimum: 0.5,
                 temp_tolerance: config.energy.default_temp_tolerance,
@@ -655,6 +656,7 @@ mod tests {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
         world.species.push(Species {
+            name: "Test".to_string(),
             metabolism: Metabolism::Photolithic,
             temp_optimum: 0.5,
             temp_tolerance: config.energy.default_temp_tolerance,

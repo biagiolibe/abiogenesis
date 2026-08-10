@@ -19,7 +19,7 @@ use abiogenesis::sim::{
     OrganismBorn, OrganismDied, SpeciesExtinct,
 };
 use abiogenesis::state::{EraState, GameState};
-use abiogenesis::world::{net_self_interaction, Organism, SimWorld, SpeciesId};
+use abiogenesis::world::{draw_species_name, net_self_interaction, Organism, SimWorld, SpeciesId};
 use abiogenesis::worldgen::era_ticks_for;
 
 use crate::notebook::{EverSeeded, LogEntry, ObservationLog, PlayerPlacedCells};
@@ -524,6 +524,9 @@ fn apply_splice(
         return;
     };
     let mut new_species = source_species.clone();
+    // Task 095: a spliced child draws its own independent name — cloning
+    // `source_species` would otherwise leave it sharing its parent's.
+    new_species.name = draw_species_name(&mut world);
     match draft.edit {
         SpliceEditChoice::SwapTag {
             old: Some(old),
@@ -569,7 +572,7 @@ fn apply_splice(
     log.entries.push(LogEntry {
         era: world.era,
         species: Some(new_species_id),
-        text: text::species_created_message(&species_label(new_species_id)),
+        text: text::species_created_message(&species_label(&world, new_species_id)),
         evidence_quality: None,
     });
     budget.points_remaining -= config.time.action_costs.splice;
@@ -605,6 +608,7 @@ mod tests {
         world.active_tags = vec![TagId(0), TagId(1)];
         world.matrix = TagMatrix::from_values(2, vec![0, 0, 0, 0]);
         world.species.push(Species {
+            name: "Test".to_string(),
             metabolism: abiogenesis::world::Metabolism::Photolithic,
             temp_optimum: 0.5,
             temp_tolerance: config.energy.default_temp_tolerance,
@@ -852,6 +856,34 @@ mod tests {
         let log = app.world().resource::<ObservationLog>();
         assert_eq!(log.entries.len(), 1, "the new species must be logged");
         assert_eq!(log.entries[0].species, Some(SpeciesId(1)));
+    }
+
+    /// Task 095: a spliced child draws its own independent name — cloning
+    /// `source_species` (`apply_splice`'s starting point for the edit) must
+    /// not leave it sharing its parent's name unchanged.
+    #[test]
+    fn spliced_species_draws_its_own_name_not_a_copy_of_its_parents() {
+        let (mut world, config) = world_with_one_taggable_species();
+        world.species[0].name = "ParentSentinel".to_string();
+        let mut app = app_with(
+            world,
+            config,
+            SpliceDraft {
+                source: Some(SpeciesId(0)),
+                edit: SpliceEditChoice::SwapTag {
+                    old: Some(TagSlot(0)),
+                    new: Some(TagSlot(1)),
+                },
+                apply_requested: true,
+            },
+        );
+        app.update();
+
+        let world = app.world().resource::<SimWorld>();
+        assert_ne!(
+            world.species[1].name, "ParentSentinel",
+            "the spliced child must draw its own name, not inherit its parent's"
+        );
     }
 
     #[test]

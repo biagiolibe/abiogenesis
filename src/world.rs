@@ -79,6 +79,13 @@ impl TagMatrix {
 /// player-readable, tags are opaque and drive matrix interactions.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Species {
+    /// Display name (task 095), drawn once from the world's own seeded RNG
+    /// at construction (`draw_species_name`) and stored — never recomputed
+    /// from `SpeciesId`, so it stays stable for the species' whole lifetime
+    /// and varies per world/seed the way tags/matrix/terrain already do. A
+    /// `Splice`-derived child draws its own independent name, not a copy of
+    /// its parent's.
+    pub name: String,
     pub metabolism: Metabolism,
     pub temp_optimum: f32,
     pub temp_tolerance: f32,
@@ -1082,6 +1089,35 @@ pub fn draw_species_tags(world: &mut SimWorld, config: &SimConfig) -> Vec<TagSlo
     }
 }
 
+/// Fixed, unordered word list `draw_species_name` samples from (task 095,
+/// replacing task 029's fixed `SpeciesId`-indexed scheme — see that
+/// function's own doc comment for why). Species carry no design secrecy
+/// constraint (unlike tags, GDD §11), so a generated name is purely a
+/// legibility upgrade — wide enough that repeats stay rare across an
+/// ordinary run, even with `Splice` adding species past the pool size.
+const SPECIES_NAMES: &[&str] = &[
+    "Nyx", "Kael", "Sable", "Rook", "Vesk", "Lira", "Thorn", "Onyx", "Fenn", "Skye", "Brakk",
+    "Cass", "Drys", "Elm", "Fira", "Grix", "Vor", "Zeph", "Quil", "Wrey", "Sten", "Blythe",
+    "Corvin", "Ashka", "Ryn", "Tavik", "Ember", "Lask", "Moth", "Juno", "Halo", "Reef", "Snow",
+    "Dune", "Ashe", "Wraith", "Fable", "Glim", "Hollow", "Marrow", "Nettle", "Opal", "Pyre",
+    "Quartz", "Rime", "Slate", "Thicket", "Umbra",
+];
+
+/// Draws this species' display name from the world's own seeded RNG
+/// (task 095) — never `rand::rng()` (TECH_DESIGN.md invariant 1), same
+/// discipline `draw_species_tags` follows. Called once per species at
+/// construction and stored on `Species::name`, never recomputed later.
+/// Names carry no GDD §11 secrecy constraint (unlike tags/matrix), so this
+/// reads from the world's main RNG stream directly rather than a
+/// decorrelated offset stream the way terrain/toxic-zone/heat-source
+/// generation does.
+pub fn draw_species_name(world: &mut SimWorld) -> String {
+    SPECIES_NAMES
+        .choose(&mut world.rng)
+        .expect("SPECIES_NAMES is a non-empty fixed list")
+        .to_string()
+}
+
 /// Every `k`-sized combination of `slots`, in lexicographic order. Hand-rolled
 /// rather than pulling in `itertools` (not a direct dependency of this
 /// project) — the search space here is tiny (at most `C(8,3) = 56` given the
@@ -1714,6 +1750,19 @@ mod tests {
                 draw_species_tags(&mut a, &config),
                 draw_species_tags(&mut b, &config)
             );
+        }
+    }
+
+    /// Task 095: `draw_species_name` must draw from `world.rng_mut()`, never
+    /// `rand::rng()` (TECH_DESIGN.md invariant 1) — same seed, same draw.
+    #[test]
+    fn draw_species_name_is_deterministic_for_the_same_seed() {
+        let config = test_config();
+        let mut a = SimWorld::new(42, &config);
+        let mut b = SimWorld::new(42, &config);
+
+        for _ in 0..5 {
+            assert_eq!(draw_species_name(&mut a), draw_species_name(&mut b));
         }
     }
 

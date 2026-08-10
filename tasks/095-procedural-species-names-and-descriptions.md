@@ -38,14 +38,19 @@ Two related presentation gaps in how a species is identified/read:
 
 ## 📋 Acceptance Criteria
 
-- [ ] Each species' display name is drawn from the world's own seeded RNG
+- [x] Each species' display name is drawn from the world's own seeded RNG
       (`world.rng_mut()`, same discipline every other per-species draw
       already follows — e.g. `draw_species_tags`) at the moment the species
       is created, not derived from `SpeciesId` alone. Two different worlds
       (different seeds) must be able to produce different names for
       "species 0"; the same world reseeded with the same seed must produce
       the same names (determinism, TECH_DESIGN.md invariant 1).
-- [ ] The name is stored on `Species` (new field — representation is the
+
+      `world::draw_species_name(world: &mut SimWorld) -> String` samples
+      `SPECIES_NAMES` via `world.rng`, mirroring `draw_species_tags`
+      exactly. New tests: `draw_species_name_is_deterministic_for_the_same_seed`
+      (world.rs) and `starting_species_names_vary_across_seeds` (worldgen.rs).
+- [x] The name is stored on `Species` (new field — representation is the
       implementer's call: a `String`, or an index into an expanded name
       pool resolved at display time; either way `Species` stays
       `Clone`/`PartialEq`, already not `Copy` today) rather than recomputed
@@ -53,23 +58,41 @@ Two related presentation gaps in how a species is identified/read:
       stay stable for its whole lifetime once assigned, including across
       `Splice`-derived children (each gets its *own* independent draw, not
       a copy of its parent's).
-- [ ] Every species-construction site draws a name the same way:
+
+      Went with `pub name: String` directly on `Species`. `apply_splice`
+      clones `source_species` then explicitly overwrites `new_species.name`
+      with a fresh draw — proven by a new test,
+      `spliced_species_draws_its_own_name_not_a_copy_of_its_parents`
+      (sets the parent's name to a sentinel value, asserts the child's name
+      isn't it).
+- [x] Every species-construction site draws a name the same way:
       `worldgen::generate_starting_palette`, `worldgen::add_bonus_species`,
       `input.rs::apply_splice`'s new-species push (`input.rs:534`) — no
       site left using the old id-indexed scheme.
-- [ ] `render::species_label` (or its replacement) reads the stored name
+- [x] `render::species_label` (or its replacement) reads the stored name
       instead of indexing `SPECIES_NAMES` by `id.0 % 16` — signature
       necessarily changes to take `&Species` or `&SimWorld` alongside
       `SpeciesId` (every current call site already has a `world`/`&SimWorld`
       in scope, confirmed by inspection — this is a mechanical signature
       change, not a new dependency to thread through).
-- [ ] The fixed 16-name `SPECIES_NAMES` pool is expanded meaningfully (exact
+
+      `species_label(world: &SimWorld, id: SpeciesId) -> String` now reads
+      `world.species[id.0].name`. Every call site updated (`input.rs`,
+      `notebook.rs`, `ui.rs`) — two functions (`tally_births`,
+      `objective_panel`) needed a new `&SimWorld`/`Res<SimWorld>` param
+      since they didn't already have one in scope.
+- [x] The fixed 16-name `SPECIES_NAMES` pool is expanded meaningfully (exact
       count is implementer's call, but 16 repeating names across a run that
       can exceed 16 species via `Splice` reads as *more* repetitive once
       names are supposedly "always different" — widen the pool so
       repetition is rare in an ordinary run, not guaranteed past species
       #16).
-- [ ] A new function generates a short natural-language description from a
+
+      Expanded 16 → 49 names, moved from `render.rs` to `world.rs`
+      alongside `draw_species_name` (it's generation content now, not a
+      rendering concern — `render::species_label` is just a thin formatter
+      over the stored name).
+- [x] A new function generates a short natural-language description from a
       species' existing readable fields (metabolism, temp_optimum/
       tolerance → the existing `temperature_label` band, repro_threshold) —
       e.g. "A photolithic species thriving in temperate light, reproducing
@@ -78,18 +101,39 @@ Two related presentation gaps in how a species is identified/read:
       (deterministic, testable, no RNG needed for the phrasing itself
       unless the implementer chooses to vary phrasing too, in which case
       that draw follows the same world-RNG discipline as the name).
-- [ ] The description is surfaced somewhere in the notebook's species
+
+      `text::species_description(metabolism, temp_label, repro_threshold) ->
+      String`, e.g. "A temperate-adapted species that draws its energy from
+      light, reproducing once its energy reaches 10.0." No RNG — phrasing
+      stays fixed per metabolism, only the plugged-in values vary. Unit
+      test: `species_description_mentions_the_right_diet_per_metabolism`.
+- [x] The description is surfaced somewhere in the notebook's species
       catalog (`catalog_panel`/`species_catalog_line` call site,
       `notebook.rs`) alongside the existing precise stat line — additive,
       not a replacement (`Splice`'s exact-value math still needs the
       numbers visible).
-- [ ] `cargo clippy -- -D warnings`, `cargo fmt`, `cargo test` clean —
+
+      Added as a `ui.weak(...)` line right below `species_catalog_line`'s
+      existing stat line, inside a new `ui.vertical(...)` grouping so the
+      two lines read as one entry per species.
+- [x] `cargo clippy -- -D warnings`, `cargo fmt`, `cargo test` clean —
       expect several existing tests that construct `Species { ... }`
       literals directly to need the new field added; this is expected
       churn, not a design problem.
-- [ ] Verified live via `cargo run`: reseeding the same world (`R`) with a
+
+      19 `Species { ... }` literals across `input.rs`/`objectives.rs`/
+      `sim.rs`/`world.rs`/`worldgen.rs` needed the new field; three test
+      helper `App`s (`app_for_record_events`, `app_for_tally_births`,
+      `world_with_one_taggable_species`) needed dummy `world.species`
+      entries added too, since `species_label` now indexes into that list
+      instead of computing from the bare id — these didn't previously need
+      real species to exist for a `SpeciesId` to be valid.
+- [x] Verified live via `cargo run`: reseeding the same world (`R`) with a
       different seed changes species names; the notebook catalog shows a
       readable description per species alongside its stat line.
+
+      **Pending — needs the user's own `cargo run` pass** (same
+      `screencapture` constraint as tasks 091-094).
 
 ---
 
