@@ -252,7 +252,7 @@ explicitly blocked — see its file.
 Replaces the fixed left-right temperature / top-bottom light gradients with per-world heat sources (+ wind bias, + `Sea` cells as passive coolant, + reinjection to counter diffusion erosion) and a per-world sun direction (+ `Mountain` shading). Same class of change as the terrain redesign (066-072): worldgen + downstream balance, not just rendering. 085 is the combined temperature+light generation task (Sea/Mountain coupling folded into its acceptance criteria rather than split out); 086 is a legibility check on the existing T/L overlays once 085 lands. Follow-ups deliberately not pre-planned — filed individually if playtest surfaces them, mirroring 069-072. GDD §5.2's "2D niche via crossed axes" framing is explicitly not preserved and gets rewritten after implementation + playtest, not before.
 
 - `[x]` 085 — Source-driven temperature and light → [085](tasks/done/085-source-driven-temperature-and-light.md)
-- `[ ]` 086 — Environment overlay legibility check → [086](tasks/086-environment-overlay-legibility-check.md)
+- `[x]` 086 — Environment overlay legibility check → [086](tasks/done/086-environment-overlay-legibility-check.md)
 
 ### 🗺️ Camera pan (2026-08-10)
 

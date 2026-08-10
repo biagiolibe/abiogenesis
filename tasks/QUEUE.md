@@ -67,15 +67,8 @@ cancelled and not blocked by another task.
 **excluded from this queue** — blocked on the "Meta-progression persistence"
 proposal (`PROJECT_PLAN.md` §1), not available to pick up yet.
 
-**Environment as sources** (2026-08-10, from `redesign/abiogenesis-environment-sources.md`): replace the fixed left-right temperature / top-bottom light gradients with per-world heat sources (+ wind bias, + `Sea` cells as passive coolant, + reinjection to counter diffusion erosion) and a per-world sun direction (+ `Mountain` shading). Same class of change as the terrain redesign (066-072): worldgen + downstream balance, not just rendering. 085 is the combined temperature+light generation task; 086 is a legibility check on the existing T/L overlays once 085 lands. Follow-ups (e.g. a Sea/Mountain coupling pass, falloff retuning) deliberately not pre-planned — filed individually if playtest surfaces them, mirroring 069-072.
-
-| Status | ID | Title | Depends on | File |
-|-------|----|--------|------------|------|
-| `[x]` | 085 | Source-driven temperature and light | none | [085](done/085-source-driven-temperature-and-light.md) |
-| `[ ]` | 086 | Environment overlay legibility check | 085 | [086](086-environment-overlay-legibility-check.md) |
-
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) beyond what's already expanded into task files here.
 
 ---
 
-*Last updated: 2026-08-10 (088-089, self-interaction balance bug fix, completed and archived to `QUEUE_ARCHIVE.md`. 082 and 083, tuned jointly, completed and archived to `tasks/done/`. 084 stays intentionally out of the queue as blocked. 078 and 081 on hold. 085 completed and moved to `tasks/done/`; 086 is open work, live-verification of 085's rendering still pending by the user.)*
+*Last updated: 2026-08-10 (088-089, self-interaction balance bug fix, completed and archived to `QUEUE_ARCHIVE.md`. 082 and 083, tuned jointly, completed and archived to `tasks/done/`. 084 stays intentionally out of the queue as blocked. 078 and 081 on hold. 085-086, "Environment as sources," fully closed and archived to `QUEUE_ARCHIVE.md`.)*

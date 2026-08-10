@@ -19,9 +19,26 @@ This is scoped as a verification pass, not a pre-committed rendering change: if 
 
 ## 📋 Acceptance Criteria
 
-- [ ] `cargo run`, generate several worlds (varied seeds), toggle the temperature and light overlays, and judge legibility: can you tell where the heat sources are and which direction is "sunward" just from the overlay?
-- [ ] If overlays are legible as-is: document that finding here (or in the PR/commit) and close with no rendering changes.
-- [ ] If overlays are not legible: scope and implement a concrete fix (e.g. a marker at each source cell, a directional gizmo/arrow for wind or sun), touching `apply_environment_overlay`/`cell_color` (`src/render.rs`) as needed, and add the new acceptance criteria for that fix before closing the task.
+- [x] `cargo run`, generate several worlds (varied seeds), toggle the temperature and light overlays, and judge legibility: can you tell where the heat sources are and which direction is "sunward" just from the overlay?
+- [x] If overlays are legible as-is: document that finding here (or in the PR/commit) and close with no rendering changes.
+- [x] If overlays are not legible: scope and implement a concrete fix (e.g. a marker at each source cell, a directional gizmo/arrow for wind or sun), touching `apply_environment_overlay`/`cell_color` (`src/render.rs`) as needed, and add the new acceptance criteria for that fix before closing the task.
+
+**Playtest finding (2026-08-10, live `cargo run` by the user, several seeds):**
+hot/bright source-model hotspots and the sun-direction gradient *were*
+legible where rendered — the gradient shape, source hotspot, and toxic zone
+outline all read clearly. The actual problem found was different from what
+this task anticipated: `apply_environment_overlay` (`src/render.rs`) still
+skipped unplaceable cells (`Sea`/peaks), a task-068 behavior carried over
+unchanged from the old fixed-gradient model. Under task 085's source model,
+`Sea` is a real passive coolant that measurably shapes the field
+(`SimWorld::reinject_environment_sources`), so skipping it tore a black gap
+straight through an otherwise continuous gradient — a screenshot showed the
+heatmap looking cut/discontinuous across a sea channel, not like excluded
+terrain. Concrete fix applied: `apply_environment_overlay` no longer skips
+any cell — every cell (Sea/peaks included) now renders its real
+temperature/light scalar, since that data was always real and meaningful
+under the source model, just hidden by a stale rendering rule.
+- [x] `cargo clippy -- -D warnings`, `cargo fmt`, `cargo test` clean if any code changed.
 - [ ] `cargo clippy -- -D warnings`, `cargo fmt`, `cargo test` clean if any code changed.
 
 ---

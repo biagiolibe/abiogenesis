@@ -124,11 +124,18 @@ fn toggle_environment_overlay(
 /// active, same shape as `debug_view::apply_debug_view` — the two overlays
 /// are independent features (one dev-only and covers all raw scalars incl.
 /// `toxicity`, this one is player-facing and only ever shows temperature or
-/// light) that happen to share `heat_color`. Skips unplaceable cells (task
-/// 068): painting the whole grid as a heatmap would erase the terrain read
-/// (Sea/peaks) the player just learned at baseline, and organisms can never
-/// occupy those cells anyway, so there's no environmental reading there
-/// that matters to the player.
+/// light) that happen to share `heat_color`.
+///
+/// Used to skip unplaceable cells (task 068) under the old fixed-gradient
+/// model, where Sea/peaks carried the same uninteresting boilerplate value
+/// as their surroundings — hiding them protected the terrain read without
+/// losing anything. Task 085's source model made that stale: `Sea` cells now
+/// act as a real passive coolant (`SimWorld::reinject_environment_sources`)
+/// that measurably shapes the field, so skipping them tore a black gap
+/// through the middle of an otherwise continuous gradient — task 086
+/// playtest finding, it read as broken/discontinuous data rather than "this
+/// terrain is just excluded." Every cell now renders its real scalar,
+/// Sea/peaks included.
 fn apply_environment_overlay(
     world: Res<SimWorld>,
     overlay: Res<EnvironmentOverlay>,
@@ -138,9 +145,6 @@ fn apply_environment_overlay(
         return;
     }
     for (cell, mut sprite) in &mut cells {
-        if !world.is_placeable(cell.x, cell.y) {
-            continue;
-        }
         let scalar = match *overlay {
             EnvironmentOverlay::Off => unreachable!(),
             EnvironmentOverlay::Temperature => world.get(cell.x, cell.y).temperature,

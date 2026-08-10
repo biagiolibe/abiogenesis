@@ -17,6 +17,15 @@ it only when you need the history/rationale behind a specific past phase.
 
 ---
 
+**Environment as sources** (2026-08-10, from `redesign/abiogenesis-environment-sources.md`): replaced the fixed left-right temperature / top-bottom light gradients with per-world heat sources (+ wind bias, + `Sea` cells as passive coolant, + reinjection to counter diffusion erosion) and a per-world sun direction (+ `Mountain` shading). 085 is the combined temperature+light generation task; 086's live playtest found the T/L overlay still skipped `Sea`/peak cells (a stale task-068 rule from the old fixed-gradient model, where those cells carried no interesting data) — under the new source model `Sea` is a real coolant that shapes the field, so skipping it tore a black gap through an otherwise continuous gradient. Fixed by rendering every cell's real scalar. Follow-ups (e.g. a Sea/Mountain coupling pass, falloff retuning) deliberately not pre-planned — filed individually if playtest surfaces them, mirroring 069-072.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[x]` | 085 | Source-driven temperature and light | none | [085](done/085-source-driven-temperature-and-light.md) |
+| `[x]` | 086 | Environment overlay legibility check | 085 | [086](done/086-environment-overlay-legibility-check.md) |
+
+---
+
 **Camera pan** (2026-08-10): zoom was already done (075-076); pan was the remaining open half of the old "camera zoom and pan" backlog item. Revisited an earlier explicit design call ("no separate pan mechanic needed") now that the grid is `128×80` and Detail zoom alone made navigation impractical.
 
 | Status | ID | Title | Depends on | File |
