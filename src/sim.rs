@@ -137,6 +137,10 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
     // snapshot (`world.cells`), writes into `world.scratch`, so it must run
     // after the copy above or its writes would be clobbered by it.
     world.diffuse_environment(config);
+    // Counters diffusion's erosion of heat sources / Sea coolant (task 085):
+    // a distinct step from the blur above, so `diffuse_environment`'s own
+    // fixed-point tests stay unaffected by it.
+    world.reinject_environment_sources(config);
 
     // Residue decays every tick unless a death overwrites it further down.
     // A small ambient trickle is added after decay so residue settles to a

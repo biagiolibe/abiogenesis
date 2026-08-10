@@ -58,7 +58,7 @@ cancelled and not blocked by another task.
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
 | `[x]` | 080 | Interaction spark: instant visual feedback on first-seen relations | 018, 075, 076 | [080](done/080-interaction-spark-visual-feedback.md) |
-| `[ ]` | 081 | The world breathes: toxic zone pulse + diffusion drift check (rescoped down after discussion) | 033, 072 | [081](081-ambient-diffusion-visible-on-empty-grid.md) |
+| `[ ]` ⏸ | 081 | ON HOLD (2026-08-10) — The world breathes: toxic zone pulse + diffusion drift check (rescoped down after discussion) | 033, 072 | [081](081-ambient-diffusion-visible-on-empty-grid.md) |
 | `[x]` | 082 | Shorter eras during world 0's opening | 079 | [082](done/082-shorter-onboarding-eras.md) |
 | `[x]` | 083 | Newborn incubation: reproduction delayed to the following era | 009 | [083](done/083-newborn-incubation-reproduction-delay.md) |
 
@@ -71,11 +71,11 @@ proposal (`PROJECT_PLAN.md` §1), not available to pick up yet.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 085 | Source-driven temperature and light | none | [085](085-source-driven-temperature-and-light.md) |
+| `[x]` | 085 | Source-driven temperature and light | none | [085](done/085-source-driven-temperature-and-light.md) |
 | `[ ]` | 086 | Environment overlay legibility check | 085 | [086](086-environment-overlay-legibility-check.md) |
 
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) beyond what's already expanded into task files here.
 
 ---
 
-*Last updated: 2026-08-10 (088-089, self-interaction balance bug fix, completed and archived to `QUEUE_ARCHIVE.md`. 082 and 083, tuned jointly, completed and archived to `tasks/done/`. 084 stays intentionally out of the queue as blocked. 078 on hold. 081, 085-086 are open work.)*
+*Last updated: 2026-08-10 (088-089, self-interaction balance bug fix, completed and archived to `QUEUE_ARCHIVE.md`. 082 and 083, tuned jointly, completed and archived to `tasks/done/`. 084 stays intentionally out of the queue as blocked. 078 and 081 on hold. 085 completed and moved to `tasks/done/`; 086 is open work, live-verification of 085's rendering still pending by the user.)*

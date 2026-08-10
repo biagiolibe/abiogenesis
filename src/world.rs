@@ -10,7 +10,7 @@ use rand::seq::IndexedRandom;
 use rand::RngExt;
 use rand::SeedableRng;
 
-use crate::config::{SimConfig, TagConfig, TerrainConfig};
+use crate::config::{EnvironmentConfig, SimConfig, SourceConfig, TagConfig, TerrainConfig};
 use crate::worldgen::{world_params, WorldParams};
 
 /// How a species derives energy (GDD §5.4). Only `Photolithic` is active in
@@ -184,6 +184,13 @@ pub struct SimWorld {
     /// own docs for why this exists separately from the diffusing
     /// `Cell::toxicity` scalar.
     pub toxic_zone: ToxicZoneBounds,
+    /// Cell indices of this world's heat sources (task 085), placed once at
+    /// generation time. `reinject_environment_sources` reads this every
+    /// tick to pull those cells' temperature back toward
+    /// `EnvironmentConfig::source_temperature`, countering
+    /// `diffuse_environment`'s erosion — the same reason `toxic_zone` is
+    /// kept as a stable reference alongside the diffusing scalar it seeded.
+    pub heat_sources: Vec<usize>,
     /// Whether any organism has ever occupied a cell in this world (task
     /// 050): set by `sim::step` the first time its population scan finds
     /// one. Worlds start with nothing placed (the player seeds them via
@@ -237,11 +244,12 @@ impl SimWorld {
             active_tags,
             matrix,
             toxic_zone: ToxicZoneBounds::default(),
+            heat_sources: Vec::new(),
             ever_populated: false,
             rng,
         };
         world.generate_terrain(config);
-        world.apply_environment_gradients(config, &params);
+        world.apply_environment_sources(config, &params);
         world.place_toxic_zone(config, &params);
         world
     }
@@ -416,30 +424,169 @@ impl SimWorld {
         }
     }
 
-    /// Light falls top→bottom, temperature rises left→right (the two axes
-    /// differ on purpose: their crossing is what creates 2D niches, GDD
-    /// §5.2); the temperature gradient's spread comes from `params` (task
-    /// 038), so later, harder worlds get harsher gradients (GDD §9) without
-    /// changing the gradient shape itself. Doesn't touch the RNG, so it's
-    /// deterministic independently of the seed, given the same `params`.
-    /// Toxicity is no longer set here (task 066: `place_toxic_zone` owns
-    /// it, since the zone's position now depends on generated terrain).
-    fn apply_environment_gradients(&mut self, config: &SimConfig, params: &WorldParams) {
+    /// Replaces the old fixed left-right/top-bottom lerps (task 085,
+    /// `redesign/abiogenesis-environment-sources.md`): temperature comes
+    /// from distance to the nearest of `params.heat_source_count` wind-biased
+    /// point sources, light from a per-world sun-direction projection dimmed
+    /// near `Mountain` peaks. Draws two independent RNG streams
+    /// (`TEMPERATURE_SOURCE_SEED_OFFSET`, `SUN_DIRECTION_SEED_OFFSET`) —
+    /// never `self.rng` — so this generation step doesn't shift any other
+    /// draw for a given seed, same discipline as `generate_terrain`/
+    /// `place_toxic_zone`. Must run after `generate_terrain` (heat source
+    /// placement needs real terrain to search against via `is_placeable`)
+    /// and before `place_toxic_zone` (unchanged ordering requirement).
+    /// Toxicity is not set here (task 066: `place_toxic_zone` owns it).
+    fn apply_environment_sources(&mut self, config: &SimConfig, params: &WorldParams) {
         let env = &config.environment;
-        let temperature_left = env.temperature_gradient_left;
-        let temperature_right = (temperature_left + params.temperature_spread).min(1.0);
+        let source_cfg = &config.source;
+
+        let mut temp_rng = StdRng::seed_from_u64(self.seed ^ TEMPERATURE_SOURCE_SEED_OFFSET);
+        let wind_angle = temp_rng.random_range(0.0..TAU);
+        let wind = (
+            wind_angle.cos() * params.wind_strength,
+            wind_angle.sin() * params.wind_strength,
+        );
+        let heat_sources = self.place_heat_sources(&mut temp_rng, source_cfg, params);
+
+        let mut sun_rng = StdRng::seed_from_u64(self.seed ^ SUN_DIRECTION_SEED_OFFSET);
+        let sun_angle = sun_rng.random_range(0.0..TAU);
+        let sun_dir = (sun_angle.cos(), sun_angle.sin());
+        let sun_bounds = (
+            sun_dir.0.min(0.0) + sun_dir.1.min(0.0),
+            sun_dir.0.max(0.0) + sun_dir.1.max(0.0),
+        );
+
+        let peaks: Vec<(usize, usize)> = self
+            .cells
+            .iter()
+            .enumerate()
+            .filter(|(_, cell)| cell.is_peak)
+            .map(|(idx, _)| (idx % self.width, idx / self.width))
+            .collect();
 
         for y in 0..self.height {
-            let ty = y as f32 / (self.height - 1).max(1) as f32;
-            let light = lerp(env.light_gradient_high, env.light_gradient_low, ty);
             for x in 0..self.width {
-                let tx = x as f32 / (self.width - 1).max(1) as f32;
-                let temperature = lerp(temperature_left, temperature_right, tx);
                 let idx = self.index(x, y);
-                self.cells[idx].light = light;
+                let temperature =
+                    self.temperature_at(x, y, &heat_sources, wind, env, params.heat_source_radius);
+                let base_light = self.sun_light_at(x, y, sun_dir, sun_bounds, env);
                 self.cells[idx].temperature = temperature;
+                self.cells[idx].light = mountain_shaded_light(base_light, x, y, &peaks, source_cfg);
             }
         }
+        self.heat_sources = heat_sources;
+    }
+
+    /// Places `params.heat_source_count` point sources via bounded-retry
+    /// generation against `is_placeable` (no sources on `Sea`/peaks),
+    /// mirroring `place_toxic_zone`'s attempt-loop/keep-best-seen pattern
+    /// (`world.rs:359-387`): each source retries up to
+    /// `max_heat_source_placement_attempts` random cells, accepting the
+    /// first that's both placeable and at least `heat_source_min_distance`
+    /// from every already-placed source, else keeping the best-scoring
+    /// placeable candidate seen (highest distance to the nearest existing
+    /// source). Never panics on an unlucky draw: a source that finds no
+    /// placeable cell at all in its attempt budget is simply skipped.
+    fn place_heat_sources(
+        &self,
+        rng: &mut StdRng,
+        source_cfg: &SourceConfig,
+        params: &WorldParams,
+    ) -> Vec<usize> {
+        let mut sources: Vec<(usize, usize)> = Vec::new();
+        for _ in 0..params.heat_source_count {
+            let mut best: Option<(usize, usize, f32)> = None;
+            for _ in 0..source_cfg.max_heat_source_placement_attempts.max(1) {
+                let x = rng.random_range(0..self.width);
+                let y = rng.random_range(0..self.height);
+                if !self.is_placeable(x, y) {
+                    continue;
+                }
+                let min_dist = sources
+                    .iter()
+                    .map(|&(sx, sy)| {
+                        (((x as f32) - sx as f32).powi(2) + ((y as f32) - sy as f32).powi(2)).sqrt()
+                    })
+                    .fold(f32::INFINITY, f32::min);
+                if min_dist >= source_cfg.heat_source_min_distance {
+                    best = Some((x, y, min_dist));
+                    break;
+                }
+                if best
+                    .as_ref()
+                    .is_none_or(|&(_, _, best_dist)| min_dist > best_dist)
+                {
+                    best = Some((x, y, min_dist));
+                }
+            }
+            if let Some((x, y, _)) = best {
+                sources.push((x, y));
+            }
+        }
+        sources.iter().map(|&(x, y)| self.index(x, y)).collect()
+    }
+
+    /// Temperature at `(x, y)`: `EnvironmentConfig::source_temperature` at
+    /// the nearest heat source, blending linearly down to `ambient_temperature`
+    /// at `radius` cells away and beyond (first-pass falloff shape, tuned
+    /// visually per task 086). `wind` shifts each source's effective
+    /// position downwind by `params.wind_strength` cells before measuring
+    /// distance, so cells downwind read hotter than the same distance
+    /// upwind. Not linear in `(x, y)` (a `min` over several distances, then
+    /// clamped) — this is why heat sources need `reinject_environment_sources`
+    /// and a sun-direction light field doesn't.
+    fn temperature_at(
+        &self,
+        x: usize,
+        y: usize,
+        heat_sources: &[usize],
+        wind: (f32, f32),
+        env: &EnvironmentConfig,
+        radius: f32,
+    ) -> f32 {
+        if heat_sources.is_empty() {
+            return env.ambient_temperature;
+        }
+        let (px, py) = (x as f32, y as f32);
+        let min_dist = heat_sources
+            .iter()
+            .map(|&idx| {
+                let (sx, sy) = (idx % self.width, idx / self.width);
+                let (esx, esy) = (sx as f32 + wind.0, sy as f32 + wind.1);
+                ((px - esx).powi(2) + (py - esy).powi(2)).sqrt()
+            })
+            .fold(f32::INFINITY, f32::min);
+        let t = (min_dist / radius.max(f32::EPSILON)).clamp(0.0, 1.0);
+        lerp(env.source_temperature, env.ambient_temperature, t)
+    }
+
+    /// Light at `(x, y)` from the per-world sun direction alone, before
+    /// mountain shading: a linear projection of the cell's normalized
+    /// position onto `sun_dir`, rescaled by `sun_bounds` (the projection's
+    /// min/max across the grid for this direction) so the field spans
+    /// exactly `[light_low, light_high]` regardless of which direction the
+    /// sun landed on. Deliberately linear in `(x, y)` — an affine transform
+    /// of a linear function stays linear, so this field alone is an exact
+    /// fixed point of `diffuse_environment`'s Moore-blur, unlike temperature
+    /// (see `sun_direction_light_field_is_a_fixed_point_of_diffusion` test).
+    fn sun_light_at(
+        &self,
+        x: usize,
+        y: usize,
+        sun_dir: (f32, f32),
+        sun_bounds: (f32, f32),
+        env: &EnvironmentConfig,
+    ) -> f32 {
+        let nx = x as f32 / (self.width - 1).max(1) as f32;
+        let ny = y as f32 / (self.height - 1).max(1) as f32;
+        let proj = nx * sun_dir.0 + ny * sun_dir.1;
+        let (min_p, max_p) = sun_bounds;
+        let t = if (max_p - min_p) > f32::EPSILON {
+            (proj - min_p) / (max_p - min_p)
+        } else {
+            0.5
+        };
+        lerp(env.light_low, env.light_high, t)
     }
 
     /// Blends each of `temperature`, `light`, `toxicity` toward the mean of
@@ -466,6 +613,55 @@ impl SimWorld {
                 self.scratch[idx].light = cell.light + rate * (mean(|c| c.light) - cell.light);
                 self.scratch[idx].toxicity =
                     cell.toxicity + rate * (mean(|c| c.toxicity) - cell.toxicity);
+            }
+        }
+    }
+
+    /// Counters `diffuse_environment`'s erosion of the two standing
+    /// temperature features it doesn't otherwise preserve (task 085):
+    /// `heat_sources` are pulled back toward `source_temperature`, and every
+    /// cell neighbouring `TerrainKind::Sea` gets a smaller pull toward
+    /// `sea_coolant_value` proportional to its Sea-neighbour fraction (the
+    /// "passive heat sink" effect — applied to the Sea's *neighbours*, since
+    /// Sea itself is never placeable and so never read by `env_fit`).
+    /// Deliberately a separate method from `diffuse_environment`, called
+    /// right after it from `sim::step` and operating on `self.scratch` (the
+    /// write side diffusion just populated) — folding this into the blend
+    /// loop would perturb `diffuse_environment`'s own fixed-point tests,
+    /// which build a hand-crafted uniform field and expect diffusion alone
+    /// to leave it untouched.
+    pub fn reinject_environment_sources(&mut self, config: &SimConfig) {
+        let source_cfg = &config.source;
+        debug_assert!(
+            source_cfg.reinjection_strength > config.environment.diffusion_rate,
+            "reinjection_strength must exceed diffusion_rate, or diffusion erodes the source \
+             faster than reinjection restores it"
+        );
+        for &idx in &self.heat_sources {
+            let current = self.scratch[idx].temperature;
+            self.scratch[idx].temperature +=
+                source_cfg.reinjection_strength * (config.environment.source_temperature - current);
+        }
+
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let neighbours: Vec<usize> = self.moore_neighbours(x, y).collect();
+                if neighbours.is_empty() {
+                    continue;
+                }
+                let sea_fraction = neighbours
+                    .iter()
+                    .filter(|&&n| self.cells[n].terrain == TerrainKind::Sea)
+                    .count() as f32
+                    / neighbours.len() as f32;
+                if sea_fraction <= 0.0 {
+                    continue;
+                }
+                let idx = self.index(x, y);
+                let current = self.scratch[idx].temperature;
+                self.scratch[idx].temperature += source_cfg.sea_coolant_strength
+                    * sea_fraction
+                    * (source_cfg.sea_coolant_value - current);
             }
         }
     }
@@ -545,6 +741,44 @@ const TERRAIN_SEED_OFFSET: u64 = 0x9E37_79B9_7F4A_7C15;
 /// search (task 066) — a different constant so the two derived streams
 /// don't start in lockstep.
 const TOXIC_ZONE_SEED_OFFSET: u64 = 0xC2B2_AE3D_27D4_EB4F;
+
+/// Same purpose as `TERRAIN_SEED_OFFSET`, for heat source placement and the
+/// per-world wind direction draw (task 085) — a different constant so this
+/// stream doesn't start in lockstep with the others.
+const TEMPERATURE_SOURCE_SEED_OFFSET: u64 = 0x1656_67B1_9E37_79F9;
+
+/// Same purpose as `TERRAIN_SEED_OFFSET`, for the per-world sun direction
+/// draw (task 085). Kept independent from `TEMPERATURE_SOURCE_SEED_OFFSET`
+/// rather than sharing its stream, so hot/bright regions don't always
+/// correlate spatially — an open question the design doc left to scoping.
+const SUN_DIRECTION_SEED_OFFSET: u64 = 0x9E97_79B9_7F4A_1656;
+
+/// Dims `light` near `Mountain` peaks (task 085's "mountain shading"):
+/// linear falloff from `mountain_shade_strength` at a peak's own cell to `0`
+/// at `mountain_shade_radius` cells away, taking the strongest (nearest)
+/// peak's contribution per cell. A separate, deliberately non-linear pass
+/// on top of `sun_light_at`'s pure linear field — see that method's doc
+/// comment for why the *unshaded* field is what's required to stay a
+/// diffusion fixed point, not this.
+fn mountain_shaded_light(
+    base_light: f32,
+    x: usize,
+    y: usize,
+    peaks: &[(usize, usize)],
+    source_cfg: &SourceConfig,
+) -> f32 {
+    if peaks.is_empty() {
+        return base_light;
+    }
+    let (px, py) = (x as f32, y as f32);
+    let min_dist = peaks
+        .iter()
+        .map(|&(qx, qy)| (((px - qx as f32).powi(2)) + ((py - qy as f32).powi(2))).sqrt())
+        .fold(f32::INFINITY, f32::min);
+    let t = (min_dist / source_cfg.mountain_shade_radius.max(f32::EPSILON)).clamp(0.0, 1.0);
+    let shade = source_cfg.mountain_shade_strength * (1.0 - t);
+    (base_light - shade).max(0.0)
+}
 
 /// One term of the terrain elevation field: a plane wave traveling in
 /// direction `(dir_x, dir_y)` with the given spatial frequency and phase —
@@ -893,19 +1127,44 @@ mod tests {
         );
     }
 
+    /// Task 085: replaces the old fixed-corner-value check (no longer
+    /// meaningful once temperature/light come from a randomized source/sun
+    /// placement) with the source model's structural invariants — light
+    /// spans its full configured range somewhere on the grid (mountain
+    /// shading only ever *reduces* light, so the unshaded extremes are
+    /// still upper/lower bounds), and heat source cells read hotter than
+    /// the ambient baseline.
     #[test]
-    fn gradients_match_gdd_extremes() {
+    fn source_model_spans_its_configured_light_range_and_heats_its_sources() {
         let config = test_config();
         let world = SimWorld::new(42, &config);
         let env = &config.environment;
 
-        assert_eq!(world.get(0, 0).light, env.light_gradient_high);
-        assert_eq!(world.get(0, world.height - 1).light, env.light_gradient_low);
-        assert_eq!(world.get(0, 0).temperature, env.temperature_gradient_left);
-        assert_eq!(
-            world.get(world.width - 1, 0).temperature,
-            env.temperature_gradient_right
+        let max_light = world.cells.iter().map(|c| c.light).fold(f32::MIN, f32::max);
+        let min_light = world.cells.iter().map(|c| c.light).fold(f32::MAX, f32::min);
+        assert!(
+            max_light <= env.light_high + f32::EPSILON,
+            "light should never exceed light_high, got {max_light}"
         );
+        assert!(
+            min_light <= env.light_low + f32::EPSILON,
+            "the grid corner farthest from the sun should reach light_low, got {min_light}"
+        );
+        assert!(
+            max_light - min_light > 0.1,
+            "the sun direction should produce a real gradient, not a near-flat field"
+        );
+
+        assert!(
+            !world.heat_sources.is_empty(),
+            "world_index 0's default config always places heat sources"
+        );
+        for &idx in &world.heat_sources {
+            assert!(
+                world.cells[idx].temperature > env.ambient_temperature,
+                "a heat source cell should read hotter than the ambient baseline"
+            );
+        }
     }
 
     #[test]
@@ -1134,6 +1393,72 @@ mod tests {
             a.rng_mut().random::<u64>(),
             b.rng_mut().random::<u64>(),
             "diffusion must not consume any RNG state"
+        );
+    }
+
+    /// Task 085's key derived fact: a field linear in `(x, y)` is an exact
+    /// fixed point of `diffuse_environment`'s Moore-blur for any *interior*
+    /// cell, because its 8 symmetric neighbour offsets cancel. Edge/corner
+    /// cells (this grid has real borders, no wrap-around — GDD §5.1) see
+    /// only 3-5 neighbours, so the cancellation is inexact there; the
+    /// resulting residual is a tiny, non-compounding boundary bias, not the
+    /// genuine unbounded erosion a radial source field suffers without
+    /// reinjection — hence the generous tolerance below, chosen well above
+    /// the observed boundary residual and well below any plausible erosion
+    /// signal. `sun_light_at`'s pure directional projection (deliberately
+    /// *not* mountain-shaded here) is linear, so it needs no reinjection —
+    /// unlike temperature's radial source falloff. Uses a real generated
+    /// world (seed 42 has peaks on the map) to prove the property holds
+    /// even with terrain irregularity nearby, not just on an empty grid.
+    #[test]
+    fn sun_direction_light_field_is_a_fixed_point_of_diffusion() {
+        let config = test_config();
+        let mut world = SimWorld::new(42, &config);
+        assert!(
+            world.cells.iter().any(|c| c.is_peak),
+            "seed 42 should generate at least one peak for this test to be meaningful"
+        );
+
+        let sun_dir: (f32, f32) = (0.6, 0.8);
+        let sun_bounds = (
+            sun_dir.0.min(0.0) + sun_dir.1.min(0.0),
+            sun_dir.0.max(0.0) + sun_dir.1.max(0.0),
+        );
+        for y in 0..world.height {
+            for x in 0..world.width {
+                let idx = world.index(x, y);
+                world.cells[idx].light =
+                    world.sun_light_at(x, y, sun_dir, sun_bounds, &config.environment);
+            }
+        }
+        let light_before: Vec<f32> = world.cells.iter().map(|c| c.light).collect();
+
+        diffuse_tick(&mut world, &config);
+
+        let light_after: Vec<f32> = world.cells.iter().map(|c| c.light).collect();
+        for (before, after) in light_before.iter().zip(&light_after) {
+            assert!(
+                (before - after).abs() < 1e-2,
+                "a pure sun-direction field must not drift (beyond a tiny boundary residual) \
+                 under diffusion: {before} -> {after}"
+            );
+        }
+    }
+
+    /// Task 085: `reinject_environment_sources`' pull-back must outweigh
+    /// `diffuse_environment`'s own erosion, or the source structure loses to
+    /// diffusion every tick and homogenizes anyway — the same class of
+    /// invariant task 060 enforces for `residue_ambient_trickle` vs
+    /// `residue_decay` (`sim.rs`'s `debug_assert` in `step`).
+    #[test]
+    fn reinjection_strength_stays_compatible_with_diffusion_rate() {
+        let config = test_config();
+        assert!(
+            config.source.reinjection_strength > config.environment.diffusion_rate,
+            "reinjection_strength ({}) must exceed diffusion_rate ({}), or heat sources erode \
+             to the field mean over a long run",
+            config.source.reinjection_strength,
+            config.environment.diffusion_rate
         );
     }
 

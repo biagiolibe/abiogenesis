@@ -751,18 +751,18 @@ fn node_tooltip_text(
 /// visible from the seed selector already, so per-encounter tag discovery
 /// isn't modeled here — that's a Phase 3 worldgen concern.
 /// A readable band ("cold"/"temperate"/"hot") for a species' `temp_optimum`,
-/// derived from `EnvironmentConfig`'s actual gradient bounds (not a hardcoded
-/// cutoff, per CLAUDE.md's no-magic-numbers rule) so it stays correct if the
-/// gradient range is retuned. The raw `temp_optimum`/`temp_tolerance` numbers
-/// stay in `species_catalog_line` alongside this label — `Splice`'s
-/// `ShiftTempOptimum` math needs the precise value, this is just an aid to
-/// read it at a glance.
+/// derived from `EnvironmentConfig`'s actual source/ambient bounds (not a
+/// hardcoded cutoff, per CLAUDE.md's no-magic-numbers rule) so it stays
+/// correct if those values are retuned. The raw `temp_optimum`/
+/// `temp_tolerance` numbers stay in `species_catalog_line` alongside this
+/// label — `Splice`'s `ShiftTempOptimum` math needs the precise value, this
+/// is just an aid to read it at a glance.
 fn temperature_label(
     temp_optimum: f32,
     env: &abiogenesis::config::EnvironmentConfig,
 ) -> &'static str {
-    let low = env.temperature_gradient_left;
-    let high = env.temperature_gradient_right;
+    let low = env.ambient_temperature;
+    let high = env.source_temperature;
     let band = (high - low) / 3.0;
     if temp_optimum <= low + band {
         "cold"
@@ -811,13 +811,16 @@ mod tests {
     #[test]
     fn temperature_label_splits_the_gradient_range_into_thirds() {
         let env = SimConfig::default().environment;
-        // Default gradient: left 0.2, right 0.8, so bands are [0.2, 0.4],
-        // (0.4, 0.6), [0.6, 0.8].
-        assert_eq!(temperature_label(0.2, &env), "cold");
-        assert_eq!(temperature_label(0.4, &env), "cold");
-        assert_eq!(temperature_label(0.5, &env), "temperate");
-        assert_eq!(temperature_label(0.6, &env), "hot");
-        assert_eq!(temperature_label(0.8, &env), "hot");
+        // Default source model: ambient 0.25, source 0.85, so bands are
+        // roughly [0.25, 0.45], (0.45, 0.65), [0.65, 0.85] — the upper-band
+        // test points sit a hair inside their band, not exactly on the
+        // `high - band`/`low + band` boundary, since `f32` division doesn't
+        // reproduce that boundary bit-for-bit.
+        assert_eq!(temperature_label(0.25, &env), "cold");
+        assert_eq!(temperature_label(0.44, &env), "cold");
+        assert_eq!(temperature_label(0.55, &env), "temperate");
+        assert_eq!(temperature_label(0.66, &env), "hot");
+        assert_eq!(temperature_label(0.85, &env), "hot");
     }
 
     fn app_for_record_events(world: SimWorld) -> App {

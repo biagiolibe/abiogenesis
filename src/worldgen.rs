@@ -30,9 +30,14 @@ pub struct WorldParams {
     pub toxic_zone_width: u32,
     /// Toxic zone height in cells.
     pub toxic_zone_height: u32,
-    /// Temperature gradient spread (`right - left`, GDD §9: "harsher
-    /// thermal gradients").
-    pub temperature_spread: f32,
+    /// Heat sources placed at world generation (task 085, GDD §9: "harsher
+    /// thermal gradients" — more, sharper hotspots at later worlds).
+    pub heat_source_count: u32,
+    /// Heat source falloff radius in cells; *smaller* at later worlds, so
+    /// the same source count reads as more concentrated/harsher.
+    pub heat_source_radius: f32,
+    /// Per-world wind bias magnitude in cells.
+    pub wind_strength: f32,
     /// Fraction of tag-pair matrix cells that are non-zero (GDD §9: "meaner
     /// matrix").
     pub matrix_density: f32,
@@ -56,18 +61,24 @@ pub fn world_params(world_index: u32, config: &SimConfig) -> WorldParams {
     let tags = &config.tags;
     let time = &config.time;
     let difficulty = &config.difficulty;
-    let early_temperature_spread = env.temperature_gradient_right - env.temperature_gradient_left;
+    let source = &config.source;
 
     WorldParams {
         active_tag_count: lerp_u32(tags.active_tags_early, tags.active_tags_late, t),
         era_budget: lerp_u32(time.era_budget_early, time.era_budget_late, t),
         toxic_zone_width: lerp_u32(env.toxic_zone_width, difficulty.toxic_zone_width_late, t),
         toxic_zone_height: lerp_u32(env.toxic_zone_height, difficulty.toxic_zone_height_late, t),
-        temperature_spread: lerp_f32(
-            early_temperature_spread,
-            difficulty.temperature_spread_late,
+        heat_source_count: lerp_u32(
+            source.heat_source_count_early,
+            source.heat_source_count_late,
             t,
         ),
+        heat_source_radius: lerp_f32(
+            source.heat_source_radius_early,
+            source.heat_source_radius_late,
+            t,
+        ),
+        wind_strength: lerp_f32(source.wind_strength_early, source.wind_strength_late, t),
         matrix_density: lerp_f32(tags.matrix_density, difficulty.matrix_density_late, t),
         objective_severity: lerp_f32(
             difficulty.objective_severity_early,
@@ -409,10 +420,14 @@ mod tests {
             config.environment.toxic_zone_height
         );
         assert_eq!(
-            params.temperature_spread,
-            config.environment.temperature_gradient_right
-                - config.environment.temperature_gradient_left
+            params.heat_source_count,
+            config.source.heat_source_count_early
         );
+        assert_eq!(
+            params.heat_source_radius,
+            config.source.heat_source_radius_early
+        );
+        assert_eq!(params.wind_strength, config.source.wind_strength_early);
         assert_eq!(params.matrix_density, config.tags.matrix_density);
         assert_eq!(
             params.objective_severity,
@@ -449,9 +464,14 @@ mod tests {
             config.difficulty.toxic_zone_height_late
         );
         assert_eq!(
-            at_ramp_end.temperature_spread,
-            config.difficulty.temperature_spread_late
+            at_ramp_end.heat_source_count,
+            config.source.heat_source_count_late
         );
+        assert_eq!(
+            at_ramp_end.heat_source_radius,
+            config.source.heat_source_radius_late
+        );
+        assert_eq!(at_ramp_end.wind_strength, config.source.wind_strength_late);
         assert_eq!(
             at_ramp_end.matrix_density,
             config.difficulty.matrix_density_late

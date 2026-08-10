@@ -27,6 +27,7 @@ pub struct SimConfig {
     pub worldgen: WorldgenConfig,
     pub objectives: ObjectiveConfig,
     pub terrain: TerrainConfig,
+    pub source: SourceConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,14 +121,22 @@ impl Default for ClusterConfig {
 pub struct EnvironmentConfig {
     /// Environmental diffusion rate, fraction per tick (Phase 1+, GDD §5.9).
     pub diffusion_rate: f32,
-    /// Light gradient value at the high end, [0,1] (GDD §5.9).
-    pub light_gradient_high: f32,
-    /// Light gradient value at the low end, [0,1] (GDD §5.9).
-    pub light_gradient_low: f32,
-    /// Temperature gradient value on the left edge, [0,1] (GDD §5.9).
-    pub temperature_gradient_left: f32,
-    /// Temperature gradient value on the right edge, [0,1] (GDD §5.9).
-    pub temperature_gradient_right: f32,
+    /// Light value at the sun-facing end of the per-world directional
+    /// falloff, [0,1] (task 085; replaces the old fixed top-bottom gradient
+    /// high end — direction now comes from `SimWorld`'s per-world sun draw,
+    /// not a fixed axis).
+    pub light_high: f32,
+    /// Light value at the far end of the directional falloff, [0,1].
+    pub light_low: f32,
+    /// Fixed temperature at a heat source's center, [0,1] (task 085;
+    /// replaces the old left-edge gradient value). `SimWorld::
+    /// reinject_environment_sources` pulls source cells back toward this
+    /// every tick, so it stays a standing feature despite diffusion.
+    pub source_temperature: f32,
+    /// Baseline temperature far from any heat source, [0,1] (task 085; the
+    /// far end of the per-source falloff, replacing the old fixed-gradient
+    /// endpoints).
+    pub ambient_temperature: f32,
     /// Toxicity value inside the toxic zone, [0,1] (GDD §5.9). Elsewhere it's 0.0.
     pub toxic_zone_value: f32,
     /// Width in cells of the Phase 0 toxic zone (bottom-right corner). Not in
@@ -141,6 +150,13 @@ pub struct EnvironmentConfig {
     /// cell has an observable, deducible effect on organisms sitting on it —
     /// toxicity is currently written (world generation, diffusion) but read
     /// by nothing in the tick, so stressing it would be an inert action.
+    /// Stressing a heat-source cell specifically is overridden the very next
+    /// tick by `reinject_environment_sources`' pull back toward
+    /// `source_temperature` (task 085) — the same "diffusion erodes it"
+    /// caveat as any other cell, just enforced faster and pinned exactly on
+    /// source cells; not worth special-casing, since a source cell's
+    /// temperature was never a meaningful place to `Stress` in the first
+    /// place (it's already the hottest point on the map).
     pub stress_delta: f32,
 }
 
@@ -148,10 +164,10 @@ impl Default for EnvironmentConfig {
     fn default() -> Self {
         Self {
             diffusion_rate: 0.05,
-            light_gradient_high: 0.9,
-            light_gradient_low: 0.2,
-            temperature_gradient_left: 0.2,
-            temperature_gradient_right: 0.8,
+            light_high: 0.9,
+            light_low: 0.2,
+            source_temperature: 0.85,
+            ambient_temperature: 0.25,
             toxic_zone_value: 0.7,
             // Scaled with grid size (task 074, 48x32 -> 128x80): kept the
             // same relative footprint as the original 8x6 (~3.1% of cells).
@@ -381,10 +397,6 @@ pub struct DifficultyConfig {
     /// Toxic zone height at the late endpoint (early end is
     /// `EnvironmentConfig::toxic_zone_height`).
     pub toxic_zone_height_late: u32,
-    /// Temperature gradient spread (`right - left`) at the late endpoint;
-    /// the early spread is derived from `EnvironmentConfig`'s existing
-    /// `temperature_gradient_left`/`temperature_gradient_right`.
-    pub temperature_spread_late: f32,
     /// Matrix density at the late endpoint (early end is
     /// `TagConfig::matrix_density`).
     pub matrix_density_late: f32,
@@ -409,7 +421,6 @@ impl Default for DifficultyConfig {
             // relative footprint as the original 16x12 (~12.5% of cells).
             toxic_zone_width_late: 43,
             toxic_zone_height_late: 30,
-            temperature_spread_late: 1.0,
             matrix_density_late: 0.6,
             objective_severity_early: 1.0,
             objective_severity_late: 2.0,
@@ -569,6 +580,82 @@ impl Default for TerrainConfig {
             max_generation_attempts: 8,
             min_toxic_zone_placeable_fraction: 0.5,
             max_toxic_zone_placement_attempts: 24,
+        }
+    }
+}
+
+/// Source-driven temperature/light generation (task 085,
+/// `redesign/abiogenesis-environment-sources.md`): replaces the old fixed
+/// left-right/top-bottom lerps with point heat sources (+ wind bias, +
+/// reinjection) and a per-world sun direction (+ mountain shading). Mirrors
+/// `TerrainConfig`'s shape — placement/attempt-count mechanics live here,
+/// the scalar endpoint *values* stay in `EnvironmentConfig` alongside the
+/// other `[0,1]` environment values.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceConfig {
+    /// Heat sources placed in a `world_index = 0` world (`WorldParams`'
+    /// early endpoint).
+    pub heat_source_count_early: u32,
+    /// Heat sources placed at `DifficultyConfig::ramp_worlds` and beyond.
+    pub heat_source_count_late: u32,
+    /// Falloff radius (cells) within which a source's temperature blends
+    /// down to `EnvironmentConfig::ambient_temperature`, at the early
+    /// endpoint. A *smaller* late radius reads as a harsher, more
+    /// concentrated hotspot (GDD §9 "harsher thermal gradients").
+    pub heat_source_radius_early: f32,
+    /// Heat source falloff radius (cells) at the late endpoint.
+    pub heat_source_radius_late: f32,
+    /// Per-world wind bias magnitude (cells) at the early endpoint: shifts
+    /// each source's effective position downwind before computing distance.
+    pub wind_strength_early: f32,
+    /// Wind bias magnitude (cells) at the late endpoint.
+    pub wind_strength_late: f32,
+    /// Minimum cell distance enforced between placed heat sources, so `N`
+    /// sources don't cluster into one big hotspot.
+    pub heat_source_min_distance: f32,
+    /// Bounded-retry attempts per source (mirrors `place_toxic_zone`'s
+    /// attempt-loop/keep-best-seen pattern, `world.rs:359-387`) before
+    /// falling back to the best candidate seen.
+    pub max_heat_source_placement_attempts: u32,
+    /// Per-tick pull-back strength toward `EnvironmentConfig::
+    /// source_temperature` for heat source cells, and toward
+    /// `sea_coolant_value` for cells neighbouring `TerrainKind::Sea` —
+    /// counteracts `diffuse_environment`'s erosion so both features persist
+    /// as standing terrain rather than fading to the field mean. Must
+    /// exceed `EnvironmentConfig::diffusion_rate`, or the pull-back loses to
+    /// diffusion's own erosion every tick.
+    pub reinjection_strength: f32,
+    /// Passive-coolant pull strength applied to a cell's temperature toward
+    /// `sea_coolant_value`, proportional to the fraction of its Moore
+    /// neighbours that are `TerrainKind::Sea` (task 085's "Sea as a passive
+    /// heat sink"). Deliberately weaker than `reinjection_strength`: this is
+    /// ambient coastal cooling, not a pinned source.
+    pub sea_coolant_strength: f32,
+    /// Fixed cold target temperature Sea's coastal cooling pulls toward.
+    pub sea_coolant_value: f32,
+    /// Mountain/peak light-dimming falloff radius (cells).
+    pub mountain_shade_radius: f32,
+    /// Maximum light reduction at a peak's own cell, fading to `0` at
+    /// `mountain_shade_radius`.
+    pub mountain_shade_strength: f32,
+}
+
+impl Default for SourceConfig {
+    fn default() -> Self {
+        Self {
+            heat_source_count_early: 2,
+            heat_source_count_late: 4,
+            heat_source_radius_early: 40.0,
+            heat_source_radius_late: 25.0,
+            wind_strength_early: 5.0,
+            wind_strength_late: 15.0,
+            heat_source_min_distance: 20.0,
+            max_heat_source_placement_attempts: 24,
+            reinjection_strength: 0.15,
+            sea_coolant_strength: 0.05,
+            sea_coolant_value: 0.1,
+            mountain_shade_radius: 8.0,
+            mountain_shade_strength: 0.3,
         }
     }
 }

@@ -38,15 +38,14 @@ const STABILITY_TOLERANCE: f32 = 0.10;
 /// Light below which `light * photolithic_metabolism_gain * env_fit` can't
 /// cover `base_upkeep` even at perfect thermal fitness (GDD §5.9).
 const LIGHT_SURVIVAL_THRESHOLD: f32 = 0.25;
-/// Margin below `LIGHT_SURVIVAL_THRESHOLD` before a row counts as "should
-/// be uninhabitable" for `dark_rows_stay_uninhabited_across_seeds` (task
-/// 074): the per-row light step shrinks with grid height (the gradient
-/// spans the same [0.2, 0.9] range over more rows), so at a large grid
-/// several rows sit within a hair of the threshold — an organism can
-/// legitimately still be there, not yet starved, without the boundary
-/// itself being a bug. Only rows clearly below the survival threshold are
-/// asserted uninhabited.
-const DARK_ROW_MARGIN: f32 = 0.03;
+/// Margin below `LIGHT_SURVIVAL_THRESHOLD` before a cell counts as "should
+/// be uninhabitable" for `dark_cells_stay_uninhabited_across_seeds` (task
+/// 074, rewritten per-cell in task 085 once light stopped varying only by
+/// row): the per-cell light step shrinks with grid size, so cells near the
+/// threshold's own value can legitimately still be inhabited, not yet
+/// starved, without the boundary itself being a bug. Only cells clearly
+/// below the survival threshold are asserted uninhabited.
+const DARK_CELL_MARGIN: f32 = 0.03;
 
 /// Seeds surveyed for the statistical properties below. Empirically (task
 /// 038's own investigation), 3/50 seeds in this range hit total extinction
@@ -215,23 +214,24 @@ fn bloom_usually_grows_then_stabilises_across_seeds() {
     );
 }
 
+/// Task 085: light now comes from a per-world sun-direction projection (plus
+/// mountain shading), not a fixed top-bottom row gradient, so the check is
+/// per-cell rather than per-row.
 #[test]
-fn dark_rows_stay_uninhabited_across_seeds() {
+fn dark_cells_stay_uninhabited_across_seeds() {
     for seed in SURVEY_SEEDS {
         let (world, _) = run_nominal_scenario(seed, RUN_TICKS);
         for y in 0..world.height {
-            // Light varies only by row (GDD §5.2): sampling column 0 is
-            // representative of the whole row.
-            let row_light = world.get(0, y).light;
-            if row_light >= LIGHT_SURVIVAL_THRESHOLD - DARK_ROW_MARGIN {
-                continue;
-            }
             for x in 0..world.width {
+                let light = world.get(x, y).light;
+                if light >= LIGHT_SURVIVAL_THRESHOLD - DARK_CELL_MARGIN {
+                    continue;
+                }
                 assert!(
                     world.get(x, y).organism.is_none(),
-                    "seed {seed}: row {y} has light {row_light:.3}, well below \
+                    "seed {seed}: cell ({x}, {y}) has light {light:.3}, well below \
                      {LIGHT_SURVIVAL_THRESHOLD}, so it should be uninhabitable, but found an \
-                     organism at ({x}, {y})"
+                     organism there"
                 );
             }
         }
