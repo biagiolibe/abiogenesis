@@ -307,7 +307,7 @@ description per species) are real feature additions, not fixes. No
 dependency between the five — pick up in any order.
 
 - `[x]` 091 — Gate map input (zoom/click/Tab) behind egui's own input capture → [091](tasks/done/091-egui-input-capture-gating.md)
-- `[ ]` 092 — Isolation hint duration should scale with era length → [092](tasks/092-isolation-hint-duration-scales-with-era.md)
+- `[x]` 092 — Isolation hint duration should scale with era length → [092](tasks/done/092-isolation-hint-duration-scales-with-era.md)
 - `[ ]` 093 — Sea should read as water, not "end of the world" → [093](tasks/093-sea-color-reads-as-water-not-void.md)
 - `[ ]` 094 — On-screen buttons for tick/era/notebook controls → [094](tasks/094-hud-buttons-for-tick-era-notebook-controls.md)
 - `[ ]` 095 — Procedural per-world species names + readable descriptions → [095](tasks/095-procedural-species-names-and-descriptions.md)

@@ -76,13 +76,11 @@ instead of reading `config.time.era_ticks` directly.
       keeps passing unmodified — this task changes *duration*, not the
       existing stale-hint-on-world-transition guard.
 - [x] `cargo clippy -- -D warnings`, `cargo fmt`, `cargo test` clean.
-- [ ] Verified live via `cargo run` on a fresh world 0: the hint now visibly
+- [x] Verified live via `cargo run` on a fresh world 0: the hint now visibly
       resolves within roughly the onboarding era it was shown in, not three
       eras later.
 
-      **Pending — needs the user's own `cargo run` pass** (this session has
-      no working `screencapture` permission, same constraint noted on task
-      091).
+      Confirmed by the user (2026-08-10): "funziona."
 
 ---
 
