@@ -1428,6 +1428,7 @@ mod tests {
             organism: Some(Organism {
                 species: SpeciesId(0),
                 energy: 5.0,
+                born_era: 0,
             }),
             ..world.cells[idx]
         };

@@ -18,6 +18,7 @@ use abiogenesis::sim::{
 };
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{Organism, SimWorld, SpeciesId};
+use abiogenesis::worldgen::era_ticks_for;
 
 use crate::notebook::{EverSeeded, LogEntry, ObservationLog, PlayerPlacedCells};
 use crate::render::{species_label, world_to_cell, GridCamera, MapViewMode, PlacementIndicator};
@@ -83,13 +84,15 @@ fn start_era(
     mut progress: ResMut<EraProgress>,
     mut next_state: ResMut<NextState<EraState>>,
     config: Res<SimConfig>,
+    run_progress: Res<RunProgress>,
+    world: Res<SimWorld>,
 ) {
     if *era_state.get() == EraState::Advancing {
         return;
     }
     if keys.just_pressed(KeyCode::Space) {
         if progress.remaining() == 0 {
-            progress.start(config.time.era_ticks);
+            progress.start(era_ticks_for(run_progress.world_index, world.era, &config));
         }
         next_state.set(EraState::Advancing);
     }
@@ -118,6 +121,7 @@ fn single_tick(
     mut era_completed: MessageWriter<EraCompleted>,
     mut born: MessageWriter<OrganismBorn>,
     mut objective_outcome: ObjectiveOutcomeParams,
+    run_progress: Res<RunProgress>,
 ) {
     if *era_state.get() == EraState::Advancing {
         return;
@@ -126,7 +130,7 @@ fn single_tick(
         return;
     }
     if progress.remaining() == 0 {
-        progress.start(config.time.era_ticks);
+        progress.start(era_ticks_for(run_progress.world_index, world.era, &config));
     }
     let events = tick_and_complete_era(
         &mut world,
@@ -217,6 +221,7 @@ fn attempt_seed(
         return false;
     }
     let index = world.index(x, y);
+    let era = world.era;
     let cell = world.get_mut(x, y);
     if cell.organism.is_some() {
         return false;
@@ -224,6 +229,7 @@ fn attempt_seed(
     cell.organism = Some(Organism {
         species,
         energy: config.energy.seed_energy,
+        born_era: era,
     });
     budget.points_remaining -= config.time.action_costs.seed;
     placed.0.insert(index);
@@ -836,7 +842,14 @@ mod tests {
         app.insert_resource(ObjectiveProgress::default());
         app.insert_resource(CurrentWorldOutcome::default());
         app.insert_resource(GraceProgress::default());
-        app.insert_resource(RunProgress::default());
+        // world_index: 1, not the default 0 — this test exercises
+        // single_tick's generic era-completion bookkeeping, not task 082's
+        // world-0 onboarding pacing exception, so it must use the standard
+        // `era_ticks` length.
+        app.insert_resource(RunProgress {
+            world_index: 1,
+            ..RunProgress::default()
+        });
         app.insert_resource(MetaProgress::default());
         app.insert_resource(NextState::<GameState>::default());
         app.add_systems(Update, single_tick);
@@ -877,6 +890,7 @@ mod tests {
         world.get_mut(6, 5).organism = Some(Organism {
             species: SpeciesId(0),
             energy: 1.0,
+            born_era: 0,
         });
         assert!(!is_isolated_placement(&world, 5, 5));
     }

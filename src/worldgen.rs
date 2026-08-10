@@ -82,6 +82,20 @@ pub fn world_params(world_index: u32, config: &SimConfig) -> WorldParams {
     }
 }
 
+/// Era tick count for a given `(world_index, era)` (task 082): world 0's
+/// opening eras (`era < config.time.onboarding_eras`) run shorter, so a
+/// player still learning the system hits checkpoints sooner. Every other
+/// era — any era in any other world, or world 0 past the threshold — uses
+/// the standard `config.time.era_ticks`.
+pub fn era_ticks_for(world_index: u32, era: u32, config: &SimConfig) -> u32 {
+    let time = &config.time;
+    if world_index == 0 && era < time.onboarding_eras {
+        time.onboarding_era_ticks
+    } else {
+        time.era_ticks
+    }
+}
+
 /// `0.0` at `world_index = 0`, ramping linearly to `1.0` at `world_index =
 /// ramp_worlds`, then staying at `1.0` — the curve saturates rather than
 /// extrapolating past its late endpoint, since a run can outlast any fixed
@@ -347,6 +361,40 @@ fn generate_one_objective(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn era_ticks_for_shortens_world_zeros_opening_eras() {
+        let config = SimConfig::default();
+
+        for era in 0..config.time.onboarding_eras {
+            assert_eq!(
+                era_ticks_for(0, era, &config),
+                config.time.onboarding_era_ticks
+            );
+        }
+    }
+
+    #[test]
+    fn era_ticks_for_uses_standard_length_past_the_onboarding_threshold() {
+        let config = SimConfig::default();
+
+        assert_eq!(
+            era_ticks_for(0, config.time.onboarding_eras, &config),
+            config.time.era_ticks
+        );
+        assert_eq!(
+            era_ticks_for(0, config.time.onboarding_eras + 5, &config),
+            config.time.era_ticks
+        );
+    }
+
+    #[test]
+    fn era_ticks_for_uses_standard_length_for_other_worlds_at_any_era() {
+        let config = SimConfig::default();
+
+        assert_eq!(era_ticks_for(1, 0, &config), config.time.era_ticks);
+        assert_eq!(era_ticks_for(2, 1, &config), config.time.era_ticks);
+    }
 
     #[test]
     fn world_index_zero_matches_the_early_endpoints_exactly() {

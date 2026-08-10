@@ -27,6 +27,7 @@ fn place_starting_organisms(world: &mut SimWorld, config: &SimConfig) {
         world.cells[idx].organism = Some(Organism {
             species: SpeciesId(i as u8),
             energy: config.energy.seed_energy,
+            born_era: 0,
         });
     }
 }

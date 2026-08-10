@@ -28,31 +28,33 @@ reasoning.
 
 ## 📋 Acceptance Criteria
 
-- [ ] `TimeConfig` (`src/config.rs:160-181`) gains two fields mirroring the
+- [x] `TimeConfig` (`src/config.rs:160-181`) gains two fields mirroring the
       `grace_eras` pattern (`config.rs:180`, doc-commented, defaulted): e.g.
       `onboarding_eras: u32` (default `3`) and `onboarding_era_ticks: u32`
       (default `8`), mirrored by hand into `assets/config/sim_config.ron`'s
       `time: (...)` block (documented manual-sync convention,
       `config.rs:562`).
-- [ ] A helper function (e.g. in `worldgen.rs`, alongside `world_params`)
+- [x] A helper function (e.g. in `worldgen.rs`, alongside `world_params`)
       computing the era-tick count for a given `(world_index, world.era)`:
       returns `onboarding_era_ticks` when `world_index == 0 && world.era <
       onboarding_eras`, otherwise `config.time.era_ticks`.
-- [ ] `start_era` and `single_tick` (`src/input.rs:80-96` and
+- [x] `start_era` and `single_tick` (`src/input.rs:80-96` and
       `src/input.rs:107-129`) call this helper instead of reading
       `config.time.era_ticks` directly at their `progress.start(...)` call
       sites (`input.rs:92`, `input.rs:128`) — both need `run_progress:
       Res<RunProgress>` and `world: Res<SimWorld>` added as system
       parameters (precedented: `RunProgress`/`SimWorld` are already
       consumed by sibling systems in the same file).
-- [ ] `cargo test` and `cargo clippy -- -D warnings` clean. New unit test
+- [x] `cargo test` and `cargo clippy -- -D warnings` clean. New unit test
       confirming the helper returns `onboarding_era_ticks` only for
       `world_index == 0` within the threshold, and the standard value
       otherwise (including `world_index != 0` at any era, and `world_index
       == 0` past the threshold).
 - [ ] Verified live via `cargo run`: world 0's first 3 eras visibly
       advance faster (era counter increments sooner) than era 4 onward, and
-      than any era in world 1.
+      than any era in world 1. **Skipped this session per explicit user
+      instruction (no run/screenshot) — pending user's own playtest,
+      ideally jointly with task 083's pacing.**
 
 ---
 

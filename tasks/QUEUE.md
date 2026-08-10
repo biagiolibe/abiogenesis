@@ -53,14 +53,14 @@ cancelled and not blocked by another task.
 |-------|----|--------|------------|------|
 | `[ ]` ⏸ | 078 | ON HOLD — Overview heatmap blob shape correction (playtest correction to 076: blobs must render smaller/abstracted and uniformly filled, not a 1:1 trace of the real occupied-cell footprint with its gaps) | 076 | [078](078-overview-heatmap-blob-shape-correction.md) |
 
-**Onboarding & engagement rollout** (2026-08-09, from `redesign/abiogenesis-engagement-design.md`, full rationale in `PROJECT_PLAN.md`'s "Onboarding & engagement rollout"): 5 onboarding-foundation proposals scoped after a multi-round discussion. 080 first (diagnostic value for playtesting the rest); 082/083 are numerically coupled — tune together, not in isolation.
+**Onboarding & engagement rollout** (2026-08-09, from `redesign/abiogenesis-engagement-design.md`, full rationale in `PROJECT_PLAN.md`'s "Onboarding & engagement rollout"): 5 onboarding-foundation proposals scoped after a multi-round discussion. 080 first (diagnostic value for playtesting the rest); 082/083 are numerically coupled — tuned together (2026-08-10), both now done. Live playtest of the combined pacing still pending (082/083 verification steps skipped this session, see below).
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
 | `[x]` | 080 | Interaction spark: instant visual feedback on first-seen relations | 018, 075, 076 | [080](done/080-interaction-spark-visual-feedback.md) |
 | `[ ]` | 081 | The world breathes: toxic zone pulse + diffusion drift check (rescoped down after discussion) | 033, 072 | [081](081-ambient-diffusion-visible-on-empty-grid.md) |
-| `[ ]` | 082 | Shorter eras during world 0's opening | 079 | [082](082-shorter-onboarding-eras.md) |
-| `[ ]` | 083 | Newborn incubation: reproduction delayed to the following era | 009 | [083](083-newborn-incubation-reproduction-delay.md) |
+| `[x]` | 082 | Shorter eras during world 0's opening | 079 | [082](done/082-shorter-onboarding-eras.md) |
+| `[x]` | 083 | Newborn incubation: reproduction delayed to the following era | 009 | [083](done/083-newborn-incubation-reproduction-delay.md) |
 
 084 (guaranteed "first light" relation in world 0's matrix) is scoped
 (`tasks/084-first-light-guaranteed-relation-world0.md`) but deliberately
@@ -78,4 +78,4 @@ Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN
 
 ---
 
-*Last updated: 2026-08-10 (087, camera pan, completed and archived to `QUEUE_ARCHIVE.md`. 084 stays intentionally out of the queue as blocked. 078 on hold. 081-083, 085-086 are open work.)*
+*Last updated: 2026-08-10 (082 and 083, tuned jointly, completed and archived to `tasks/done/`. 084 stays intentionally out of the queue as blocked. 078 on hold. 081, 085-086 are open work.)*

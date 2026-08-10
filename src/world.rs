@@ -83,6 +83,10 @@ pub struct Species {
 pub struct Organism {
     pub species: SpeciesId,
     pub energy: f32,
+    /// The era this organism was born in (task 083). Reproduction requires
+    /// `born_era < world.era` — an organism must survive into a later era
+    /// than its own birth before it can reproduce.
+    pub born_era: u32,
 }
 
 /// The toxic zone's geometry (GDD §5.2): every cell within the rectangle

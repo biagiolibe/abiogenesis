@@ -32,22 +32,22 @@ during onboarding, not the energy threshold task 082 modulates on its own.
 
 ## 📋 Acceptance Criteria
 
-- [ ] `Organism` (`src/world.rs:82-86`) gains a `born_era: u32` field.
-- [ ] Both spawn sites in `src/sim.rs` updated: the parent's post-cost copy
+- [x] `Organism` (`src/world.rs:82-86`) gains a `born_era: u32` field.
+- [x] Both spawn sites in `src/sim.rs` updated: the parent's post-cost copy
       (`sim.rs:350-353`, uses `..organism` — `born_era` is naturally
       preserved, no change needed there beyond the struct gaining the
       field) and the child's spawn (`sim.rs:370-373`) — the child must be
       given `born_era: world.era` explicitly (its birth era differs from
       the parent's, so `..organism` can't be relied on here).
-- [ ] The reproduction check (`sim.rs:361`, `if new_energy >=
+- [x] The reproduction check (`sim.rs:361`, `if new_energy >=
       species.repro_threshold`) gains an additional clause: the organism may
       only reproduce if `organism.born_era < world.era` (it has survived
       into a later era than the one it was born in).
-- [ ] `EnergyConfig`/`repro_threshold`/`repro_cost` (`src/config.rs:227-271`)
+- [x] `EnergyConfig`/`repro_threshold`/`repro_cost` (`src/config.rs:227-271`)
       are untouched — this is a structural gate, not a new tunable
       coefficient, consistent with "no magic numbers" (it reads the
       already-existing `world.era`, introduces no new constant).
-- [ ] `tests/balance.rs`'s existing suites (`population_rarely_reaches_total_extinction_across_seeds`,
+- [x] `tests/balance.rs`'s existing suites (`population_rarely_reaches_total_extinction_across_seeds`,
       `population_never_saturates_the_grid_across_seeds`,
       `bloom_usually_grows_then_stabilises_across_seeds`,
       `dark_rows_stay_uninhabited_across_seeds`) re-run and re-validated —
@@ -55,14 +55,16 @@ during onboarding, not the energy threshold task 082 modulates on its own.
       investigate whether it's a genuine balance regression or an assertion
       that needs updating for the new intended dynamics (do not silently
       loosen assertions without understanding why they moved).
-- [ ] `src/sim.rs`'s inline reproduction unit tests (`mod tests`, from line
+- [x] `src/sim.rs`'s inline reproduction unit tests (`mod tests`, from line
       544) extended with a case confirming a same-era-born organism cannot
       reproduce even with energy above `repro_threshold`, and can once
       `world.era` advances.
-- [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
+- [x] `cargo test` and `cargo clippy -- -D warnings` clean.
 - [ ] Verified live via `cargo run`, ideally in the same session as task 082:
       a freshly-seeded organism's first reproduction visibly waits for the
-      next era boundary rather than firing mid-era.
+      next era boundary rather than firing mid-era. **Skipped this session
+      per explicit user instruction (no run/screenshot) — pending user's own
+      playtest.**
 
 ---
 

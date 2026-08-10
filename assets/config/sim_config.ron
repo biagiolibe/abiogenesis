@@ -43,6 +43,8 @@
         ),
         era_tick_hz: 8.0,
         grace_eras: 3,
+        onboarding_eras: 3,
+        onboarding_era_ticks: 8,
     ),
     energy: (
         seed_energy: 5.0,

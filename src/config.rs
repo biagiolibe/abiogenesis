@@ -184,6 +184,15 @@ pub struct TimeConfig {
     /// far smaller than `era_budget_early`/`era_budget_late`, since it only
     /// ever gates total-extinction, never era-budget exhaustion.
     pub grace_eras: u32,
+    /// Onboarding pacing (task 082): world 0's eras `0..onboarding_eras` use
+    /// `onboarding_era_ticks` instead of `era_ticks`, shortening the wait
+    /// between checkpoints while the player is still learning the system.
+    /// Every other era (any era in any other world, or world 0 past this
+    /// threshold) keeps the standard `era_ticks`.
+    pub onboarding_eras: u32,
+    /// Shortened tick count for world 0's opening eras (task 082). See
+    /// `onboarding_eras`.
+    pub onboarding_era_ticks: u32,
 }
 
 impl Default for TimeConfig {
@@ -196,6 +205,8 @@ impl Default for TimeConfig {
             action_costs: ActionCosts::default(),
             era_tick_hz: 8.0,
             grace_eras: 3,
+            onboarding_eras: 3,
+            onboarding_era_ticks: 8,
         }
     }
 }

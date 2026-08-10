@@ -363,7 +363,7 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
         // collected from the snapshot in index order, so the RNG draw is
         // reproducible; the scratch buffer is re-checked to resolve
         // contention between two parents claiming the same cell this tick.
-        if new_energy >= species.repro_threshold {
+        if new_energy >= species.repro_threshold && organism.born_era < world.era {
             let empty_neighbours: Vec<usize> = world
                 .moore_neighbours(x, y)
                 .filter(|&n| world.cells[n].organism.is_none() && world.is_placeable_index(n))
@@ -375,6 +375,7 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
                     world.scratch[target].organism = Some(Organism {
                         species: organism.species,
                         energy: energy.repro_cost,
+                        born_era: world.era,
                     });
                     world.scratch[idx].organism = Some(Organism {
                         energy: new_energy - energy.repro_cost,
@@ -582,6 +583,7 @@ mod tests {
             organism: Some(Organism {
                 species: SpeciesId(0),
                 energy,
+                born_era: 0,
             }),
             ..world.cells[idx]
         };
@@ -616,6 +618,7 @@ mod tests {
             world.cells[idx].organism = Some(Organism {
                 species: SpeciesId(0),
                 energy: 1.0,
+                born_era: 0,
             });
         }
         let target = neighbours[0];
@@ -633,6 +636,27 @@ mod tests {
         );
     }
 
+    /// Task 083: an organism born this era must not reproduce even with
+    /// energy above `repro_threshold` — it has to survive into a later era
+    /// first (`born_era < world.era`).
+    #[test]
+    fn newborn_cannot_reproduce_until_a_later_era() {
+        let (mut world, config) = world_with_one_organism(0.7, 0.5, 15.0);
+
+        let events = step(&mut world, &config);
+        assert!(
+            events.births.is_empty(),
+            "an organism born this era (born_era == world.era) must not reproduce yet"
+        );
+
+        world.era += 1;
+        let events = step(&mut world, &config);
+        assert!(
+            !events.births.is_empty(),
+            "once world.era has advanced past born_era, reproduction may proceed"
+        );
+    }
+
     #[test]
     fn crowded_photolithic_stalls_at_carrying_capacity() {
         let (mut world, config) = world_with_one_organism(0.7, 0.5, 5.0);
@@ -645,6 +669,7 @@ mod tests {
             world.cells[idx].organism = Some(Organism {
                 species: SpeciesId(0),
                 energy: 1.0,
+                born_era: 0,
             });
         }
 
@@ -810,7 +835,11 @@ mod tests {
             world.cells[idx] = Cell {
                 light,
                 temperature,
-                organism: Some(Organism { species, energy }),
+                organism: Some(Organism {
+                    species,
+                    energy,
+                    born_era: 0,
+                }),
                 ..world.cells[idx]
             };
         }
@@ -920,7 +949,11 @@ mod tests {
             world.cells[idx] = Cell {
                 light: 0.7,
                 temperature: 0.5,
-                organism: Some(Organism { species, energy }),
+                organism: Some(Organism {
+                    species,
+                    energy,
+                    born_era: 0,
+                }),
                 ..world.cells[idx]
             };
         }
@@ -950,6 +983,7 @@ mod tests {
             organism: Some(Organism {
                 species: SpeciesId(0),
                 energy,
+                born_era: 0,
             }),
             ..world.cells[idx]
         };
@@ -995,6 +1029,7 @@ mod tests {
             world.cells[idx].organism = Some(Organism {
                 species: SpeciesId(1),
                 energy: 20.0,
+                born_era: 0,
             });
         }
 
@@ -1039,6 +1074,7 @@ mod tests {
             organism: Some(Organism {
                 species: SpeciesId(1),
                 energy: 20.0,
+                born_era: 0,
             }),
             ..world.cells[prey_idx]
         };
@@ -1050,6 +1086,7 @@ mod tests {
                 organism: Some(Organism {
                     species: SpeciesId(0),
                     energy: 5.0,
+                    born_era: 0,
                 }),
                 ..world.cells[idx]
             };
@@ -1099,6 +1136,7 @@ mod tests {
             organism: Some(Organism {
                 species: SpeciesId(0),
                 energy,
+                born_era: 0,
             }),
             ..world.cells[idx]
         };
@@ -1220,6 +1258,7 @@ mod tests {
                 organism: Some(Organism {
                     species: SpeciesId(0),
                     energy: 5.0,
+                    born_era: 0,
                 }),
                 ..world.cells[idx]
             };
@@ -1277,6 +1316,7 @@ mod tests {
             organism: Some(Organism {
                 species: SpeciesId(0),
                 energy: 0.05,
+                born_era: 0,
             }),
             ..world.cells[dying_idx]
         };
@@ -1288,6 +1328,7 @@ mod tests {
             organism: Some(Organism {
                 species: SpeciesId(0),
                 energy: 5.0,
+                born_era: 0,
             }),
             ..world.cells[surviving_idx]
         };
@@ -1429,6 +1470,7 @@ mod tests {
                 organism: Some(Organism {
                     species,
                     energy: 5.0,
+                    born_era: 0,
                 }),
                 ..world.cells[idx]
             };
