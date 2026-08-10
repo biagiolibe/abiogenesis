@@ -283,7 +283,34 @@ species, confirmed explicitly), but is a real, consistent-with-048 fix worth
 doing regardless.
 
 - `[x]` 088 — Exhaustive search in `draw_species_tags` to guarantee zero self-interaction: replaced the random-sample-with-retry search with a deterministic enumeration at decreasing tag-set size (3→2→1 tags), guaranteed to always terminate at an exact `net_self_interaction == 0` result (a 1-tag set is trivially always safe). Removed the now-unnecessary `config.tags.max_self_conflict_draws`. New 300-seed property test under the real default config confirms the invariant directly; `tests/balance.rs` re-run clean with no threshold changes needed → [088](tasks/done/088-exhaustive-self-neutral-species-tags.md)
-- `[ ]` 089 — Reject Splice edits that create a nonzero same-species self-interaction → [089](tasks/089-splice-self-interaction-gate.md)
+- `[x]` 089 — Reject Splice edits that create a nonzero same-species self-interaction → [089](tasks/done/089-splice-self-interaction-gate.md)
+
+### 🐛 Bugfixing & UX follow-ups (2026-08-10)
+
+Three bugs plus three improvements, user-reported live during a
+debugging/planning discussion held right after tasks 085-090 landed.
+Investigated and scoped in one session, no implementation yet. 091 merges
+two input bugs sharing one root cause: nothing in the codebase checks
+`bevy_egui`'s own input-capture state (`EguiWantsInput`, auto-registered by
+`EguiPlugin` since `bevy_egui` 0.41) before the map's own zoom/click/`Tab`
+systems run — the notebook window doesn't block map interaction underneath
+it, and `Tab` fights egui's own keyboard-navigation focus-cycling. 092 is a
+task-082 side effect: `ISOLATION_HINT_DURATION_TICKS` is a fixed 30-tick
+window that used to read as "about one era" back when every era was 25
+ticks, but no longer tracks the shortened onboarding eras (8 ticks) task
+082 introduced. 093 reverses a stale task-068 decision (`Sea` deliberately
+rendered near-black to read as "void") now that task 085 gave `Sea` a real
+mechanical role. 094 (on-screen buttons for tick/era/notebook controls,
+coexisting with their keyboard shortcuts) and 095 (species names drawn from
+the world's own RNG instead of a fixed id-indexed list, plus a readable
+description per species) are real feature additions, not fixes. No
+dependency between the five — pick up in any order.
+
+- `[ ]` 091 — Gate map input (zoom/click/Tab) behind egui's own input capture → [091](tasks/091-egui-input-capture-gating.md)
+- `[ ]` 092 — Isolation hint duration should scale with era length → [092](tasks/092-isolation-hint-duration-scales-with-era.md)
+- `[ ]` 093 — Sea should read as water, not "end of the world" → [093](tasks/093-sea-color-reads-as-water-not-void.md)
+- `[ ]` 094 — On-screen buttons for tick/era/notebook controls → [094](tasks/094-hud-buttons-for-tick-era-notebook-controls.md)
+- `[ ]` 095 — Procedural per-world species names + readable descriptions → [095](tasks/095-procedural-species-names-and-descriptions.md)
 
 ### 🎚️ Final tuning — *the real art*
 
