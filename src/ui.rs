@@ -17,16 +17,32 @@ use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{SimWorld, SpeciesId, TagSlot};
 
 /// Task 055's guided first-isolation hint: the message to show (isolated vs.
-/// clustered first placement) and the `SimWorld::tick` it was set at, so
-/// `viewport_hint` can self-dismiss it after `ISOLATION_HINT_DURATION_TICKS`
-/// — the tick counter the HUD's own "Era X · tick Y" readout already
-/// exposes, not a wall-clock timer. Written once, by `input.rs`'s
-/// `seed_organism_on_click` at the player's first-ever placement of their
-/// first-ever run (gated on `MetaProgress::seen_isolation_hint`); read here.
+/// clustered first placement), the `SimWorld::tick` it was set at, and how
+/// long it stays up — the tick counter the HUD's own "Era X · tick Y"
+/// readout already exposes, not a wall-clock timer. Written once, by
+/// `input.rs`'s `seed_organism_on_click` at the player's first-ever
+/// placement of their first-ever run (gated on
+/// `MetaProgress::seen_isolation_hint`); read here.
+///
+/// `duration_ticks` (task 092) is computed once at set-time from
+/// `worldgen::era_ticks_for` for whatever era is current *then* — not a
+/// fixed constant, and not re-derived on later frames even if the era
+/// changes underneath it before the hint dismisses. Before task 092 this was
+/// a fixed `30`, which read as "about one era" back when every era was `25`
+/// ticks; task 082's shortened onboarding eras (`8` ticks each) made that
+/// stale, since the hint kept outliving the era it was shown in and no
+/// longer read as anchored to anything. Pinning the duration to the
+/// *shown-in* era (rather than re-deriving it against whatever era is
+/// current each frame) is the deliberate choice here: a hint that started
+/// during an 8-tick onboarding era and is still up when era 4's 25-tick era
+/// begins should still resolve on its own short original schedule, not
+/// suddenly gain 17 more ticks of life because the era around it got
+/// longer.
 #[derive(Resource, Default)]
 pub struct IsolationHint {
     pub text: Option<&'static str>,
     pub shown_at_tick: u64,
+    pub duration_ticks: u64,
 }
 
 /// The species the seed action (task 017) places on click. A UI intent, not
@@ -120,12 +136,6 @@ const SPECIES_GLYPH: &str = "●";
 /// no existing semantic (it's neither a species nor a tag color), so it
 /// gets its own constant rather than reusing one of those.
 const NOTEBOOK_BADGE_COLOR: egui::Color32 = egui::Color32::from_rgb(230, 190, 60);
-
-/// How many ticks the guided first-isolation hint (task 055) stays on
-/// screen before self-dismissing — long enough to read over a few ticks of
-/// the freshly-placed organism's energy, short enough not to linger once
-/// the moment it refers to has passed.
-const ISOLATION_HINT_DURATION_TICKS: u64 = 30;
 
 /// How many Biosphere rows (task 064) stay visible before the list scrolls
 /// internally, matching the redesign mockup's "~4-5 visible rows" call.
@@ -454,11 +464,12 @@ fn hint_text(ever_seeded: bool, notebook_ever_opened: bool) -> Option<&'static s
     }
 }
 
-/// Whether task 055's guided first-isolation hint, shown at `shown_at_tick`,
-/// is still within its `ISOLATION_HINT_DURATION_TICKS` display window — pure
-/// so the self-dismiss timing is unit-testable without a `World`.
-fn isolation_hint_active(shown_at_tick: u64, current_tick: u64) -> bool {
-    current_tick.saturating_sub(shown_at_tick) < ISOLATION_HINT_DURATION_TICKS
+/// Whether task 055's guided first-isolation hint, shown at `shown_at_tick`
+/// for `duration_ticks` (task 092: derived from the era it was shown in, see
+/// `IsolationHint`'s own doc comment), is still within its display window —
+/// pure so the self-dismiss timing is unit-testable without a `World`.
+fn isolation_hint_active(shown_at_tick: u64, duration_ticks: u64, current_tick: u64) -> bool {
+    current_tick.saturating_sub(shown_at_tick) < duration_ticks
 }
 
 /// Non-interactive onboarding hint over the grid viewport (task 053),
@@ -471,8 +482,8 @@ fn isolation_hint_active(shown_at_tick: u64, current_tick: u64) -> bool {
 /// task-053 hints while it's active: it's a short-lived, more specific
 /// message set by `input.rs::seed_organism_on_click` at the player's
 /// first-ever placement, self-dismissed here by clearing `IsolationHint`
-/// once `ISOLATION_HINT_DURATION_TICKS` have passed, after which the
-/// task-053 flow (e.g. "open the notebook") resumes underneath it.
+/// once its `duration_ticks` have passed, after which the task-053 flow
+/// (e.g. "open the notebook") resumes underneath it.
 fn viewport_hint(
     mut contexts: EguiContexts,
     ever_seeded: Res<EverSeeded>,
@@ -481,7 +492,11 @@ fn viewport_hint(
     world: Res<SimWorld>,
 ) -> Result {
     if isolation_hint.text.is_some()
-        && !isolation_hint_active(isolation_hint.shown_at_tick, world.tick)
+        && !isolation_hint_active(
+            isolation_hint.shown_at_tick,
+            isolation_hint.duration_ticks,
+            world.tick,
+        )
     {
         isolation_hint.text = None;
     }
@@ -1117,15 +1132,20 @@ mod tests {
 
     #[test]
     fn isolation_hint_active_within_and_at_the_edge_of_its_window() {
-        assert!(isolation_hint_active(100, 100));
-        assert!(isolation_hint_active(
-            100,
-            100 + ISOLATION_HINT_DURATION_TICKS - 1
-        ));
-        assert!(!isolation_hint_active(
-            100,
-            100 + ISOLATION_HINT_DURATION_TICKS
-        ));
+        const DURATION: u64 = 30;
+        assert!(isolation_hint_active(100, DURATION, 100));
+        assert!(isolation_hint_active(100, DURATION, 100 + DURATION - 1));
+        assert!(!isolation_hint_active(100, DURATION, 100 + DURATION));
+    }
+
+    /// Task 092: a shorter onboarding-era duration dismisses sooner than a
+    /// standard-era one, for the same `shown_at_tick` — the whole point of
+    /// deriving `duration_ticks` from the era it was shown in instead of a
+    /// fixed constant.
+    #[test]
+    fn isolation_hint_active_respects_a_shorter_duration() {
+        assert!(!isolation_hint_active(100, 8, 108));
+        assert!(isolation_hint_active(100, 25, 108));
     }
 
     #[test]
@@ -1134,6 +1154,6 @@ mod tests {
         // `saturating_sub` must not panic if it ever does — elapsed
         // saturates to 0, so the hint reads as freshly active rather than
         // crashing.
-        assert!(isolation_hint_active(100, 0));
+        assert!(isolation_hint_active(100, 30, 0));
     }
 }

@@ -3,6 +3,7 @@
 // sim.rs and world.rs.
 
 use bevy::camera::Camera;
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
 
@@ -245,6 +246,18 @@ fn attempt_seed(
     true
 }
 
+/// Bundled into one `SystemParam` (mirrors `objectives.rs`'s
+/// `ObjectiveOutcomeParams`, `run_flow.rs`'s `WorldResetParams`) purely to
+/// stay under Bevy's per-function system-param limit — `seed_organism_on_click`
+/// was already at the edge of it before task 092 added `run_progress` for
+/// `IsolationHint`'s new era-derived `duration_ticks`.
+#[derive(SystemParam)]
+struct IsolationHintParams<'w> {
+    isolation_hint: ResMut<'w, IsolationHint>,
+    meta: ResMut<'w, MetaProgress>,
+    run_progress: Res<'w, RunProgress>,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn seed_organism_on_click(
     buttons: Res<ButtonInput<MouseButton>>,
@@ -258,8 +271,7 @@ fn seed_organism_on_click(
     mut budget: ResMut<ActionBudget>,
     mut placed: ResMut<PlayerPlacedCells>,
     mut ever_seeded: ResMut<EverSeeded>,
-    mut meta: ResMut<MetaProgress>,
-    mut isolation_hint: ResMut<IsolationHint>,
+    mut hint_params: IsolationHintParams,
     mode: Res<MapViewMode>,
     mut placement_indicator: ResMut<PlacementIndicator>,
     egui_wants_input: Res<EguiWantsInput>,
@@ -300,14 +312,20 @@ fn seed_organism_on_click(
         placement_indicator.show(x, y);
     }
 
-    if !ever_seeded.0 && !meta.seen_isolation_hint {
-        isolation_hint.text = Some(if is_isolated_placement(&world, x, y) {
+    if !ever_seeded.0 && !hint_params.meta.seen_isolation_hint {
+        hint_params.isolation_hint.text = Some(if is_isolated_placement(&world, x, y) {
             text::HINT_ISOLATED_FIRST_PLACEMENT
         } else {
             text::HINT_CLUSTERED_FIRST_PLACEMENT
         });
-        isolation_hint.shown_at_tick = world.tick;
-        meta.seen_isolation_hint = true;
+        hint_params.isolation_hint.shown_at_tick = world.tick;
+        // Task 092: pinned to the era length *at the moment the hint is
+        // shown*, not re-derived later — see `IsolationHint`'s own doc
+        // comment for why a later, longer era shouldn't retroactively
+        // extend an already-showing hint's lifetime.
+        hint_params.isolation_hint.duration_ticks =
+            era_ticks_for(hint_params.run_progress.world_index, world.era, &config) as u64;
+        hint_params.meta.seen_isolation_hint = true;
     }
     ever_seeded.0 = true;
 }

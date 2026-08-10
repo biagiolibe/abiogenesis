@@ -32,32 +32,57 @@ instead of reading `config.time.era_ticks` directly.
 
 ## 📋 Acceptance Criteria
 
-- [ ] The isolation hint's effective display duration is derived from
+- [x] The isolation hint's effective display duration is derived from
       `worldgen::era_ticks_for(world_index, era, config)` at the moment
       it's shown (`input.rs::seed_organism_on_click`, where
       `isolation_hint.shown_at_tick` is currently set), not the fixed
       `ISOLATION_HINT_DURATION_TICKS` constant — e.g. store the computed
       duration alongside `shown_at_tick` on `IsolationHint`, or compute the
       dismiss tick directly at set-time.
-- [ ] `isolation_hint_active` (`ui.rs:456`, currently pure and unit-tested)
+
+      `IsolationHint` gained a `duration_ticks: u64` field, set alongside
+      `shown_at_tick` from `era_ticks_for(run_progress.world_index,
+      world.era, &config)`. `seed_organism_on_click` was already at Bevy's
+      per-system param limit, so the three isolation-hint-related params
+      (`isolation_hint`, `meta`, the new `run_progress`) got bundled into a
+      `#[derive(SystemParam)]` struct, `IsolationHintParams` — same pattern
+      `objectives.rs`'s `ObjectiveOutcomeParams` already uses.
+- [x] `isolation_hint_active` (`ui.rs:456`, currently pure and unit-tested)
       stays pure and unit-testable — update its signature/tests to take
       whatever duration value the new derivation produces, rather than
       hardcoding `ISOLATION_HINT_DURATION_TICKS` inside it.
-- [ ] Decide and document a coherent rule for what happens if the hint is
+
+      Now `isolation_hint_active(shown_at_tick, duration_ticks,
+      current_tick)`; existing tests updated to pass an explicit duration,
+      plus a new `isolation_hint_active_respects_a_shorter_duration` test
+      proving an 8-tick duration dismisses sooner than a 25-tick one for the
+      same `shown_at_tick`.
+- [x] Decide and document a coherent rule for what happens if the hint is
       shown near the end of a short onboarding era and the *next* era has a
       different length (e.g. onboarding era 2 → standard-length era 3) —
       does the hint's window stay pinned to the era it was shown in, or
       re-derive per-frame against whatever era is current? Pick one, note
       why, since this is exactly the kind of edge case that reads as a new
       bug if left ambiguous.
-- [ ] `run_flow.rs`'s existing world-transition `IsolationHint` reset
+
+      Pinned to the era it was shown in: `duration_ticks` is computed once
+      at set-time and never re-derived, documented on `IsolationHint`'s own
+      doc comment. A hint that started in an 8-tick onboarding era resolves
+      on that original short schedule even if a longer standard era begins
+      before it dismisses — it doesn't retroactively gain more lifetime
+      just because the surrounding era got longer.
+- [x] `run_flow.rs`'s existing world-transition `IsolationHint` reset
       (`advancing_to_the_next_world_clears_a_stale_isolation_hint` test)
       keeps passing unmodified — this task changes *duration*, not the
       existing stale-hint-on-world-transition guard.
-- [ ] `cargo clippy -- -D warnings`, `cargo fmt`, `cargo test` clean.
+- [x] `cargo clippy -- -D warnings`, `cargo fmt`, `cargo test` clean.
 - [ ] Verified live via `cargo run` on a fresh world 0: the hint now visibly
       resolves within roughly the onboarding era it was shown in, not three
       eras later.
+
+      **Pending — needs the user's own `cargo run` pass** (this session has
+      no working `screencapture` permission, same constraint noted on task
+      091).
 
 ---
 
