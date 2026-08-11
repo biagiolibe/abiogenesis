@@ -5,7 +5,11 @@
 > **Priority**: 🟡 P2
 > **Estimate**: ~3h (includes a visual tuning pass)
 > **Assigned to**: unassigned
-> **Session**: 2026-08-11 (scoped from `redesign/abiogenesis-notebook-redesign.md`)
+> **Session**: 2026-08-11 (scoped from `redesign/abiogenesis-notebook-redesign.md`).
+> **Extended 2026-08-12** (partial-evidence confidence percentage) after a
+> review of an external concurrent-design draft (`abiogenesis-concurrent-idea.md`,
+> repo root) surfaced a legibility idea worth folding in here rather than a
+> new task.
 
 ---
 
@@ -42,6 +46,19 @@ Three changes to `hypothesis_grid`'s edge drawing
    enough at the ζ/ε case's density). This is the part most likely to need
    real geometry work; see Suggested Implementation for the tuning
    expectation.
+4. **Partial evidence — surface a confidence percentage, not just "some
+   evidence."** `node_tooltip_text`'s fallback for a partial pair
+   (`text::partial_relation_line`, `src/text.rs:470-472`) currently reads
+   "(some evidence)" with no sense of how close the pair is to confirming.
+   `MatrixKnowledge` already tracks the exact numbers needed
+   (`evidence()`, `src/notebook.rs:158-160`, and the private `threshold`
+   field, `src/notebook.rs:138`) — expose a `threshold()` getter and have
+   the tooltip report `evidence / threshold` as a rounded percentage (e.g.
+   "ζ → ε (some evidence, ~40%)"). Textual/tooltip-only — the on-grid
+   dashed line itself (point 2 above) stays uniform thickness; a
+   partial-fill-by-confidence render would fight this task's own
+   "sign/magnitude genuinely aren't known pre-confirmation" rationale for
+   why partial edges carry no thickness signal today.
 
 ---
 
@@ -94,6 +111,16 @@ Three changes to `hypothesis_grid`'s edge drawing
       "(some evidence)" wording already doesn't name the marker shape, so
       confirm it still reads correctly rather than assuming a rewrite is
       needed.
+- [ ] `MatrixKnowledge` gains a `threshold(&self) -> f32` getter
+      (`src/notebook.rs`, alongside `evidence()`/`is_confirmed()`). At the
+      `text::partial_relation_line` call site in `node_tooltip_text`
+      (`src/notebook.rs:768-772`), compute
+      `(knowledge.evidence(slot, other_slot) / knowledge.threshold() * 100.0).round()`
+      and pass it through; `partial_relation_line` gains a `confidence_pct:
+      u32` (or similar) parameter and includes it in the formatted line
+      (e.g. `"{from} → {to} (some evidence, ~{confidence_pct}%)"`). No
+      change to `MatrixKnowledge::record`/evidence accumulation itself —
+      this only exposes numbers that already exist.
 - [ ] A short written note in this file (or the commit message) on what
       curve/offset parameters were landed on and why, since this is
       genuinely tuned by eye — see Suggested Implementation.

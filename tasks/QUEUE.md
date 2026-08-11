@@ -168,4 +168,9 @@ archived to `tasks/done/`. 084 stays intentionally out of the queue as
 blocked. 078 and 081 on hold. 085-086, "Environment as sources," fully
 closed and archived to `QUEUE_ARCHIVE.md`. 090, terrain island-band
 retune, completed and archived. 091-095, the bugfixing/UX batch, fully
-closed and archived to `QUEUE_ARCHIVE.md`.)*
+closed and archived to `QUEUE_ARCHIVE.md`. 102 and 106/107 extended in
+place (no new task IDs, no status change) after a review of an external
+design draft, `abiogenesis-concurrent-idea.md`: 102 gains a partial-evidence
+confidence-percentage tooltip; 106/107 gain a concrete first-pass
+dominant-stimulus → edit mapping, resolving 107's previously-open
+stimulus-to-outcome question.)*

@@ -33,13 +33,14 @@ The three stimuli named in the source doc:
    `src/world.rs:160`).
 3. Exposure to `toxicity` (`Cell.toxicity`, `src/world.rs:153`).
 
-**Exact stimulus-to-outcome mapping is explicitly out of scope and
-undesigned** — the source doc's own open question ("does a specific
-stimulus bias toward a specific capability, or is the outcome drawn more
-loosely?") is left for playtest. This task's accumulator must stay generic
-enough to support whichever mapping task 107 eventually picks: track
-*how much* pressure has built up and *from what stimuli*, not *which
-outcome* it implies.
+**Exact stimulus-to-outcome mapping is out of scope for this task** —
+task 107 now has a first-pass answer (2026-08-12 update to
+`tasks/107-evolution-speciation.md`: the *dominant* stimulus, i.e. the one
+contributing the largest share of the accumulated tally, picks the edit).
+This task's job is to make that determination possible, not to make it:
+track *how much* pressure has built up *per stimulus*, so the emitted
+event can carry each stimulus's individual contribution (not just a
+boolean "did it contribute") for task 107 to compare and pick the largest.
 
 ---
 
@@ -66,10 +67,12 @@ outcome* it implies.
       `TECH_DESIGN.md` §5) — a first-pass, tunable value, documented as such
       in a doc comment.
 - [ ] A new discrete Bevy `Message` type (e.g. `SelectionThresholdCrossed`),
-      mirroring `OrganismDied`'s shape (`src/sim.rs:16-31`): carries enough
-      identifying/diagnostic data (organism/species/cell, and which
-      stimulus(es) contributed) for a future consumer (task 107) to act on
-      without re-deriving it.
+      mirroring `OrganismDied`'s shape (`src/sim.rs:16-31`): carries
+      identifying data (organism/species/cell) plus the **per-stimulus
+      breakdown of the accumulated tally** (three `f32` contributions —
+      interaction-delta harm, terrain/temp-optimum mismatch, toxicity — not
+      just a bitset of which contributed), so task 107 can pick the
+      largest to decide which edit to apply without re-deriving the tally.
 - [ ] The event fires at most once per organism/lineage per crossing (mirrors
       `MatrixKnowledge::record`'s `was_confirmed` guard, `notebook.rs:156-161`)
       — no repeat-firing every tick once already above threshold.

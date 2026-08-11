@@ -5,7 +5,16 @@
 > **Priority**: 🟡 P2
 > **Estimate**: ~3h
 > **Assigned to**: unassigned
-> **Session**: 2026-08-11 (scoped from `redesign/abiogenesis-evolution-xenotypes.md`)
+> **Session**: 2026-08-11 (scoped from `redesign/abiogenesis-evolution-xenotypes.md`).
+> **Extended 2026-08-12** (stimulus-to-outcome mapping, see Acceptance
+> Criteria) — the source doc's own open question ("does a specific
+> stimulus bias toward a specific capability, or is the outcome drawn more
+> loosely?") is answered here with a concrete first pass, prompted by a
+> parallel design draft (`abiogenesis-concurrent-idea.md`, repo root) that
+> proposed named pressure→trait mappings (predation→armor,
+> cold→thermal adaptation, cooperation→social adaptation). Re-grounded
+> below in the three stimuli task 106 actually tracks and the edit choices
+> that actually exist in this codebase, rather than adopted as-is.
 
 ---
 
@@ -57,10 +66,33 @@ guardrail).
       - better dispersal,
       - an additional tag drawn only from `world.active_tags` — never a tag
         outside that world's already-active set (see Objective's guardrail).
-      Which specific edit(s) a given crossing applies is a first-pass
-      choice (task 106 explicitly leaves the stimulus-to-outcome mapping
-      undesigned) — document whatever selection rule is implemented as a
-      first pass, tunable later.
+      **Which edit a given crossing applies is decided by which of task
+      106's three stimuli dominated that lineage's accumulated tally**
+      (whichever stimulus contributed the largest share of the pressure
+      that crossed the threshold — task 106's `SelectionThresholdCrossed`
+      event already carries per-stimulus breakdown for this purpose).
+      First-pass mapping, documented as tunable:
+      - **Dominant stimulus: sustained negative `interaction_delta`**
+        (lineage repeatedly harmed by adjacency) → gain an additional tag
+        from `world.active_tags` — a new axis the lineage can use to
+        counter or evade whatever's been hurting it, the same "expose
+        yourself to X, steer evolution toward Y" shape the source doc
+        wants.
+      - **Dominant stimulus: sustained `toxicity` exposure** → grant
+        toxic-zone placement tolerance for this lineage (the `is_placeable`
+        bypass flag) — the lineage adapts to the specific hazard it kept
+        surviving.
+      - **Dominant stimulus: sustained terrain occupancy at the edge of
+        `temp_optimum`/tolerance** (time spent on a `TerrainKind` whose
+        temperature sits far from the species' current optimum) → shift
+        `temp_optimum` toward the terrain actually occupied (reuses
+        `ShiftTempOptimum`).
+      Better dispersal and metabolism change are not wired to a specific
+      stimulus in this first pass — leave them unused by the automatic
+      selection rule for now (still available to `Splice` as before);
+      revisit if playtesting shows the three stimuli above don't cover
+      enough cases. Document this mapping (and the "leave two edits
+      unmapped" choice) in a doc comment at the selection function.
 - [ ] `net_self_interaction` is checked the same way `apply_splice` does
       (`src/input.rs:539/552`) before committing a tag-changing edit — a
       speciation event must not produce a self-reinforcing/self-draining
@@ -135,8 +167,10 @@ guardrail).
 1. Implement the descendant-creation path as a pure function (no Bevy `App`
    dependency), mirroring `apply_splice`'s clone / edit / name / push /
    `SpeciesId` sequence, including the hard `u8`-cap check.
-2. Decide and implement the first-pass edit-selection rule (which wishlist
-   capability a given crossing grants) — document it as tunable.
+2. Implement the dominant-stimulus edit-selection rule from the Acceptance
+   Criteria (negative `interaction_delta` → new tag, `toxicity` → placement
+   tolerance, terrain/temp-optimum mismatch → `ShiftTempOptimum`) — document
+   it as tunable.
 3. Add the new placement-gating flag for toxic/Sea tolerance, threaded
    through `is_placeable`/`is_placeable_kind` for organisms of the
    descendant species only.
