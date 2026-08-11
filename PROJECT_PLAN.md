@@ -117,6 +117,23 @@ questions in the linked doc.
 - `[?]` **More metabolisms, near-term** — first candidate is the chemolithotroph already named in GDD §5.4 (linked above), ahead of any full xenotype/archetype redesign.
 - `[?]` **Xenotype/archetype naming redesign: deferred** until after the game stabilizes. Design principle to carry forward: describe what a trait *is* (its biochemical nature), never how it interacts — real microbiology already separates those two facts. `VISION.md` §D's litmus test ("could a first-time player guess the matrix effect from the name alone?") applies whenever this is picked up.
 
+**Species-persistence follow-up (2026-08-11)**: how an evolved species survives a world reset is answered in "Progression & pacing" below — within-run only, via `RunProgress` (mirroring `MetaProgress::absorb`'s existing `worlds_cleared → bonus_available_species` shape), not the deferred cross-run persistence layer.
+
+### Progression & pacing (2026-08-11, from `redesign/abiogenesis-progression-pacing.md`)
+
+Reconciles "Mondo vivo" and "Evolution & xenotypes" (both above) with the
+current core loop: clearing a world's objective sequence today triggers a
+full reset (grid/species/matrix/notebook knowledge all wiped,
+`run_flow.rs:68-145`) — any long-term ecosystem investment is destroyed
+right as it starts to pay off. Full reasoning and open questions in the
+linked doc. **Sequenced after** "Mondo vivo" and "Evolution & xenotypes"
+get scoped — this doc's long-term objective content depends on their
+mechanics existing.
+
+- `[?]` **Long-term objective tier replaces the current sequence as the reset trigger**: a new `Objective` variant tied to mondo-vivo/evolution milestones (e.g. a speciation event, sustained population over many eras, N confirmed matrix relations) becomes what actually clears a world; existing short-term objectives keep today's in-place-advance behavior (`apply_tick_outcome`, `objectives.rs:403-467`) but now grant an energy reward on each clear, which they don't today. The fresh-matrix-per-world pillar itself is untouched — only how long a world lasts before the reset changes.
+- `[?]` **New within-run energy resource**: distinct from the per-era-resetting `ActionBudget` (`sim.rs:436-445`), lives at the `RunProgress` level (`run.rs:15-21`, already survives world-to-world resets within a run).
+- `[?]` **`Splice` stays available from world 0**: energy unlocks a more powerful tier (more simultaneous edits, reduced action-point cost) instead of gating the action's existence — deliberately avoids touching the already-tuned onboarding (tasks 082/083, grace period).
+
 ---
 
 ## 🔵 SECTION 2 — BACKLOG (Operational)

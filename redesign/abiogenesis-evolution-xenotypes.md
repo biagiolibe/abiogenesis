@@ -112,6 +112,11 @@ those get an actual resolution.
   mid-run is a bigger moment than a normal birth — needs its own
   celebration distinct from task 054's confirmation `★` and the existing
   per-era birth summary, so it doesn't read as just another log line.
+- **Resolved (2026-08-11)**: whether an evolved species survives a world
+  reset — see `redesign/abiogenesis-progression-pacing.md`. Within-run
+  only, via `RunProgress` (mirrors `MetaProgress::absorb`'s existing
+  `worlds_cleared → bonus_available_species` shape), not the deferred
+  cross-run persistence layer task 084 is blocked on.
 - **Where/how the descendant enters the grid**: does the first qualifying
   organism itself "become" the founder of the new species (its cell
   reassigned), or does the descendant spawn adjacent/nearby once the
