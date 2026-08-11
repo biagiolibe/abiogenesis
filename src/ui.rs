@@ -437,6 +437,12 @@ pub(crate) fn hud_panel(
                 .max_height(SPECIES_VISIBLE_ROWS as f32 * console_row_height(ui))
                 .show(ui, |ui| {
                     for i in 0..world.species.len() as u8 {
+                        // Wild populations (task 098) aren't a player
+                        // choice — they already exist, elsewhere on the
+                        // grid — so they're excluded from the seed palette.
+                        if world.is_wild(SpeciesId(i)) {
+                            continue;
+                        }
                         species_row(ui, SpeciesId(i), &world, &mut selected.0);
                     }
                 });

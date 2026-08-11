@@ -9,6 +9,19 @@
 
 ---
 
+**Status (2026-08-11): done.** Implementation, unit tests, `cargo clippy -D
+warnings`, `cargo fmt` all clean. Live verification completed manually by
+the user (with `conditional_tag_count` temporarily raised in
+`assets/config/sim_config.ron` to make a reveal likelier to encounter — reset
+back to the shipped default of `1` afterward): "Revealed: ..." log entries
+were observed. **Open follow-up, not treated as blocking**: the user noted
+reveals seemed to stop appearing after pressing `r` (reseed) mid-session, but
+wasn't certain this wasn't a testing artifact (e.g. having already exhausted
+that world's conditional tag before reseeding) — flagged to re-check in a
+future session/task rather than re-opening this one now.
+
+---
+
 ## 🎯 Objective
 
 Same underlying mechanism as task 096's conditional tags: when a
@@ -33,7 +46,7 @@ directly** — do not let this task build an isolated tracking structure that
 
 ## 📋 Acceptance Criteria
 
-- [ ] A new per-`SpeciesId` terrain-occupancy tracker: a bitmask (or
+- [x] A new per-`SpeciesId` terrain-occupancy tracker: a bitmask (or
       fixed-size `[bool; 4]`/small bitflags type) over `TerrainKind`'s 4
       variants (`Sea`/`Plain`/`Hill`/`Mountain`, `world.rs:140-146`), one
       entry per species, **not** a `HashMap` (CLAUDE.md's no-`HashMap`-
@@ -42,12 +55,12 @@ directly** — do not let this task build an isolated tracking structure that
       species, mirroring how `world.species: Vec<Species>` itself grows.
       Reset per world the same way `world.ever_populated` is (fresh, empty,
       at `SimWorld::new_for_world`).
-- [ ] Updated wherever an organism actually lands on the grid in
+- [x] Updated wherever an organism actually lands on the grid in
       `sim::step` — the same sites `ever_populated` and reproduction already
       touch (`src/sim.rs:359` initial write-back, `379-384` reproduction
       birth cell) — not recomputed from scratch every tick by scanning the
       whole grid.
-- [ ] When updating the tracker for a species/terrain pair that (a) is
+- [x] When updating the tracker for a species/terrain pair that (a) is
       newly set (this species has never occupied this terrain before this
       run) and (b) the species carries a tag that task 096's per-world
       conditional-tag roll conditions on that exact terrain: fire a log
@@ -56,17 +69,17 @@ directly** — do not let this task build an isolated tracking structure that
       — reuse `text::confirmation_message` or add a parallel, clearly-named
       text function if the existing one's wording doesn't fit a
       terrain-reveal (check `src/text.rs` before deciding either way).
-- [ ] The reveal fires once per (species, conditional tag, terrain) —
+- [x] The reveal fires once per (species, conditional tag, terrain) —
       re-entering the same terrain later in the run must not re-log.
-- [ ] Unit test: a species entering its tag's trigger terrain for the first
+- [x] Unit test: a species entering its tag's trigger terrain for the first
       time fires exactly one reveal; re-entering does not fire again.
-- [ ] Unit test: a species entering terrain its tag is *not* conditioned on
+- [x] Unit test: a species entering terrain its tag is *not* conditioned on
       fires no reveal.
-- [ ] Unit test: a species with no conditional tags never fires a reveal,
+- [x] Unit test: a species with no conditional tags never fires a reveal,
       regardless of terrain visited (regression coverage — this must not
       touch species with only unconditional tags).
-- [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
-- [ ] Verified live via `cargo run`: seed a species carrying a conditional
+- [x] `cargo test` and `cargo clippy -- -D warnings` clean.
+- [x] Verified live via `cargo run`: seed a species carrying a conditional
       tag (per 096), let it spread onto its trigger terrain for the first
       time this run, confirm a log entry appears in the notebook the moment
       it happens.

@@ -73,6 +73,7 @@
         effect_intensity_min: -2,
         effect_intensity_max: 2,
         matrix_density: 0.4,
+        conditional_tag_count: 1,
     ),
     notebook: (
         confirmation_threshold: 3.0,
@@ -91,6 +92,9 @@
     worldgen: (
         starting_species_count: 2,
         extra_available_species_count: 1,
+        wild_species_count: 1,
+        wild_species_min_distance_from_center: 30.0,
+        wild_species_placement_attempts: 30,
     ),
     objectives: (
         coexistence_min_species_base: 3,

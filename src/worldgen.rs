@@ -10,7 +10,7 @@ use rand::RngExt;
 use crate::config::SimConfig;
 use crate::objectives::{Objective, ZoneKind};
 use crate::world::{
-    draw_species_name, draw_species_tags, Metabolism, SimWorld, Species, SpeciesId,
+    draw_species_name, draw_species_tags, Metabolism, Organism, SimWorld, Species, SpeciesId,
 };
 
 /// Concrete generation parameters for one world, derived from its position
@@ -153,9 +153,52 @@ fn lerp_f32(early: f32, late: f32, t: f32) -> f32 {
 /// (`draw_species_tags`, task 010/036) and its RNG from `world`'s own seeded
 /// stream (never an external RNG), so the whole palette stays deterministic
 /// given the same world seed.
+/// Placeable cells' temperatures, sorted ascending (playtest fix,
+/// 2026-08-11) — what generated species' `temp_optimum` should actually
+/// draw from. Replaces the old `world.get(0, 0)`/`world.get(width - 1, 0)`
+/// corner-sampling bug: those two fixed corners assumed a left-right
+/// temperature gradient that hasn't existed since the heat-source model
+/// landed (tasks 085/086 — temperature now depends on distance to
+/// randomly-placed sources plus sea-coolant blending, not grid position).
+/// Sampling two arbitrary corners meant they were very often both close to
+/// `ambient`/`sea_coolant_value` (frequently the same `Sea` cell's
+/// neighbourhood), so almost every generated species' `temp_optimum` landed
+/// in `notebook.rs`'s "cold" band regardless of the world's real range.
+/// Restricted to `is_placeable_index` cells (excludes `Sea`/peaks, where
+/// nothing can ever stand) — a naive whole-grid min/max instead pulls in
+/// `Sea`'s coolant floor and a single heat-source cell's ceiling, handing
+/// some species a `temp_optimum` viable almost nowhere any organism could
+/// actually be placed.
+fn placeable_temperature_distribution(world: &SimWorld) -> Vec<f32> {
+    let mut temps: Vec<f32> = world
+        .cells
+        .iter()
+        .enumerate()
+        .filter(|&(idx, _)| world.is_placeable_index(idx))
+        .map(|(_, cell)| cell.temperature)
+        .collect();
+    temps.sort_by(f32::total_cmp);
+    temps
+}
+
+/// Maps a `[0, 1]` weight to a `temp_optimum` drawn from `distribution`'s
+/// interior 10th-90th percentile band, not its literal extremes (playtest
+/// fix, 2026-08-11): the single coldest/hottest placeable cells are rare
+/// outliers (often one cell right at a heat source's edge or the coast) —
+/// handing a whole species' `temp_optimum` exactly there makes `env_fit`'s
+/// Gaussian falloff (`default_temp_tolerance`) leave it non-viable almost
+/// everywhere else on the map. Squeezing into the interior band keeps every
+/// generated species viable somewhere non-trivial while still spreading
+/// them across the world's real thermal range, not clustering them all near
+/// `ambient` the way the old corner-sampling bug did.
+fn temp_optimum_at_percentile(distribution: &[f32], weight: f32) -> f32 {
+    let squeezed = 0.1 + weight.clamp(0.0, 1.0) * 0.8;
+    let idx = ((distribution.len() - 1) as f32 * squeezed).round() as usize;
+    distribution[idx]
+}
+
 pub fn generate_starting_palette(world: &mut SimWorld, config: &SimConfig) {
-    let cold = world.get(0, 0).temperature;
-    let hot = world.get(world.width - 1, 0).temperature;
+    let distribution = placeable_temperature_distribution(world);
     let starting_count = config.worldgen.starting_species_count as usize;
 
     for i in 0..starting_count {
@@ -164,7 +207,7 @@ pub fn generate_starting_palette(world: &mut SimWorld, config: &SimConfig) {
         } else {
             i as f32 / (starting_count - 1) as f32
         };
-        let temp_optimum = cold + (hot - cold) * weight;
+        let temp_optimum = temp_optimum_at_percentile(&distribution, weight);
         let tags = draw_species_tags(world, config);
         let name = draw_species_name(world);
         world.species.push(Species {
@@ -189,8 +232,7 @@ pub fn generate_starting_palette(world: &mut SimWorld, config: &SimConfig) {
 /// `MetaProgress::bonus_available_species` (task 046) on top: more species
 /// to *choose from*, never anything about the hidden matrix.
 pub fn add_bonus_species(world: &mut SimWorld, config: &SimConfig, count: u32) {
-    let cold = world.get(0, 0).temperature;
-    let hot = world.get(world.width - 1, 0).temperature;
+    let distribution = placeable_temperature_distribution(world);
     for _ in 0..count as usize {
         // A per-slot coin flip, not `i % 2` parity: `add_bonus_species` is
         // called independently from `generate_starting_palette` (fixed
@@ -207,7 +249,7 @@ pub fn add_bonus_species(world: &mut SimWorld, config: &SimConfig, count: u32) {
             Metabolism::Decomposer
         };
         let weight: f32 = world.rng_mut().random_range(0.0..=1.0);
-        let temp_optimum = cold + (hot - cold) * weight;
+        let temp_optimum = temp_optimum_at_percentile(&distribution, weight);
         let tags = draw_species_tags(world, config);
         let name = draw_species_name(world);
         world.species.push(Species {
@@ -260,7 +302,102 @@ pub fn build_world(
     add_bonus_species(&mut world, config, bonus_available_species);
     let params = world_params(world_index, config);
     let objectives = generate_objectives(&mut world, &params, config, world_index);
+    // Placed after objective generation (task 098) so wild populations
+    // never enter `Coexistence`'s `min_species` clamp or become a
+    // `SurviveIn`/`TriggerBloom` target — those draws only ever see the
+    // player-seedable pool that existed at generation time.
+    place_wild_species(&mut world, config);
     (world, objectives)
+}
+
+/// Places `WorldgenConfig::wild_species_count` wild, pre-existing
+/// populations directly onto the grid (task 098,
+/// `redesign/abiogenesis-living-world.md` §2a) — one organism each, hidden
+/// away from the grid's center where the player is most likely to look
+/// first. A narrow, documented exception to task 050's "nothing
+/// auto-placed" rule: unlike the player-seedable pool, these already have a
+/// living organism on the grid before the player acts. Tracked via
+/// `SimWorld::wild_species` (not a flag on `Species` itself) so every
+/// existing `Species { .. }` construction site in the codebase stays
+/// untouched.
+///
+/// Called after `generate_objectives` (see `build_world`), so these species
+/// never influence objective generation, and their organisms are placed
+/// directly on `world.cells` without touching `world.ever_populated` —
+/// `sim::step`'s population scan excludes wild species from that flip (task
+/// 098), preserving task 050's "hasn't been seeded yet" semantics for the
+/// player's own lineages.
+fn place_wild_species(world: &mut SimWorld, config: &SimConfig) {
+    let count = config.worldgen.wild_species_count as usize;
+    if count == 0 {
+        return;
+    }
+    let distribution = placeable_temperature_distribution(world);
+    let center = (world.width as f32 / 2.0, world.height as f32 / 2.0);
+    let min_distance = config.worldgen.wild_species_min_distance_from_center;
+    let attempts = config.worldgen.wild_species_placement_attempts;
+
+    for _ in 0..count {
+        let tags = draw_species_tags(world, config);
+        let name = draw_species_name(world);
+        let weight: f32 = world.rng_mut().random_range(0.0..=1.0);
+        let temp_optimum = temp_optimum_at_percentile(&distribution, weight);
+        let species_id = SpeciesId(world.species.len() as u8);
+        world.species.push(Species {
+            name,
+            metabolism: Metabolism::Photolithic,
+            temp_optimum,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags,
+        });
+        world.wild_species.push(species_id);
+
+        let idx = find_wild_placement(world, center, min_distance, attempts);
+        world.cells[idx].organism = Some(Organism {
+            species: species_id,
+            energy: config.energy.seed_energy,
+            born_era: world.era,
+        });
+    }
+}
+
+/// Finds a placeable, unoccupied cell for one wild population (task 098):
+/// bounded-resamples random cells (same defensive-generation pattern as
+/// `SimWorld::place_toxic_zone`), preferring one at least `min_distance`
+/// from `center`, falling back to the farthest placeable candidate seen if
+/// none clears that floor within `attempts` draws — placement itself can
+/// never fail outright as long as the world has at least one placeable
+/// cell, which terrain generation already guarantees.
+fn find_wild_placement(
+    world: &mut SimWorld,
+    center: (f32, f32),
+    min_distance: f32,
+    attempts: u32,
+) -> usize {
+    let (width, height) = (world.width, world.height);
+    let mut best: Option<(usize, f32)> = None;
+    for _ in 0..attempts.max(1) {
+        let x = world.rng_mut().random_range(0..width);
+        let y = world.rng_mut().random_range(0..height);
+        let idx = world.index(x, y);
+        if !world.is_placeable_index(idx) || world.get(x, y).organism.is_some() {
+            continue;
+        }
+        let (dx, dy) = (x as f32 - center.0, y as f32 - center.1);
+        let distance = (dx * dx + dy * dy).sqrt();
+        if distance >= min_distance {
+            return idx;
+        }
+        if best.is_none_or(|(_, best_distance)| distance > best_distance) {
+            best = Some((idx, distance));
+        }
+    }
+    best.map(|(idx, _)| idx).unwrap_or_else(|| {
+        (0..world.cells.len())
+            .find(|&idx| world.is_placeable_index(idx) && world.cells[idx].organism.is_none())
+            .expect("a world always has at least one placeable, unoccupied cell")
+    })
 }
 
 /// Chooses and parametrizes this world's objective sequence (task 040/059,
@@ -540,6 +677,105 @@ mod tests {
 
     /// Task 050: no world starts with an organism already on the grid — the
     /// player seeds it themselves via `Seed`.
+    #[test]
+    fn place_wild_species_puts_exactly_configured_count_of_organisms_on_the_grid() {
+        let config = SimConfig::default();
+        let (world, _) = build_world(42, 0, &config, 0);
+
+        let placed_wild = world
+            .cells
+            .iter()
+            .filter(|cell| cell.organism.is_some_and(|o| world.is_wild(o.species)))
+            .count();
+        assert_eq!(placed_wild, config.worldgen.wild_species_count as usize);
+        assert_eq!(
+            world.wild_species.len(),
+            config.worldgen.wild_species_count as usize
+        );
+    }
+
+    #[test]
+    fn wild_species_never_land_on_non_placeable_terrain() {
+        let config = SimConfig::default();
+        for seed in 0..20u64 {
+            let (world, _) = build_world(seed, 0, &config, 0);
+            for &species in &world.wild_species {
+                let idx = world
+                    .cells
+                    .iter()
+                    .position(|cell| cell.organism.is_some_and(|o| o.species == species))
+                    .expect("every wild species has exactly one placed organism");
+                assert!(
+                    world.is_placeable_index(idx),
+                    "seed {seed}: wild species {species:?} landed on non-placeable terrain"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn wild_species_placement_is_deterministic_for_the_same_seed() {
+        let config = SimConfig::default();
+        let (a, _) = build_world(42, 0, &config, 0);
+        let (b, _) = build_world(42, 0, &config, 0);
+
+        assert_eq!(a.wild_species, b.wild_species);
+        let wild_cells_of = |world: &SimWorld| -> Vec<usize> {
+            world
+                .cells
+                .iter()
+                .enumerate()
+                .filter(|(_, cell)| cell.organism.is_some_and(|o| world.is_wild(o.species)))
+                .map(|(idx, _)| idx)
+                .collect()
+        };
+        assert_eq!(wild_cells_of(&a), wild_cells_of(&b));
+        for (id_a, id_b) in a.wild_species.iter().zip(b.wild_species.iter()) {
+            assert_eq!(world_species(&a, *id_a).tags, world_species(&b, *id_b).tags);
+            assert_eq!(
+                world_species(&a, *id_a).temp_optimum,
+                world_species(&b, *id_b).temp_optimum
+            );
+        }
+    }
+
+    fn world_species(world: &SimWorld, id: SpeciesId) -> &Species {
+        &world.species[id.0 as usize]
+    }
+
+    #[test]
+    fn wild_species_do_not_flip_ever_populated() {
+        let config = SimConfig::default();
+        let (world, _) = build_world(42, 0, &config, 0);
+
+        assert!(
+            !world.wild_species.is_empty(),
+            "the default config places at least one wild species"
+        );
+        assert!(
+            !world.ever_populated,
+            "wild placement alone must not flip ever_populated (task 050's semantics)"
+        );
+    }
+
+    #[test]
+    fn wild_species_are_excluded_from_the_coexistence_pool_at_generation_time() {
+        // Wild species are placed after `generate_objectives` (see
+        // `build_world`), so they must never appear as the species count
+        // that decision saw — verified indirectly here by confirming the
+        // world's non-wild species count still matches the pre-098
+        // palette size the objective generation actually used.
+        let config = SimConfig::default();
+        let (world, _) = build_world(42, 0, &config, 0);
+        let non_wild = world.species.len() - world.wild_species.len();
+        assert_eq!(
+            non_wild,
+            (config.worldgen.starting_species_count + config.worldgen.extra_available_species_count)
+                as usize,
+            "wild species must be additional to, not counted within, the objective-generation pool"
+        );
+    }
+
     #[test]
     fn generate_starting_palette_places_no_organisms() {
         let config = SimConfig::default();

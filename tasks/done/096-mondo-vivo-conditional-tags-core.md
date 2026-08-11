@@ -35,11 +35,11 @@ non-visible worldgen/sim changes).
 
 ## 📋 Acceptance Criteria
 
-- [ ] `TagConfig` (`src/config.rs:321-344`) gains `conditional_tag_count: u32`
+- [x] `TagConfig` (`src/config.rs:321-344`) gains `conditional_tag_count: u32`
       (no magic numbers) — a first-pass guess of `1` or `2` (out of
       `global_tag_pool: 10`), tunable, matching the doc's density guidance
       ("only a small minority of the pool should be conditional").
-- [ ] Conditionality is keyed on `TagId` (pool-wide identity), **not**
+- [x] Conditionality is keyed on `TagId` (pool-wide identity), **not**
       `TagSlot` (per-world position) — the first `conditional_tag_count`
       `TagId`s by convention (e.g. `TagId(0)`, `TagId(1)`) are always the
       conditional ones, in every world. This is deliberate: `TagSlot` is
@@ -47,17 +47,17 @@ non-visible worldgen/sim changes).
       (`src/world.rs:962-966`), so keying conditionality on slot position
       would make a *different* glyph conditional every world — exactly what
       the doc's "fixed at the pool level" decision rules out.
-- [ ] A new per-world roll — a small struct or `Vec` on `SimWorld`, e.g.
+- [x] A new per-world roll — a small struct or `Vec` on `SimWorld`, e.g.
       `conditional_tags: Vec<(TagId, TerrainKind, Mode)>` — populated once at
       construction, same RNG moment as `select_active_tags`/`generate_matrix`
       (`SimWorld::new_for_world`, `src/world.rs:238-250`). Only conditional
       `TagId`s that actually landed in this world's `active_tags` need an
       entry (a conditional tag not drawn into a given world's active subset
       simply doesn't exist there this run — no entry, no gating needed).
-- [ ] New `Mode` enum: `Inducible` | `Repressible`, rolled per conditional
+- [x] New `Mode` enum: `Inducible` | `Repressible`, rolled per conditional
       tag alongside its trigger `TerrainKind`, using the world's own RNG
       (`StdRng`, never `rand::rng()`).
-- [ ] `interaction_delta` (`src/sim.rs:294-296`) gates a conditional tag's
+- [x] `interaction_delta` (`src/sim.rs:294-296`) gates a conditional tag's
       participation in the matrix lookup: for each `their_tag`/`my_tag` in
       the existing double loop, resolve `world.active_tags[slot.0 as usize]`
       to its `TagId`, look up whether that `TagId` is conditional in this
@@ -70,31 +70,31 @@ non-visible worldgen/sim changes).
       `sim.rs:301-307` — an organism that never satisfies its gate shouldn't
       generate observation evidence for a relationship it isn't actually
       exhibiting).
-- [ ] Unconditional tags (no entry in the per-world conditional set) behave
+- [x] Unconditional tags (no entry in the per-world conditional set) behave
       exactly as today — active on every terrain, no gate applied. Add a
       regression test asserting this explicitly (e.g. build a world with
       `conditional_tag_count = 0` and confirm `interaction_delta` matches the
       pre-096 formula for a hand-crafted matrix/species pair).
-- [ ] Unit test: a conditional tag in `Inducible` mode contributes to
+- [x] Unit test: a conditional tag in `Inducible` mode contributes to
       `interaction_delta` only when its carrier occupies the trigger
       terrain, and not otherwise (same organism, same neighbours, terrain
       varied).
-- [ ] Unit test: a conditional tag in `Repressible` mode contributes
+- [x] Unit test: a conditional tag in `Repressible` mode contributes
       everywhere *except* the trigger terrain.
-- [ ] Unit test: **a conditional `TagId` that isn't in this world's
+- [x] Unit test: **a conditional `TagId` that isn't in this world's
       `active_tags` at all** doesn't panic and doesn't affect
       `interaction_delta` — the likeliest silent-panic site is indexing a
       per-slot conditional lookup sized for the wrong axis; keying by
       `TagId` and checking membership (not indexing by slot count) avoids
       this by construction, but test it directly.
-- [ ] Determinism: same seed → same conditional-tag rolls (trigger terrain
+- [x] Determinism: same seed → same conditional-tag rolls (trigger terrain
       and mode), same as the existing `TagMatrix`/`active_tags` determinism
       guarantee. `tests/determinism.rs`'s `same_seed_yields_identical_history`
       test already asserts cell-by-cell equality across two same-seed runs
       (not hardcoded expected values), so it exercises this for free once
       `SimWorld::new_for_world` draws the new roll from `world`'s own RNG —
       confirm it still passes, don't need a new determinism test file.
-- [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
+- [x] `cargo test` and `cargo clippy -- -D warnings` clean.
 
 ---
 

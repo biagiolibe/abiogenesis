@@ -341,6 +341,15 @@ pub struct TagConfig {
     pub effect_intensity_max: i8,
     /// Fraction of tag-pair cells in the hidden matrix that are non-zero (~40%).
     pub matrix_density: f32,
+    /// How many `TagId`s, out of `global_tag_pool`, are terrain-conditional
+    /// in every world (task 096, `redesign/abiogenesis-living-world.md`
+    /// §1) — a small, fixed structural fact learned from the manual, not
+    /// decoded per world. Keyed on `TagId` (pool-wide identity): the first
+    /// `conditional_tag_count` `TagId`s by convention (`TagId(0)`, `TagId(1)`,
+    /// ...) are always the conditional ones. *Which* terrain triggers each
+    /// one, and whether it's `Mode::Inducible` or `Mode::Repressible`, is
+    /// still rolled fresh per world — see `SimWorld::conditional_tags`.
+    pub conditional_tag_count: u32,
 }
 
 impl Default for TagConfig {
@@ -354,6 +363,7 @@ impl Default for TagConfig {
             effect_intensity_min: -2,
             effect_intensity_max: 2,
             matrix_density: 0.4,
+            conditional_tag_count: 1,
         }
     }
 }
@@ -448,6 +458,27 @@ pub struct WorldgenConfig {
     /// every starting organism needing prey/residue to survive its first
     /// ticks.
     pub extra_available_species_count: u32,
+    /// Wild, pre-existing populations placed directly on the grid at world
+    /// generation (task 098, `redesign/abiogenesis-living-world.md` §2a) —
+    /// a narrow, documented exception to task 050's "nothing auto-placed"
+    /// rule: unlike the player-seedable pool above, these already have a
+    /// living organism on the grid before the player acts, hidden away from
+    /// the likely starting area for the player to discover. First-pass
+    /// tune-by-playtest guess, not derived.
+    pub wild_species_count: u32,
+    /// Minimum Euclidean distance from the grid's center a wild
+    /// population's placement cell must clear (task 098) — a first-pass
+    /// stand-in for "not immediately reachable/visible from the player's
+    /// likely starting area," since the codebase has no fixed player-start
+    /// position to measure against. Tunable, not derived.
+    pub wild_species_min_distance_from_center: f32,
+    /// Bounded-resample attempts (task 098, same defensive-generation
+    /// pattern as `TerrainConfig::max_generation_attempts`/
+    /// `max_toxic_zone_placement_attempts`) for finding a placeable cell
+    /// that also clears `wild_species_min_distance_from_center`; falls back
+    /// to the best (farthest) placeable candidate seen if none clears it
+    /// within this many draws, so wild placement can never fail outright.
+    pub wild_species_placement_attempts: u32,
 }
 
 impl Default for WorldgenConfig {
@@ -455,6 +486,9 @@ impl Default for WorldgenConfig {
         Self {
             starting_species_count: 2,
             extra_available_species_count: 1,
+            wild_species_count: 1,
+            wild_species_min_distance_from_center: 30.0,
+            wild_species_placement_attempts: 30,
         }
     }
 }

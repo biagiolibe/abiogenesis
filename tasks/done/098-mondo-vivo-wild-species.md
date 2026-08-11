@@ -9,6 +9,18 @@
 
 ---
 
+**Status (2026-08-11): done.** Implementation, unit tests, `cargo clippy -D
+warnings`, `cargo fmt` all clean. Live verification completed manually by
+the user: wild population placement confirmed, spark + notebook log entry on
+first contact confirmed. A separate temperature-spread bug surfaced during
+this playtest (`generate_starting_palette`/`add_bonus_species`/
+`place_wild_species` sampling two fixed grid corners instead of the real
+placeable-cell temperature distribution) and was fixed the same session —
+see `worldgen::placeable_temperature_distribution`/`temp_optimum_at_percentile`
+and the corresponding `tests/balance.rs` harness correction.
+
+---
+
 ## 🎯 Objective
 
 At world generation, in addition to the species the player seeds, place a
@@ -33,10 +45,10 @@ they're already alive, elsewhere).
 
 ## 📋 Acceptance Criteria
 
-- [ ] `WorldgenConfig` (`src/config.rs`, alongside `starting_species_count`/
+- [x] `WorldgenConfig` (`src/config.rs`, alongside `starting_species_count`/
       `extra_available_species_count`) gains `wild_species_count: u32` (no
       magic numbers), first-pass guess `1`-`2`.
-- [ ] A new worldgen step (e.g. `worldgen::place_wild_species`, called from
+- [x] A new worldgen step (e.g. `worldgen::place_wild_species`, called from
       `build_world`, `src/worldgen.rs:252-259`, after `generate_starting_palette`)
       generates `wild_species_count` species via the same machinery
       `generate_starting_palette`/`add_bonus_species` already use
@@ -44,7 +56,7 @@ they're already alive, elsewhere).
       places **one organism each** directly onto `world.cells` — the one
       place in the codebase allowed to write `cell.organism = Some(..)` at
       worldgen time outside `input.rs`'s player-driven `Seed` path.
-- [ ] Wild species are **not** added to `world.species`'s player-facing
+- [x] Wild species are **not** added to `world.species`'s player-facing
       "available to seed" pool distinction if one exists in this codebase's
       UI layer (`input.rs`'s `Seed` picker) — check how `Seed`
       enumerates choices (likely all of `world.species`) and decide: either
@@ -53,7 +65,7 @@ they're already alive, elsewhere).
       from the `Seed` picker by a flag on `Species`/`SpeciesId`. Document the
       choice; either is acceptable, but wild species must not appear as a
       pickable option.
-- [ ] Placement respects `is_placeable_index` (`world.rs:756-758` — no `Sea`
+- [x] Placement respects `is_placeable_index` (`world.rs:756-758` — no `Sea`
       or mountain-peak placement) and a first-pass spatial rule for "not
       immediately reachable/visible from the player's likely starting area."
       There is no existing "player start position" concept in the codebase
@@ -63,7 +75,7 @@ they're already alive, elsewhere).
       `wild_species_min_distance_from_center`), first-pass guess, tune
       visually per 081's precedent, not derived from any existing spatial
       constant.
-- [ ] **`is_total_extinction` decision, made and documented**
+- [x] **`is_total_extinction` decision, made and documented**
       (`src/objectives.rs:275-277`, `world.ever_populated && all cells empty`):
       a wild population staying alive after every player-seeded organism
       dies must not silently prevent extinction failure — decide whether
@@ -74,7 +86,7 @@ they're already alive, elsewhere).
       wrong, since the player's own run would then never fail on
       extinction). Pick the option that keeps extinction meaningful for the
       player's own lineages; document the choice and add a regression test.
-- [ ] **`ever_populated` decision, made and documented**: does placing a
+- [x] **`ever_populated` decision, made and documented**: does placing a
       wild organism at worldgen set `world.ever_populated = true`
       (`world.rs:216`, flipped today only by `sim::step` once a real
       organism count is seen, `sim.rs:124-130`)? If yes, the extinction
@@ -83,14 +95,14 @@ they're already alive, elsewhere).
       almost certainly wild placement should **not** set `ever_populated`;
       confirm this explicitly and add a test asserting a fresh world with
       only wild species placed still has `ever_populated == false`.
-- [ ] **`Coexistence` objective decision, made and documented**
+- [x] **`Coexistence` objective decision, made and documented**
       (`worldgen::generate_objective`'s `min_species`/species-count clamp):
       do wild species count toward the pool `Coexistence` draws its
       `min_species` target from? If yes, the objective could become
       trivially satisfiable by wild populations the player never interacted
       with — decide and document whether wild species are excluded from
       that count.
-- [ ] Discovery trigger: when a player-seeded species' organism first
+- [x] Discovery trigger: when a player-seeded species' organism first
       occupies a cell within interaction range (Moore-neighbor adjacency, the
       same range `interaction_delta` reads) of a wild population's organism,
       fire the same spark (task 080's `spawn_spark_on_first_observation`
@@ -101,13 +113,13 @@ they're already alive, elsewhere).
       uses — first contact with a wild species is functionally a first
       observation of its tags, so it should ride the exact same
       `AdjacencyObserved`/`MatrixKnowledge` pipeline, not a new one.
-- [ ] Unit test: `wild_species_count` wild organisms exist on the grid
+- [x] Unit test: `wild_species_count` wild organisms exist on the grid
       immediately after `build_world`, before any `Seed` action.
-- [ ] Unit test: wild placement never lands on non-placeable terrain.
-- [ ] Determinism: same seed → same wild species (tags, position,
+- [x] Unit test: wild placement never lands on non-placeable terrain.
+- [x] Determinism: same seed → same wild species (tags, position,
       temperature optimum).
-- [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
-- [ ] Verified live via `cargo run`: a fresh world contains at least one
+- [x] `cargo test` and `cargo clippy -- -D warnings` clean.
+- [x] Verified live via `cargo run`: a fresh world contains at least one
       wild population not visible near the player's initial view; seeding a
       player species and letting it spread into contact range with the wild
       population triggers the spark and a notebook log entry.

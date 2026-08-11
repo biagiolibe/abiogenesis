@@ -205,10 +205,10 @@ shared design pass with the Precursor), the notebook's visual polish pass,
 evolution's new-species presentation moment, and the full xenotype naming
 redesign — all explicitly flagged as not design-ready in their source docs.
 
-- `[ ]` 096 — Conditional tags: terrain-gated matrix participation → [096](tasks/096-mondo-vivo-conditional-tags-core.md)
+- `[x]` 096 — Conditional tags: terrain-gated matrix participation → [096](tasks/done/096-mondo-vivo-conditional-tags-core.md)
 - `[ ]` 097 — Conditional tag catalog badge + (tag, terrain) evidence track (depends on 096, 103) → [097](tasks/097-mondo-vivo-conditional-tag-catalog-badge.md)
-- `[ ]` 098 — Wild, pre-existing species at world generation → [098](tasks/098-mondo-vivo-wild-species.md)
-- `[ ]` 099 — Reveal-on-first-zone-entry for conditional tags (depends on 096) → [099](tasks/099-mondo-vivo-zone-entry-reveal.md)
+- `[x]` 098 — Wild, pre-existing species at world generation → [098](tasks/done/098-mondo-vivo-wild-species.md)
+- `[x]` 099 — Reveal-on-first-zone-entry for conditional tags (depends on 096) → [099](tasks/done/099-mondo-vivo-zone-entry-reveal.md)
 - `[ ]` 100 — Strip raw per-tick noise from the observation log → [100](tasks/100-notebook-log-rework.md)
 - `[ ]` 101 — Hypothesis grid: reveal-on-first-observation, layout over visible subset only → [101](tasks/101-notebook-grid-visibility-layout.md)
 - `[ ]` 102 — Hypothesis grid: edge grammar rewrite (thickness, dashed partial lines, curved bidirectional arcs) → [102](tasks/102-notebook-grid-edge-grammar.md)
@@ -479,6 +479,38 @@ dependency between the five — pick up in any order.
 - `[x]` 093 — Sea should read as water, not "end of the world" → [093](tasks/done/093-sea-color-reads-as-water-not-void.md)
 - `[x]` 094 — On-screen buttons for tick/era/notebook controls → [094](tasks/done/094-hud-buttons-for-tick-era-notebook-controls.md)
 - `[x]` 095 — Procedural per-world species names + readable descriptions (follow-up noted: the description reads flat/repetitive across species, phrasing fixed per metabolism — left for a future task if picked up) → [095](tasks/done/095-procedural-species-names-and-descriptions.md)
+
+### 🐛 Temperature-spread bug + HUD click-through (2026-08-11, user-reported live during 098/099 playtest)
+
+Two issues surfaced during manual playtesting of tasks 098/099. Both
+diagnosed same session; the first fixed immediately (small, contained, no
+open design questions), the second scoped as its own task since the root
+cause needs investigation before it can be fixed correctly.
+
+`temp_optimum` generation (`generate_starting_palette`/`add_bonus_species`/
+`place_wild_species`) used to read two fixed grid corners
+(`world.get(0, 0)`/`world.get(width - 1, 0)`) as the "cold"/"hot" endpoints
+to spread species temperatures across — a leftover from before tasks 085/086
+replaced the left-right temperature gradient with a heat-source-distance
+model. Those two corners very often both landed near `ambient`, so almost
+every generated species' `temp_optimum` fell in `notebook.rs`'s "cold" band
+regardless of the world's real range (confirmed via a diagnostic probe
+across 8 seeds). Fixed by sampling from the actual distribution of
+*placeable* cells' temperatures (`worldgen::placeable_temperature_distribution`),
+mapped through an interior 10th-90th percentile band
+(`temp_optimum_at_percentile`) rather than the distribution's literal
+extremes — the naive whole-grid min/max version regressed `tests/balance.rs`
+badly (25/50 → still 21/50 seeds hitting extinction) because
+`tests/balance.rs`'s own `place_starting_organisms` placed species 0/1 at
+those exact same two corners, a tautological fit=1.0 coupling that the fix
+had to break intentionally; the test's placement was corrected to seek the
+placeable cell nearest each species' own `temp_optimum` instead, which
+restored green (`0/50` across all four balance properties).
+
+- `[x]` Temperature-spread fix (no task file — small, contained, fixed same
+  session as diagnosed; see `worldgen.rs`'s `placeable_temperature_distribution`/
+  `temp_optimum_at_percentile` and `tests/balance.rs`'s `place_starting_organisms`)
+- `[ ]` 115 — Grid clicks leak through the HUD panel when the camera is zoomed → [115](tasks/115-egui-panel-click-through-when-zoomed.md)
 
 ### 🎚️ Final tuning — *the real art*
 

@@ -3,10 +3,20 @@
 // or going extinct, and the light gradient must carve out a real niche.
 // Together with task 007 this was Phase 0's exit gate (GDD §13). Since task
 // 050 nothing is auto-placed in real play — `place_starting_organisms` below
-// synthesizes the same "first `starting_species_count` species, spread along
-// y = 0" placement a player would perform, purely so these seed-swept
-// statistical properties keep measuring real population dynamics under a
-// fixed, comparable starting condition.
+// synthesizes a plausible player placement: each generated species goes onto
+// the placeable cell whose temperature is closest to that species' own
+// `temp_optimum`, so these seed-swept statistical properties measure real
+// population dynamics under a fixed, comparable starting condition.
+//
+// This replaced a `y = 0`-corner placement (task 098/099 playtest session,
+// 2026-08-11): `generate_starting_palette` used to derive every species'
+// `temp_optimum` by reading the temperature at exactly the two grid corners
+// this test placed organisms on, so `env_fit` was tautologically ~1.0 by
+// construction, not because the scenario was actually balanced. Fixing that
+// bug (species now draw `temp_optimum` from the real distribution of
+// placeable-cell temperatures, `worldgen::placeable_temperature_distribution`)
+// broke the coincidence — placement here now has to actually seek out where
+// each species would fit, the way a player choosing where to `Seed` would.
 //
 // Task 038 made active-tag selection procedural (`select_active_tags`
 // samples the RNG instead of always taking `TagId(0..5)`), so a fixed seed
@@ -83,12 +93,15 @@ fn population(world: &SimWorld) -> usize {
 fn place_starting_organisms(world: &mut SimWorld, config: &SimConfig) {
     let count = config.worldgen.starting_species_count as usize;
     for i in 0..count {
-        let x = if count <= 1 {
-            world.width / 2
-        } else {
-            i * (world.width - 1) / (count - 1)
-        };
-        let idx = world.index(x, 0);
+        let optimum = world.species[i].temp_optimum;
+        let idx = (0..world.cells.len())
+            .filter(|&idx| world.is_placeable_index(idx) && world.cells[idx].organism.is_none())
+            .min_by(|&a, &b| {
+                (world.cells[a].temperature - optimum)
+                    .abs()
+                    .total_cmp(&(world.cells[b].temperature - optimum).abs())
+            })
+            .expect("terrain generation guarantees at least one placeable cell");
         world.cells[idx].organism = Some(Organism {
             species: SpeciesId(i as u8),
             energy: config.energy.seed_energy,

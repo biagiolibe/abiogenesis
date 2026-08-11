@@ -11,7 +11,7 @@ use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::ObjectiveAdvanced;
 use abiogenesis::sim::{
-    AdjacencyObserved, EraCompleted, OrganismBorn, OrganismDied, SpeciesExtinct,
+    AdjacencyObserved, EraCompleted, OrganismBorn, OrganismDied, SpeciesExtinct, TerrainRevealed,
 };
 use abiogenesis::state::GameState;
 use abiogenesis::world::{SimWorld, SpeciesId, TagId, TagSlot};
@@ -330,6 +330,7 @@ fn record_events(
     mut extinctions: MessageReader<SpeciesExtinct>,
     mut deaths: MessageReader<OrganismDied>,
     mut objectives_advanced: MessageReader<ObjectiveAdvanced>,
+    mut terrain_revealed: MessageReader<TerrainRevealed>,
     mut placed: ResMut<PlayerPlacedCells>,
     mut log: ResMut<ObservationLog>,
 ) {
@@ -347,6 +348,19 @@ fn record_events(
             era: world.era,
             species: None,
             text: text::objective_advanced_message(event.index),
+            evidence_quality: None,
+        });
+    }
+
+    for event in terrain_revealed.read() {
+        log.entries.push(LogEntry {
+            era: world.era,
+            species: Some(event.species),
+            text: text::terrain_reveal_message(
+                &species_label(&world, event.species),
+                tag_glyph(event.tag),
+                event.terrain,
+            ),
             evidence_quality: None,
         });
     }
@@ -885,6 +899,7 @@ mod tests {
         app.add_message::<SpeciesExtinct>();
         app.add_message::<OrganismDied>();
         app.add_message::<ObjectiveAdvanced>();
+        app.add_message::<TerrainRevealed>();
         app.add_systems(Update, record_events);
         app
     }

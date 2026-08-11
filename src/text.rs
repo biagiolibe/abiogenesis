@@ -11,7 +11,7 @@
 
 use crate::ui::ActionMode;
 use abiogenesis::objectives::ZoneKind;
-use abiogenesis::world::Metabolism;
+use abiogenesis::world::{Metabolism, TerrainKind};
 
 // --- Main menu (`menu.rs::main_menu_ui`) ---
 
@@ -424,6 +424,34 @@ pub fn observation_message(from_glyph: &str, to_glyph: &str) -> String {
 pub fn confirmation_message(from_glyph: &str, to_glyph: &str, positive: bool) -> String {
     let sign = if positive { "boosts" } else { "harms" };
     format!("Confirmed: tag {from_glyph} {sign} tag {to_glyph}")
+}
+
+/// A `TerrainKind`'s player-facing name (task 099), for the zone-entry
+/// reveal message below — no other player-facing terrain label exists yet
+/// in this codebase (terrain otherwise only shows up as color, task 066).
+pub fn terrain_label(kind: TerrainKind) -> &'static str {
+    match kind {
+        TerrainKind::Sea => "sea",
+        TerrainKind::Plain => "plains",
+        TerrainKind::Hill => "hills",
+        TerrainKind::Mountain => "mountains",
+    }
+}
+
+/// A species' lineage set foot on a terrain that conditions one of its tags,
+/// for the first time this run (task 099, GDD-adjacent "reveal-on-first-
+/// zone-entry" — the terrain-conditional counterpart to `confirmation_message`'s
+/// matrix-cell "aha" moment). Deliberately its own function rather than
+/// reusing `confirmation_message`: that one is phrased around a matrix
+/// tag-pair boost/harm, which doesn't fit "this tag only matters on this
+/// terrain."
+pub fn terrain_reveal_message(
+    species_label: &str,
+    tag_glyph: &str,
+    terrain: TerrainKind,
+) -> String {
+    let terrain = terrain_label(terrain);
+    format!("Revealed: {species_label}'s tag {tag_glyph} is conditioned by {terrain}")
 }
 
 // --- Notebook — hypothesis graph (`notebook.rs::hypothesis_grid`) ---

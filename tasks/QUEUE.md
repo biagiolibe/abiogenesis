@@ -63,10 +63,10 @@ but blocked.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 096 | Conditional tags: terrain-gated matrix participation | — | [096](096-mondo-vivo-conditional-tags-core.md) |
+| `[x]` | 096 | Conditional tags: terrain-gated matrix participation | — | [096](done/096-mondo-vivo-conditional-tags-core.md) |
 | `[ ]` | 097 | Conditional tag catalog badge + (tag, terrain) evidence track | 096, 103 | [097](097-mondo-vivo-conditional-tag-catalog-badge.md) |
-| `[ ]` | 098 | Wild, pre-existing species at world generation | — | [098](098-mondo-vivo-wild-species.md) |
-| `[ ]` | 099 | Reveal-on-first-zone-entry for conditional tags | 096 | [099](099-mondo-vivo-zone-entry-reveal.md) |
+| `[x]` | 098 | Wild, pre-existing species at world generation | — | [098](done/098-mondo-vivo-wild-species.md) |
+| `[x]` | 099 | Reveal-on-first-zone-entry for conditional tags | 096 | [099](done/099-mondo-vivo-zone-entry-reveal.md) |
 | `[ ]` | 100 | Strip raw per-tick noise from the observation log | — | [100](100-notebook-log-rework.md) |
 | `[ ]` | 101 | Hypothesis grid: reveal-on-first-observation, layout over visible subset only | — | [101](101-notebook-grid-visibility-layout.md) |
 | `[ ]` | 102 | Hypothesis grid: edge grammar rewrite | 101 (soft) | [102](102-notebook-grid-edge-grammar.md) |
@@ -94,6 +94,13 @@ small/pulsing heat-source category exists yet to back it.
 | `[ ]` | 113 | Palude replaces `toxic_zone` | 110 | [113](113-swamp-replaces-toxic-zone.md) |
 | `[ ]` ⏸ | 114 | BLOCKED — Geyser biome (needs a small/pulsing heat-source category, not yet scoped) | 110, 111, unscoped source-model extension | [114](114-geyser-pulsing-source-blocked.md) |
 
+**UI bugfixes** (2026-08-11, reported live during the 098/099 manual playtest
+pass).
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[ ]` | 115 | Grid clicks leak through the HUD panel when the camera is zoomed | — | [115](115-egui-panel-click-through-when-zoomed.md) |
+
 **Onboarding & engagement rollout** (2026-08-09, from `redesign/abiogenesis-engagement-design.md`, full rationale in `PROJECT_PLAN.md`'s "Onboarding & engagement rollout"): 5 onboarding-foundation proposals scoped after a multi-round discussion. 080 first (diagnostic value for playtesting the rest); 082/083 are numerically coupled — tuned together (2026-08-10), both now done. Live playtest of the combined pacing still pending (082/083 verification steps skipped this session, see below).
 
 | Status | ID | Title | Depends on | File |
@@ -112,7 +119,12 @@ Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN
 
 ---
 
-*Last updated: 2026-08-11 (110-114 added: biome system scoped from
+*Last updated: 2026-08-11 (096, 098, 099 completed and archived to
+`tasks/done/` — 098's manual playtest also surfaced and fixed a temperature-
+spread bug in `generate_starting_palette`/`add_bonus_species`/
+`place_wild_species` that predated this session, plus the matching
+`tests/balance.rs` harness correction. 115 added: HUD-panel click-through
+bug at high zoom, reported during that same playtest. 110-114 added: biome system scoped from
 `redesign/abiogenesis-biomes.md` after a design-discussion pass reconciling the
 doc with the current codebase — `TerrainKind`/`is_peak` already cover the
 elevation-based biomes, task 085's heat sources already back Bocca vulcanica,

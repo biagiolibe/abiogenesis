@@ -265,15 +265,25 @@ pub fn evaluate_world(
     outcome
 }
 
-/// True once every living organism on the grid has died. Guarded by
-/// `SimWorld::ever_populated` (task 050): worlds start with nothing placed
-/// — the player seeds them via `Seed` — so an empty grid on its own doesn't
-/// mean extinction, only an empty grid *after* life has actually existed
-/// here does. A player who never seeds anything doesn't dodge failure
-/// forever this way — the world still fails once `WorldParams::era_budget`
-/// runs out (`is_era_budget_exhausted`), just via that condition instead.
+/// True once every living organism *of the player's own lineages* on the
+/// grid has died. Guarded by `SimWorld::ever_populated` (task 050): worlds
+/// start with nothing placed — the player seeds them via `Seed` — so an
+/// empty grid on its own doesn't mean extinction, only an empty grid *after*
+/// life has actually existed here does. A player who never seeds anything
+/// doesn't dodge failure forever this way — the world still fails once
+/// `WorldParams::era_budget` runs out (`is_era_budget_exhausted`), just via
+/// that condition instead.
+///
+/// Wild populations (task 098) are excluded from the "all empty" check: a
+/// surviving wild population must not silently block the player's own run
+/// from ever failing on extinction, since the player never chose to place
+/// or sustain it.
 fn is_total_extinction(world: &SimWorld) -> bool {
-    world.ever_populated && world.cells.iter().all(|cell| cell.organism.is_none())
+    world.ever_populated
+        && world.cells.iter().all(|cell| match cell.organism {
+            None => true,
+            Some(organism) => world.is_wild(organism.species),
+        })
 }
 
 /// Whether `world`'s era count has reached its per-world budget
@@ -313,7 +323,15 @@ fn count_coexisting_species(world: &SimWorld) -> u32 {
             population[organism.species.0 as usize] += 1;
         }
     }
-    population.iter().filter(|&&count| count > 0).count() as u32
+    // Wild populations (task 098) don't count toward `Coexistence`: they're
+    // alive from world start regardless of the player, so counting them
+    // would make the objective trivially satisfiable without any player
+    // action.
+    population
+        .iter()
+        .enumerate()
+        .filter(|&(idx, &count)| count > 0 && !world.is_wild(SpeciesId(idx as u8)))
+        .count() as u32
 }
 
 /// Whether any living organism of `species` currently occupies a cell in
@@ -916,6 +934,49 @@ mod tests {
             evaluate_world(None, &world, &mut progress, 40, false),
             WorldOutcome::Failed(FailureReason::TotalExtinction),
             "an empty grid after life has existed must still fail the world"
+        );
+    }
+
+    /// Task 098: a wild population surviving after every player-placed
+    /// organism has died must not block total extinction — the player's own
+    /// run should still fail, since they never chose to place or sustain
+    /// the wild population.
+    #[test]
+    fn a_surviving_wild_population_does_not_block_total_extinction() {
+        let mut world = world_with_species(2);
+        world.wild_species.push(SpeciesId(1));
+        place(&mut world, 0, 0, SpeciesId(0));
+        place(&mut world, 1, 0, SpeciesId(1));
+        // The player's organism dies; the wild one lives on.
+        let idx = world.index(0, 0);
+        world.cells[idx].organism = None;
+        let mut progress = ObjectiveProgress::default();
+
+        assert_eq!(
+            evaluate_world(None, &world, &mut progress, 40, false),
+            WorldOutcome::Failed(FailureReason::TotalExtinction),
+            "a surviving wild population must not mask the player's own total extinction"
+        );
+    }
+
+    /// Task 098: `Coexistence` must not be satisfiable by wild populations
+    /// the player never interacted with.
+    #[test]
+    fn wild_species_do_not_count_toward_coexistence() {
+        let mut world = world_with_species(2);
+        world.wild_species.push(SpeciesId(1));
+        place(&mut world, 0, 0, SpeciesId(0));
+        place(&mut world, 1, 0, SpeciesId(1));
+        let objective = Objective::Coexistence {
+            min_species: 2,
+            ticks: 1,
+        };
+        let mut progress = ObjectiveProgress::default();
+
+        assert_eq!(
+            evaluate(&objective, &world, &mut progress),
+            WorldOutcome::Ongoing,
+            "only one non-wild species is alive, so min_species: 2 must not be satisfied"
         );
     }
 

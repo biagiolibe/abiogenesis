@@ -16,7 +16,7 @@ use abiogenesis::objectives::{
 use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::{
     tick_and_complete_era, ActionBudget, AdjacencyObserved, EraCompleted, EraProgress,
-    OrganismBorn, OrganismDied, SpeciesExtinct,
+    OrganismBorn, OrganismDied, SpeciesExtinct, TerrainRevealed,
 };
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{draw_species_name, net_self_interaction, Organism, SimWorld, SpeciesId};
@@ -140,6 +140,7 @@ fn single_tick(
     mut adjacencies: MessageWriter<AdjacencyObserved>,
     mut era_completed: MessageWriter<EraCompleted>,
     mut born: MessageWriter<OrganismBorn>,
+    mut revealed: MessageWriter<TerrainRevealed>,
     mut objective_outcome: ObjectiveOutcomeParams,
     run_progress: Res<RunProgress>,
     mut intents: ResMut<HudControlIntents>,
@@ -166,6 +167,7 @@ fn single_tick(
     extinct.write_batch(events.extinctions);
     adjacencies.write_batch(events.adjacencies);
     born.write_batch(events.births);
+    revealed.write_batch(events.reveals);
     apply_tick_outcome(&world, &config, &mut objective_outcome);
 }
 
@@ -1057,9 +1059,12 @@ mod tests {
     fn reseed_resets_a_selected_species_left_pointing_past_the_fresh_worlds_registry() {
         // Simulates having spliced past the starting-palette species count
         // (task 025) and left the seed selector pointing at the spliced-in
-        // species, then pressing `r`. A fresh world always starts with
-        // `starting_species_count + extra_available_species_count` species
-        // (task 039's `generate_starting_palette`, 2 + 1 by default), so
+        // species, then pressing `r`. A fresh world built via `reseed_world`
+        // goes through `build_world` (unlike this test's own setup below,
+        // which calls `generate_starting_palette` directly), so it always
+        // starts with `starting_species_count + extra_available_species_count
+        // + wild_species_count` species (task 039's `generate_starting_palette`
+        // plus task 098's wild populations, 2 + 1 + 1 by default), so
         // `SelectedSpecies` must be pulled back in range or the next seed
         // click indexes out of bounds.
         let config = SimConfig::default();
@@ -1101,8 +1106,8 @@ mod tests {
         let world = app.world().resource::<SimWorld>();
         assert_eq!(
             world.species.len(),
-            3,
-            "a fresh world starts with the starting palette's species count"
+            4,
+            "a fresh world starts with the starting palette's species count plus wild species"
         );
         let selected = app.world().resource::<SelectedSpecies>();
         assert_eq!(
@@ -1144,6 +1149,7 @@ mod tests {
         app.add_message::<AdjacencyObserved>();
         app.add_message::<EraCompleted>();
         app.add_message::<OrganismBorn>();
+        app.add_message::<TerrainRevealed>();
         app.add_message::<ObjectiveAdvanced>();
         app.insert_resource(CurrentObjective::default());
         app.insert_resource(ObjectiveProgress::default());

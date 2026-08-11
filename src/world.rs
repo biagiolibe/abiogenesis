@@ -43,6 +43,29 @@ pub struct TagSlot(pub u8);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpeciesId(pub u8);
 
+/// How a terrain-conditional tag's default participation switches (task
+/// 096, operon regulation as the biochemical grounding: *lac* = inducible,
+/// *trp* = repressible). `Inducible` is silent unless the carrying
+/// organism's cell matches the trigger terrain; `Repressible` is the
+/// mirror — active everywhere except the trigger terrain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    Inducible,
+    Repressible,
+}
+
+/// One terrain-conditional `TagId`'s per-world roll (task 096): which
+/// terrain triggers it and which `Mode` it rolled. *Which* `TagId`s are
+/// conditional at all is a fixed, structural, cross-world constant (the
+/// first `TagConfig::conditional_tag_count` `TagId`s by convention) — only
+/// this struct's `terrain`/`mode` vary per world.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConditionalTag {
+    pub tag: TagId,
+    pub terrain: TerrainKind,
+    pub mode: Mode,
+}
+
 /// The secret tag x tag adjacency matrix (GDD §5.5): `get(exerter, receiver)`
 /// is the energy delta `receiver` gets from being adjacent to `exerter`. The
 /// diagonal is always `0` — a tag has no effect on itself, not stated
@@ -145,6 +168,40 @@ pub enum TerrainKind {
     Mountain,
 }
 
+/// Which `TerrainKind` bands a species' lineage has ever occupied this run
+/// (task 099) — a tiny bitmask over `TerrainKind`'s 4 variants, one entry
+/// per `SpeciesId` in `SimWorld::terrain_occupancy`. Deliberately named and
+/// shaped generically (not `RevealTracker`/reveal-specific): task 106's
+/// speciation trigger is expected to reuse this same structure for its own
+/// "has this lineage been exposed to a terrain" check, not build a parallel
+/// one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TerrainOccupancy(u8);
+
+impl TerrainOccupancy {
+    fn bit(kind: TerrainKind) -> u8 {
+        match kind {
+            TerrainKind::Sea => 0b0001,
+            TerrainKind::Plain => 0b0010,
+            TerrainKind::Hill => 0b0100,
+            TerrainKind::Mountain => 0b1000,
+        }
+    }
+
+    pub fn has(&self, kind: TerrainKind) -> bool {
+        self.0 & Self::bit(kind) != 0
+    }
+
+    /// Sets `kind`'s bit, returning whether this call newly set it (i.e.
+    /// this is the first time this terrain has been marked occupied).
+    pub fn mark(&mut self, kind: TerrainKind) -> bool {
+        let bit = Self::bit(kind);
+        let newly_set = self.0 & bit == 0;
+        self.0 |= bit;
+        newly_set
+    }
+}
+
 /// One grid cell. Single occupancy (GDD §5.1): `organism` is never a collection.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Cell {
@@ -187,6 +244,13 @@ pub struct SimWorld {
     pub active_tags: Vec<TagId>,
     /// The world's secret matrix (GDD §5.5), generated once at construction.
     pub matrix: TagMatrix,
+    /// This world's terrain-conditional tags (task 096): only conditional
+    /// `TagId`s that actually landed in `active_tags` get an entry — a
+    /// conditional `TagId` not drawn into this world's active subset simply
+    /// doesn't exist here this run, no gating needed. Tiny (~1-2 entries by
+    /// `TagConfig::conditional_tag_count`), so a linear scan
+    /// (`conditional_gate`) is used instead of a `HashMap`.
+    pub conditional_tags: Vec<ConditionalTag>,
     /// The toxic zone's fixed bounds (task 047) — see `ToxicZoneBounds`'s
     /// own docs for why this exists separately from the diffusing
     /// `Cell::toxicity` scalar.
@@ -214,6 +278,19 @@ pub struct SimWorld {
     /// world that hasn't been seeded yet doesn't fail on its very first
     /// evaluated tick.
     pub ever_populated: bool,
+    /// `SpeciesId`s of wild, pre-existing populations placed directly onto
+    /// the grid at world generation (task 098) — a narrow, documented
+    /// exception to task 050's "nothing auto-placed" rule. Tracked
+    /// separately from `Species` itself (rather than a bool field on it) to
+    /// avoid touching every existing `Species { .. }` literal in the
+    /// codebase; tiny (`WorldgenConfig::wild_species_count` entries), so a
+    /// `Vec` scan (`is_wild`) is fine, no `HashMap` needed.
+    pub wild_species: Vec<SpeciesId>,
+    /// Per-`SpeciesId` terrain-occupancy history (task 099), indexed by
+    /// `SpeciesId.0`, grown lazily as `species` grows — see
+    /// `TerrainOccupancy`'s own doc comment for why this is shaped
+    /// generically rather than reveal-specific.
+    pub terrain_occupancy: Vec<TerrainOccupancy>,
     rng: StdRng,
     /// Write-side double buffer for the tick (TECH_DESIGN.md §6). `pub(crate)`
     /// so `sim::step` can read/write it directly without a cell-by-cell API.
@@ -248,6 +325,7 @@ impl SimWorld {
             &config.tags,
             &mut rng,
         );
+        let conditional_tags = roll_conditional_tags(&active_tags, &config.tags, &mut rng);
         let mut world = Self {
             width,
             height,
@@ -259,10 +337,13 @@ impl SimWorld {
             seed,
             active_tags,
             matrix,
+            conditional_tags,
             toxic_zone: ToxicZoneBounds::default(),
             heat_sources: Vec::new(),
             sea_distance: Vec::new(),
             ever_populated: false,
+            wild_species: Vec::new(),
+            terrain_occupancy: Vec::new(),
             rng,
         };
         world.generate_terrain(config);
@@ -729,6 +810,29 @@ impl SimWorld {
         y * self.width + x
     }
 
+    /// This world's conditional-tag entry for `tag`, if any (task 096). A
+    /// linear scan over `conditional_tags` — the set is tiny (~1-2 entries),
+    /// so this avoids reaching for a `HashMap` for convenience (CLAUDE.md's
+    /// ban on `HashMap` iteration in sim logic).
+    pub fn conditional_gate(&self, tag: TagId) -> Option<&ConditionalTag> {
+        self.conditional_tags.iter().find(|c| c.tag == tag)
+    }
+
+    /// Whether `species` is one of this world's wild, pre-existing
+    /// populations (task 098) rather than a player-seedable one.
+    pub fn is_wild(&self, species: SpeciesId) -> bool {
+        self.wild_species.contains(&species)
+    }
+
+    /// Whether `species`'s lineage has ever occupied `terrain` this run
+    /// (task 099). `false` for a species index past the tracker's current
+    /// length — it simply hasn't had anything recorded yet, not an error.
+    pub fn has_occupied_terrain(&self, species: SpeciesId, terrain: TerrainKind) -> bool {
+        self.terrain_occupancy
+            .get(species.0 as usize)
+            .is_some_and(|occupancy| occupancy.has(terrain))
+    }
+
     pub fn get(&self, x: usize, y: usize) -> &Cell {
         &self.cells[self.index(x, y)]
     }
@@ -965,6 +1069,42 @@ fn select_active_tags(params: &WorldParams, config: &TagConfig, rng: &mut StdRng
     pool.sample(rng, count).copied().collect()
 }
 
+/// Rolls this world's terrain-conditional tags (task 096): *which* `TagId`s
+/// are conditional is a fixed, structural, cross-world constant — the first
+/// `config.conditional_tag_count` `TagId`s by pool-wide convention — but the
+/// trigger `TerrainKind` and `Mode` are rolled fresh here, from the world's
+/// own seeded RNG, same moment as `select_active_tags`/`generate_matrix`.
+/// Only conditional `TagId`s that actually landed in `active_tags` get an
+/// entry — one not drawn into this world's active subset simply doesn't
+/// exist here this run.
+fn roll_conditional_tags(
+    active_tags: &[TagId],
+    config: &TagConfig,
+    rng: &mut StdRng,
+) -> Vec<ConditionalTag> {
+    const TERRAIN_KINDS: [TerrainKind; 4] = [
+        TerrainKind::Sea,
+        TerrainKind::Plain,
+        TerrainKind::Hill,
+        TerrainKind::Mountain,
+    ];
+    (0..config.conditional_tag_count as u8)
+        .map(TagId)
+        .filter(|conditional_id| active_tags.contains(conditional_id))
+        .map(|tag| {
+            let terrain = *TERRAIN_KINDS
+                .choose(rng)
+                .expect("TERRAIN_KINDS is non-empty");
+            let mode = if rng.random_bool(0.5) {
+                Mode::Inducible
+            } else {
+                Mode::Repressible
+            };
+            ConditionalTag { tag, terrain, mode }
+        })
+        .collect()
+}
+
 /// Generates the world's secret tag matrix (GDD §5.5, §5.8), sized to
 /// `slot_count` — the number of tags this world has active, regardless of
 /// which `TagId`s from the global pool they are (task 036: the matrix is
@@ -1193,6 +1333,43 @@ mod tests {
 
         assert_ne!(a.seed, b.seed);
         assert_ne!(a.rng_mut().random::<u64>(), b.rng_mut().random::<u64>());
+    }
+
+    #[test]
+    fn roll_conditional_tags_skips_ids_not_in_active_set() {
+        let mut config = test_config();
+        config.tags.conditional_tag_count = 1;
+        let mut rng = StdRng::seed_from_u64(1);
+        // TagId(0) is the conditional identity, but it's not in this
+        // world's active subset — no entry should be produced, and this
+        // must not panic.
+        let active_tags = vec![TagId(1), TagId(2)];
+        let rolled = roll_conditional_tags(&active_tags, &config.tags, &mut rng);
+        assert!(rolled.is_empty());
+    }
+
+    #[test]
+    fn roll_conditional_tags_includes_active_conditional_ids() {
+        let mut config = test_config();
+        config.tags.conditional_tag_count = 1;
+        let mut rng = StdRng::seed_from_u64(1);
+        let active_tags = vec![TagId(0), TagId(1)];
+        let rolled = roll_conditional_tags(&active_tags, &config.tags, &mut rng);
+        assert_eq!(rolled.len(), 1);
+        assert_eq!(rolled[0].tag, TagId(0));
+    }
+
+    #[test]
+    fn conditional_gate_finds_the_matching_entry_by_tag_id() {
+        let config = test_config();
+        let mut world = SimWorld::new(42, &config);
+        world.conditional_tags = vec![ConditionalTag {
+            tag: TagId(3),
+            terrain: TerrainKind::Mountain,
+            mode: Mode::Repressible,
+        }];
+        assert!(world.conditional_gate(TagId(3)).is_some());
+        assert!(world.conditional_gate(TagId(4)).is_none());
     }
 
     #[test]
