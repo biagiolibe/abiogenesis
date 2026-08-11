@@ -72,6 +72,11 @@ the linked doc.
 - `[?]` **Reveal-on-first-zone-entry**: same mechanism as conditional tags — a player species occupying a `TerrainKind` for the first time in a run, while carrying a tag conditioned on it, logs a notebook discovery event. No separate system from the conditional-tags mechanic above.
 - `[?]` **Transient world features (e.g. low-decay residue)**: a lighter-weight instance of the Precursor's (2.2) "phantom tag entity" pattern — procedural/recurring instead of fixed/singular, decaying over time to give species a limited discovery window.
 
+**Scoped into tasks 096-099** (2026-08-11, SECTION 2's "Mondo vivo, notebook,
+death legibility, evolution & progression" entry) — the transient
+world-features/residue item above stays unscoped, needing the shared
+"phantom tag entity" design pass with the Precursor (2.2) first.
+
 **Real-time mode** (already a `[?]` above, "Camera, pacing & menu features") was raised again in this same discussion and **explicitly deferred**: the user agreed to keep it independent, revisited only after these mechanics are scoped, implemented, and playtested — stacking it now would add a second, simultaneous source of reduced legibility on top of these.
 
 ### Notebook UX redesign (2026-08-10, from `redesign/abiogenesis-notebook-redesign.md`)
@@ -89,6 +94,10 @@ catalog badge.
 - `[?]` **Visual polish pass**: palette, background, spacing, and typography across all three panels — not yet specified, needs its own mini design pass before scoping.
 - `[?]` **Catalog cleanup**: dedupe repeated per-metabolism boilerplate into a one-time legend; trim species rows to parameters only — raised as uncontroversial but not yet formally confirmed.
 
+**Scoped into tasks 100-103** (2026-08-11). The visual polish pass stays
+unscoped — needs its own concrete mockup/design pass before it's
+task-ready.
+
 ### Death/failure legibility (2026-08-11, from `redesign/abiogenesis-death-legibility.md`)
 
 Companion topic spun out of the notebook redesign discussion: bad
@@ -102,6 +111,13 @@ direct about these causes costs zero discovery value; only the matrix
 - `[?]` **Anchor-cause plain language**: rewrite the existing player-placed death message from a 5-number dump into one qualitative sentence per death (poor temperature fit / no resource / overcrowded / eaten / harmed by a nearby species for the matrix case) — requires a small `OrganismDied` (`sim.rs:16-31`) schema addition to distinguish "poor temperature fit" from "resource genuinely absent," both of which collapse into the same `gain` value today.
 - `[?]` **Matrix-cause number removed**: when `interaction_delta` dominates, drop the exact number from the message (consistent with the hypothesis-grid decision above to stop showing raw numbers) — still says *that* a species harmed it, never which tag/sign/magnitude.
 - `[?]` **Aggregate Biosphere trend diagnosis**: for population-wide cases (e.g. a predator population quietly starving from lack of prey, not player-placed), attach a short dominant-cause label to the HUD's existing ▼ trend indicator instead of adding per-organism log spam for untracked organisms.
+
+**Scoped into tasks 104-105** (2026-08-11). Scoping corrected two
+assumptions in the doc above: the HUD's population trend is driven by
+era-over-era average survivor energy, not a death tally (`ui.rs:1006-1116`)
+— so 105 gates its cause label on "at least one death this era," not on
+the ▼ glyph specifically, which can otherwise show ▲/▬ even while deaths
+are happening.
 
 ### Evolution & xenotypes (2026-08-11, from `redesign/abiogenesis-evolution-xenotypes.md`)
 
@@ -119,6 +135,10 @@ questions in the linked doc.
 
 **Species-persistence follow-up (2026-08-11)**: how an evolved species survives a world reset is answered in "Progression & pacing" below — within-run only, via `RunProgress` (mirroring `MetaProgress::absorb`'s existing `worlds_cleared → bonus_available_species` shape), not the deferred cross-run persistence layer.
 
+**Scoped into tasks 106-108** (2026-08-11) — the new-species presentation
+moment (open question above) and the full xenotype naming redesign stay
+unscoped, both explicitly not designed yet.
+
 ### Progression & pacing (2026-08-11, from `redesign/abiogenesis-progression-pacing.md`)
 
 Reconciles "Mondo vivo" and "Evolution & xenotypes" (both above) with the
@@ -134,11 +154,45 @@ mechanics existing.
 - `[?]` **New within-run energy resource**: distinct from the per-era-resetting `ActionBudget` (`sim.rs:436-445`), lives at the `RunProgress` level (`run.rs:15-21`, already survives world-to-world resets within a run).
 - `[?]` **`Splice` stays available from world 0**: energy unlocks a more powerful tier (more simultaneous edits, reduced action-point cost) instead of gating the action's existence — deliberately avoids touching the already-tuned onboarding (tasks 082/083, grace period).
 
+**Scoped for reference as task 109 (2026-08-11), but BLOCKED**: needs at
+least one of 096-099/106-107 to actually ship (not merely scope) before
+it has real state to check — see the task file.
+
 ---
 
 ## 🔵 SECTION 2 — BACKLOG (Operational)
 
 > Approved tasks. Phase 0 is already expanded into task files; later phases expand when we get there.
+
+### 🌍 Mondo vivo, notebook, death legibility, evolution & progression (2026-08-11)
+
+Full scoping pass over the five redesign docs from this session's design
+discussion (`redesign/abiogenesis-living-world.md`,
+`abiogenesis-notebook-redesign.md`, `abiogenesis-death-legibility.md`,
+`abiogenesis-evolution-xenotypes.md`, `abiogenesis-progression-pacing.md`
+— SECTION 1 above has the full reasoning). Dependency order: 096
+(conditional tags core) unblocks 099 and 097 (097 also depends on 103);
+098, 100-106, 108 are independently startable; 107 depends on 106; 109 is
+scoped for reference but blocked until 096-099/106-107 actually ship.
+Intentionally **not** scoped: transient world features/residues (needs a
+shared design pass with the Precursor), the notebook's visual polish pass,
+evolution's new-species presentation moment, and the full xenotype naming
+redesign — all explicitly flagged as not design-ready in their source docs.
+
+- `[ ]` 096 — Conditional tags: terrain-gated matrix participation → [096](tasks/096-mondo-vivo-conditional-tags-core.md)
+- `[ ]` 097 — Conditional tag catalog badge + (tag, terrain) evidence track (depends on 096, 103) → [097](tasks/097-mondo-vivo-conditional-tag-catalog-badge.md)
+- `[ ]` 098 — Wild, pre-existing species at world generation → [098](tasks/098-mondo-vivo-wild-species.md)
+- `[ ]` 099 — Reveal-on-first-zone-entry for conditional tags (depends on 096) → [099](tasks/099-mondo-vivo-zone-entry-reveal.md)
+- `[ ]` 100 — Strip raw per-tick noise from the observation log → [100](tasks/100-notebook-log-rework.md)
+- `[ ]` 101 — Hypothesis grid: reveal-on-first-observation, layout over visible subset only → [101](tasks/101-notebook-grid-visibility-layout.md)
+- `[ ]` 102 — Hypothesis grid: edge grammar rewrite (thickness, dashed partial lines, curved bidirectional arcs) → [102](tasks/102-notebook-grid-edge-grammar.md)
+- `[ ]` 103 — Catalog: one-time metabolism legend, trimmed species rows → [103](tasks/103-notebook-catalog-cleanup.md)
+- `[ ]` 104 — Plain-language death message for player-placed organisms → [104](tasks/104-death-message-plain-language.md)
+- `[ ]` 105 — Cause label on the Biosphere panel for a species taking deaths (depends on 104) → [105](tasks/105-death-biosphere-trend-diagnosis.md)
+- `[ ]` 106 — Selection pressure accumulation + threshold-crossing trigger → [106](tasks/106-evolution-selection-pressure-trigger.md)
+- `[ ]` 107 — Evolution by speciation: a new descendant species from selection pressure (depends on 106) → [107](tasks/107-evolution-speciation.md)
+- `[ ]` 108 — Fourth metabolism: chemolithotroph, gain from toxicity → [108](tasks/108-chemolithotroph-metabolism.md)
+- `[ ]` ⏸ 109 — BLOCKED — Long-term objective tier + within-run energy economy (depends on 096-099/106-107 shipping, not just scoping) → [109](tasks/109-progression-long-term-objective-energy.md)
 
 ### 🏗️ Phase 0 — Walking skeleton
 

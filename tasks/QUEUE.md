@@ -53,6 +53,31 @@ cancelled and not blocked by another task.
 |-------|----|--------|------------|------|
 | `[ ]` ⏸ | 078 | ON HOLD — Overview heatmap blob shape correction (playtest correction to 076: blobs must render smaller/abstracted and uniformly filled, not a 1:1 trace of the real occupied-cell footprint with its gaps) | 076 | [078](078-overview-heatmap-blob-shape-correction.md) |
 
+**Mondo vivo, notebook, death legibility, evolution & progression**
+(2026-08-11, full scoping pass over five redesign docs from this
+session's design discussion — see `PROJECT_PLAN.md` SECTION 1 for the
+reasoning and SECTION 2 for the grouped backlog entry). Dependency order:
+096 unblocks 099 and 097 (097 also depends on 103); 098, 100-106, 108 are
+independently startable; 107 depends on 106; 109 is scoped for reference
+but blocked.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[ ]` | 096 | Conditional tags: terrain-gated matrix participation | — | [096](096-mondo-vivo-conditional-tags-core.md) |
+| `[ ]` | 097 | Conditional tag catalog badge + (tag, terrain) evidence track | 096, 103 | [097](097-mondo-vivo-conditional-tag-catalog-badge.md) |
+| `[ ]` | 098 | Wild, pre-existing species at world generation | — | [098](098-mondo-vivo-wild-species.md) |
+| `[ ]` | 099 | Reveal-on-first-zone-entry for conditional tags | 096 | [099](099-mondo-vivo-zone-entry-reveal.md) |
+| `[ ]` | 100 | Strip raw per-tick noise from the observation log | — | [100](100-notebook-log-rework.md) |
+| `[ ]` | 101 | Hypothesis grid: reveal-on-first-observation, layout over visible subset only | — | [101](101-notebook-grid-visibility-layout.md) |
+| `[ ]` | 102 | Hypothesis grid: edge grammar rewrite | 101 (soft) | [102](102-notebook-grid-edge-grammar.md) |
+| `[ ]` | 103 | Catalog: one-time metabolism legend, trimmed species rows | — | [103](103-notebook-catalog-cleanup.md) |
+| `[ ]` | 104 | Plain-language death message for player-placed organisms | — | [104](104-death-message-plain-language.md) |
+| `[ ]` | 105 | Cause label on the Biosphere panel for a species taking deaths | 104 | [105](105-death-biosphere-trend-diagnosis.md) |
+| `[ ]` | 106 | Selection pressure accumulation + threshold-crossing trigger | — | [106](106-evolution-selection-pressure-trigger.md) |
+| `[ ]` | 107 | Evolution by speciation: a new descendant species | 106 | [107](107-evolution-speciation.md) |
+| `[ ]` | 108 | Fourth metabolism: chemolithotroph, gain from toxicity | — | [108](108-chemolithotroph-metabolism.md) |
+| `[ ]` ⏸ | 109 | BLOCKED — Long-term objective tier + within-run energy economy | 096-099/106-107 (shipped, not just scoped) | [109](109-progression-long-term-objective-energy.md) |
+
 **Onboarding & engagement rollout** (2026-08-09, from `redesign/abiogenesis-engagement-design.md`, full rationale in `PROJECT_PLAN.md`'s "Onboarding & engagement rollout"): 5 onboarding-foundation proposals scoped after a multi-round discussion. 080 first (diagnostic value for playtesting the rest); 082/083 are numerically coupled — tuned together (2026-08-10), both now done. Live playtest of the combined pacing still pending (082/083 verification steps skipped this session, see below).
 
 | Status | ID | Title | Depends on | File |
@@ -71,4 +96,14 @@ Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN
 
 ---
 
-*Last updated: 2026-08-10 (088-089, self-interaction balance bug fix, completed and archived to `QUEUE_ARCHIVE.md`. 082 and 083, tuned jointly, completed and archived to `tasks/done/`. 084 stays intentionally out of the queue as blocked. 078 and 081 on hold. 085-086, "Environment as sources," fully closed and archived to `QUEUE_ARCHIVE.md`. 090, terrain island-band retune, completed and archived. 091-095, the bugfixing/UX batch, fully closed and archived to `QUEUE_ARCHIVE.md`.)*
+*Last updated: 2026-08-11 (096-109 added: full scoping pass over the five
+redesign docs from this session's "mondo vivo" design discussion —
+conditional tags, notebook UX, death legibility, evolution & xenotypes,
+progression & pacing. 109 is scoped for reference but blocked, same
+pattern as 084. 088-089, self-interaction balance bug fix, completed and
+archived to `QUEUE_ARCHIVE.md`. 082 and 083, tuned jointly, completed and
+archived to `tasks/done/`. 084 stays intentionally out of the queue as
+blocked. 078 and 081 on hold. 085-086, "Environment as sources," fully
+closed and archived to `QUEUE_ARCHIVE.md`. 090, terrain island-band
+retune, completed and archived. 091-095, the bugfixing/UX batch, fully
+closed and archived to `QUEUE_ARCHIVE.md`.)*
