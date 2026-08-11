@@ -1,0 +1,186 @@
+<svg width="320" height="660" viewBox="0 0 320 660" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, Menlo, Consolas, monospace">
+  <rect width="320" height="660" rx="12" fill="#0d0f14"/>
+
+  <text x="20" y="26" font-size="11" letter-spacing="1" fill="#5a5c64">SEED 4766648...</text>
+  <circle cx="248" cy="22" r="3" fill="#5DCAA5"/>
+  <text x="256" y="26" font-size="12" fill="#8f9199">observing</text>
+  <line x1="20" y1="40" x2="300" y2="40" stroke="#23262e" stroke-width="0.5"/>
+
+  <!-- TIME -->
+  <text x="20" y="60" font-size="11" letter-spacing="1" fill="#5a5c64">TIME</text>
+  <text x="20" y="82" font-size="13" fill="#c8c9ce">era 5 &#183; pulse 14/25</text>
+
+  <rect x="20" y="92" width="86" height="24" rx="4" fill="none" stroke="#2a2c34" stroke-width="0.5"/>
+  <text x="63" y="108" font-size="11" fill="#c8c9ce" text-anchor="middle">&#9654; pulse</text>
+
+  <rect x="114" y="92" width="86" height="24" rx="4" fill="none" stroke="#2a2c34" stroke-width="0.5"/>
+  <text x="157" y="108" font-size="11" fill="#c8c9ce" text-anchor="middle">&#9654;&#9654; era</text>
+
+  <rect x="208" y="92" width="34" height="24" rx="4" fill="#12241d" stroke="#5DCAA5" stroke-width="0.5"/>
+  <text x="225" y="109" font-size="12" fill="#8FD666" text-anchor="middle">&#10074;&#10074;</text>
+  <text x="252" y="108" font-size="10" fill="#5a5c64">auto attivo</text>
+
+  <line x1="20" y1="130" x2="300" y2="130" stroke="#23262e" stroke-width="0.5"/>
+
+  <!-- MOVES -->
+  <text x="20" y="150" font-size="11" letter-spacing="1" fill="#5a5c64">MOVES</text>
+
+  <rect x="20" y="160" width="38" height="38" rx="6" fill="#12241d" stroke="#5DCAA5" stroke-width="0.5"/>
+  <path d="M39 170 C33 176 30 183 30 189 a9 9 0 0 0 18 0 c0 -6 -3 -13 -9 -19z" fill="none" stroke="#8FD666" stroke-width="1.6"/>
+  <text x="39" y="203" font-size="7" fill="#5DCAA5" text-anchor="middle">seed</text>
+
+  <rect x="66" y="160" width="38" height="38" rx="6" fill="none" stroke="#2a2c34" stroke-width="0.5"/>
+  <polygon points="90,167 78,183 86,183 82,192 96,175 88,175" fill="none" stroke="#888780" stroke-width="1.6" stroke-linejoin="round"/>
+  <text x="85" y="203" font-size="7" fill="#5a5c64" text-anchor="middle">stress</text>
+
+  <rect x="112" y="160" width="38" height="38" rx="6" fill="none" stroke="#2a2c34" stroke-width="0.5"/>
+  <circle cx="131" cy="175" r="7" fill="none" stroke="#888780" stroke-width="1.6"/>
+  <circle cx="128" cy="174" r="1.2" fill="#888780"/>
+  <circle cx="134" cy="174" r="1.2" fill="#888780"/>
+  <path d="M124 189 c0 -4 3 -6 7 -6 s7 2 7 6" fill="none" stroke="#888780" stroke-width="1.6"/>
+  <text x="131" y="203" font-size="7" fill="#5a5c64" text-anchor="middle">cull</text>
+
+  <rect x="158" y="160" width="38" height="38" rx="6" fill="none" stroke="#2a2c34" stroke-width="0.5"/>
+  <path d="M171 167 v8 l-6 14 h16 l-6 -14 v-8" fill="none" stroke="#888780" stroke-width="1.6" stroke-linejoin="round"/>
+  <line x1="167" y1="167" x2="181" y2="167" stroke="#888780" stroke-width="1.6"/>
+  <circle cx="192" cy="164" r="6" fill="#3a2418" stroke="#EF9F27" stroke-width="0.5"/>
+  <text x="192" y="167" font-size="7.5" fill="#EF9F27" text-anchor="middle">T</text>
+  <text x="177" y="203" font-size="7" fill="#5a5c64" text-anchor="middle">mutate</text>
+
+  <text x="220" y="182" font-size="9" fill="#5a5c64">mutazione: tag</text>
+  <text x="220" y="193" font-size="9" fill="#3a3c44">solo, non ancora</text>
+  <text x="220" y="204" font-size="9" fill="#3a3c44">manuale completa</text>
+
+  <rect x="20" y="216" width="14" height="3" rx="1.5" fill="#5DCAA5"/>
+  <rect x="38" y="216" width="14" height="3" rx="1.5" fill="#5DCAA5"/>
+  <rect x="56" y="216" width="14" height="3" rx="1.5" fill="#23262e"/>
+  <text x="80" y="220" font-size="10.5" fill="#5a5c64">2 di 3 moves rimaste</text>
+
+  <line x1="20" y1="238" x2="300" y2="238" stroke="#23262e" stroke-width="0.5"/>
+
+  <!-- BIOSPHERE -->
+  <text x="20" y="258" font-size="11" letter-spacing="1" fill="#5a5c64">BIOSPHERE</text>
+
+  <defs>
+    <clipPath id="bioClip"><rect x="16" y="266" width="288" height="118"/></clipPath>
+    <linearGradient id="bioFade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0d0f14" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#0d0f14" stop-opacity="1"/>
+    </linearGradient>
+  </defs>
+
+  <g clip-path="url(#bioClip)">
+    <!-- Opal -->
+    <g transform="translate(26,282)">
+      <line x1="-3" y1="-3" x2="3" y2="3" stroke="#E24B4A" stroke-width="1.4"/>
+      <line x1="-3" y1="3" x2="3" y2="-3" stroke="#E24B4A" stroke-width="1.4"/>
+      <line x1="0" y1="-4" x2="0" y2="4" stroke="#E24B4A" stroke-width="1.4"/>
+      <line x1="-4" y1="0" x2="4" y2="0" stroke="#E24B4A" stroke-width="1.4"/>
+    </g>
+    <text x="38" y="286" font-size="13" fill="#F09595">Opal</text>
+    <polygon points="188,280 194,280 191,275" fill="#5DCAA5"/>
+    <text x="200" y="286" font-size="11" fill="#5DCAA5">+4</text>
+    <text x="292" y="286" font-size="12" fill="#8f9199" text-anchor="end">96</text>
+    <line x1="16" y1="296" x2="304" y2="296" stroke="#1a1c22" stroke-width="0.5"/>
+
+    <!-- Halo -->
+    <g transform="translate(26,312)">
+      <line x1="-3" y1="-3" x2="3" y2="3" stroke="#639922" stroke-width="1.4"/>
+      <line x1="-3" y1="3" x2="3" y2="-3" stroke="#639922" stroke-width="1.4"/>
+      <line x1="0" y1="-4" x2="0" y2="4" stroke="#639922" stroke-width="1.4"/>
+      <line x1="-4" y1="0" x2="4" y2="0" stroke="#639922" stroke-width="1.4"/>
+    </g>
+    <text x="38" y="316" font-size="13" fill="#97C459">Halo</text>
+    <rect x="188" y="310" width="7" height="1.6" fill="#888780"/>
+    <text x="200" y="316" font-size="11" fill="#888780">&#177;0</text>
+    <text x="292" y="316" font-size="12" fill="#8f9199" text-anchor="end">37</text>
+    <line x1="16" y1="326" x2="304" y2="326" stroke="#1a1c22" stroke-width="0.5"/>
+
+    <!-- Ashe -->
+    <g transform="translate(26,342)">
+      <circle cx="-2" cy="-1" r="2.6" fill="#7F77DD"/>
+      <circle cx="2" cy="-1" r="2.6" fill="#7F77DD"/>
+      <circle cx="0" cy="2" r="2.6" fill="#7F77DD"/>
+    </g>
+    <text x="38" y="346" font-size="13" fill="#B3ADE8">Ashe</text>
+    <polygon points="188,344 194,344 191,349" fill="#E24B4A"/>
+    <text x="200" y="346" font-size="11" fill="#E38A8A">-2</text>
+    <text x="292" y="346" font-size="12" fill="#8f9199" text-anchor="end">3</text>
+    <line x1="16" y1="356" x2="304" y2="356" stroke="#1a1c22" stroke-width="0.5"/>
+
+    <!-- Vex (partial, scroll hint) -->
+    <g transform="translate(26,372)">
+      <line x1="-3" y1="-3" x2="3" y2="3" stroke="#EF9F27" stroke-width="1.4"/>
+      <line x1="-3" y1="3" x2="3" y2="-3" stroke="#EF9F27" stroke-width="1.4"/>
+      <line x1="0" y1="-4" x2="0" y2="4" stroke="#EF9F27" stroke-width="1.4"/>
+      <line x1="-4" y1="0" x2="4" y2="0" stroke="#EF9F27" stroke-width="1.4"/>
+    </g>
+    <text x="38" y="376" font-size="13" fill="#F0C382">Vex</text>
+    <polygon points="188,370 194,370 191,365" fill="#5DCAA5"/>
+    <text x="200" y="376" font-size="11" fill="#5DCAA5">+1</text>
+    <text x="292" y="376" font-size="12" fill="#8f9199" text-anchor="end">12</text>
+  </g>
+  <rect x="16" y="344" width="288" height="40" fill="url(#bioFade)"/>
+  <text x="160" y="394" font-size="10" fill="#3a3c44" text-anchor="middle">scorri per vedere tutte</text>
+
+  <line x1="20" y1="408" x2="300" y2="408" stroke="#23262e" stroke-width="0.5"/>
+
+  <!-- SPECIES -->
+  <text x="20" y="428" font-size="11" letter-spacing="1" fill="#5a5c64">SPECIES</text>
+
+  <rect x="20" y="438" width="80" height="42" rx="5" fill="#2a1414" stroke="#E24B4A" stroke-width="0.5"/>
+  <g transform="translate(35,452)">
+    <line x1="-3" y1="-3" x2="3" y2="3" stroke="#F09595" stroke-width="1.3"/>
+    <line x1="-3" y1="3" x2="3" y2="-3" stroke="#F09595" stroke-width="1.3"/>
+    <line x1="0" y1="-4" x2="0" y2="4" stroke="#F09595" stroke-width="1.3"/>
+    <line x1="-4" y1="0" x2="4" y2="0" stroke="#F09595" stroke-width="1.3"/>
+  </g>
+  <text x="46" y="457" font-size="12" fill="#F09595">Opal</text>
+  <text x="30" y="472" font-size="8.5" fill="#a08484">photo &#183; cold</text>
+
+  <rect x="108" y="438" width="80" height="42" rx="5" fill="none" stroke="#2a2c34" stroke-width="0.5"/>
+  <g transform="translate(123,452)">
+    <line x1="-3" y1="-3" x2="3" y2="3" stroke="#97C459" stroke-width="1.3"/>
+    <line x1="-3" y1="3" x2="3" y2="-3" stroke="#97C459" stroke-width="1.3"/>
+    <line x1="0" y1="-4" x2="0" y2="4" stroke="#97C459" stroke-width="1.3"/>
+    <line x1="-4" y1="0" x2="4" y2="0" stroke="#97C459" stroke-width="1.3"/>
+  </g>
+  <text x="134" y="457" font-size="12" fill="#8f9199">Halo</text>
+  <text x="118" y="472" font-size="8.5" fill="#5a5c64">photo &#183; warm</text>
+
+  <rect x="196" y="438" width="80" height="42" rx="5" fill="none" stroke="#2a2c34" stroke-width="0.5"/>
+  <g transform="translate(211,452)">
+    <circle cx="-2" cy="-1" r="2.3" fill="#B3ADE8"/>
+    <circle cx="2" cy="-1" r="2.3" fill="#B3ADE8"/>
+    <circle cx="0" cy="2" r="2.3" fill="#B3ADE8"/>
+  </g>
+  <text x="222" y="457" font-size="12" fill="#8f9199">Ashe</text>
+  <text x="206" y="472" font-size="8.5" fill="#5a5c64">pred &#183; cold</text>
+
+  <text x="296" y="461" font-size="13" fill="#3a3c44" text-anchor="middle">&#8250;</text>
+
+  <line x1="20" y1="494" x2="300" y2="494" stroke="#23262e" stroke-width="0.5"/>
+
+  <!-- NOTEBOOK button -->
+  <rect x="20" y="504" width="280" height="36" rx="6" fill="none" stroke="#2a2c34" stroke-width="0.5"/>
+  <path d="M46 516 v16 h12 v-16 z M46 516 h12" fill="none" stroke="#8f9199" stroke-width="1.3"/>
+  <line x1="49" y1="521" x2="55" y2="521" stroke="#8f9199" stroke-width="1"/>
+  <line x1="49" y1="526" x2="55" y2="526" stroke="#8f9199" stroke-width="1"/>
+  <text x="68" y="527" font-size="13" fill="#c8c9ce">Notebook</text>
+  <rect x="258" y="514" width="30" height="16" rx="3" fill="none" stroke="#3a3c44" stroke-width="0.5"/>
+  <text x="273" y="526" font-size="9" fill="#5a5c64" text-anchor="middle">tab</text>
+  <circle cx="294" cy="508" r="3.5" fill="#EF9F27"/>
+
+  <line x1="20" y1="556" x2="300" y2="556" stroke="#23262e" stroke-width="0.5"/>
+
+  <!-- THIS WORLD WANTS -->
+  <text x="20" y="576" font-size="11" letter-spacing="1" fill="#5a5c64">THIS WORLD WANTS &#183; 1/2</text>
+  <text x="20" y="598" font-size="13" font-style="italic" font-family="Georgia, serif" fill="#b4b2a9">"Sustain 2 coexisting species"</text>
+  <circle cx="26" cy="618" r="7" fill="none" stroke="#3a3c44" stroke-width="0.5"/>
+  <circle cx="44" cy="618" r="7" fill="none" stroke="#3a3c44" stroke-width="0.5"/>
+  <circle cx="62" cy="618" r="7" fill="none" stroke="#3a3c44" stroke-width="0.5"/>
+  <text x="76" y="621" font-size="10" fill="#5a5c64">0 di 3 ere</text>
+
+  <text x="20" y="646" font-size="9" fill="#3a3c44">seed 4766648025500778776</text>
+  <text x="20" y="660" font-size="9" fill="#3a3c44">tab notebook &#183; esc quit &#183; space auto</text>
+</svg>

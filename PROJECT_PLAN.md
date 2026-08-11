@@ -212,13 +212,61 @@ redesign — all explicitly flagged as not design-ready in their source docs.
 - `[ ]` 100 — Strip raw per-tick noise from the observation log → [100](tasks/100-notebook-log-rework.md)
 - `[ ]` 101 — Hypothesis grid: reveal-on-first-observation, layout over visible subset only → [101](tasks/101-notebook-grid-visibility-layout.md)
 - `[ ]` 102 — Hypothesis grid: edge grammar rewrite (thickness, dashed partial lines, curved bidirectional arcs) → [102](tasks/102-notebook-grid-edge-grammar.md)
-- `[ ]` 103 — Catalog: one-time metabolism legend, trimmed species rows → [103](tasks/103-notebook-catalog-cleanup.md)
+- `[ ]` 103 — Catalog: one-time metabolism legend, trimmed species rows, population + origin era (extended 2026-08-12, see "HUD & Notebook redesign follow-up" below) → [103](tasks/103-notebook-catalog-cleanup.md)
 - `[ ]` 104 — Plain-language death message for player-placed organisms → [104](tasks/104-death-message-plain-language.md)
 - `[ ]` 105 — Cause label on the Biosphere panel for a species taking deaths (depends on 104) → [105](tasks/105-death-biosphere-trend-diagnosis.md)
 - `[ ]` 106 — Selection pressure accumulation + threshold-crossing trigger → [106](tasks/106-evolution-selection-pressure-trigger.md)
 - `[ ]` 107 — Evolution by speciation: a new descendant species from selection pressure (depends on 106) → [107](tasks/107-evolution-speciation.md)
 - `[ ]` 108 — Fourth metabolism: chemolithotroph, gain from toxicity → [108](tasks/108-chemolithotroph-metabolism.md)
 - `[ ]` ⏸ 109 — BLOCKED — Long-term objective tier + within-run energy economy (depends on 096-099/106-107 shipping, not just scoping) → [109](tasks/109-progression-long-term-objective-energy.md)
+
+### 🖥️ HUD & Notebook redesign follow-up (2026-08-12, from `redesign/abiogenesis-hud-notebook.md`)
+
+Before starting the notebook UX track's next task, read this new doc against
+what tasks 097/100-103 already planned, specifically to avoid double work.
+Discrepancy-check findings and resolutions (decided with the user):
+
+- **Already aligned, no new work**: curated observation log (100), grid
+  reveal-on-evidence + static layout (101), grid edge grammar (102), shared
+  metabolism icon set (065, reused by 103), "Moves rimasti" as tick dots
+  (already implemented that way), notebook-button unread badge (exists,
+  confirmation-triggered).
+- **Folded into task 103** (catalog card gains current population and
+  origin era — the latter needs new per-species state, since only
+  `Organism::born_era` exists today, not a per-`Species` field; task 103's
+  file now documents the `SimWorld::push_species`/`species_origin_era`
+  approach, mirroring 098/099's `wild_species`/`terrain_occupancy`
+  precedent).
+- **Kept as currently scoped, doc's broader wording not adopted**: task
+  100's notebook-button badge stays confirmation-only (not "any new
+  observation") — the doc's "osservazioni nuove non ancora lette" reading
+  is broader than what's built and would need its own decision; not
+  revisited now.
+- **New tasks scoped**: 116 (notebook docked-left panel + dimmed map,
+  replacing today's floating `egui::Window`), 117 (era-relative time
+  readout, replacing the current run-wide tick counter), 118 (tick → pulse
+  rename, cosmetic only, no internal identifier renames), 119 (Moves icon
+  restyle — narrowed from the doc's full ask: while investigating, found
+  `ui.rs`'s own doc comment already documents that 3 of the 4 current Move
+  icons are almost certainly rendering as tofu boxes today, since egui has
+  no color-emoji support — this task fixes that as a side effect of
+  switching to monochrome glyphs), 120 (Biosphere population delta — found
+  during scoping that the existing trend arrow is energy-based, not
+  population-based, so the new delta and the existing arrow can legitimately
+  disagree; flagged explicitly in the task rather than silently resolved).
+- **Deliberately not scoped**: auto-advance play/pause (deferred until a
+  real-time pacing mechanic exists), the mutation-tier badge (no
+  progression mechanic exists to back it — 119 does the icon restyle only,
+  no badge), and the doc's own claim that Stress is "a new action" (it
+  isn't — already shipped; the doc appears to have been written without
+  checking current game state on this specific point, noted here as a
+  caution for reading the rest of it).
+
+- `[ ]` 116 — Notebook: left-docked panel with dimmed map behind it, not a floating window → [116](tasks/116-notebook-docked-panel-dimmed-map.md)
+- `[ ]` 117 — Time readout: show progress within the current era, not the run-wide tick counter → [117](tasks/117-time-readout-era-relative-pulse-progress.md)
+- `[ ]` 118 — Rename player-facing "tick" to "pulse" → [118](tasks/118-rename-tick-to-pulse.md)
+- `[ ]` 119 — Moves icons: monochrome glyphs that actually render (fixes a pre-existing tofu-box bug) → [119](tasks/119-moves-icon-restyle-monochrome.md)
+- `[ ]` 120 — Biosphere: numeric population delta alongside the trend arrow → [120](tasks/120-biosphere-population-delta.md)
 
 ### 🗻 Biomes (2026-08-11)
 

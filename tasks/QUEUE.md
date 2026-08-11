@@ -70,7 +70,7 @@ but blocked.
 | `[ ]` | 100 | Strip raw per-tick noise from the observation log | — | [100](100-notebook-log-rework.md) |
 | `[ ]` | 101 | Hypothesis grid: reveal-on-first-observation, layout over visible subset only | — | [101](101-notebook-grid-visibility-layout.md) |
 | `[ ]` | 102 | Hypothesis grid: edge grammar rewrite | 101 (soft) | [102](102-notebook-grid-edge-grammar.md) |
-| `[ ]` | 103 | Catalog: one-time metabolism legend, trimmed species rows | — | [103](103-notebook-catalog-cleanup.md) |
+| `[ ]` | 103 | Catalog: one-time metabolism legend, trimmed species rows, population + origin era | — | [103](103-notebook-catalog-cleanup.md) |
 | `[ ]` | 104 | Plain-language death message for player-placed organisms | — | [104](104-death-message-plain-language.md) |
 | `[ ]` | 105 | Cause label on the Biosphere panel for a species taking deaths | 104 | [105](105-death-biosphere-trend-diagnosis.md) |
 | `[ ]` | 106 | Selection pressure accumulation + threshold-crossing trigger | — | [106](106-evolution-selection-pressure-trigger.md) |
@@ -93,6 +93,30 @@ small/pulsing heat-source category exists yet to back it.
 | `[ ]` | 112 | Biome rendering (flat color, dithering, borders, tree overlay) | 110, 111 | [112](112-biome-rendering.md) |
 | `[ ]` | 113 | Palude replaces `toxic_zone` | 110 | [113](113-swamp-replaces-toxic-zone.md) |
 | `[ ]` ⏸ | 114 | BLOCKED — Geyser biome (needs a small/pulsing heat-source category, not yet scoped) | 110, 111, unscoped source-model extension | [114](114-geyser-pulsing-source-blocked.md) |
+
+**HUD & Notebook redesign follow-up** (2026-08-12, scoped from
+`redesign/abiogenesis-hud-notebook.md` after a discrepancy-check pass against
+the already-scoped notebook tasks 100-103/097 — see `PROJECT_PLAN.md` for
+the full list of discrepancies found and how each was resolved). 103 was
+extended in place (population + origin era added to its existing scope,
+not split out) rather than becoming a new task. No dependencies between
+116-120; 117/118 touch the same HUD readout line for different reasons
+(math vs. wording) and may need a small rebase if landed out of order, but
+neither blocks the other.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[ ]` | 116 | Notebook: left-docked panel with dimmed map behind it, not a floating window | — | [116](116-notebook-docked-panel-dimmed-map.md) |
+| `[ ]` | 117 | Time readout: show progress within the current era, not the run-wide tick counter | — | [117](117-time-readout-era-relative-pulse-progress.md) |
+| `[ ]` | 118 | Rename player-facing "tick" to "pulse" | — | [118](118-rename-tick-to-pulse.md) |
+| `[ ]` | 119 | Moves icons: monochrome glyphs that actually render (fixes a pre-existing tofu-box bug) | — | [119](119-moves-icon-restyle-monochrome.md) |
+| `[ ]` | 120 | Biosphere: numeric population delta alongside the trend arrow | — | [120](120-biosphere-population-delta.md) |
+
+Deliberately **not** scoped from the same doc, per this session's decision:
+auto-advance (play/pause continuous ticking) — deferred until a separate
+real-time pacing mechanic lands; the doc's mutation-tier badge — descoped
+to icon-restyle-only (119) since no tiered-unlock mechanic exists to back a
+badge yet.
 
 **UI bugfixes** (2026-08-11, reported live during the 098/099 manual playtest
 pass).
@@ -119,7 +143,12 @@ Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN
 
 ---
 
-*Last updated: 2026-08-11 (096, 098, 099 completed and archived to
+*Last updated: 2026-08-12 (116-120 added: HUD & Notebook redesign
+follow-up, scoped from `redesign/abiogenesis-hud-notebook.md` after a
+discrepancy-check pass against tasks 097/100-103 — see `PROJECT_PLAN.md`
+for the full discrepancy list and resolutions. Task 103 extended in place
+(population + origin era) rather than split into a new task. 096, 098, 099
+completed and archived to
 `tasks/done/` — 098's manual playtest also surfaced and fixed a temperature-
 spread bug in `generate_starting_palette`/`add_bonus_species`/
 `place_wild_species` that predated this session, plus the matching

@@ -1,11 +1,13 @@
-# Task 103 — Catalog: one-time metabolism legend, trimmed species rows
+# Task 103 — Catalog: one-time metabolism legend, trimmed species rows, population + origin era
 
 > **ID**: `103`
 > **Category**: UX / Notebook
 > **Priority**: 🟡 P2
-> **Estimate**: ~1h
+> **Estimate**: ~2h (extended 2026-08-12, see below)
 > **Assigned to**: unassigned
-> **Session**: 2026-08-11 (scoped from `redesign/abiogenesis-notebook-redesign.md`)
+> **Session**: 2026-08-11 (scoped from `redesign/abiogenesis-notebook-redesign.md`); extended
+> 2026-08-12 after reading `redesign/abiogenesis-hud-notebook.md`, which
+> asks for a richer catalog card than this task originally scoped.
 
 ---
 
@@ -32,6 +34,16 @@ Note: this item is flagged in the redesign doc as "raised as uncontroversial
 but not yet formally confirmed by the user" — distinct from the log/grid
 changes (tasks 100-102), which were explicitly decided in discussion. Still
 fine to scope and build; flag this provenance for whoever picks it up.
+
+**Extension (2026-08-12)**: `redesign/abiogenesis-hud-notebook.md` §8 asks
+for two more pieces of per-species data on the catalog card beyond what this
+task originally scoped: **current population** and **origin era** (the era
+a species was first seeded/created in). Folded into this same task rather
+than split out, since both only matter for this card and the work is small.
+Origin era needs new state — nothing in the codebase tracks "the era a
+species first came into being" today (`Organism::born_era` exists per
+*individual*, not per `Species`) — see the extra Acceptance Criteria and
+Technical Context below.
 
 ---
 
@@ -79,11 +91,38 @@ fine to scope and build; flag this provenance for whoever picks it up.
       (`species_description_mentions_the_right_diet_per_metabolism`,
       `src/text.rs`'s test module) or repurpose the test to cover the new
       legend-line function instead of deleting coverage outright.
+- [ ] **(Extension)** Each species row shows its **current population**
+      (count of `world.cells` whose `organism.species` matches this
+      `SpeciesId`) — computed on demand in `catalog_panel` per row, no new
+      state needed (this is a cheap per-render scan over the grid, not a
+      per-tick tracked value).
+- [ ] **(Extension)** Each species row shows its **origin era** (the era it
+      was first seeded/created in). This needs new state — `Organism::
+      born_era` exists per *individual*, not per `Species`, so there is
+      currently nothing to read here. Recommended shape, following task
+      098/099's precedent (`SimWorld::wild_species`/`terrain_occupancy`,
+      small `Vec`s indexed by `SpeciesId`, kept separate from `Species`
+      itself specifically to avoid touching every one of the ~20
+      `Species { .. }` construction sites across the codebase): add
+      `SimWorld::species_origin_era: Vec<u32>` and a small
+      `SimWorld::push_species(species: Species) -> SpeciesId` helper that
+      both pushes onto `world.species` and records `world.era` into
+      `species_origin_era` in the same place, then migrate every
+      `world.species.push(Species { .. })` call site (worldgen.rs's three
+      generators, `input.rs::apply_splice`, plus every test call site) to go
+      through it. Unlike `wild_species`/`terrain_occupancy`, this **does**
+      require touching existing call sites (there's no way to reconstruct
+      "the era this already-pushed species was created in" after the fact
+      without recording it at push time) — budget time for that, and prefer
+      the single-helper approach over duplicating `world.era` capture at
+      every site by hand (error-prone, easy to miss one).
 - [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
 - [ ] Verified live via `cargo run`: open the notebook with several species
       of the same metabolism present — the descriptive sentence appears
       once in a legend, not once per matching species row; each row still
-      shows its own specific numbers.
+      shows its own specific numbers, including current population and
+      origin era; seed a species mid-run (not world start) and confirm its
+      row shows the era it was actually seeded in, not `0`.
 
 ---
 
@@ -94,6 +133,8 @@ fine to scope and build; flag this provenance for whoever picks it up.
 | `src/notebook.rs` | `catalog_panel` (line 809-843) — add the legend section, trim the per-row description call. |
 | `src/text.rs` | `species_description` (line 472-485), `species_catalog_line` (452-463), `HEADING_CATALOG`/`ACTIVE_TAGS_LABEL`/`SPECIES_HEADING` (448-450) — new legend-line constant/function belongs alongside these. |
 | `src/render.rs` | `metabolism_glyph` (line 61-67) — existing per-metabolism icon, reused for the legend exactly as the sidebar Species list already uses it (task 065). |
+| `src/world.rs` | **(Extension)** `SimWorld` — add `species_origin_era: Vec<u32>` and a `push_species` helper (see Acceptance Criteria); `Organism::born_era` is the existing per-individual precedent for the field's naming/shape. |
+| `src/worldgen.rs`, `src/input.rs` | **(Extension)** `generate_starting_palette`/`add_bonus_species`/`place_wild_species` (worldgen.rs) and `apply_splice` (input.rs) — every non-test `world.species.push(Species { .. })` call site, to migrate to `push_species`. |
 
 ---
 
@@ -118,6 +159,13 @@ fine to scope and build; flag this provenance for whoever picks it up.
   `CLAUDE.md`'s no-`HashMap`/`HashSet`-iteration rule — a 3-variant enum has
   at most 3 distinct values, a linear `contains` check on a `Vec` is simpler
   and cheap enough) is enough.
+- **(Extension)** Current population needs no new state: a per-row scan of
+  `world.cells.iter().filter(|c| c.organism.is_some_and(|o| o.species ==
+  id)).count()` at render time is cheap (grid is small, catalog only
+  renders while the notebook window is open, not every simulation tick).
+  Origin era, by contrast, cannot be computed after the fact — it must be
+  captured at the moment a species is created, hence the `push_species`
+  helper above.
 
 ---
 
@@ -143,8 +191,14 @@ fine to scope and build; flag this provenance for whoever picks it up.
    per-species value — is gone.
 4. Decide `species_description`'s fate (remove vs. repurpose its test) per
    the acceptance criteria.
-5. `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt`.
-6. `cargo run`: verify the legend renders once and rows are trimmed.
+5. **(Extension)** Add `SimWorld::species_origin_era`/`push_species` (see
+   Acceptance Criteria), migrate every non-test `world.species.push(..)`
+   call site to it, and add the current-population scan + origin-era read to
+   the catalog row.
+6. `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt`.
+7. `cargo run`: verify the legend renders once, rows are trimmed, and
+   population/origin era are correct (including for a species seeded
+   mid-run, not just world start).
 
 ---
 

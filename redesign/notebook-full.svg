@@ -1,0 +1,144 @@
+<svg width="820" height="700" viewBox="0 0 820 700" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, Menlo, Consolas, monospace">
+  <rect width="820" height="700" fill="#05060a"/>
+
+  <!-- dimmed map behind, far right -->
+  <g opacity="0.35">
+    <rect x="480" y="0" width="70" height="700" fill="#223a24"/>
+    <rect x="550" y="0" width="60" height="700" fill="#26402a"/>
+    <rect x="610" y="0" width="50" height="700" fill="#16233a"/>
+    <rect x="480" y="120" width="180" height="90" fill="#4a3f22"/>
+    <rect x="480" y="420" width="180" height="70" fill="#453f36"/>
+  </g>
+  <rect x="480" y="0" width="180" height="700" fill="#05060a" opacity="0.55"/>
+  <text x="490" y="24" font-size="10" fill="#4a4c54">mappa &#183; attenuata</text>
+  <text x="490" y="38" font-size="9" fill="#3a3c44">sotto il notebook mentre &#232; aperto</text>
+
+  <!-- HUD sidebar snippet, far right, still visible -->
+  <rect x="660" y="0" width="160" height="700" fill="#0d0f14"/>
+  <text x="678" y="26" font-size="10" letter-spacing="1" fill="#5a5c64">SEED 4766...</text>
+  <circle cx="800" cy="22" r="3" fill="#5DCAA5"/>
+  <line x1="678" y1="40" x2="802" y2="40" stroke="#23262e" stroke-width="0.5"/>
+  <text x="678" y="60" font-size="10" letter-spacing="1" fill="#5a5c64">TIME</text>
+  <text x="678" y="80" font-size="12" fill="#c8c9ce">era 5 &#183; pulse 14/25</text>
+  <rect x="678" y="90" width="60" height="20" rx="4" fill="none" stroke="#2a2c34" stroke-width="0.5"/>
+  <text x="708" y="103" font-size="9" fill="#c8c9ce" text-anchor="middle">&#9654; pulse</text>
+  <line x1="678" y1="126" x2="802" y2="126" stroke="#23262e" stroke-width="0.5"/>
+  <text x="678" y="146" font-size="10" letter-spacing="1" fill="#5a5c64">MOVES</text>
+  <rect x="678" y="156" width="30" height="30" rx="5" fill="#12241d" stroke="#5DCAA5" stroke-width="0.5"/>
+  <rect x="714" y="156" width="30" height="30" rx="5" fill="none" stroke="#2a2c34" stroke-width="0.5"/>
+  <rect x="750" y="156" width="30" height="30" rx="5" fill="none" stroke="#2a2c34" stroke-width="0.5"/>
+  <text x="678" y="204" font-size="9" fill="#5a5c64">sidebar attiva e</text>
+  <text x="678" y="216" font-size="9" fill="#5a5c64">interagibile mentre</text>
+  <text x="678" y="228" font-size="9" fill="#5a5c64">il notebook &#232; aperto</text>
+
+  <!-- notebook panel -->
+  <rect x="0" y="0" width="480" height="700" fill="#111318"/>
+  <line x1="479.5" y1="0" x2="479.5" y2="700" stroke="#3a3c44" stroke-width="1"/>
+
+  <text x="24" y="28" font-size="13" fill="#c8c9ce">Notebook</text>
+  <text x="24" y="44" font-size="11" fill="#5a5c64">era 5 &#183; aperto con [tab] o dal pulsante in sidebar</text>
+  <line x1="24" y1="56" x2="456" y2="56" stroke="#23262e" stroke-width="0.5"/>
+
+  <!-- observation log -->
+  <text x="24" y="76" font-size="11" letter-spacing="1" fill="#8f9199">OBSERVATION LOG</text>
+
+  <circle cx="30" cy="94" r="3" fill="#5DCAA5"/>
+  <text x="40" y="98" font-size="11" fill="#c8c9ce">era 2 &#183; &#950; isolato accanto a &#954;: <tspan fill="#E38A8A">&#954; si indebolisce</tspan></text>
+  <text x="40" y="112" font-size="9.5" fill="#5a5c64">nessun confondente &#183; peso 1.0</text>
+  <line x1="24" y1="122" x2="456" y2="122" stroke="#1a1c22" stroke-width="0.5"/>
+
+  <circle cx="30" cy="140" r="3" fill="#EF9F27"/>
+  <text x="40" y="144" font-size="11" fill="#c8c9ce">era 4 &#183; &#949; accanto a &#946; e &#954; insieme</text>
+  <text x="40" y="158" font-size="9.5" fill="#EF9F27">confuso da 2 tag vicini &#183; peso 0.33</text>
+  <line x1="24" y1="168" x2="456" y2="168" stroke="#1a1c22" stroke-width="0.5"/>
+
+  <circle cx="30" cy="186" r="3" fill="#5DCAA5"/>
+  <text x="40" y="190" font-size="11" fill="#c8c9ce">era 5 &#183; &#945; in zona calda: crescita stabile</text>
+  <text x="40" y="204" font-size="9.5" fill="#5a5c64">nessuna interazione rilevata</text>
+
+  <line x1="24" y1="220" x2="456" y2="220" stroke="#23262e" stroke-width="0.5"/>
+
+  <!-- relationship graph -->
+  <text x="24" y="240" font-size="11" letter-spacing="1" fill="#8f9199">RELATIONSHIPS</text>
+  <text x="24" y="253" font-size="9.5" fill="#4a4c54">chi influenza chi &#183; righe = agente</text>
+
+  <g transform="translate(0,-15)">
+    <path d="M300,344 Q252,318 204,344" fill="none" stroke="#E24B4A" stroke-width="2.4" marker-end="url(#arrowNb)"/>
+    <path d="M204,344 Q252,368 300,344" fill="none" stroke="#888780" stroke-width="0.8" marker-end="url(#arrowNb)"/>
+    <line x1="240" y1="292" x2="164" y2="330" stroke="#EF9F27" stroke-width="1.2" stroke-dasharray="3 2" marker-end="url(#arrowNb)"/>
+    <line x1="164" y1="345" x2="280" y2="392" stroke="#639922" stroke-width="1.2" stroke-dasharray="3 2" marker-end="url(#arrowNb)"/>
+
+    <circle cx="252" cy="292" r="18" fill="none" stroke="#565b64" stroke-width="0.5"/>
+    <text x="252" y="292" font-size="11" fill="#8f9199" text-anchor="middle" dominant-baseline="central">&#949;</text>
+    <circle cx="360" cy="330" r="18" fill="none" stroke="#565b64" stroke-width="0.5" stroke-dasharray="3 3"/>
+    <text x="360" y="330" font-size="11" fill="#8f9199" text-anchor="middle" dominant-baseline="central">&#946;</text>
+    <circle cx="300" cy="392" r="18" fill="none" stroke="#565b64" stroke-width="0.5"/>
+    <text x="300" y="392" font-size="11" fill="#8f9199" text-anchor="middle" dominant-baseline="central">&#954;</text>
+    <circle cx="164" cy="330" r="18" fill="none" stroke="#565b64" stroke-width="0.5"/>
+    <text x="164" y="330" font-size="11" fill="#8f9199" text-anchor="middle" dominant-baseline="central">&#945;</text>
+  </g>
+
+  <defs>
+    <marker id="arrowNb" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5"/>
+    </marker>
+  </defs>
+
+  <line x1="24" y1="30" x2="24" y2="30" stroke="none"/>
+  <line x1="24" y1="30" x2="24" y2="30" stroke="none"/>
+  <line x1="24" y1="430" x2="200" y2="430" stroke="none"/>
+  <text x="24" y="432" font-size="9.5" fill="#6b6d75"><tspan fill="#E24B4A">&#8212;</tspan> confermata</text>
+  <text x="120" y="432" font-size="9.5" fill="#6b6d75"><tspan fill="#EF9F27">&#8226;&#8226;&#8226;</tspan> ipotesi neg.</text>
+  <text x="230" y="432" font-size="9.5" fill="#6b6d75"><tspan fill="#639922">&#8226;&#8226;&#8226;</tspan> ipotesi pos.</text>
+  <text x="340" y="432" font-size="9.5" fill="#6b6d75">tratteggio nodo = non osservata</text>
+
+  <line x1="24" y1="450" x2="456" y2="450" stroke="#23262e" stroke-width="0.5"/>
+
+  <!-- species catalog -->
+  <text x="24" y="470" font-size="11" letter-spacing="1" fill="#8f9199">SPECIES CATALOG</text>
+
+  <defs>
+    <clipPath id="catClip"><rect x="20" y="478" width="440" height="150"/></clipPath>
+    <linearGradient id="catFade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#111318" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#111318" stop-opacity="1"/>
+    </linearGradient>
+  </defs>
+
+  <g clip-path="url(#catClip)">
+    <g transform="translate(30,494)">
+      <line x1="-3" y1="-3" x2="3" y2="3" stroke="#F09595" stroke-width="1.4"/>
+      <line x1="-3" y1="3" x2="3" y2="-3" stroke="#F09595" stroke-width="1.4"/>
+      <line x1="0" y1="-4" x2="0" y2="4" stroke="#F09595" stroke-width="1.4"/>
+      <line x1="-4" y1="0" x2="4" y2="0" stroke="#F09595" stroke-width="1.4"/>
+    </g>
+    <text x="42" y="498" font-size="13" fill="#F09595">Opal</text>
+    <text x="42" y="513" font-size="10" fill="#8f9199">fotolitico &#183; temp 0.20&#177;0.15 (cold) &#183; pop 96</text>
+    <text x="42" y="526" font-size="10" fill="#6b6d75">tag: &#950; &#946; &#954; &#183; origine: seminato era 0</text>
+    <line x1="20" y1="536" x2="460" y2="536" stroke="#1e2027" stroke-width="0.5"/>
+
+    <g transform="translate(30,552)">
+      <line x1="-3" y1="-3" x2="3" y2="3" stroke="#97C459" stroke-width="1.4"/>
+      <line x1="-3" y1="3" x2="3" y2="-3" stroke="#97C459" stroke-width="1.4"/>
+      <line x1="0" y1="-4" x2="0" y2="4" stroke="#97C459" stroke-width="1.4"/>
+      <line x1="-4" y1="0" x2="4" y2="0" stroke="#97C459" stroke-width="1.4"/>
+    </g>
+    <text x="42" y="556" font-size="13" fill="#97C459">Halo</text>
+    <text x="42" y="571" font-size="10" fill="#8f9199">fotolitico &#183; temp 0.80&#177;0.15 (hot) &#183; pop 37</text>
+    <text x="42" y="584" font-size="10" fill="#6b6d75">tag: &#945; &#183; origine: seminato era 1</text>
+    <line x1="20" y1="594" x2="460" y2="594" stroke="#1e2027" stroke-width="0.5"/>
+
+    <g transform="translate(30,610)">
+      <circle cx="-2" cy="-1" r="2.6" fill="#B3ADE8"/>
+      <circle cx="2" cy="-1" r="2.6" fill="#B3ADE8"/>
+      <circle cx="0" cy="2" r="2.6" fill="#B3ADE8"/>
+    </g>
+    <text x="42" y="614" font-size="13" fill="#B3ADE8">Ashe</text>
+    <text x="42" y="629" font-size="10" fill="#8f9199">predatore &#183; temp 0.40&#177;0.15 (cold) &#183; pop 3</text>
+    <text x="42" y="642" font-size="10" fill="#6b6d75">tag: &#949; &#946; &#950; &#183; origine: seminato era 3</text>
+  </g>
+  <rect x="20" y="598" width="440" height="30" fill="url(#catFade)"/>
+  <text x="240" y="640" font-size="9.5" fill="#3a3c44" text-anchor="middle">scorri per vedere tutte le specie</text>
+
+  <text x="24" y="668" font-size="9" fill="#3a3c44">tab o clic fuori dal pannello per chiudere</text>
+</svg>
