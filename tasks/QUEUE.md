@@ -78,6 +78,22 @@ but blocked.
 | `[ ]` | 108 | Fourth metabolism: chemolithotroph, gain from toxicity | — | [108](108-chemolithotroph-metabolism.md) |
 | `[ ]` ⏸ | 109 | BLOCKED — Long-term objective tier + within-run energy economy | 096-099/106-107 (shipped, not just scoped) | [109](109-progression-long-term-objective-energy.md) |
 
+**Biomi** (2026-08-11, scoped from `redesign/abiogenesis-biomes.md` after a
+design-discussion pass that reconciled the doc with the current codebase — full
+decision record in the doc itself). Replaces the flat `TerrainKind` bands with 16
+discrete biomes. Dependency order: 110 (data layer, areal biomes) unblocks 111
+(explicit feature placement) and 113 (Palude replaces `toxic_zone`); 112 (rendering)
+depends on both 110 and 111. 114 (Geyser) is scoped for reference but blocked — no
+small/pulsing heat-source category exists yet to back it.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[ ]` | 110 | Biome enum + two-stage classification (areal biomes) | — | [110](110-biome-classification-two-stage.md) |
+| `[ ]` | 111 | Explicit placement for feature biomes (Cratere, Distesa di cristalli, Lago, Bocca vulcanica) | 110 | [111](111-biome-feature-placement.md) |
+| `[ ]` | 112 | Biome rendering (flat color, dithering, borders, tree overlay) | 110, 111 | [112](112-biome-rendering.md) |
+| `[ ]` | 113 | Palude replaces `toxic_zone` | 110 | [113](113-swamp-replaces-toxic-zone.md) |
+| `[ ]` ⏸ | 114 | BLOCKED — Geyser biome (needs a small/pulsing heat-source category, not yet scoped) | 110, 111, unscoped source-model extension | [114](114-geyser-pulsing-source-blocked.md) |
+
 **Onboarding & engagement rollout** (2026-08-09, from `redesign/abiogenesis-engagement-design.md`, full rationale in `PROJECT_PLAN.md`'s "Onboarding & engagement rollout"): 5 onboarding-foundation proposals scoped after a multi-round discussion. 080 first (diagnostic value for playtesting the rest); 082/083 are numerically coupled — tuned together (2026-08-10), both now done. Live playtest of the combined pacing still pending (082/083 verification steps skipped this session, see below).
 
 | Status | ID | Title | Depends on | File |
@@ -96,8 +112,13 @@ Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN
 
 ---
 
-*Last updated: 2026-08-11 (096-109 added: full scoping pass over the five
-redesign docs from this session's "mondo vivo" design discussion —
+*Last updated: 2026-08-11 (110-114 added: biome system scoped from
+`redesign/abiogenesis-biomes.md` after a design-discussion pass reconciling the
+doc with the current codebase — `TerrainKind`/`is_peak` already cover the
+elevation-based biomes, task 085's heat sources already back Bocca vulcanica,
+task 108 will make biome toxicity values load-bearing. 114 is scoped for
+reference but blocked, same pattern as 084/109. 096-109 added: full scoping pass
+over the five redesign docs from this session's "mondo vivo" design discussion —
 conditional tags, notebook UX, death legibility, evolution & xenotypes,
 progression & pacing. 109 is scoped for reference but blocked, same
 pattern as 084. 088-089, self-interaction balance bug fix, completed and

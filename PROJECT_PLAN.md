@@ -158,6 +158,32 @@ mechanics existing.
 least one of 096-099/106-107 to actually ship (not merely scope) before
 it has real state to check — see the task file.
 
+### Biomes (2026-08-11, from `redesign/abiogenesis-biomes.md`)
+
+16 discrete biomes replacing the flat `TerrainKind` bands as the primary
+environmental classification, reconciled against the current codebase in a
+design-discussion pass: `TerrainKind`/`is_peak` (task 066/068) already cover the
+elevation-based biomes structurally, task 085's point heat sources already back
+Bocca vulcanica, and task 108 (chemolithotroph) makes the per-biome `toxicity`
+values load-bearing rather than cosmetic. Full reasoning in the linked doc.
+
+- `[?]` **Two-stage biome classification**: Stage A reuses `TerrainKind`/`is_peak`
+  for the base landform; Stage B refines it into a final biome from
+  `temperature`/`light`/`toxicity`, with feature biomes (Cratere profondo, Distesa
+  di cristalli, Lago, Bocca vulcanica) placed explicitly (bounded-retry, same
+  pattern as `place_toxic_zone`) rather than derived from thresholds.
+- `[?]` **Palude replaces `toxic_zone`**: the isolated rectangle is superseded by a
+  proper biome; the `SurviveIn`/`ZoneKind::Toxic` objective (`objectives.rs:320-336`)
+  moves from rectangle-containment to biome-cell-membership.
+- `[?]` **Geyser stays out of reach**: needs a small/pulsing heat-source category
+  that task 085 doesn't provide (every source it generates is mechanically
+  identical) — a real, currently-unscoped prerequisite, not just a formality.
+
+**Scoped as tasks 110-114 (2026-08-11)**: 110 (classification data layer), 111
+(feature placement), 112 (rendering), 113 (Palude/`toxic_zone`) are startable per
+the dependency order in the tasks themselves; 114 (Geyser) is scoped for reference
+but BLOCKED, same pattern as 084/109.
+
 ---
 
 ## 🔵 SECTION 2 — BACKLOG (Operational)
@@ -193,6 +219,19 @@ redesign — all explicitly flagged as not design-ready in their source docs.
 - `[ ]` 107 — Evolution by speciation: a new descendant species from selection pressure (depends on 106) → [107](tasks/107-evolution-speciation.md)
 - `[ ]` 108 — Fourth metabolism: chemolithotroph, gain from toxicity → [108](tasks/108-chemolithotroph-metabolism.md)
 - `[ ]` ⏸ 109 — BLOCKED — Long-term objective tier + within-run energy economy (depends on 096-099/106-107 shipping, not just scoping) → [109](tasks/109-progression-long-term-objective-energy.md)
+
+### 🗻 Biomes (2026-08-11)
+
+Full scoping pass over `redesign/abiogenesis-biomes.md` (SECTION 1 above has the
+full reasoning). Dependency order: 110 unblocks 111 and 113; 112 depends on both
+110 and 111; 114 is scoped for reference but blocked on an unscoped small/pulsing
+heat-source category.
+
+- `[ ]` 110 — Biome enum + two-stage classification (areal biomes) → [110](tasks/110-biome-classification-two-stage.md)
+- `[ ]` 111 — Explicit placement for feature biomes (depends on 110) → [111](tasks/111-biome-feature-placement.md)
+- `[ ]` 112 — Biome rendering: flat color, dithering, borders, tree overlay (depends on 110, 111) → [112](tasks/112-biome-rendering.md)
+- `[ ]` 113 — Palude replaces `toxic_zone` (depends on 110) → [113](tasks/113-swamp-replaces-toxic-zone.md)
+- `[ ]` ⏸ 114 — BLOCKED — Geyser biome (needs a small/pulsing heat-source category, not yet scoped) → [114](tasks/114-geyser-pulsing-source-blocked.md)
 
 ### 🏗️ Phase 0 — Walking skeleton
 
