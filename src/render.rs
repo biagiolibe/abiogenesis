@@ -13,7 +13,7 @@ use abiogenesis::cluster::compute_cluster_density;
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::AdjacencyObserved;
 use abiogenesis::state::GameState;
-use abiogenesis::world::{Metabolism, SimWorld, SpeciesId, TagSlot, TerrainKind};
+use abiogenesis::world::{Biome, Metabolism, SimWorld, SpeciesId, TagSlot, TerrainKind};
 
 /// Pixel size of one grid cell on screen. Presentation-only, not a
 /// simulation coefficient, so it stays local instead of living in
@@ -432,7 +432,7 @@ mod energy_overlay {
 /// visible, not an instrument reading.
 mod terrain_overlay {
     use super::{cell_position, GridCamera, CELL_SIZE};
-    use abiogenesis::world::{SimWorld, TerrainKind};
+    use abiogenesis::world::{Biome, SimWorld};
     use bevy::prelude::*;
     use bevy_egui::{egui, EguiContexts};
 
@@ -501,6 +501,7 @@ mod terrain_overlay {
 
         draw_boundaries(&world, &project, &painter);
         draw_peaks(&world, &project, &painter);
+        draw_trees(&world, &project, &painter);
         draw_toxic_zone(&world, &project, &painter);
         Ok(())
     }
@@ -521,6 +522,11 @@ mod terrain_overlay {
 
     /// Compares each cell against its right and bottom neighbours only
     /// (task doc: "sufficient to avoid drawing every shared edge twice").
+    /// Reads `cell.biome` (task 112), not `cell.terrain` — a biome
+    /// boundary is the actual visible edge now that cells are colored by
+    /// biome, and it's a strict refinement of the terrain boundary anyway
+    /// (every `TerrainKind` change is also a `Biome` change, but not vice
+    /// versa — e.g. Pianura/Palude/Deserto all share `TerrainKind::Plain`).
     fn draw_boundaries(
         world: &SimWorld,
         project: &impl Fn(Vec3) -> Option<egui::Pos2>,
@@ -528,9 +534,9 @@ mod terrain_overlay {
     ) {
         for y in 0..world.height {
             for x in 0..world.width {
-                let here = world.get(x, y).terrain;
+                let here = world.get(x, y).biome;
                 if x + 1 < world.width {
-                    let right = world.get(x + 1, y).terrain;
+                    let right = world.get(x + 1, y).biome;
                     if right != here {
                         let (_, top_right, bottom_right, _) =
                             cell_corners(x, y, world.width, world.height);
@@ -538,7 +544,7 @@ mod terrain_overlay {
                     }
                 }
                 if y + 1 < world.height {
-                    let below = world.get(x, y + 1).terrain;
+                    let below = world.get(x, y + 1).biome;
                     if below != here {
                         let (_, _, bottom_right, bottom_left) =
                             cell_corners(x, y, world.width, world.height);
@@ -549,18 +555,28 @@ mod terrain_overlay {
         }
     }
 
+    /// Whether `biome` is one of the water landforms `TerrainKind::Sea`
+    /// classifies into (task 112) — `is_coastline` below checks this
+    /// instead of `TerrainKind::Sea` directly, per the design doc's
+    /// "coastlines are more marked than internal biome borders" rule.
+    /// Deliberately excludes Lago: that's a standalone inland feature
+    /// biome, not part of the coastline.
+    fn is_water(biome: Biome) -> bool {
+        matches!(biome, Biome::DeepWater | Biome::ShallowWater)
+    }
+
     fn draw_edge(
         project: &impl Fn(Vec3) -> Option<egui::Pos2>,
         painter: &egui::Painter,
         from: Vec3,
         to: Vec3,
-        a: TerrainKind,
-        b: TerrainKind,
+        a: Biome,
+        b: Biome,
     ) {
         let (Some(p0), Some(p1)) = (project(from), project(to)) else {
             return;
         };
-        let is_coastline = a == TerrainKind::Sea || b == TerrainKind::Sea;
+        let is_coastline = is_water(a) || is_water(b);
         let (color, width) = if is_coastline {
             (boundary_coastline_color(), BOUNDARY_COASTLINE_WIDTH)
         } else {
@@ -590,6 +606,93 @@ mod terrain_overlay {
                     PEAK_GLYPH,
                     egui::FontId::monospace(PEAK_GLYPH_FONT_SIZE),
                     PEAK_GLYPH_COLOR,
+                );
+            }
+        }
+    }
+
+    /// Monochrome club glyph (task 112) — a card-suit dingbat, not an emoji,
+    /// so it renders as a real glyph rather than a tofu box (the same
+    /// concern `ui.rs`'s `DEJAVU_SANS` doc comment raises about
+    /// `ACTION_GLYPHS`' 🌱💀🔬: egui has no COLR/bitmap emoji rendering path
+    /// at all). Doubles as a stylized tree/shrub mark.
+    const TREE_GLYPH: &str = "♣";
+    const TREE_GLYPH_FONT_SIZE: f32 = 8.0;
+    const TREE_GLYPH_COLOR: egui::Color32 = egui::Color32::from_rgb(90, 130, 80);
+
+    /// Sparse-density biomes (task 112, design doc's tree-overlay table):
+    /// Pianura, Collina, Montagna, Palude.
+    const SPARSE_TREE_DENSITY: f32 = 0.12;
+    /// Dense-density biome: Foresta — the biome's own distinguishing
+    /// feature, per the design doc.
+    const DENSE_TREE_DENSITY: f32 = 0.55;
+
+    /// Per-cell tree probability for `biome`, or `None` where the design
+    /// doc places no trees at all (every biome not listed: water in any
+    /// form, Vetta, Roccia nuda, Cratere, Deserto, Bocca vulcanica, Tundra,
+    /// Distesa di cristalli).
+    fn tree_density(biome: Biome) -> Option<f32> {
+        match biome {
+            Biome::Plain | Biome::Hill | Biome::Mountain | Biome::Swamp => {
+                Some(SPARSE_TREE_DENSITY)
+            }
+            Biome::Forest => Some(DENSE_TREE_DENSITY),
+            _ => None,
+        }
+    }
+
+    /// Deterministic, RNG-free pseudo-random value in `[0, 1)` for cell
+    /// `(x, y)` in world `seed` — trees are a decoration layer independent
+    /// of `SimWorld::rng` (TECH_DESIGN.md §5's determinism invariant
+    /// applies even to pure rendering here: a re-render or a screenshot
+    /// must show the same trees every time, not reroll on every frame).
+    /// A standard 64-bit avalanche finalizer (SplitMix64/MurmurHash3-style),
+    /// not a cryptographic hash — only good bit-mixing is needed so nearby
+    /// cells don't visibly correlate.
+    fn tree_hash(seed: u64, x: usize, y: usize) -> f32 {
+        let mut h = seed
+            ^ (x as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            ^ (y as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F);
+        h ^= h >> 33;
+        h = h.wrapping_mul(0xFF51_AFD7_ED55_8CCD);
+        h ^= h >> 33;
+        h = h.wrapping_mul(0xC4CE_B9FE_1A85_EC53);
+        h ^= h >> 33;
+        (h >> 40) as f32 / (1u64 << 24) as f32
+    }
+
+    /// Tree overlay (task 112, design doc's "trees are not a biome, they're
+    /// an independent decoration layer" — a separate render pass, not part
+    /// of `biome_color`). Skips occupied cells: drawing a tree glyph
+    /// directly over an organism's shape/color would fight for the same
+    /// pixels the organism itself needs to stay readable, and organism
+    /// legibility takes priority everywhere else in this codebase.
+    fn draw_trees(
+        world: &SimWorld,
+        project: &impl Fn(Vec3) -> Option<egui::Pos2>,
+        painter: &egui::Painter,
+    ) {
+        for y in 0..world.height {
+            for x in 0..world.width {
+                let cell = world.get(x, y);
+                if cell.organism.is_some() {
+                    continue;
+                }
+                let Some(density) = tree_density(cell.biome) else {
+                    continue;
+                };
+                if tree_hash(world.seed, x, y) >= density {
+                    continue;
+                }
+                let Some(pos) = project(cell_position(x, y, world.width, world.height)) else {
+                    continue;
+                };
+                painter.text(
+                    pos,
+                    egui::Align2::CENTER_CENTER,
+                    TREE_GLYPH,
+                    egui::FontId::monospace(TREE_GLYPH_FONT_SIZE),
+                    TREE_GLYPH_COLOR,
                 );
             }
         }
@@ -643,6 +746,64 @@ mod terrain_overlay {
                 egui::Stroke::new(TOXIC_ZONE_OUTLINE_WIDTH, TOXIC_ZONE_OUTLINE_COLOR),
             );
             travelled += step;
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn is_water_is_true_only_for_deep_and_shallow_water() {
+            for biome in [Biome::DeepWater, Biome::ShallowWater] {
+                assert!(is_water(biome), "{biome:?} should count as water");
+            }
+            for biome in [Biome::Plain, Biome::Lake, Biome::VolcanicVent] {
+                assert!(!is_water(biome), "{biome:?} should not count as water");
+            }
+        }
+
+        #[test]
+        fn tree_density_matches_the_design_docs_sparse_dense_none_table() {
+            for biome in [Biome::Plain, Biome::Hill, Biome::Mountain, Biome::Swamp] {
+                assert_eq!(tree_density(biome), Some(SPARSE_TREE_DENSITY));
+            }
+            assert_eq!(tree_density(Biome::Forest), Some(DENSE_TREE_DENSITY));
+            for biome in [
+                Biome::DeepWater,
+                Biome::ShallowWater,
+                Biome::Peak,
+                Biome::BareRock,
+                Biome::Crater,
+                Biome::Desert,
+                Biome::VolcanicVent,
+                Biome::Tundra,
+                Biome::CrystalField,
+                Biome::Lake,
+            ] {
+                assert_eq!(tree_density(biome), None, "{biome:?} should have no trees");
+            }
+        }
+
+        #[test]
+        fn tree_hash_is_deterministic_and_spans_the_unit_interval() {
+            let a = tree_hash(42, 5, 7);
+            let b = tree_hash(42, 5, 7);
+            assert_eq!(a, b, "same inputs must produce the same hash every time");
+            assert!((0.0..1.0).contains(&a));
+
+            // A reasonable spread check: over a grid-sized sample, the mean
+            // should land near 0.5 (a badly broken mixer — e.g. one that
+            // barely uses `y`, or a constant — would fail this).
+            let sum: f32 = (0..80)
+                .flat_map(|y| (0..128).map(move |x| (x, y)))
+                .map(|(x, y)| tree_hash(7, x, y))
+                .sum();
+            let mean = sum / (80 * 128) as f32;
+            assert!(
+                (0.4..0.6).contains(&mean),
+                "hash values should spread roughly uniformly over [0, 1), got mean {mean}"
+            );
         }
     }
 }
@@ -1331,10 +1492,10 @@ pub fn world_to_cell(world_pos: Vec2, width: usize, height: usize) -> Option<(us
 /// The single place that decides a cell's color (GDD §11): occupied cells by
 /// species hue and energy (`Detail`) or cluster density (`Overview`, task
 /// 076), cells with leftover residue by a neutral hue scaled by how much is
-/// left, empty cells by their terrain band (task 066,
-/// `redesign/abiogenesis-terrain-map.md` — flat color, no longer a
-/// continuous `light` shading), then a toxicity tint (task 033) composited
-/// on top of whichever of the three applies.
+/// left, empty cells by their biome (task 112, `redesign/abiogenesis-biomes.md`
+/// — flat color, dithered — superseding task 066/068's `TerrainKind`-only
+/// bands), then a toxicity tint (task 033) composited on top of whichever
+/// of the three applies.
 fn cell_color(
     world: &SimWorld,
     config: &SimConfig,
@@ -1381,33 +1542,67 @@ fn cell_color(
         let intensity = (cell.residue / config.energy.residue_on_death).clamp(0.0, 1.0);
         Color::hsl(30.0, 0.2, 0.08 + intensity * 0.22)
     } else {
-        terrain_color(cell.terrain)
+        dithered_biome_color(cell.biome, x, y)
     };
 
     toxicity_tint(base, cell.toxicity)
 }
 
-/// Flat per-band terrain color (task 068 — the mockup's "no gradient, one
-/// flat color per elevation band" rule). `Plain`/`Hill`/`Mountain`/`Sea` are
-/// desaturated tones from the same console/lab palette family as the rest
-/// of the HUD, not a new palette.
+/// Flat per-biome color (task 112, `redesign/abiogenesis-biomes.md`,
+/// superseding task 066/068's `terrain_color`/`TerrainKind`-only bands —
+/// `Biome` is now the primary environmental classification, `TerrainKind`
+/// stays as Stage A's input to it). Desaturated tones from the same
+/// console/lab palette family as the rest of the HUD, not a new palette —
+/// **except Distesa di cristalli** (`CrystalField`), the design doc's
+/// deliberate exception: "tonalità visivamente aliena, fuori dalla
+/// palette naturale," picked to read as a chemistry anomaly worth
+/// investigating on sight, not a rendering inconsistency.
 ///
-/// `Sea` was originally near-black, deliberately reading as "void" the way
-/// the pre-terrain empty cell did (task 068) — that made sense while Sea was
-/// inert, but stopped making sense once task 085 gave it a real mechanical
-/// role (coastal cooling) and task 086 made the environment overlay render
-/// its real scalar there too. Task 093 (2026-08-10 playtest finding: the
-/// near-black fill read as "edge of the map," not water) moved it to a dark
-/// desaturated blue instead — still low-lightness like every other band
-/// here, just a hue that reads as a body of water rather than an absence of
-/// terrain.
-fn terrain_color(kind: TerrainKind) -> Color {
-    match kind {
-        TerrainKind::Sea => Color::hsl(210.0, 0.35, 0.10),
-        TerrainKind::Plain => Color::hsl(130.0, 0.20, 0.09),
-        TerrainKind::Hill => Color::hsl(125.0, 0.22, 0.14),
-        TerrainKind::Mountain => Color::hsl(30.0, 0.10, 0.19),
+/// `DeepWater`/`ShallowWater` continue task 093's "Sea reads as a dark
+/// blue, not a void" fix (that finding predates the areal/feature biome
+/// split but still applies to both).
+fn biome_color(biome: Biome) -> Color {
+    match biome {
+        Biome::DeepWater => Color::hsl(215.0, 0.40, 0.07),
+        Biome::ShallowWater => Color::hsl(200.0, 0.35, 0.14),
+        Biome::Plain => Color::hsl(130.0, 0.20, 0.09),
+        Biome::Hill => Color::hsl(125.0, 0.22, 0.14),
+        Biome::Mountain => Color::hsl(30.0, 0.10, 0.19),
+        Biome::Peak => Color::hsl(200.0, 0.10, 0.30),
+        Biome::Desert => Color::hsl(45.0, 0.35, 0.20),
+        Biome::Tundra => Color::hsl(200.0, 0.15, 0.20),
+        Biome::BareRock => Color::hsl(30.0, 0.05, 0.15),
+        Biome::Forest => Color::hsl(130.0, 0.30, 0.06),
+        Biome::Swamp => Color::hsl(90.0, 0.25, 0.10),
+        Biome::Crater => Color::hsl(15.0, 0.20, 0.07),
+        Biome::CrystalField => Color::hsl(280.0, 0.55, 0.35),
+        Biome::Lake => Color::hsl(190.0, 0.30, 0.12),
+        Biome::VolcanicVent => Color::hsl(15.0, 0.55, 0.20),
     }
+}
+
+/// Two-tone checkerboard dithering (task 112, new — `TerrainKind`
+/// rendering never had this): a fixed `(x + y) % 2` pattern, never noise,
+/// and never blended across a biome boundary since each cell's dither
+/// offset is computed from `biome_color(cell.biome)` alone, independent of
+/// its neighbours. Small enough to read as material texture, not a second
+/// color.
+const DITHER_LIGHTNESS_DELTA: f32 = 0.015;
+
+fn dithered_biome_color(biome: Biome, x: usize, y: usize) -> Color {
+    let Color::Hsla(hsla) = biome_color(biome) else {
+        return biome_color(biome);
+    };
+    let delta = if (x + y).is_multiple_of(2) {
+        DITHER_LIGHTNESS_DELTA
+    } else {
+        -DITHER_LIGHTNESS_DELTA
+    };
+    Color::hsl(
+        hsla.hue,
+        hsla.saturation,
+        (hsla.lightness + delta).clamp(0.0, 1.0),
+    )
 }
 
 /// A warning-magenta hue to blend toward as `toxicity` rises (GDD §5.2's
@@ -1429,7 +1624,7 @@ fn toxicity_tint(base: Color, toxicity: f32) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use abiogenesis::world::{Cell, Organism, SpeciesId, TerrainKind};
+    use abiogenesis::world::{Biome, Cell, Organism, SpeciesId};
 
     /// `cell_color` in `Detail` mode, exactly as it behaved before task 076
     /// added the `Overview` branch — the density argument is unused on this
@@ -1484,21 +1679,21 @@ mod tests {
         };
         assert!(residue.saturation < occupied.saturation);
 
-        // Task 068: empty cells render by terrain band (flat color), not a
-        // continuous grayscale `light` shading — pin the terrain so the
+        // Task 112: empty cells render by biome (flat, dithered color), not
+        // a continuous grayscale `light` shading — pin the biome so the
         // assertion doesn't depend on whatever this seed's generator drew
         // for (0, 0).
         world.cells[idx].residue = 0.0;
-        world.cells[idx].terrain = TerrainKind::Plain;
+        world.cells[idx].biome = Biome::Plain;
         let Color::Hsla(empty) = detail_color(&world, &config, x, y) else {
             panic!("expected an HSL color");
         };
-        assert_eq!(empty, terrain_hsla(TerrainKind::Plain));
+        assert_eq!(empty, dithered_biome_hsla(Biome::Plain, x, y));
         assert!(empty.lightness < residue.lightness);
     }
 
     #[test]
-    fn ambient_residue_trickle_does_not_hide_the_terrain_color() {
+    fn ambient_residue_trickle_does_not_hide_the_biome_color() {
         // Task 060's ambient trickle settles every cell's residue at exactly
         // `residue_ambient_trickle` grid-wide, not just where something
         // died — `cell_color` must not treat that floor as "there's a
@@ -1510,60 +1705,102 @@ mod tests {
         let idx = world.index(x, y);
         world.cells[idx].organism = None;
         world.cells[idx].residue = config.energy.residue_ambient_trickle;
-        world.cells[idx].terrain = TerrainKind::Plain;
+        world.cells[idx].biome = Biome::Plain;
         world.cells[idx].toxicity = 0.0;
 
         assert_eq!(
             detail_color(&world, &config, x, y),
-            terrain_color(TerrainKind::Plain)
+            dithered_biome_color(Biome::Plain, x, y)
         );
     }
 
-    fn terrain_hsla(kind: TerrainKind) -> bevy::color::Hsla {
-        let Color::Hsla(hsla) = terrain_color(kind) else {
+    fn biome_hsla(biome: Biome) -> bevy::color::Hsla {
+        let Color::Hsla(hsla) = biome_color(biome) else {
+            panic!("expected an HSL color");
+        };
+        hsla
+    }
+
+    fn dithered_biome_hsla(biome: Biome, x: usize, y: usize) -> bevy::color::Hsla {
+        let Color::Hsla(hsla) = dithered_biome_color(biome, x, y) else {
             panic!("expected an HSL color");
         };
         hsla
     }
 
     #[test]
-    fn each_terrain_band_has_a_distinct_flat_color() {
-        let colors = [
-            TerrainKind::Sea,
-            TerrainKind::Plain,
-            TerrainKind::Hill,
-            TerrainKind::Mountain,
-        ]
-        .map(terrain_hsla);
+    fn each_biome_has_a_distinct_flat_color() {
+        let biomes = [
+            Biome::DeepWater,
+            Biome::ShallowWater,
+            Biome::Plain,
+            Biome::Hill,
+            Biome::Mountain,
+            Biome::Peak,
+            Biome::Desert,
+            Biome::Tundra,
+            Biome::BareRock,
+            Biome::Forest,
+            Biome::Swamp,
+            Biome::Crater,
+            Biome::CrystalField,
+            Biome::Lake,
+            Biome::VolcanicVent,
+        ];
+        let colors = biomes.map(biome_hsla);
         for i in 0..colors.len() {
             for j in (i + 1)..colors.len() {
-                assert_ne!(colors[i], colors[j], "bands {i} and {j} share a color");
+                assert_ne!(
+                    colors[i], colors[j],
+                    "{:?} and {:?} share a color",
+                    biomes[i], biomes[j]
+                );
             }
         }
     }
 
-    /// Task 093: Sea used to read as near-black "void" (task 068); a
-    /// playtest found that misleading now that it's real terrain (task
-    /// 085), not an edge-of-map marker — it should read as water instead.
+    /// Task 093 (continued by task 112's biome split): Sea used to read as
+    /// near-black "void" (task 068); a playtest found that misleading once
+    /// it became real terrain (task 085) with a mechanical role — it should
+    /// read as water instead. Checked here against `DeepWater`, the biome
+    /// `TerrainKind::Sea` now renders through.
     #[test]
-    fn sea_reads_as_a_dark_blue_not_a_void() {
-        let sea = terrain_hsla(TerrainKind::Sea);
+    fn deep_water_reads_as_a_dark_blue_not_a_void() {
+        let deep_water = biome_hsla(Biome::DeepWater);
         assert!(
-            (180.0..=260.0).contains(&sea.hue),
-            "Sea's hue should sit in the blue range, got {}",
-            sea.hue
+            (180.0..=260.0).contains(&deep_water.hue),
+            "DeepWater's hue should sit in the blue range, got {}",
+            deep_water.hue
         );
         assert!(
-            sea.saturation > 0.1,
-            "Sea should read as a color, not near-gray/black, got saturation {}",
-            sea.saturation
+            deep_water.saturation > 0.1,
+            "DeepWater should read as a color, not near-gray/black, got saturation {}",
+            deep_water.saturation
         );
         assert!(
-            (0.05..0.3).contains(&sea.lightness),
-            "Sea should stay in the same low-lightness family as the other \
-             terrain bands, not near-black or bright, got {}",
-            sea.lightness
+            (0.05..0.3).contains(&deep_water.lightness),
+            "DeepWater should stay in the same low-lightness family as the other \
+             biomes, not near-black or bright, got {}",
+            deep_water.lightness
         );
+    }
+
+    #[test]
+    fn dithering_alternates_lightness_by_cell_parity_without_changing_hue_or_saturation() {
+        let even = dithered_biome_hsla(Biome::Plain, 0, 0);
+        let odd = dithered_biome_hsla(Biome::Plain, 1, 0);
+        let base = biome_hsla(Biome::Plain);
+
+        assert_eq!(even.hue, base.hue);
+        assert_eq!(odd.hue, base.hue);
+        assert_eq!(even.saturation, base.saturation);
+        assert_eq!(odd.saturation, base.saturation);
+        assert_ne!(
+            even.lightness, odd.lightness,
+            "adjacent-parity cells of the same biome must dither to different lightness"
+        );
+        assert!((even.lightness - base.lightness).abs() < 0.05);
+        assert!((odd.lightness - base.lightness).abs() < 0.05);
     }
 
     #[test]

@@ -65,7 +65,7 @@ small/pulsing heat-source category exists yet to back it.
 |-------|----|--------|------------|------|
 | `[x]` | 110 | Biome enum + two-stage classification (areal biomes) | — | [110](done/110-biome-classification-two-stage.md) |
 | `[x]` | 111 | Explicit placement for feature biomes (Cratere, Distesa di cristalli, Lago, Bocca vulcanica) | 110 | [111](done/111-biome-feature-placement.md) |
-| `[ ]` | 112 | Biome rendering (flat color, dithering, borders, tree overlay) | 110, 111 | [112](112-biome-rendering.md) |
+| `[x]` | 112 | Biome rendering (flat color, dithering, borders, tree overlay) | 110, 111 | [112](done/112-biome-rendering.md) |
 | `[ ]` | 113 | Palude replaces `toxic_zone` | 110 | [113](113-swamp-replaces-toxic-zone.md) |
 | `[ ]` ⏸ | 114 | BLOCKED — Geyser biome (needs a small/pulsing heat-source category, not yet scoped) | 110, 111, unscoped source-model extension | [114](114-geyser-pulsing-source-blocked.md) |
 
@@ -125,7 +125,12 @@ Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN
 
 ---
 
-*Last updated: 2026-08-12 (111, explicit placement for feature biomes —
+*Last updated: 2026-08-12 (112, biome rendering — flat dithered colors via
+`biome_color`/`dithered_biome_color`, biome-based boundaries/coastline, a
+new deterministic tree overlay (`♣` glyph, no RNG) — completed and
+archived to `tasks/done/`. `draw_toxic_zone` deliberately left untouched,
+task 113's job. Only 113 (and blocked 114) remain open in the Biomi
+phase. 111, explicit placement for feature biomes —
 Crater/CrystalField/Lake via bounded-retry rectangles with a hard
 zero-overlap requirement against each other, Bocca vulcanica hooked
 directly into `SimWorld::heat_sources` via a small independent vent
