@@ -271,6 +271,12 @@ pub struct EnergyConfig {
     pub decomposer_extract_rate: f32,
     /// Decomposer species: base upkeep per tick.
     pub decomposer_upkeep: f32,
+    /// Chemolithotroph species (task 108): energy gained per tick from
+    /// `Cell.toxicity`, the same role `photolithic_metabolism_gain` plays
+    /// for `light`.
+    pub chemolithotroph_metabolism_gain: f32,
+    /// Chemolithotroph species: base upkeep per tick.
+    pub chemolithotroph_upkeep: f32,
     /// Residue energy deposited when an organism dies.
     pub residue_on_death: f32,
     /// Residue decay rate per tick.
@@ -308,6 +314,14 @@ impl Default for EnergyConfig {
             predator_upkeep: 0.7,
             decomposer_extract_rate: 1.5,
             decomposer_upkeep: 0.5,
+            // First-pass, tunable (task 108): mirrors `photolithic_metabolism_gain`/
+            // `base_upkeep` exactly. `EnvironmentConfig::toxic_zone_value`
+            // defaults to 0.7 — the same order of magnitude as the ~0.7
+            // `light` a photolithic organism sees in a bright cell — so
+            // starting from Photolithic's own numbers is the natural
+            // balance-comparable baseline until playtesting says otherwise.
+            chemolithotroph_metabolism_gain: 2.0,
+            chemolithotroph_upkeep: 0.5,
             residue_on_death: 3.0,
             residue_decay: 0.2,
             residue_ambient_trickle: 0.05,

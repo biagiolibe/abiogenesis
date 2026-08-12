@@ -75,7 +75,7 @@ but blocked.
 | `[x]` | 105 | Cause label on the Biosphere panel for a species taking deaths | 104 | [105](done/105-death-biosphere-trend-diagnosis.md) |
 | `[x]` | 106 | Selection pressure accumulation + threshold-crossing trigger | — | [106](done/106-evolution-selection-pressure-trigger.md) |
 | `[x]` | 107 | Evolution by speciation: a new descendant species | 106 | [107](done/107-evolution-speciation.md) |
-| `[ ]` | 108 | Fourth metabolism: chemolithotroph, gain from toxicity | — | [108](108-chemolithotroph-metabolism.md) |
+| `[x]` | 108 | Fourth metabolism: chemolithotroph, gain from toxicity | — | [108](done/108-chemolithotroph-metabolism.md) |
 | `[ ]` ⏸ | 109 | BLOCKED — Long-term objective tier + within-run energy economy | 096-099/106-107 (shipped, not just scoped) | [109](109-progression-long-term-objective-energy.md) |
 
 **Biomi** (2026-08-11, scoped from `redesign/abiogenesis-biomes.md` after a
@@ -125,6 +125,12 @@ pass).
 |-------|----|--------|------------|------|
 | `[ ]` | 115 | Grid input (clicks and scroll-zoom) leaks through the HUD panel | — | [115](115-egui-panel-click-through-when-zoomed.md) |
 | `[ ]` | 121 | Conditional-tag catalog badge never renders in a live playtest | 096, 097 | [121](121-terrain-badge-missing-in-catalog.md) |
+
+**Balance/persistence** (found while balance-testing task 108).
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[ ]` | 122 | Toxic zone reinjection (toxicity erodes with no source to counter it) | 072, 085, 108 | [122](122-toxic-zone-reinjection.md) |
 
 **Onboarding & engagement rollout** (2026-08-09, from `redesign/abiogenesis-engagement-design.md`, full rationale in `PROJECT_PLAN.md`'s "Onboarding & engagement rollout"): 5 onboarding-foundation proposals scoped after a multi-round discussion. 080 first (diagnostic value for playtesting the rest); 082/083 are numerically coupled — tuned together (2026-08-10), both now done. Live playtest of the combined pacing still pending (082/083 verification steps skipped this session, see below).
 

@@ -217,7 +217,7 @@ redesign — all explicitly flagged as not design-ready in their source docs.
 - `[x]` 105 — Cause label on the Biosphere panel for a species taking deaths (depends on 104) → [105](tasks/done/105-death-biosphere-trend-diagnosis.md)
 - `[x]` 106 — Selection pressure accumulation + threshold-crossing trigger → [106](tasks/done/106-evolution-selection-pressure-trigger.md)
 - `[x]` 107 — Evolution by speciation: a new descendant species from selection pressure (depends on 106) → [107](tasks/done/107-evolution-speciation.md)
-- `[ ]` 108 — Fourth metabolism: chemolithotroph, gain from toxicity → [108](tasks/108-chemolithotroph-metabolism.md)
+- `[x]` 108 — Fourth metabolism: chemolithotroph, gain from toxicity → [108](tasks/done/108-chemolithotroph-metabolism.md)
 - `[ ]` ⏸ 109 — BLOCKED — Long-term objective tier + within-run energy economy (depends on 096-099/106-107 shipping, not just scoping) → [109](tasks/109-progression-long-term-objective-energy.md)
 
 ### 🖥️ HUD & Notebook redesign follow-up (2026-08-12, from `redesign/abiogenesis-hud-notebook.md`)
@@ -569,6 +569,7 @@ restored green (`0/50` across all four balance properties).
   `ui.horizontal_wrapped` (`ui.rs`).
 - `[ ]` 115 — Grid input (clicks and scroll-zoom) leaks through the HUD panel → [115](tasks/115-egui-panel-click-through-when-zoomed.md)
 - `[ ]` 121 — Conditional-tag catalog badge never renders in a live playtest (reported 2026-08-12, static review inconclusive — needs live repro) → [121](tasks/121-terrain-badge-missing-in-catalog.md)
+- `[ ]` 122 — Toxic zone reinjection: toxicity erodes over long runs with no source to counter diffusion, unlike heat sources (found balance-testing task 108's chemolithotroph) → [122](tasks/122-toxic-zone-reinjection.md)
 
 ### 🎚️ Final tuning — *the real art*
 

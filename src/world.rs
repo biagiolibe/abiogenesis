@@ -20,6 +20,10 @@ pub enum Metabolism {
     Photolithic,
     Predator,
     Decomposer,
+    /// Draws energy from `Cell.toxicity` (task 108, GDD §5.4's deferred
+    /// item) the same way `Photolithic` draws from `light` — a per-cell
+    /// scalar read directly, no shared-resource pre-pass needed.
+    Chemolithotroph,
 }
 
 /// Identity of a tag in the *global* pool of `TagConfig::global_tag_pool`

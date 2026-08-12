@@ -63,6 +63,7 @@ pub fn metabolism_glyph(metabolism: Metabolism) -> &'static str {
         Metabolism::Photolithic => "☀",
         Metabolism::Predator => "⚔",
         Metabolism::Decomposer => "♻",
+        Metabolism::Chemolithotroph => "☣",
     }
 }
 
@@ -1160,6 +1161,7 @@ struct MetabolismShapes {
     photolithic: Handle<Image>,
     predator: Handle<Image>,
     decomposer: Handle<Image>,
+    chemolithotroph: Handle<Image>,
 }
 
 impl MetabolismShapes {
@@ -1168,6 +1170,7 @@ impl MetabolismShapes {
             Metabolism::Photolithic => self.photolithic.clone(),
             Metabolism::Predator => self.predator.clone(),
             Metabolism::Decomposer => self.decomposer.clone(),
+            Metabolism::Chemolithotroph => self.chemolithotroph.clone(),
         }
     }
 }
@@ -1225,11 +1228,20 @@ fn diamond_mask(nx: f32, ny: f32) -> bool {
     nx.abs() + ny.abs() <= 0.9
 }
 
+/// A plus/cross — `Chemolithotroph` (task 108), visually distinct from the
+/// existing circle/triangle/diamond trio.
+fn cross_mask(nx: f32, ny: f32) -> bool {
+    let half_arm = 0.32;
+    let extent = 0.85;
+    (nx.abs() <= half_arm && ny.abs() <= extent) || (ny.abs() <= half_arm && nx.abs() <= extent)
+}
+
 fn spawn_metabolism_shapes(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     commands.insert_resource(MetabolismShapes {
         photolithic: images.add(shape_mask_image(circle_mask)),
         predator: images.add(shape_mask_image(triangle_mask)),
         decomposer: images.add(shape_mask_image(diamond_mask)),
+        chemolithotroph: images.add(shape_mask_image(cross_mask)),
     });
 }
 

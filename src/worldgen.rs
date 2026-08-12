@@ -225,10 +225,10 @@ pub fn generate_starting_palette(world: &mut SimWorld, config: &SimConfig) {
 
 /// Adds `count` species to `world.species`, available for `Seed` but not
 /// placed on the grid — the same generation rule `generate_starting_palette`
-/// uses for its own `extra_available_species_count` (`Predator`/`Decomposer`
-/// each drawn with equal probability per slot, temperature optimum spread
-/// across the world's actual range), factored out so `build_world` can reuse
-/// it to apply
+/// uses for its own `extra_available_species_count` (`Predator`/`Decomposer`/
+/// `Chemolithotroph`, task 108, each drawn with equal probability per slot,
+/// temperature optimum spread across the world's actual range), factored
+/// out so `build_world` can reuse it to apply
 /// `MetaProgress::bonus_available_species` (task 046) on top: more species
 /// to *choose from*, never anything about the hidden matrix.
 pub fn add_bonus_species(world: &mut SimWorld, config: &SimConfig, count: u32) {
@@ -243,10 +243,15 @@ pub fn add_bonus_species(world: &mut SimWorld, config: &SimConfig, count: u32) {
         // = 1`) always landed on index 0 and was deterministically always
         // `Predator`, making `Decomposer` structurally unreachable for an
         // entire run (playtest finding: 4 worlds cleared, never seen).
-        let metabolism = if world.rng_mut().random_bool(0.5) {
-            Metabolism::Predator
-        } else {
-            Metabolism::Decomposer
+        // Task 108: a third metabolism joins the bonus-species pool. Kept as
+        // a uniform 3-way draw (not nested coin flips, which would bias the
+        // distribution) — same per-slot-independent rationale as the
+        // original 2-way flip above: each `add_bonus_species` call must
+        // reach all three regardless of how many slots it's given.
+        let metabolism = match world.rng_mut().random_range(0..3) {
+            0 => Metabolism::Predator,
+            1 => Metabolism::Decomposer,
+            _ => Metabolism::Chemolithotroph,
         };
         let weight: f32 = world.rng_mut().random_range(0.0..=1.0);
         let temp_optimum = temp_optimum_at_percentile(&distribution, weight);
@@ -855,13 +860,15 @@ mod tests {
         // `generate_starting_palette`'s fixed slot, once more from
         // `build_world`'s meta-progression bonus), so a lone slot always
         // landed on `Predator` and `Decomposer` was mathematically
-        // unreachable for an entire run. A per-slot coin flip fixes that;
-        // sampling many seeds with several slots each pins that both
-        // metabolisms are actually reachable, so this can't silently
-        // regress back to a fixed pattern.
+        // unreachable for an entire run. A per-slot draw fixes that;
+        // sampling many seeds with several slots each pins that all three
+        // non-`Photolithic` metabolisms (task 108 added `Chemolithotroph`)
+        // are actually reachable, so this can't silently regress back to a
+        // fixed pattern.
         let config = SimConfig::default();
         let mut saw_predator = false;
         let mut saw_decomposer = false;
+        let mut saw_chemolithotroph = false;
         for seed in 0..50u64 {
             let mut world = SimWorld::new(seed, &config);
             add_bonus_species(&mut world, &config, 8);
@@ -869,12 +876,14 @@ mod tests {
                 match species.metabolism {
                     Metabolism::Predator => saw_predator = true,
                     Metabolism::Decomposer => saw_decomposer = true,
+                    Metabolism::Chemolithotroph => saw_chemolithotroph = true,
                     Metabolism::Photolithic => {}
                 }
             }
         }
         assert!(saw_predator, "Predator should be reachable");
         assert!(saw_decomposer, "Decomposer should be reachable");
+        assert!(saw_chemolithotroph, "Chemolithotroph should be reachable");
     }
 
     #[test]

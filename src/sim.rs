@@ -661,6 +661,9 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
             Metabolism::Photolithic => cell.light * energy.photolithic_metabolism_gain * fit,
             Metabolism::Predator => predation_gain[idx],
             Metabolism::Decomposer => decomposition_gain[idx],
+            Metabolism::Chemolithotroph => {
+                cell.toxicity * energy.chemolithotroph_metabolism_gain * fit
+            }
         };
 
         // 3. Hidden matrix effect (GDD §5.6 step 3, §5.5): additive and
@@ -752,6 +755,7 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
             Metabolism::Photolithic => energy.base_upkeep,
             Metabolism::Predator => energy.predator_upkeep,
             Metabolism::Decomposer => energy.decomposer_upkeep,
+            Metabolism::Chemolithotroph => energy.chemolithotroph_upkeep,
         };
         let crowding_penalty = energy.crowd_factor * occupied_neighbours as f32;
 
@@ -2186,6 +2190,125 @@ mod tests {
             (world.get(nx, ny).residue - 8.3).abs() < TOLERANCE,
             "expected residue reduced by the drawn amount, got {}",
             world.get(nx, ny).residue
+        );
+    }
+
+    fn world_with_one_chemolithotroph(
+        temperature: f32,
+        toxicity: f32,
+        energy: f32,
+    ) -> (SimWorld, SimConfig) {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.push_species(Species {
+            name: "Test".to_string(),
+            metabolism: Metabolism::Chemolithotroph,
+            temp_optimum: temperature,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: Vec::new(),
+        });
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let idx = world.index(cx, cy);
+        world.cells[idx] = Cell {
+            light: 0.0,
+            temperature,
+            toxicity,
+            organism: Some(Organism {
+                species: SpeciesId(0),
+                energy,
+                born_era: 0,
+            }),
+            ..world.cells[idx]
+        };
+        (world, config)
+    }
+
+    #[test]
+    fn chemolithotroph_with_no_toxicity_behaves_like_dark_photolithic() {
+        // Mirrors `decomposer_with_no_residue_behaves_like_dark_photolithic`:
+        // zero gain source ⇒ loses `chemolithotroph_upkeep` per tick, same
+        // shape as an isolated photolithic organism in the dark.
+        let (mut world, config) = world_with_one_chemolithotroph(0.5, 0.0, config_seed_energy());
+        let (cx, cy) = (world.width / 2, world.height / 2);
+
+        step(&mut world, &config);
+        let organism = world.get(cx, cy).organism.expect("survives the first tick");
+        assert!(
+            (organism.energy - (config_seed_energy() - config.energy.chemolithotroph_upkeep)).abs()
+                < TOLERANCE,
+            "expected net -upkeep/tick with no toxicity, got {}",
+            organism.energy - config_seed_energy()
+        );
+
+        for _ in 0..200 {
+            if world.get(cx, cy).organism.is_none() {
+                break;
+            }
+            step(&mut world, &config);
+        }
+        assert!(
+            world.get(cx, cy).organism.is_none(),
+            "chemolithotroph with no toxicity should not survive long-term"
+        );
+    }
+
+    #[test]
+    fn chemolithotroph_in_a_toxic_cell_nets_positive_energy() {
+        let (mut world, mut config) =
+            world_with_one_chemolithotroph(0.5, 0.7, config_seed_energy());
+        // Isolate from environmental drift, mirroring the decomposer
+        // trickle-survival tests' rationale — the exact-math assertion
+        // below assumes this cell's temperature/toxicity stay put.
+        config.environment.diffusion_rate = 0.0;
+        let (cx, cy) = (world.width / 2, world.height / 2);
+
+        step(&mut world, &config);
+
+        let organism = world.get(cx, cy).organism.expect("survives");
+        // fit(temp_optimum == temperature) == 1.0: gain = 0.7 *
+        // chemolithotroph_metabolism_gain(2.0) * 1.0 = 1.4; net =
+        // 5.0 + 1.4 - chemolithotroph_upkeep(0.5) = 5.9.
+        let expected = config_seed_energy() + 0.7 * config.energy.chemolithotroph_metabolism_gain
+            - config.energy.chemolithotroph_upkeep;
+        assert!(
+            (organism.energy - expected).abs() < TOLERANCE,
+            "expected net positive gain in a toxic cell, got {} (expected {})",
+            organism.energy,
+            expected
+        );
+        assert!(
+            organism.energy > config_seed_energy(),
+            "a chemolithotroph in toxicity should gain energy, not lose it"
+        );
+    }
+
+    #[test]
+    fn chemolithotroph_gain_scales_with_env_fit() {
+        // Same toxicity, two different temperature mismatches: the
+        // well-matched organism must net more energy than the poorly
+        // matched one, confirming `fit` still gates chemolithotroph gain
+        // exactly like it does for the other three metabolisms.
+        let (mut matched_world, config) =
+            world_with_one_chemolithotroph(0.5, 0.7, config_seed_energy());
+        let (mut mismatched_world, _) =
+            world_with_one_chemolithotroph(0.5, 0.7, config_seed_energy());
+        mismatched_world.species[0].temp_optimum = 0.9;
+
+        step(&mut matched_world, &config);
+        step(&mut mismatched_world, &config);
+
+        let (cx, cy) = (matched_world.width / 2, matched_world.height / 2);
+        let matched_energy = matched_world.get(cx, cy).organism.expect("survives").energy;
+        let mismatched_energy = mismatched_world
+            .get(cx, cy)
+            .organism
+            .expect("survives")
+            .energy;
+        assert!(
+            matched_energy > mismatched_energy,
+            "a well-matched chemolithotroph ({matched_energy}) should out-gain a \
+             poorly-matched one ({mismatched_energy})"
         );
     }
 

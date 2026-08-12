@@ -477,6 +477,7 @@ fn resource_absence_phrase(metabolism: Metabolism) -> &'static str {
         Metabolism::Photolithic => "there was no light here",
         Metabolism::Predator => "there was no prey nearby",
         Metabolism::Decomposer => "there was no residue to feed on",
+        Metabolism::Chemolithotroph => "there was no toxicity here to draw on",
     }
 }
 
@@ -507,6 +508,7 @@ pub fn death_cause_short_label(cause: DominantDeathCause, metabolism: Metabolism
             Metabolism::Photolithic => "no light",
             Metabolism::Predator => "no prey",
             Metabolism::Decomposer => "no residue",
+            Metabolism::Chemolithotroph => "no toxicity",
         },
         DominantDeathCause::Predation => "predation",
         DominantDeathCause::Crowding => "crowded",
@@ -648,14 +650,15 @@ pub fn species_catalog_line(
     )
 }
 
-/// Population and origin era for one species' catalog row (task 103's
-/// extension) — separate from `species_catalog_line` since those two fields
-/// come from different sources (`world.cells` scan vs.
-/// `SimWorld::species_origin_era`) and are easier to reason about as their
-/// own small line. `origin_era` is `None` for a species still sitting in
-/// the available roster with nothing ever placed (`SimWorld::
-/// species_ever_placed`) — showing a "seeded era" for a species that was
-/// never actually seeded would be misleading, not merely incomplete.
+/// Population and seeded era for one species' catalog row (task 103's
+/// extension, corrected by a 103 follow-up) — separate from
+/// `species_catalog_line` since those two fields come from different
+/// sources (`world.cells` scan vs. `SimWorld::species_seeded_era`) and are
+/// easier to reason about as their own small line. `origin_era` is `None`
+/// for a species still sitting in the available roster with nothing ever
+/// placed (`SimWorld::species_seeded_era` stays `None` until then) —
+/// showing a "seeded era" for a species that was never actually seeded
+/// would be misleading, not merely incomplete.
 pub fn species_population_line(population: usize, origin_era: Option<u32>) -> String {
     match origin_era {
         Some(era) => format!("Population {population} · seeded era {era}"),
@@ -676,6 +679,7 @@ pub fn metabolism_legend_line(metabolism: Metabolism) -> String {
         Metabolism::Photolithic => "draws its energy from light",
         Metabolism::Predator => "hunts adjacent organisms for energy",
         Metabolism::Decomposer => "feeds on residue left behind by the dead",
+        Metabolism::Chemolithotroph => "draws its energy from environmental toxicity",
     };
     format!("{diet}, reproducing once its energy reaches its threshold.")
 }

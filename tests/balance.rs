@@ -34,7 +34,7 @@
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::step;
-use abiogenesis::world::{Organism, SimWorld, SpeciesId};
+use abiogenesis::world::{Metabolism, Organism, SimWorld, Species, SpeciesId};
 use abiogenesis::worldgen::generate_starting_palette;
 
 /// Long enough for a bloom to grow, saturate, and settle (suggested
@@ -222,6 +222,87 @@ fn bloom_usually_grows_then_stabilises_across_seeds() {
          {STABILITY_WINDOW} ticks, got {}/{} ({:.0}%)",
         MAX_UNSTABLE_RATE * 100.0,
         unstable,
+        SURVEY_SEED_COUNT,
+        rate * 100.0
+    );
+}
+
+/// Deliberately much shorter than `RUN_TICKS` (unlike the other tests in
+/// this file): unlike heat sources (`reinject_environment_sources`), the
+/// toxic zone has no reinjection — `toxicity` just diffuses toward ambient
+/// like any unreinforced scalar, so over `RUN_TICKS`' 500-tick horizon it
+/// erodes and a chemolithotroph's local advantage fades with it,
+/// regardless of how well the metabolism itself works. That's a real
+/// environment-persistence question, but a separate one from "does this
+/// metabolism correctly gain energy from toxicity" — task 108's own scope
+/// — so this measures short-horizon viability only, well past the ~7-tick
+/// "obviously starving" baseline other tests in this file use, without
+/// being confounded by toxic-zone decay this task isn't scoped to address.
+const CHEMOLITHOTROPH_SURVIVAL_TICKS: usize = 100;
+
+/// Task 108: `generate_starting_palette`/`place_starting_organisms` never
+/// place a `Chemolithotroph` (bonus species from `add_bonus_species` are
+/// available for `Seed`, not pre-placed), so the nominal scenario above
+/// doesn't naturally exercise it. This is the minimum bar the task's own
+/// acceptance criteria set instead: seed one directly into each seed's
+/// toxic zone (guaranteed to exist and overlap enough placeable land, per
+/// `world.rs`'s `toxic_zone_always_overlaps_enough_placeable_land`), at a
+/// `temp_optimum` matched to that cell so `env_fit` isn't confounding the
+/// measurement, and confirm it doesn't crash and usually doesn't
+/// immediately collapse — not a full bloom/stability sweep like the tests
+/// above, just "this metabolism is actually viable where it's supposed to
+/// be," the same bar `decomposer`/`predator` cleared informally by already
+/// existing in the codebase before any balance test targeted them directly.
+#[test]
+fn chemolithotroph_survives_reasonably_in_its_toxic_zone_across_seeds() {
+    let mut collapses = 0;
+    for seed in SURVEY_SEEDS {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(seed, &config);
+        generate_starting_palette(&mut world, &config);
+
+        let idx = (0..world.cells.len())
+            .find(|&idx| {
+                let (x, y) = (idx % world.width, idx / world.width);
+                world.toxic_zone.contains(x, y) && world.is_placeable_index(idx)
+            })
+            .expect("every world guarantees a placeable cell within its toxic zone");
+        let temp_optimum = world.cells[idx].temperature;
+
+        let species_id = world.push_species(Species {
+            name: "ChemoTest".to_string(),
+            metabolism: Metabolism::Chemolithotroph,
+            temp_optimum,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: Vec::new(),
+        });
+        world.cells[idx].organism = Some(Organism {
+            species: species_id,
+            energy: config.energy.seed_energy,
+            born_era: 0,
+        });
+
+        for _ in 0..CHEMOLITHOTROPH_SURVIVAL_TICKS {
+            step(&mut world, &config);
+        }
+
+        let survived = world
+            .cells
+            .iter()
+            .any(|c| c.organism.is_some_and(|o| o.species == species_id));
+        if !survived {
+            collapses += 1;
+        }
+    }
+    let rate = collapses as f32 / SURVEY_SEED_COUNT as f32;
+
+    assert!(
+        rate <= MAX_EXTINCTION_RATE,
+        "expected at most {:.0}% of seeds to lose a well-matched, well-placed \
+         chemolithotroph entirely, got {}/{} ({:.0}%)",
+        MAX_EXTINCTION_RATE * 100.0,
+        collapses,
         SURVEY_SEED_COUNT,
         rate * 100.0
     );
