@@ -9,6 +9,35 @@
 
 ---
 
+## ✅ Outcome (2026-08-12)
+
+Implemented as scoped, with the static-recompute layout choice (no
+force-directed physics). `hypothesis_grid` now computes a `visible: Vec<usize>`
+of tag indices with `!has_no_evidence(...)`, lays out `positions` only over
+that subset (indexed by tag index for simple lookups; unused slots keep a
+default `center` value that's never read), and both the edge- and
+node-drawing loops iterate `visible` only — the edge-visibility acceptance
+criterion held without a separate check, as expected (an edge can only exist
+where evidence is nonzero on at least one side, which already implies both
+endpoints are visible). `draw_dashed_ring` and its constants
+(`DASHED_RING_MARGIN`/`SEGMENTS`/`COLOR`) removed — grep confirmed
+`hypothesis_grid` was the only call site. Empty state (`visible.is_empty()`)
+draws `text::NO_OBSERVATIONS_YET` centered in the painter's rect, reusing the
+same constant the log panel's empty state already uses rather than adding a
+grid-specific one — it reads naturally standalone. No pop-in/fade-in
+animation added (the static-reveal option the acceptance criteria allowed).
+`node_tooltip_text`'s `lines.len() == 1` fallback is now unreachable in
+practice (a node that would trigger it never renders) — left in place with a
+one-line doc comment rather than removed, per the task's own guidance.
+`cargo test`/`cargo clippy -- -D warnings` clean; no new unit tests (this
+function is pure `egui::Painter` drawing with no headless-testable surface,
+consistent with `hypothesis_grid` having none before this task either). Live
+`cargo run` check limited to a clean-boot smoke test, same sandbox
+constraint noted in task 100's outcome — no interactive window automation
+available to drive several eras and inspect the grid visually.
+
+---
+
 ## 🎯 Objective
 
 Live screenshot review (redesign doc) found 3 of 5 active tags sitting inert

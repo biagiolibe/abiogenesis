@@ -529,6 +529,17 @@ const PARTIAL_MARKER_T: f32 = 0.65;
 /// skipped entirely rather than drawn as a self-loop — there was never a
 /// real hypothesis there.
 ///
+/// **Reveal-on-first-observation (task 101):** a tag with zero evidence in
+/// every direction (`has_no_evidence`) doesn't occupy a node slot at all —
+/// no ghost/placeholder ring, it simply isn't laid out yet. Positions are
+/// recomputed each call over just the currently-visible subset, evenly
+/// spaced, so a 2-visible-tag state and a 5-visible-tag state both read as
+/// evenly laid out rather than a couple of dots lost in a mostly-empty ring.
+/// This is a static recompute-on-reveal, not a force-directed layout —
+/// deliberately, evidence is monotonic within a run (`MatrixKnowledge::
+/// record` only adds) so a tag never needs to disappear again once visible,
+/// and continuous physics was judged not worth the complexity here.
+///
 /// Player-authored conjectures (GDD §5.9's `±?` state — marking a guess
 /// before it's confirmed) aren't implemented: cut for this task, left as a
 /// follow-up rather than a half-built annotation feature.
@@ -540,16 +551,36 @@ fn hypothesis_grid(ui: &mut egui::Ui, world: &SimWorld, knowledge: &MatrixKnowle
     let center = rect.center();
     let radius = (rect.width().min(rect.height()) / 2.0 - NODE_RADIUS - 6.0).max(10.0);
 
-    let positions: Vec<egui::Pos2> = (0..tags.len())
-        .map(|i| {
-            let angle =
-                i as f32 / tags.len() as f32 * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
-            center + radius * egui::vec2(angle.cos(), angle.sin())
-        })
+    // Only tags with at least some evidence occupy a slot on the ring — an
+    // untouched tag is invisible rather than a dashed-ring placeholder (task
+    // 101), so the layout is always evenly spaced for however many tags are
+    // *currently* relevant instead of reserving a slot for the full pool.
+    let visible: Vec<usize> = (0..tags.len())
+        .filter(|&i| !has_no_evidence(TagSlot(i as u8), tags.len(), knowledge))
         .collect();
 
-    for ei in 0..tags.len() {
-        for ri in 0..tags.len() {
+    if visible.is_empty() {
+        painter.text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            text::NO_OBSERVATIONS_YET,
+            egui::FontId::proportional(13.0),
+            ui.visuals().weak_text_color(),
+        );
+        return;
+    }
+
+    // Indexed by tag index (not position within `visible`) so lookups below
+    // stay simple; entries for invisible tags are never read.
+    let mut positions = vec![center; tags.len()];
+    for (vi, &i) in visible.iter().enumerate() {
+        let angle =
+            vi as f32 / visible.len() as f32 * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
+        positions[i] = center + radius * egui::vec2(angle.cos(), angle.sin());
+    }
+
+    for &ei in &visible {
+        for &ri in &visible {
             if ei == ri {
                 continue;
             }
@@ -567,12 +598,10 @@ fn hypothesis_grid(ui: &mut egui::Ui, world: &SimWorld, knowledge: &MatrixKnowle
         }
     }
 
-    for (i, &tag) in tags.iter().enumerate() {
+    for &i in &visible {
+        let tag = tags[i];
         let slot = TagSlot(i as u8);
         let pos = positions[i];
-        if has_no_evidence(slot, tags.len(), knowledge) {
-            draw_dashed_ring(&painter, pos, NODE_RADIUS + DASHED_RING_MARGIN);
-        }
         painter.circle_filled(pos, NODE_RADIUS, tag_color(tag));
         painter.text(
             pos,
@@ -647,9 +676,9 @@ fn draw_edge(
 }
 
 /// Whether a tag has zero evidence in *every* direction against every other
-/// active tag — drives the dashed-ring marker (task 061) distinguishing "no
-/// observation has ever touched this tag" from a tag with at least some
-/// partial or confirmed evidence.
+/// active tag — drives node visibility on the hypothesis grid (task 101):
+/// distinguishes "no observation has ever touched this tag" (not drawn) from
+/// a tag with at least some partial or confirmed evidence (drawn).
 fn has_no_evidence(slot: TagSlot, tag_count: usize, knowledge: &MatrixKnowledge) -> bool {
     (0..tag_count).all(|oi| {
         if oi == slot.0 as usize {
@@ -658,29 +687,6 @@ fn has_no_evidence(slot: TagSlot, tag_count: usize, knowledge: &MatrixKnowledge)
         let other = TagSlot(oi as u8);
         knowledge.evidence(slot, other) == 0.0 && knowledge.evidence(other, slot) == 0.0
     })
-}
-
-/// Margin between a zero-evidence node's dashed ring and its filled circle.
-const DASHED_RING_MARGIN: f32 = 3.0;
-/// Number of dash segments around the ring's circumference.
-const DASHED_RING_SEGMENTS: usize = 16;
-const DASHED_RING_COLOR: egui::Color32 = egui::Color32::from_gray(160);
-
-/// Approximates a dashed circle outline (egui's `Painter` has no built-in
-/// dashed-circle primitive) as alternating short arcs, each drawn as a small
-/// straight line segment — accurate enough at `NODE_RADIUS` scale, cheaper
-/// than a true arc tessellation.
-fn draw_dashed_ring(painter: &egui::Painter, center: egui::Pos2, radius: f32) {
-    for i in 0..DASHED_RING_SEGMENTS {
-        if i % 2 != 0 {
-            continue;
-        }
-        let a0 = i as f32 / DASHED_RING_SEGMENTS as f32 * std::f32::consts::TAU;
-        let a1 = (i as f32 + 0.6) / DASHED_RING_SEGMENTS as f32 * std::f32::consts::TAU;
-        let p0 = center + radius * egui::vec2(a0.cos(), a0.sin());
-        let p1 = center + radius * egui::vec2(a1.cos(), a1.sin());
-        painter.line_segment([p0, p1], egui::Stroke::new(1.5, DASHED_RING_COLOR));
-    }
 }
 
 /// A small, dim, lineless dot (task 028) marking a pair with `evidence >
@@ -734,6 +740,11 @@ fn node_tooltip_text(
             ));
         }
     }
+    // Unreachable since task 101: a node with no evidence in either
+    // direction never renders (see `hypothesis_grid`'s `visible` filter), so
+    // this fallback can never actually be hovered. Left in rather than
+    // removed — harmless, and still correct if a future caller ever invokes
+    // `node_tooltip_text` for a non-visible tag.
     if lines.len() == 1 {
         lines.push(text::NO_OBSERVATIONS_YET.to_string());
     }
