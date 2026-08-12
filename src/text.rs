@@ -354,10 +354,9 @@ pub fn extinction_message(species_label: &str) -> String {
 
 /// A curated once-per-era summary of `OrganismBorn` events (task 063) — the
 /// real "individuals crossed `repro_threshold`" signal, replacing the old
-/// misleading average-vs-threshold comparison on the HUD. Deliberately the
-/// opposite curation choice from `observation_message` (task 061, which
-/// logs every single adjacency): a zero-birth species gets no line, keeping
-/// this a summary rather than a per-birth flood.
+/// misleading average-vs-threshold comparison on the HUD: a zero-birth
+/// species gets no line, keeping this a summary rather than a per-birth
+/// flood.
 pub fn birth_log_message(species_label: &str, count: u32) -> String {
     format!("{species_label}: +{count} births this era")
 }
@@ -405,16 +404,6 @@ pub fn player_organism_death_message(
         -crowding_penalty + 0.0,
         -predation_loss + 0.0,
     )
-}
-
-/// A single `AdjacencyObserved` event (task 061), logged for every raw
-/// observation rather than only the ones that cross the confirmation
-/// threshold — the isolation principle (GDD §7) made visible by
-/// reinforcement, not just prose. Short and distinct from
-/// `confirmation_message` so the two don't read as duplicates next to each
-/// other in the log.
-pub fn observation_message(from_glyph: &str, to_glyph: &str) -> String {
-    format!("{from_glyph} → {to_glyph} observed")
 }
 
 /// A matrix cell crossing the confirmation threshold (GDD §7's "aha"

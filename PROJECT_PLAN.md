@@ -209,7 +209,7 @@ redesign — all explicitly flagged as not design-ready in their source docs.
 - `[ ]` 097 — Conditional tag catalog badge + (tag, terrain) evidence track (depends on 096, 103) → [097](tasks/097-mondo-vivo-conditional-tag-catalog-badge.md)
 - `[x]` 098 — Wild, pre-existing species at world generation → [098](tasks/done/098-mondo-vivo-wild-species.md)
 - `[x]` 099 — Reveal-on-first-zone-entry for conditional tags (depends on 096) → [099](tasks/done/099-mondo-vivo-zone-entry-reveal.md)
-- `[ ]` 100 — Strip raw per-tick noise from the observation log → [100](tasks/100-notebook-log-rework.md)
+- `[x]` 100 — Strip raw per-tick noise from the observation log → [100](tasks/done/100-notebook-log-rework.md)
 - `[ ]` 101 — Hypothesis grid: reveal-on-first-observation, layout over visible subset only → [101](tasks/101-notebook-grid-visibility-layout.md)
 - `[ ]` 102 — Hypothesis grid: edge grammar rewrite (thickness, dashed partial lines, curved bidirectional arcs) → [102](tasks/102-notebook-grid-edge-grammar.md)
 - `[ ]` 103 — Catalog: one-time metabolism legend, trimmed species rows, population + origin era (extended 2026-08-12, see "HUD & Notebook redesign follow-up" below) → [103](tasks/103-notebook-catalog-cleanup.md)

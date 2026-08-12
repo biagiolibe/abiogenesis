@@ -9,6 +9,25 @@
 
 ---
 
+## ✅ Outcome (2026-08-12)
+
+Implemented as scoped: `LogEntry`/`EvidenceQuality`/`evidence_quality_color`/
+`EVIDENCE_DOT_GLYPH` removed (no other caller), `text::observation_message`
+removed, `notebook_window`'s three-way match simplified to two cases
+(`Some(species)` / `None`). Replaced the three `evidence_quality`-asserting
+tests with one (`an_unconfirmed_observation_logs_nothing_but_still_
+accumulates_evidence`) covering the actual new behavior; the third original
+test (extinction entries carrying no `evidence_quality`) was redundant with
+existing `record_events` coverage once the field is gone, not replaced.
+`cargo test`/`cargo clippy -- -D warnings` clean. Live `cargo run` check was
+limited to confirming a clean boot (no panic) — this session's sandbox
+doesn't support driving the native window interactively (no accessibility
+automation set up, background process torn down with the shell), so the
+full "play several eras, open the Notebook" walkthrough wasn't performed;
+the unit test above exercises the exact same code path headlessly.
+
+---
+
 ## 🎯 Objective
 
 `player_guide.md` promises the observation log is "a curated feed of what

@@ -33,28 +33,6 @@ pub struct LogEntry {
     pub era: u32,
     pub species: Option<SpeciesId>,
     pub text: String,
-    pub evidence_quality: Option<EvidenceQuality>,
-}
-
-/// An `AdjacencyObserved` event's evidence quality (GDD §7: "an isolated
-/// observation is worth more"), derived straight from `n_confounders` —
-/// `Clean` when the observation had none, `Confounded` otherwise. `None` on
-/// `LogEntry` for every other entry kind (deaths, extinctions, confirmations,
-/// species-created), which carry no per-observation weight to show.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EvidenceQuality {
-    Clean,
-    Confounded,
-}
-
-impl EvidenceQuality {
-    fn from_confounders(n_confounders: u32) -> Self {
-        if n_confounders == 0 {
-            EvidenceQuality::Clean
-        } else {
-            EvidenceQuality::Confounded
-        }
-    }
 }
 
 /// Ordered (oldest first), ever-growing record of salient events.
@@ -241,12 +219,6 @@ fn accumulate_evidence(
     for event in observed.read() {
         let from_glyph = tag_glyph(world.active_tags[event.exerter_tag.0 as usize]);
         let to_glyph = tag_glyph(world.active_tags[event.receiver_tag.0 as usize]);
-        log.entries.push(LogEntry {
-            era: world.era,
-            species: None,
-            text: text::observation_message(from_glyph, to_glyph),
-            evidence_quality: Some(EvidenceQuality::from_confounders(event.n_confounders)),
-        });
 
         let weight =
             config.notebook.observation_weight_numerator / (1.0 + event.n_confounders as f32);
@@ -257,7 +229,6 @@ fn accumulate_evidence(
                 era: world.era,
                 species: None,
                 text: text::confirmation_message(from_glyph, to_glyph, positive),
-                evidence_quality: None,
             });
             unseen.0 = true;
         }
@@ -339,7 +310,6 @@ fn record_events(
             era: world.era,
             species: Some(event.species),
             text: text::extinction_message(&species_label(&world, event.species)),
-            evidence_quality: None,
         });
     }
 
@@ -348,7 +318,6 @@ fn record_events(
             era: world.era,
             species: None,
             text: text::objective_advanced_message(event.index),
-            evidence_quality: None,
         });
     }
 
@@ -361,7 +330,6 @@ fn record_events(
                 tag_glyph(event.tag),
                 event.terrain,
             ),
-            evidence_quality: None,
         });
     }
 
@@ -381,7 +349,6 @@ fn record_events(
                     event.crowding_penalty,
                     event.predation_loss,
                 ),
-                evidence_quality: None,
             });
         }
     }
@@ -392,9 +359,8 @@ fn record_events(
 /// one birth that era ("Kael: +3 births this era") and resets the tally.
 /// The real "individuals crossed `repro_threshold`" signal (task 063),
 /// replacing the old HUD average-vs-threshold comparison that could never
-/// actually show this. Deliberately the opposite curation choice from
-/// `accumulate_evidence`'s per-observation logging (task 061): a zero-birth
-/// species gets no line, keeping this a once-per-era summary, not a flood.
+/// actually show this: a zero-birth species gets no line, keeping this a
+/// once-per-era summary, not a flood.
 fn tally_births(
     world: Res<SimWorld>,
     mut born: MessageReader<OrganismBorn>,
@@ -427,7 +393,6 @@ fn tally_births(
             era,
             species: Some(species),
             text: text::birth_log_message(&species_label(&world, species), count),
-            evidence_quality: None,
         });
     }
     tally.0.fill(0);
@@ -452,18 +417,6 @@ const TAG_GLYPH: &str = "●";
 /// species-color swatch other entries get — a confirmation is about a tag
 /// pair, not any one species, so there's no `species_color` to render.
 const CONFIRMATION_GLYPH: &str = "★";
-
-/// Marks a per-observation log line (task 061) in place of the species-color
-/// swatch or the confirmation glyph — colored by `EvidenceQuality` so the
-/// isolation principle (GDD §7) is visible at a glance, not just in prose.
-const EVIDENCE_DOT_GLYPH: &str = "●";
-
-fn evidence_quality_color(quality: EvidenceQuality) -> egui::Color32 {
-    match quality {
-        EvidenceQuality::Clean => EDGE_POSITIVE_COLOR,
-        EvidenceQuality::Confounded => PARTIAL_EVIDENCE_COLOR,
-    }
-}
 
 /// Fixed Greek-letter alphabet for `tag_glyph` (task 029): opaque, stable
 /// within a run, deterministic from `TagId` — never a hint at the tag's
@@ -510,17 +463,11 @@ fn notebook_window(
                     }
                     for entry in &log.entries {
                         ui.horizontal(|ui| {
-                            match (entry.species, entry.evidence_quality) {
-                                (Some(species), _) => {
+                            match entry.species {
+                                Some(species) => {
                                     ui.colored_label(species_color(species), TAG_GLYPH);
                                 }
-                                (None, Some(quality)) => {
-                                    ui.colored_label(
-                                        evidence_quality_color(quality),
-                                        EVIDENCE_DOT_GLYPH,
-                                    );
-                                }
-                                (None, None) => {
+                                None => {
                                     ui.label(CONFIRMATION_GLYPH);
                                 }
                             }
@@ -1156,7 +1103,7 @@ mod tests {
     }
 
     #[test]
-    fn a_clean_observation_logs_an_evidence_quality_clean_entry() {
+    fn an_unconfirmed_observation_logs_nothing_but_still_accumulates_evidence() {
         let config = SimConfig::default();
         let world = SimWorld::new(42, &config);
         let mut app = app_for_accumulate_evidence(config, world);
@@ -1173,55 +1120,16 @@ mod tests {
         app.update();
 
         let log = app.world().resource::<ObservationLog>();
-        assert_eq!(log.entries.len(), 1);
         assert_eq!(
-            log.entries[0].evidence_quality,
-            Some(EvidenceQuality::Clean)
+            log.entries.len(),
+            0,
+            "task 100: a raw, non-confirming observation must not log a line"
         );
-        assert_eq!(log.entries[0].species, None);
-    }
-
-    #[test]
-    fn a_confounded_observation_logs_an_evidence_quality_confounded_entry() {
-        let config = SimConfig::default();
-        let world = SimWorld::new(42, &config);
-        let mut app = app_for_accumulate_evidence(config, world);
-
-        app.world_mut()
-            .resource_mut::<Messages<AdjacencyObserved>>()
-            .write(AdjacencyObserved {
-                receiver_species: SpeciesId(0),
-                exerter_tag: TagSlot(0),
-                receiver_tag: TagSlot(1),
-                n_confounders: 2,
-                cell: 0,
-            });
-        app.update();
-
-        let log = app.world().resource::<ObservationLog>();
-        assert_eq!(log.entries.len(), 1);
-        assert_eq!(
-            log.entries[0].evidence_quality,
-            Some(EvidenceQuality::Confounded)
+        let knowledge = app.world().resource::<MatrixKnowledge>();
+        assert!(
+            knowledge.evidence(TagSlot(0), TagSlot(1)) > 0.0,
+            "evidence still accumulates even though nothing was logged"
         );
-    }
-
-    #[test]
-    fn non_adjacency_log_entries_carry_no_evidence_quality() {
-        let config = SimConfig::default();
-        let mut world = SimWorld::new(42, &config);
-        world.era = 3;
-        let mut app = app_for_record_events(world);
-
-        app.world_mut()
-            .resource_mut::<Messages<SpeciesExtinct>>()
-            .write(SpeciesExtinct {
-                species: SpeciesId(2),
-            });
-        app.update();
-
-        let log = app.world().resource::<ObservationLog>();
-        assert_eq!(log.entries[0].evidence_quality, None);
     }
 
     #[test]

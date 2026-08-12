@@ -575,7 +575,6 @@ fn apply_splice(
         era: world.era,
         species: Some(new_species_id),
         text: text::species_created_message(&species_label(&world, new_species_id)),
-        evidence_quality: None,
     });
     budget.points_remaining -= config.time.action_costs.splice;
     *draft = SpliceDraft::default();
