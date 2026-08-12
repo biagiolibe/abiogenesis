@@ -6,10 +6,10 @@ use bevy::prelude::*;
 use rand::RngExt;
 
 use crate::config::{EvolutionConfig, SimConfig};
-use crate::state::EraState;
+use crate::state::{EraState, GameState};
 use crate::world::{
-    ConditionalTag, Metabolism, Mode, Organism, SelectionPressure, SimWorld, SpeciesId, TagId,
-    TagSlot, TerrainKind, TerrainOccupancy,
+    draw_species_name, net_self_interaction, ConditionalTag, Metabolism, Mode, Organism,
+    SelectionPressure, SimWorld, SpeciesId, TagId, TagSlot, TerrainKind, TerrainOccupancy,
 };
 
 /// One organism's energy reached zero and it was removed this tick, with
@@ -56,6 +56,19 @@ pub struct SpeciesExtinct {
 /// population average.
 #[derive(Debug, Clone, Copy, Message)]
 pub struct OrganismBorn {
+    pub species: SpeciesId,
+}
+
+/// A new descendant species was actually created by `speciate` (task 107)
+/// — fired only on success, not on every `SelectionThresholdCrossed`
+/// (which can no-op: cap reached, no valid tag left, self-interacting tag
+/// set). Read-only consumers (`notebook.rs`'s logging) need this "it
+/// actually happened" signal rather than reacting to the crossing event
+/// directly, since `notebook.rs` is documented read-only with respect to
+/// `SimWorld` and must not call the mutating `speciate` itself — mirrors
+/// `OrganismBorn`'s relationship to the tick's raw per-organism data.
+#[derive(Debug, Clone, Copy, Message)]
+pub struct SpeciesEvolved {
     pub species: SpeciesId,
 }
 
@@ -346,6 +359,125 @@ fn accumulate_selection_pressure(
         dominant_terrain: TerrainKind::from_index(dominant_terrain_idx),
         toxicity: pressure.toxicity,
     })
+}
+
+/// Which of task 106's three stimuli contributed the largest share of the
+/// pressure that crossed the threshold — decides which edit
+/// `speciate` applies (task 107's first-pass stimulus→edit mapping,
+/// `redesign/abiogenesis-evolution-xenotypes.md`, extended 2026-08-12).
+/// Ties broken in a fixed preference order (interaction, then terrain, then
+/// toxicity) — arbitrary, but deterministic, matching this codebase's "no
+/// `rand::rng()`, reproducible from the world's own seed" invariant; a real
+/// three-way tie is vanishingly unlikely given these are independent `f32`
+/// accumulations, so which side of the tie-break it falls on barely
+/// matters in practice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DominantStimulus {
+    /// Sustained negative `interaction_delta` (repeatedly harmed by
+    /// adjacency) → the descendant gains an additional tag.
+    InteractionHarm,
+    /// Sustained temperature mismatch on the terrain actually occupied →
+    /// the descendant's `temp_optimum` shifts toward it.
+    TerrainMismatch,
+    /// Sustained `toxicity` exposure → the descendant gains `Sea`
+    /// placement tolerance (see `SimWorld::sea_tolerant_species`'s doc
+    /// comment for why this, not literal toxicity tolerance, is what's
+    /// actually implemented here).
+    Toxicity,
+}
+
+fn dominant_stimulus(event: &SelectionThresholdCrossed) -> DominantStimulus {
+    if event.interaction_harm >= event.terrain_mismatch && event.interaction_harm >= event.toxicity
+    {
+        DominantStimulus::InteractionHarm
+    } else if event.terrain_mismatch >= event.toxicity {
+        DominantStimulus::TerrainMismatch
+    } else {
+        DominantStimulus::Toxicity
+    }
+}
+
+/// GDD §5.3's tags-per-species cap, mirrored from `apply_splice`
+/// (`input.rs`'s `AddTag` handling) rather than read from
+/// `TagConfig::tags_per_species_max` — `apply_splice` itself hardcodes `3`
+/// today, and this function is meant to behave identically to it for the
+/// same edit, not introduce a second source of truth that could drift from
+/// the one `Splice` already uses.
+const MAX_TAGS_PER_SPECIES: usize = 3;
+
+/// Task 107's descendant-creation path: on a qualifying
+/// `SelectionThresholdCrossed`, appends a new `Species` to `world.species`
+/// — the source species is never mutated, only a new entry is appended
+/// (the source doc's load-bearing "evolution never mutates in place"
+/// decision). Mirrors `apply_splice`'s exact shape (`input.rs:505-578`):
+/// clone, edit, draw an independent name, push, allocate `SpeciesId`.
+///
+/// Returns `None` (a silent no-op, matching `apply_splice`'s own rejection
+/// behavior) when: the triggering species no longer exists; the world is
+/// already at `EvolutionConfig::max_species` (the hard `u8`-wraparound
+/// safety cap — checked here, not merely documented); the dominant
+/// stimulus is `InteractionHarm` but the species already carries every
+/// active tag or is already at the cap; or the resulting tag set would
+/// self-interact (mirrors `apply_splice`'s `net_self_interaction` guard).
+///
+/// **Founder placement**: per this task's own documented choice (the
+/// simpler of two options the source doc left open), the triggering
+/// organism's cell is reassigned to the new species — no new placement
+/// logic. If that organism is no longer there by the time this runs (e.g.
+/// it died in between the crossing and this system running), the
+/// descendant is still created — it just starts at population 0, exactly
+/// like a player `Splice` output before the player seeds one.
+pub fn speciate(
+    world: &mut SimWorld,
+    config: &SimConfig,
+    event: &SelectionThresholdCrossed,
+) -> Option<SpeciesId> {
+    if world.species.len() >= config.evolution.max_species {
+        return None;
+    }
+    let source_species = world.species.get(event.species.0 as usize)?;
+    let mut new_species = source_species.clone();
+    new_species.name = draw_species_name(world);
+
+    let grants_sea_tolerance = match dominant_stimulus(event) {
+        DominantStimulus::InteractionHarm => {
+            if new_species.tags.len() >= MAX_TAGS_PER_SPECIES {
+                return None;
+            }
+            // First active tag not already on the species, in `TagSlot`
+            // order — deterministic, no RNG draw needed for this pick.
+            let slot = (0..world.active_tags.len())
+                .map(|i| TagSlot(i as u8))
+                .find(|slot| !new_species.tags.contains(slot))?;
+            new_species.tags.push(slot);
+            if net_self_interaction(&world.matrix, &new_species.tags) != 0 {
+                return None;
+            }
+            false
+        }
+        DominantStimulus::TerrainMismatch => {
+            let warmer = world.cells[event.cell].temperature > new_species.temp_optimum;
+            let delta = if warmer {
+                config.energy.splice_temp_shift
+            } else {
+                -config.energy.splice_temp_shift
+            };
+            new_species.temp_optimum = (new_species.temp_optimum + delta).clamp(0.0, 1.0);
+            false
+        }
+        DominantStimulus::Toxicity => true,
+    };
+
+    let new_species_id = world.push_species(new_species);
+    if grants_sea_tolerance {
+        world.sea_tolerant_species.push(new_species_id);
+    }
+    if let Some(organism) = world.cells[event.cell].organism.as_mut() {
+        if organism.species == event.species {
+            organism.species = new_species_id;
+        }
+    }
+    Some(new_species_id)
 }
 
 pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
@@ -686,7 +818,10 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
             let repro_tags = species.tags.clone();
             let empty_neighbours: Vec<usize> = world
                 .moore_neighbours(x, y)
-                .filter(|&n| world.cells[n].organism.is_none() && world.is_placeable_index(n))
+                .filter(|&n| {
+                    world.cells[n].organism.is_none()
+                        && world.is_placeable_index_for(n, organism.species)
+                })
                 .collect();
             if !empty_neighbours.is_empty() {
                 let pick = world.rng_mut().random_range(0..empty_neighbours.len());
@@ -808,11 +943,27 @@ impl Plugin for SimPlugin {
         app.add_message::<TerrainRevealed>();
         app.add_message::<TerrainGateObserved>();
         app.add_message::<SelectionThresholdCrossed>();
+        app.add_message::<SpeciesEvolved>();
         app.add_systems(
             FixedUpdate,
             advance_tick
                 .in_set(SimSet::Advance)
                 .run_if(in_state(EraState::Advancing)),
+        );
+        // `Update`, not `FixedUpdate`/`SimSet::Advance` (task 107): this
+        // only reads already-drained `SelectionThresholdCrossed` messages
+        // and mutates `SimWorld` in response — it doesn't need to run in
+        // lockstep with tick advancement, and gating it to
+        // `EraState::Advancing` would miss crossings produced by
+        // `single_tick`'s manual-tick path (`input.rs`), which runs
+        // outside `Advancing`. Mirrors `notebook.rs`'s message-consuming
+        // systems' scheduling (`Update`, gated on `GameState::Playing`
+        // only) even though this one mutates `SimWorld` and they don't —
+        // `notebook.rs` is documented read-only, so the mutating half of
+        // task 107 belongs here in `sim`, not there.
+        app.add_systems(
+            Update,
+            speciate_on_threshold_crossed.run_if(in_state(GameState::Playing)),
         );
     }
 }
@@ -872,10 +1023,26 @@ fn advance_tick(
     }
 }
 
+/// Thin Bevy wrapper (task 107) around the pure `speciate`: reads every
+/// `SelectionThresholdCrossed` drained this frame and, for each one that
+/// actually produces a descendant, writes `SpeciesEvolved` for read-only
+/// consumers (`notebook.rs`'s logging) to react to.
+fn speciate_on_threshold_crossed(
+    mut world: ResMut<SimWorld>,
+    config: Res<SimConfig>,
+    mut crossed: MessageReader<SelectionThresholdCrossed>,
+    mut evolved: MessageWriter<SpeciesEvolved>,
+) {
+    for event in crossed.read() {
+        if let Some(species) = speciate(&mut world, &config, event) {
+            evolved.write(SpeciesEvolved { species });
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::GameState;
     use crate::world::{
         Cell, ConditionalTag, Species, SpeciesId, TagId, TagMatrix, TagSlot, TerrainKind,
     };
@@ -1152,6 +1319,7 @@ mod tests {
         app.add_message::<TerrainRevealed>();
         app.add_message::<TerrainGateObserved>();
         app.add_message::<SelectionThresholdCrossed>();
+        app.add_message::<SpeciesEvolved>();
         app.add_systems(Update, advance_tick.run_if(in_state(EraState::Advancing)));
 
         app.world_mut()
@@ -2322,6 +2490,7 @@ mod tests {
             interaction_harm_weight: 1.0,
             terrain_mismatch_weight: 1.0,
             toxicity_weight: 1.0,
+            max_species: 40,
         }
     }
 
@@ -2546,5 +2715,176 @@ mod tests {
         let crossed = crossed.expect("sustained toxicity exposure should cross the threshold");
         assert_eq!(crossed.species, SpeciesId(0));
         assert!(crossed.toxicity > 0.0);
+    }
+
+    /// A world with two active tags, a neutral (all-zero) matrix, and one
+    /// species carrying only `TagSlot(0)`, placed at the grid's center —
+    /// mirrors `input.rs`'s `world_with_one_taggable_species` fixture, the
+    /// precedent for deterministic tag-edit tests independent of a seed's
+    /// randomly-generated matrix.
+    fn world_for_speciation() -> (SimWorld, SimConfig, usize) {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.active_tags = vec![TagId(0), TagId(1)];
+        world.matrix = TagMatrix::from_values(2, vec![0, 0, 0, 0]);
+        world.push_species(Species {
+            name: "Source".to_string(),
+            metabolism: Metabolism::Photolithic,
+            temp_optimum: 0.5,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: vec![TagSlot(0)],
+        });
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let idx = world.index(cx, cy);
+        world.cells[idx].organism = Some(Organism {
+            species: SpeciesId(0),
+            energy: 5.0,
+            born_era: 0,
+        });
+        (world, config, idx)
+    }
+
+    fn toxicity_dominant_event(species: SpeciesId, cell: usize) -> SelectionThresholdCrossed {
+        SelectionThresholdCrossed {
+            species,
+            cell,
+            interaction_harm: 0.0,
+            terrain_mismatch: 0.0,
+            dominant_terrain: TerrainKind::Plain,
+            toxicity: 5.0,
+        }
+    }
+
+    fn interaction_harm_dominant_event(
+        species: SpeciesId,
+        cell: usize,
+    ) -> SelectionThresholdCrossed {
+        SelectionThresholdCrossed {
+            species,
+            cell,
+            interaction_harm: 5.0,
+            terrain_mismatch: 0.0,
+            dominant_terrain: TerrainKind::Plain,
+            toxicity: 0.0,
+        }
+    }
+
+    #[test]
+    fn a_qualifying_crossing_produces_exactly_one_new_species_and_leaves_the_parent_unchanged() {
+        let (mut world, config, idx) = world_for_speciation();
+        let source_before = world.species[0].clone();
+        let event = toxicity_dominant_event(SpeciesId(0), idx);
+
+        let new_id = speciate(&mut world, &config, &event).expect("qualifying crossing");
+
+        assert_eq!(world.species.len(), 2);
+        assert_eq!(new_id, SpeciesId(1));
+        assert_eq!(
+            world.species[0], source_before,
+            "the source species must never be mutated in place"
+        );
+        // Toxicity-dominant grants Sea tolerance, not a tag/temp edit.
+        assert!(world.is_sea_tolerant(new_id));
+        // Founder placement: the triggering organism's cell now belongs to
+        // the descendant (this task's documented "simpler of two options"
+        // choice — no new placement logic).
+        assert_eq!(world.cells[idx].organism.unwrap().species, new_id);
+    }
+
+    #[test]
+    fn interaction_harm_dominant_descendant_tags_stay_within_active_tags() {
+        let (mut world, config, idx) = world_for_speciation();
+        let event = interaction_harm_dominant_event(SpeciesId(0), idx);
+
+        let new_id = speciate(&mut world, &config, &event).expect("qualifying crossing");
+
+        let descendant = &world.species[new_id.0 as usize];
+        assert!(descendant.tags.len() > world.species[0].tags.len());
+        for &slot in &descendant.tags {
+            assert!(
+                (slot.0 as usize) < world.active_tags.len(),
+                "descendant tag {slot:?} is outside world.active_tags"
+            );
+        }
+    }
+
+    #[test]
+    fn a_self_interacting_tag_addition_is_rejected_not_partially_applied() {
+        let (mut world, config, idx) = world_for_speciation();
+        // tag0 -> tag1 = +1, tag1 -> tag0 = +1: adding tag1 to a species
+        // that already carries tag0 makes it net self-reinforcing.
+        world.matrix = TagMatrix::from_values(2, vec![0, 1, 1, 0]);
+        let event = interaction_harm_dominant_event(SpeciesId(0), idx);
+
+        let result = speciate(&mut world, &config, &event);
+
+        assert!(
+            result.is_none(),
+            "a self-reinforcing tag addition must no-op, not partially apply"
+        );
+        assert_eq!(
+            world.species.len(),
+            1,
+            "no descendant should have been appended"
+        );
+    }
+
+    #[test]
+    fn speciation_is_a_no_op_once_max_species_is_reached() {
+        let (mut world, mut config, idx) = world_for_speciation();
+        config.evolution.max_species = world.species.len();
+        let event = toxicity_dominant_event(SpeciesId(0), idx);
+
+        assert!(speciate(&mut world, &config, &event).is_none());
+        assert_eq!(world.species.len(), 1);
+    }
+
+    #[test]
+    fn speciation_no_ops_for_a_species_that_no_longer_exists() {
+        let (mut world, config, idx) = world_for_speciation();
+        let event = toxicity_dominant_event(SpeciesId(5), idx);
+
+        assert!(speciate(&mut world, &config, &event).is_none());
+        assert_eq!(world.species.len(), 1);
+    }
+
+    /// End-to-end verification (task 107's live-verification acceptance
+    /// criterion, exercised headlessly like task 106's equivalent test):
+    /// sustained toxicity exposure through real `step()` calls eventually
+    /// crosses the threshold, and feeding that *actual* emitted event into
+    /// `speciate` produces a distinct descendant without touching the
+    /// parent — the full pure-Rust pipeline `sim::speciate_on_threshold_crossed`
+    /// wires together, without needing a running `App`/GUI to confirm it.
+    #[test]
+    fn a_real_threshold_crossing_from_step_produces_a_descendant_species() {
+        let (mut world, mut config) = world_with_one_organism(0.7, 0.5, 5.0);
+        config.evolution.selection_pressure_threshold = 5.0;
+        let source_name_before = world.species[0].name.clone();
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let idx = world.index(cx, cy);
+
+        let mut crossed = None;
+        for _ in 0..200 {
+            world.cells[idx].toxicity = 1.0;
+            let events = step(&mut world, &config);
+            if let Some(event) = events.selection_thresholds.into_iter().next() {
+                crossed = Some(event);
+                break;
+            }
+        }
+        let event = crossed.expect("sustained toxicity exposure should cross the threshold");
+
+        let new_id = speciate(&mut world, &config, &event).expect("qualifying crossing");
+
+        assert_eq!(world.species.len(), 2);
+        assert_ne!(
+            world.species[new_id.0 as usize].name, source_name_before,
+            "the descendant must draw its own independent name"
+        );
+        assert_eq!(
+            world.species[0].name, source_name_before,
+            "the source species must be unchanged"
+        );
     }
 }

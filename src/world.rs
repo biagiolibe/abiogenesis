@@ -360,6 +360,25 @@ pub struct SimWorld {
     /// codebase; tiny (`WorldgenConfig::wild_species_count` entries), so a
     /// `Vec` scan (`is_wild`) is fine, no `HashMap` needed.
     pub wild_species: Vec<SpeciesId>,
+    /// `SpeciesId`s granted tolerance to `Sea` cells by a speciation event
+    /// (task 107, "toxicity"-dominant stimulus edit) — a small side list,
+    /// same shape as `wild_species` above and for the same reason (avoid
+    /// touching every `Species { .. }` literal in the codebase for a flag
+    /// only a handful of species will ever carry). **Naming note**: the
+    /// source doc calls this edit "toxic-zone placement tolerance," but
+    /// `is_placeable`/`is_placeable_kind` has never actually gated on
+    /// `Cell::toxicity` — only on `TerrainKind::Sea` and mountain peaks —
+    /// and the GDD (§5.2, v0.5 changelog) is explicit that `toxicity` is a
+    /// "declared-but-currently-inert scalar," not read anywhere in the
+    /// tick loop. There is no toxicity hazard to grant tolerance *from*
+    /// yet. This bypasses the one placement gate that actually exists and
+    /// is thematically closest (an environmental-hazard exemption), the
+    /// same kind of doc/code grounding correction task 105 made explicit
+    /// rather than silently building on a false premise. Revisit the name
+    /// and behavior once toxicity gets real mechanical teeth (task 108 or
+    /// later). Peaks are never bypassed — that's a structural
+    /// impassability, not a hazard-tolerance question.
+    pub sea_tolerant_species: Vec<SpeciesId>,
     /// Per-`SpeciesId` terrain-occupancy history (task 099), indexed by
     /// `SpeciesId.0`, grown lazily as `species` grows — see
     /// `TerrainOccupancy`'s own doc comment for why this is shaped
@@ -445,6 +464,7 @@ impl SimWorld {
             sea_distance: Vec::new(),
             ever_populated: false,
             wild_species: Vec::new(),
+            sea_tolerant_species: Vec::new(),
             terrain_occupancy: Vec::new(),
             selection_pressure: Vec::new(),
             species_origin_era: Vec::new(),
@@ -977,6 +997,34 @@ impl SimWorld {
     pub fn is_placeable_index(&self, idx: usize) -> bool {
         let cell = &self.cells[idx];
         is_placeable_kind(cell.terrain, cell.is_peak)
+    }
+
+    /// Whether `species` has been granted `Sea` tolerance by a speciation
+    /// event (task 107) — see `sea_tolerant_species`'s own doc comment.
+    pub fn is_sea_tolerant(&self, species: SpeciesId) -> bool {
+        self.sea_tolerant_species.contains(&species)
+    }
+
+    /// Species-aware variant of `is_placeable` (task 107): identical except
+    /// a `Sea` cell is placeable for a species in `sea_tolerant_species`.
+    /// Peaks stay unplaceable for every species regardless — that gate is
+    /// structural, not a hazard tolerance question.
+    pub fn is_placeable_for(&self, x: usize, y: usize, species: SpeciesId) -> bool {
+        let cell = self.get(x, y);
+        if cell.is_peak {
+            return false;
+        }
+        cell.terrain != TerrainKind::Sea || self.is_sea_tolerant(species)
+    }
+
+    /// Species-aware variant of `is_placeable_index` (task 107), mirroring
+    /// `is_placeable_for`'s `Sea`-tolerance exception.
+    pub fn is_placeable_index_for(&self, idx: usize, species: SpeciesId) -> bool {
+        let cell = &self.cells[idx];
+        if cell.is_peak {
+            return false;
+        }
+        cell.terrain != TerrainKind::Sea || self.is_sea_tolerant(species)
     }
 
     /// The seeded RNG, exposed only through `&mut self` so nobody can clone

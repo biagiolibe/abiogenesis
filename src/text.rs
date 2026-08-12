@@ -380,6 +380,14 @@ pub fn species_created_message(species_label: &str) -> String {
     format!("{species_label} created via Splice")
 }
 
+/// Task 107's simulation-driven counterpart to `species_created_message` —
+/// distinct wording so a player can tell a `Splice` they made apart from a
+/// descendant the simulation produced on its own from sustained selection
+/// pressure.
+pub fn species_evolved_message(species_label: &str) -> String {
+    format!("{species_label} evolved from sustained selection pressure")
+}
+
 /// `env_fit` below this counts as a "poor" fit rather than a "decent" one
 /// (task 104) — `env_fit` is a Gaussian in `(0, 1]`, `1.0` at the species'
 /// exact temperature optimum, so the midpoint is a reasonable first-pass

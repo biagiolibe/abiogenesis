@@ -19,8 +19,8 @@ use abiogenesis::sim::{
 };
 #[cfg(test)]
 use abiogenesis::sim::{
-    AdjacencyObserved, OrganismBorn, OrganismDied, SelectionThresholdCrossed, SpeciesExtinct,
-    TerrainGateObserved, TerrainRevealed,
+    AdjacencyObserved, OrganismBorn, OrganismDied, SelectionThresholdCrossed, SpeciesEvolved,
+    SpeciesExtinct, TerrainGateObserved, TerrainRevealed,
 };
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{draw_species_name, net_self_interaction, Organism, SimWorld, SpeciesId};
@@ -247,7 +247,7 @@ fn attempt_seed(
     if budget.points_remaining < config.time.action_costs.seed {
         return false;
     }
-    if !world.is_placeable(x, y) {
+    if !world.is_placeable_for(x, y, species) {
         return false;
     }
     let index = world.index(x, y);
@@ -1148,6 +1148,7 @@ mod tests {
         app.add_message::<TerrainRevealed>();
         app.add_message::<TerrainGateObserved>();
         app.add_message::<SelectionThresholdCrossed>();
+        app.add_message::<SpeciesEvolved>();
         app.add_message::<ObjectiveAdvanced>();
         app.insert_resource(CurrentObjective::default());
         app.insert_resource(ObjectiveProgress::default());

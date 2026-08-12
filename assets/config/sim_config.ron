@@ -140,5 +140,6 @@
         interaction_harm_weight: 1.0,
         terrain_mismatch_weight: 1.0,
         toxicity_weight: 1.0,
+        max_species: 40,
     ),
 )

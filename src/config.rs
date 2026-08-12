@@ -386,6 +386,14 @@ pub struct EvolutionConfig {
     /// Weight applied to a tick's `Cell::toxicity` exposure before
     /// accumulating.
     pub toxicity_weight: f32,
+    /// Hard cap on `world.species.len()` a speciation event (task 107) will
+    /// ever push past — a correctness requirement, not merely a balance
+    /// knob: `SpeciesId` wraps a `u8` (`world.rs`'s doc comment: "species
+    /// are few and never removed"), and a simulation-driven creator has no
+    /// `ActionBudget` gate the way player `Splice` does, so nothing else
+    /// stops unbounded growth from wrapping/aliasing `SpeciesId`s past
+    /// `u8::MAX`. Kept well under that ceiling.
+    pub max_species: usize,
 }
 
 impl Default for EvolutionConfig {
@@ -395,6 +403,7 @@ impl Default for EvolutionConfig {
             interaction_harm_weight: 1.0,
             terrain_mismatch_weight: 1.0,
             toxicity_weight: 1.0,
+            max_species: 40,
         }
     }
 }

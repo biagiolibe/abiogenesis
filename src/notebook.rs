@@ -11,7 +11,7 @@ use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::ObjectiveAdvanced;
 use abiogenesis::sim::{
-    AdjacencyObserved, EraCompleted, OrganismBorn, OrganismDied, SpeciesExtinct,
+    AdjacencyObserved, EraCompleted, OrganismBorn, OrganismDied, SpeciesEvolved, SpeciesExtinct,
     TerrainGateObserved, TerrainRevealed,
 };
 use abiogenesis::state::GameState;
@@ -413,12 +413,14 @@ fn clear_stray_tab_focus(keys: Res<ButtonInput<KeyCode>>, mut contexts: EguiCont
 ///
 /// TODO: bloom detection (population of a species crossing some multiple of
 /// its starting count within an era) as a second salient-event type.
+#[allow(clippy::too_many_arguments)]
 fn record_events(
     world: Res<SimWorld>,
     mut extinctions: MessageReader<SpeciesExtinct>,
     mut deaths: MessageReader<OrganismDied>,
     mut objectives_advanced: MessageReader<ObjectiveAdvanced>,
     mut terrain_revealed: MessageReader<TerrainRevealed>,
+    mut species_evolved: MessageReader<SpeciesEvolved>,
     mut placed: ResMut<PlayerPlacedCells>,
     mut log: ResMut<ObservationLog>,
 ) {
@@ -427,6 +429,19 @@ fn record_events(
             era: world.era,
             species: Some(event.species),
             text: text::extinction_message(&species_label(&world, event.species)),
+        });
+    }
+
+    // Task 107: logs only on an actual descendant (the mutation itself
+    // already happened in `sim::speciate_on_threshold_crossed` — this
+    // module stays read-only with respect to `SimWorld`, per its own
+    // header comment, so it can only react to the "it happened" signal,
+    // not call `speciate` itself).
+    for event in species_evolved.read() {
+        log.entries.push(LogEntry {
+            era: world.era,
+            species: Some(event.species),
+            text: text::species_evolved_message(&species_label(&world, event.species)),
         });
     }
 
@@ -1210,6 +1225,7 @@ mod tests {
         app.add_message::<OrganismDied>();
         app.add_message::<ObjectiveAdvanced>();
         app.add_message::<TerrainRevealed>();
+        app.add_message::<SpeciesEvolved>();
         app.add_systems(Update, record_events);
         app
     }
