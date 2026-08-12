@@ -389,10 +389,14 @@ pub fn species_created_message(species_label: &str) -> String {
 const POOR_ENV_FIT_THRESHOLD: f32 = 0.5;
 
 /// Which energy-update term (GDD §5.6 step 5) dominated a death, for
-/// `player_organism_death_message`'s qualitative phrasing (task 104).
-/// `TemperatureOrResource` covers `gain` shortfall — a single upstream
-/// signal `env_fit` then splits into the two player-facing causes below.
-enum DominantDeathCause {
+/// `player_organism_death_message`'s qualitative phrasing (task 104) and,
+/// reused rather than reimplemented, task 105's per-era Biosphere cause
+/// label. `TemperatureOrResource` covers `gain` shortfall — a single
+/// upstream signal `env_fit` then splits into the two player-facing causes
+/// below. `PartialEq`/`Eq`/`Copy` (task 105) so `ui.rs::DeathCauseTally` can
+/// tally and compare causes without cloning strings around.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DominantDeathCause {
     Temperature,
     ResourceAbsence,
     Predation,
@@ -426,7 +430,7 @@ enum DominantDeathCause {
 /// branch further splits into `Temperature` vs. `ResourceAbsence` purely
 /// from `env_fit` (`POOR_ENV_FIT_THRESHOLD`), independent of its own
 /// magnitude in the comparison above.
-fn dominant_death_cause(
+pub fn dominant_death_cause(
     gain: f32,
     env_fit: f32,
     interaction_delta: f32,
@@ -480,6 +484,25 @@ fn death_cause_phrase(cause: DominantDeathCause, metabolism: Metabolism) -> &'st
         DominantDeathCause::Predation => "eaten by a predator",
         DominantDeathCause::Crowding => "too crowded here",
         DominantDeathCause::Interaction => "harmed by an interaction with a nearby species",
+    }
+}
+
+/// A short (one-to-two word) label for one `DominantDeathCause` (task 105) —
+/// the Biosphere panel's per-species cause tag next to the trend glyph
+/// (`▼ predation`, `▲ crowded`), too tight for `death_cause_phrase`'s full
+/// sentence fragments. Same qualitative taxonomy, same vagueness rule for
+/// `Interaction` (no number/sign/tag identity), just compressed.
+pub fn death_cause_short_label(cause: DominantDeathCause, metabolism: Metabolism) -> &'static str {
+    match cause {
+        DominantDeathCause::Temperature => "temperature",
+        DominantDeathCause::ResourceAbsence => match metabolism {
+            Metabolism::Photolithic => "no light",
+            Metabolism::Predator => "no prey",
+            Metabolism::Decomposer => "no residue",
+        },
+        DominantDeathCause::Predation => "predation",
+        DominantDeathCause::Crowding => "crowded",
+        DominantDeathCause::Interaction => "interaction",
     }
 }
 

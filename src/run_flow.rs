@@ -28,7 +28,7 @@ use crate::notebook::{
     TerrainKnowledge,
 };
 use crate::render::SeenRelations;
-use crate::ui::{IsolationHint, PopulationTrends, SelectedSpecies, SpliceDraft};
+use crate::ui::{DeathCauseTally, IsolationHint, PopulationTrends, SelectedSpecies, SpliceDraft};
 
 /// Every piece of per-world state a world (re)start resets, bundled into one
 /// `SystemParam` (task 054) — `start_world`'s individual `&mut` arguments
@@ -53,6 +53,7 @@ pub struct WorldResetParams<'w> {
     pub outcome: ResMut<'w, CurrentWorldOutcome>,
     pub grace: ResMut<'w, GraceProgress>,
     pub population_trends: ResMut<'w, PopulationTrends>,
+    pub death_cause_tally: ResMut<'w, DeathCauseTally>,
     pub birth_tally: ResMut<'w, BirthTally>,
     pub seen_relations: ResMut<'w, SeenRelations>,
 }
@@ -115,6 +116,7 @@ pub fn start_world(
     // a stale trend/tally from the previous world would show up mislabeled
     // against the new world's species the moment it exists.
     *reset.population_trends = PopulationTrends::default();
+    *reset.death_cause_tally = DeathCauseTally::default();
     *reset.birth_tally = BirthTally::default();
 }
 
@@ -210,6 +212,7 @@ mod tests {
         ecs_world.insert_resource(outcome);
         ecs_world.insert_resource(GraceProgress::default());
         ecs_world.insert_resource(PopulationTrends::default());
+        ecs_world.insert_resource(DeathCauseTally::default());
         ecs_world.insert_resource(BirthTally::default());
         ecs_world.insert_resource(SeenRelations::new(5));
         ecs_world

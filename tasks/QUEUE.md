@@ -72,7 +72,7 @@ but blocked.
 | `[x]` | 102 | Hypothesis grid: edge grammar rewrite | 101 (soft) | [102](done/102-notebook-grid-edge-grammar.md) |
 | `[x]` | 103 | Catalog: one-time metabolism legend, trimmed species rows, population + origin era | — | [103](done/103-notebook-catalog-cleanup.md) |
 | `[x]` | 104 | Plain-language death message for player-placed organisms | — | [104](done/104-death-message-plain-language.md) |
-| `[ ]` | 105 | Cause label on the Biosphere panel for a species taking deaths | 104 | [105](105-death-biosphere-trend-diagnosis.md) |
+| `[x]` | 105 | Cause label on the Biosphere panel for a species taking deaths | 104 | [105](done/105-death-biosphere-trend-diagnosis.md) |
 | `[ ]` | 106 | Selection pressure accumulation + threshold-crossing trigger | — | [106](106-evolution-selection-pressure-trigger.md) |
 | `[ ]` | 107 | Evolution by speciation: a new descendant species | 106 | [107](107-evolution-speciation.md) |
 | `[ ]` | 108 | Fourth metabolism: chemolithotroph, gain from toxicity | — | [108](108-chemolithotroph-metabolism.md) |

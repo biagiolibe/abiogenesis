@@ -1,5 +1,6 @@
 use bevy::camera::visibility::RenderLayers;
 use bevy::camera::{Camera, ClearColorConfig, Viewport};
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_egui::{
     egui, EguiContexts, EguiGlobalSettings, EguiPrimaryContextPass, PrimaryEguiContext,
@@ -14,7 +15,7 @@ use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::{
     is_grace_active, CurrentObjective, GraceProgress, Objective, ObjectiveProgress,
 };
-use abiogenesis::sim::{ActionBudget, EraCompleted};
+use abiogenesis::sim::{ActionBudget, EraCompleted, OrganismDied};
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{SimWorld, SpeciesId, TagSlot};
 
@@ -230,11 +231,16 @@ impl Plugin for UiPlugin {
             .init_resource::<SpliceDraft>()
             .init_resource::<IsolationHint>()
             .init_resource::<PopulationTrends>()
+            .init_resource::<DeathCauseTally>()
             .init_resource::<HudControlIntents>()
             .add_systems(Startup, spawn_hud_camera)
             .add_systems(
                 Update,
-                (reserve_hud_viewport, update_population_trends)
+                (
+                    reserve_hud_viewport,
+                    update_population_trends,
+                    tally_death_causes,
+                )
                     .run_if(in_state(GameState::Playing)),
             )
             .add_systems(EguiPrimaryContextPass, configure_fonts)
@@ -326,6 +332,18 @@ fn reserve_hud_viewport(
 
 /// Side panel with the numeric readout of GDD §11. Reads `SimWorld`
 /// read-only: the UI never writes simulation state (TECH_DESIGN.md §3.3).
+/// The Biosphere row's two per-era readouts, bundled into one `SystemParam`
+/// (task 105, mirrors `run_flow.rs`'s `WorldResetParams`/`objectives.rs`'s
+/// `ObjectiveOutcomeParams`): `hud_panel` already sat at Bevy's ~16-parameter
+/// system ceiling before `DeathCauseTally` joined `PopulationTrends` as a
+/// second trend-glyph-adjacent readout, so the two are folded into one
+/// parameter here instead of pushing the function over it.
+#[derive(SystemParam)]
+pub struct BiosphereReadouts<'w> {
+    pub trends: Res<'w, PopulationTrends>,
+    pub death_causes: Res<'w, DeathCauseTally>,
+}
+
 #[allow(clippy::too_many_arguments)]
 /// `pub(crate)` (task 091) so `notebook.rs` can order its stray-focus-clear
 /// system `.after(hud_panel)` — the sidebar action buttons this draws are
@@ -344,7 +362,7 @@ pub(crate) fn hud_panel(
     objective_progress: Res<ObjectiveProgress>,
     grace: Res<GraceProgress>,
     unseen_confirmation: Res<NotebookHasUnseenConfirmation>,
-    trends: Res<PopulationTrends>,
+    biosphere: BiosphereReadouts,
     mode: Res<MapViewMode>,
     mut intents: ResMut<HudControlIntents>,
     notebook_open: Res<NotebookWindowOpen>,
@@ -420,8 +438,12 @@ pub(crate) fn hud_panel(
                                 *population,
                                 *avg_energy,
                             ));
-                            let trend = trends.trend_for(*species);
+                            let trend = biosphere.trends.trend_for(*species);
                             ui.colored_label(trend_color(trend), trend_glyph(trend));
+                            if let Some(cause) = biosphere.death_causes.dominant_for(*species) {
+                                let metabolism = world.species[species.0 as usize].metabolism;
+                                ui.weak(text::death_cause_short_label(cause, metabolism));
+                            }
                         });
                     }
                 });
@@ -1143,9 +1165,240 @@ fn trend_color(trend: PopulationTrend) -> egui::Color32 {
     }
 }
 
+/// Per-species dominant death cause for the Biosphere panel (task 105,
+/// `redesign/abiogenesis-death-legibility.md`) — a population-wide
+/// aggregate over *every* death of that species this era (not just
+/// player-placed ones, unlike `notebook.rs`'s death log, GDD §7's
+/// curated-log principle keeping per-organism lines out of scope here).
+/// Gated on deaths actually recorded this era, deliberately independent of
+/// `PopulationTrend`: `species_stats`' average-energy trend can read
+/// `▲`/`▬` while a species is actively being culled (the survivors' average
+/// goes *up* as the weakest die), which is exactly the "predator quietly
+/// starving somewhere on the map" case this label exists to catch.
+#[derive(Resource, Default)]
+pub struct DeathCauseTally {
+    /// Every dominant cause recorded this era, per species, in occurrence
+    /// order — cleared right after each `EraCompleted` is processed below.
+    causes_this_era: Vec<Vec<text::DominantDeathCause>>,
+    /// The cause exposed to the HUD, computed once per `EraCompleted` from
+    /// `causes_this_era` and held stable until the next one (mirrors
+    /// `PopulationTrends::current`'s "only updates once per era" shape).
+    /// `None` for a species with zero deaths that era — not a fabricated
+    /// carry-over from whatever the previous era's dominant cause was.
+    dominant_last_era: Vec<Option<text::DominantDeathCause>>,
+}
+
+impl DeathCauseTally {
+    pub fn dominant_for(&self, species: SpeciesId) -> Option<text::DominantDeathCause> {
+        self.dominant_last_era
+            .get(species.0 as usize)
+            .copied()
+            .flatten()
+    }
+}
+
+/// The most-tallied cause in `causes`, ties broken by "most recent dominant
+/// cause wins" (task 105's explicit first-pass tie-break rule — the doc left
+/// this open, so this is the stated choice, not an accidental one). Linear
+/// aggregation over a handful of `DominantDeathCause` variants, not a
+/// `HashMap` (`CLAUDE.md`'s no-`HashMap`-iteration rule for sim/HUD state
+/// alike in this codebase's convention). `causes` must be non-empty.
+fn dominant_cause_with_tiebreak(causes: &[text::DominantDeathCause]) -> text::DominantDeathCause {
+    let mut tallied: Vec<(text::DominantDeathCause, u32, usize)> = Vec::new();
+    for (i, &cause) in causes.iter().enumerate() {
+        match tallied.iter_mut().find(|(c, ..)| *c == cause) {
+            Some(entry) => {
+                entry.1 += 1;
+                entry.2 = i;
+            }
+            None => tallied.push((cause, 1, i)),
+        }
+    }
+    tallied
+        .into_iter()
+        .max_by_key(|&(_, count, last_index)| (count, last_index))
+        .map(|(cause, ..)| cause)
+        .expect("causes is non-empty")
+}
+
+/// Drains `OrganismDied` into `DeathCauseTally` every tick (task 105) —
+/// scheduled exactly like `record_events`/`update_population_trends`, not
+/// gated to era-advance ticks only, so deaths from the manual single-tick
+/// path (`input.rs::single_tick`) are tallied too, not silently dropped.
+/// On `EraCompleted`, computes and exposes each species' dominant cause for
+/// the era that just ended, then resets the accumulator for the next one.
+fn tally_death_causes(
+    mut deaths: MessageReader<OrganismDied>,
+    mut era_completed: MessageReader<EraCompleted>,
+    mut tally: ResMut<DeathCauseTally>,
+) {
+    for event in deaths.read() {
+        let idx = event.species.0 as usize;
+        if tally.causes_this_era.len() <= idx {
+            tally.causes_this_era.resize(idx + 1, Vec::new());
+        }
+        let cause = text::dominant_death_cause(
+            event.gain,
+            event.env_fit,
+            event.interaction_delta,
+            event.upkeep,
+            event.crowding_penalty,
+            event.predation_loss,
+        );
+        tally.causes_this_era[idx].push(cause);
+    }
+
+    let mut era_ended = false;
+    for _ in era_completed.read() {
+        era_ended = true;
+    }
+    if !era_ended {
+        return;
+    }
+
+    let species_count = tally.causes_this_era.len();
+    if tally.dominant_last_era.len() < species_count {
+        tally.dominant_last_era.resize(species_count, None);
+    }
+    let DeathCauseTally {
+        causes_this_era,
+        dominant_last_era,
+    } = &mut *tally;
+    for (idx, dominant) in dominant_last_era.iter_mut().enumerate() {
+        *dominant = causes_this_era
+            .get(idx)
+            .filter(|causes| !causes.is_empty())
+            .map(|causes| dominant_cause_with_tiebreak(causes));
+    }
+    for causes in causes_this_era {
+        causes.clear();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dominant_cause_with_tiebreak_picks_the_highest_count() {
+        use text::DominantDeathCause::*;
+        let causes = [Predation, Crowding, Predation, Predation, Crowding];
+        assert_eq!(dominant_cause_with_tiebreak(&causes), Predation);
+    }
+
+    #[test]
+    fn dominant_cause_with_tiebreak_breaks_ties_by_most_recent_occurrence() {
+        use text::DominantDeathCause::*;
+        // Predation and Crowding both occur twice; Crowding's second
+        // occurrence is later in the sequence, so — per task 105's explicit
+        // "most recent dominant cause wins" rule — it wins the tie even
+        // though neither count is larger.
+        let causes = [Predation, Crowding, Predation, Crowding];
+        assert_eq!(dominant_cause_with_tiebreak(&causes), Crowding);
+    }
+
+    /// One `OrganismDied` whose energy terms are hand-picked to make
+    /// `text::dominant_death_cause` classify it as `cause` — used to drive
+    /// `tally_death_causes` in the system-level tests below without needing
+    /// a full `SimWorld`/`step()` tick.
+    fn organism_died_with_cause(
+        species: SpeciesId,
+        cause: text::DominantDeathCause,
+    ) -> OrganismDied {
+        let base = OrganismDied {
+            cell: 0,
+            species,
+            gain: 0.5,
+            env_fit: 0.9,
+            interaction_delta: 0.0,
+            upkeep: 0.5,
+            crowding_penalty: 0.0,
+            predation_loss: 0.0,
+            energy_before: 0.1,
+        };
+        match cause {
+            text::DominantDeathCause::Predation => OrganismDied {
+                predation_loss: 2.0,
+                ..base
+            },
+            text::DominantDeathCause::Crowding => OrganismDied {
+                crowding_penalty: 2.0,
+                ..base
+            },
+            _ => unimplemented!("not needed by these tests"),
+        }
+    }
+
+    fn app_for_tally_death_causes() -> App {
+        let mut app = App::new();
+        app.init_resource::<DeathCauseTally>();
+        app.add_message::<OrganismDied>();
+        app.add_message::<EraCompleted>();
+        app.add_systems(Update, tally_death_causes);
+        app
+    }
+
+    #[test]
+    fn tally_death_causes_exposes_the_most_tallied_cause_after_era_completes() {
+        let mut app = app_for_tally_death_causes();
+        for _ in 0..2 {
+            app.world_mut()
+                .resource_mut::<Messages<OrganismDied>>()
+                .write(organism_died_with_cause(
+                    SpeciesId(0),
+                    text::DominantDeathCause::Predation,
+                ));
+        }
+        app.world_mut()
+            .resource_mut::<Messages<OrganismDied>>()
+            .write(organism_died_with_cause(
+                SpeciesId(0),
+                text::DominantDeathCause::Crowding,
+            ));
+        app.world_mut()
+            .resource_mut::<Messages<EraCompleted>>()
+            .write(EraCompleted { era: 1 });
+        app.update();
+
+        let tally = app.world().resource::<DeathCauseTally>();
+        assert_eq!(
+            tally.dominant_for(SpeciesId(0)),
+            Some(text::DominantDeathCause::Predation),
+            "predation (2 deaths) should dominate over crowding (1 death) this era"
+        );
+    }
+
+    #[test]
+    fn tally_death_causes_resets_between_eras_and_clears_species_with_no_deaths() {
+        let mut app = app_for_tally_death_causes();
+        app.world_mut()
+            .resource_mut::<Messages<OrganismDied>>()
+            .write(organism_died_with_cause(
+                SpeciesId(0),
+                text::DominantDeathCause::Predation,
+            ));
+        app.world_mut()
+            .resource_mut::<Messages<EraCompleted>>()
+            .write(EraCompleted { era: 1 });
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<DeathCauseTally>()
+                .dominant_for(SpeciesId(0)),
+            Some(text::DominantDeathCause::Predation)
+        );
+
+        // A second era completes with no deaths at all.
+        app.world_mut()
+            .resource_mut::<Messages<EraCompleted>>()
+            .write(EraCompleted { era: 2 });
+        app.update();
+        assert_eq!(
+            app.world().resource::<DeathCauseTally>().dominant_for(SpeciesId(0)),
+            None,
+            "a species with zero deaths this era must show no label, not a stale carry-over from the previous era"
+        );
+    }
 
     #[test]
     fn era_progress_display_shows_dots_at_and_under_the_cap() {
