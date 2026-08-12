@@ -372,10 +372,27 @@ pub struct SimWorld {
     pub selection_pressure: Vec<SelectionPressure>,
     /// Per-`SpeciesId` origin era (task 103) — `species_origin_era[id.0]` is
     /// the `era` this world was on when that species was first pushed onto
-    /// `species`. Can't be reconstructed after the fact, so every
-    /// `species.push` call site goes through `push_species` instead, which
-    /// records both in the same step.
+    /// `species` (i.e. when it entered the registry: world generation for
+    /// the starting roster, or the moment of a `Splice`). Distinct from
+    /// `species_seeded_era` below: a species can sit in the registry for
+    /// several eras before the player ever places one — this field alone
+    /// is *not* "when it was seeded," a bug task 103's original catalog
+    /// row conflated (fixed as a follow-up, see `species_seeded_era`).
+    /// Can't be reconstructed after the fact, so every `species.push` call
+    /// site goes through `push_species` instead, which records both in the
+    /// same step.
     pub species_origin_era: Vec<u32>,
+    /// Per-`SpeciesId` "era this species was first actually placed on the
+    /// grid" (task 103 follow-up), indexed by `SpeciesId.0`, grown lazily
+    /// and set by `sim::step`'s per-tick population scan the first tick a
+    /// species' population goes from `0` to `> 0` — unlike
+    /// `species_origin_era` (registry-creation time), this tracks real
+    /// placement, so a species seeded mid-run shows that era, not `0`.
+    /// `None` for a species still sitting in the available roster with
+    /// nothing placed yet. Once set, never cleared — the seeded era stays
+    /// a true historical fact even after the species later goes fully
+    /// extinct.
+    pub species_seeded_era: Vec<Option<u32>>,
     rng: StdRng,
     /// Write-side double buffer for the tick (TECH_DESIGN.md §6). `pub(crate)`
     /// so `sim::step` can read/write it directly without a cell-by-cell API.
@@ -431,6 +448,7 @@ impl SimWorld {
             terrain_occupancy: Vec::new(),
             selection_pressure: Vec::new(),
             species_origin_era: Vec::new(),
+            species_seeded_era: Vec::new(),
             rng,
         };
         world.generate_terrain(config);

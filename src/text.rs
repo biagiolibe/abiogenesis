@@ -644,9 +644,15 @@ pub fn species_catalog_line(
 /// extension) — separate from `species_catalog_line` since those two fields
 /// come from different sources (`world.cells` scan vs.
 /// `SimWorld::species_origin_era`) and are easier to reason about as their
-/// own small line.
-pub fn species_population_line(population: usize, origin_era: u32) -> String {
-    format!("Population {population} · seeded era {origin_era}")
+/// own small line. `origin_era` is `None` for a species still sitting in
+/// the available roster with nothing ever placed (`SimWorld::
+/// species_ever_placed`) — showing a "seeded era" for a species that was
+/// never actually seeded would be misleading, not merely incomplete.
+pub fn species_population_line(population: usize, origin_era: Option<u32>) -> String {
+    match origin_era {
+        Some(era) => format!("Population {population} · seeded era {era}"),
+        None => format!("Population {population}"),
+    }
 }
 
 /// One line per metabolism kind, shown once in the catalog's legend section
@@ -685,6 +691,23 @@ mod tests {
         assert!(decomposer.contains("residue"), "got: {decomposer}");
         assert_ne!(photolithic, predator);
         assert_ne!(predator, decomposer);
+    }
+
+    /// Task 103 follow-up: a species never placed on the grid
+    /// (`SimWorld::species_ever_placed` false) must not show a "seeded
+    /// era" — a species from the available roster that the player hasn't
+    /// used yet isn't "seeded" in any meaningful sense.
+    #[test]
+    fn species_population_line_omits_seeded_era_when_never_placed() {
+        let line = species_population_line(0, None);
+        assert_eq!(line, "Population 0");
+        assert!(!line.contains("seeded"), "got: {line}");
+    }
+
+    #[test]
+    fn species_population_line_shows_seeded_era_once_placed() {
+        let line = species_population_line(4, Some(2));
+        assert_eq!(line, "Population 4 · seeded era 2");
     }
 
     #[test]

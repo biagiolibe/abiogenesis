@@ -64,6 +64,11 @@ can land independently, in either order.
       Species catalog — tasks 100-103's concern) renders unchanged inside
       the new panel chrome; this task doesn't touch what's drawn *inside*,
       only the window/panel/overlay chrome around it.
+- [ ] The Observation log's scroll works: the player can manually scroll up
+      to read older entries, and it doesn't fight back to the bottom while
+      they're doing so (see the known-bug note in Constraints and Caveats —
+      confirm live whether this is still broken once the panel itself has
+      changed, since the fix might fall out of the chrome rewrite).
 - [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
 - [ ] Verified live via `cargo run`: open the notebook (`Tab` or the HUD
       button), confirm it docks left, the map dims visibly behind it, the
@@ -157,6 +162,18 @@ can land independently, in either order.
   (which, if it does gate ticking, must not introduce non-determinism —
   gating an existing deterministic system on/off based on a UI bool is
   fine, same category as `EraState` itself).
+- **Known bug to fix while this panel is being touched anyway (reported
+  2026-08-12, deliberately deferred to this task rather than a standalone
+  fix)**: the Observation log's `ScrollArea` (`notebook.rs` ~577-598,
+  `.stick_to_bottom(true)`) no longer lets the player scroll up through
+  older entries in a live playtest — it appears to keep snapping back to
+  the bottom. Not root-caused yet; `stick_to_bottom(true)`'s interaction
+  with manual drag is the prime suspect, but confirm live rather than
+  assuming. Since this task already rebuilds the notebook's chrome
+  (`egui::Window` → docked `egui::Panel`), verify the scroll behavior
+  explicitly as part of this task's own live-verification pass instead of
+  filing a separate task against code this task is about to replace
+  anyway.
 
 ---
 

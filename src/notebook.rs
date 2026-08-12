@@ -825,7 +825,7 @@ fn draw_edge(
         painter.line_segment([start, end], stroke);
         dir
     } else {
-        let control = start.lerp(end, 0.5) + perp(dir) * curvature;
+        let control = start.lerp(end, 0.5) + bow_axis(from, to) * curvature;
         let bezier = egui::epaint::QuadraticBezierShape::from_points_stroke(
             [start, control, end],
             false,
@@ -854,6 +854,30 @@ fn draw_edge(
 /// `draw_dashed_line` both need.
 fn perp(dir: egui::Vec2) -> egui::Vec2 {
     egui::vec2(-dir.y, dir.x)
+}
+
+/// The bow axis for a curved edge between two node positions, independent
+/// of which one is `from` and which is `to` (bugfix, reported live
+/// 2026-08-12: two arrows for the same pair — one confirmed positive, one
+/// confirmed negative — drew on the exact same curve instead of bowing
+/// apart). `hypothesis_grid` signs `curvature` by tag-index order (`ei <
+/// ri`) so the pair's two directions are meant to bow to opposite sides,
+/// but `draw_edge`/`draw_dashed_line` used to compute their bow axis as
+/// `perp((to - from).normalized())` — and `perp` of a direction flips sign
+/// whenever `from`/`to` swap, which is exactly what happens between a
+/// pair's two directions. That flip silently cancelled the caller's own
+/// sign flip, so both directions ended up adding the *same* absolute
+/// offset to their control point and landed on the identical curve. Tie
+/// break on `from`'s coordinates (not `to`'s or the tag order) is
+/// arbitrary but must be *some* endpoint-order-independent rule — using
+/// `from`/`to` directly, as before, is exactly what was wrong.
+fn bow_axis(from: egui::Pos2, to: egui::Pos2) -> egui::Vec2 {
+    let canonical_dir = if (from.x, from.y) < (to.x, to.y) {
+        (to - from).normalized()
+    } else {
+        (from - to).normalized()
+    };
+    perp(canonical_dir)
 }
 
 /// Whether a tag has zero evidence in *every* direction against every other
@@ -894,7 +918,7 @@ fn draw_dashed_line(painter: &egui::Painter, from: egui::Pos2, to: egui::Pos2, c
     let points = if curvature.abs() < f32::EPSILON {
         vec![start, end]
     } else {
-        let control = start.lerp(end, 0.5) + perp(dir) * curvature;
+        let control = start.lerp(end, 0.5) + bow_axis(from, to) * curvature;
         let bezier = egui::epaint::QuadraticBezierShape::from_points_stroke(
             [start, control, end],
             false,
@@ -1069,11 +1093,7 @@ fn catalog_panel(
             .iter()
             .filter(|c| c.organism.is_some_and(|o| o.species == species_id))
             .count();
-        let origin_era = world
-            .species_origin_era
-            .get(id)
-            .copied()
-            .unwrap_or_default();
+        let seeded_era = world.species_seeded_era.get(id).copied().flatten();
         ui.horizontal(|ui| {
             ui.colored_label(species_color(species_id), TAG_GLYPH);
             ui.label(metabolism_glyph(species.metabolism));
@@ -1086,7 +1106,7 @@ fn catalog_panel(
                     temperature_label(species.temp_optimum, &config.environment),
                     species.repro_threshold,
                 ));
-                ui.weak(text::species_population_line(population, origin_era));
+                ui.weak(text::species_population_line(population, seeded_era));
             });
             for &slot in &species.tags {
                 let tag = world.active_tags[slot.0 as usize];
@@ -1134,6 +1154,23 @@ mod tests {
     use super::*;
     use abiogenesis::config::SimConfig;
     use abiogenesis::world::SpeciesId;
+
+    /// Bugfix regression (reported live 2026-08-12): a pair with both a
+    /// confirmed positive and a confirmed negative direction must bow the
+    /// two arcs to opposite sides, not draw them on the identical curve.
+    /// `bow_axis` must return the *same* vector regardless of which
+    /// endpoint is `from`/`to` — the caller's own `curvature` sign (keyed
+    /// off tag index order, independent of draw order) is what's supposed
+    /// to separate the two directions; `bow_axis` flipping too (the actual
+    /// bug: it used to derive its axis from the call-local `(to - from)`
+    /// direction, which flips between a pair's two directions) would
+    /// cancel that sign back out.
+    #[test]
+    fn bow_axis_is_independent_of_endpoint_order() {
+        let a = egui::pos2(10.0, 20.0);
+        let b = egui::pos2(80.0, 65.0);
+        assert_eq!(bow_axis(a, b), bow_axis(b, a));
+    }
 
     #[test]
     fn temperature_label_splits_the_gradient_range_into_thirds() {

@@ -1,11 +1,16 @@
-# Task 115 — Grid clicks leak through the HUD panel when the camera is zoomed
+# Task 115 — Grid input (clicks and scroll-zoom) leaks through the HUD panel
 
 > **ID**: `115`
 > **Category**: Bugfix
 > **Priority**: 🟡 P2
-> **Estimate**: ~2h
+> **Estimate**: ~2h (was ~2h for clicks alone; budget more now the scope
+> covers a second input path — reassess once the root cause is found, since
+> a shared root cause would make both fixes cheap together)
 > **Assigned to**: unassigned
-> **Session**: 2026-08-11 (reported by the user during 098/099's manual playtest pass)
+> **Session**: 2026-08-11 (clicks, reported during 098/099's manual playtest
+> pass); **extended 2026-08-12** (scroll-zoom, reported during a live
+> playtest of tasks 097/103/105 — see the new Objective paragraph and
+> acceptance criterion below)
 
 ---
 
@@ -41,6 +46,21 @@ rect, not what's drawn beneath it — but worth ruling out explicitly). Read
 091's diff/reasoning before assuming this needs new gating logic from
 scratch.
 
+**2026-08-12 addition — a second input path with the same symptom**: a live
+playtest also found that scrolling the mouse wheel while the pointer sits
+over the HUD sidebar zooms the map camera instead of being absorbed by the
+panel (e.g. scrolling over the Biosphere list). This is a *different*
+system — `render.rs::zoom_camera` (~948), not `input.rs`'s click handlers —
+but it already has the same kind of guard task 091 added for clicks:
+`if egui_wants_input.wants_pointer_input() { return; }` (`render.rs` ~967).
+That the guard is present and still doesn't stop the zoom is itself
+evidence: whatever makes `EguiWantsInput` unreliable over the HUD panel is
+likely shared between the click path and the scroll path, so this is folded
+into the same investigation rather than filed separately. If the two turn
+out to have unrelated root causes after investigation, split the zoom half
+back out into its own task at that point — don't assume they're the same
+fix going in, just start from one investigation.
+
 ---
 
 ## 📋 Acceptance Criteria
@@ -59,10 +79,19 @@ scratch.
 - [ ] Regression test covering the specific failure: a click at a screen
       position under the panel's rect, at a zoom level where the grid extends
       there, must not produce a grid action.
+- [ ] Scrolling the mouse wheel while the pointer is over the HUD panel
+      (any zoom level — the reported case didn't require the grid to extend
+      under the panel first, unlike the click bug) never changes camera
+      zoom. Root cause documented: does it share the click bug's cause, or
+      is `EguiWantsInput` failing differently for scroll events specifically?
+- [ ] Regression test covering the scroll-zoom failure, parallel to the
+      click one above.
 - [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
 - [ ] Verified live via `cargo run`: zoom in until the grid extends under the
       right panel, click a sidebar widget (e.g. a species row) and confirm no
-      organism gets placed on the grid underneath.
+      organism gets placed on the grid underneath; separately, scroll the
+      mouse wheel over the HUD sidebar (e.g. over the Biosphere list) and
+      confirm the map does not zoom.
 
 ---
 
@@ -72,7 +101,7 @@ scratch.
 |------|------|
 | `src/input.rs` | `clicked_cell`, `seed_organism_on_click`, and the other action click-handlers — check `EguiWantsInput` usage and how screen→world→cell mapping is gated against the panel. |
 | `src/ui.rs` | `hud_panel` — the panel's layout/screen area egui actually occupies. |
-| `src/render.rs` | Camera zoom/pan (`clamp_camera_pan` and friends) — whether the grid's rendered extent under the panel changes with zoom in a way that interacts with the click gating. |
+| `src/render.rs` | `zoom_camera` (~948) — already gated on `EguiWantsInput::wants_pointer_input()` (~967) yet still lets scroll-zoom through over the HUD; `clamp_camera_pan` and friends for whether the grid's rendered extent under the panel changes with zoom in a way that interacts with the click gating. |
 
 ---
 

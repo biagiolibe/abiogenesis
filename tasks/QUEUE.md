@@ -123,7 +123,8 @@ pass).
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 115 | Grid clicks leak through the HUD panel when the camera is zoomed | — | [115](115-egui-panel-click-through-when-zoomed.md) |
+| `[ ]` | 115 | Grid input (clicks and scroll-zoom) leaks through the HUD panel | — | [115](115-egui-panel-click-through-when-zoomed.md) |
+| `[ ]` | 121 | Conditional-tag catalog badge never renders in a live playtest | 096, 097 | [121](121-terrain-badge-missing-in-catalog.md) |
 
 **Onboarding & engagement rollout** (2026-08-09, from `redesign/abiogenesis-engagement-design.md`, full rationale in `PROJECT_PLAN.md`'s "Onboarding & engagement rollout"): 5 onboarding-foundation proposals scoped after a multi-round discussion. 080 first (diagnostic value for playtesting the rest); 082/083 are numerically coupled — tuned together (2026-08-10), both now done. Live playtest of the combined pacing still pending (082/083 verification steps skipped this session, see below).
 

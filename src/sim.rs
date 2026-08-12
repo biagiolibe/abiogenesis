@@ -378,6 +378,25 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
     if !world.ever_populated && any_player_population {
         world.ever_populated = true;
     }
+    // Task 103 follow-up: per-species "era first placed" — distinct from
+    // `species_origin_era` (registry-creation time, always the world's
+    // starting era for the initial roster regardless of when the player
+    // actually seeds one). Set once, the first tick this species' pre-tick
+    // population is observed positive; `world.era` hasn't advanced yet this
+    // tick (that only happens in `tick_and_complete_era`, after `step`
+    // returns), so this is the era the player was actually looking at when
+    // they placed it. Unlike `ever_populated` above, wild populations do
+    // count here — the catalog row only needs to know when the species
+    // first existed on the grid, not whether the player specifically
+    // placed it.
+    if world.species_seeded_era.len() < world.species.len() {
+        world.species_seeded_era.resize(world.species.len(), None);
+    }
+    for (idx, &count) in population.iter().enumerate() {
+        if count > 0 && world.species_seeded_era[idx].is_none() {
+            world.species_seeded_era[idx] = Some(world.era);
+        }
+    }
 
     // Start the write side as a copy of the snapshot; every field below
     // (environment scalars, residue, organism) gets overwritten in place.
@@ -1041,6 +1060,70 @@ mod tests {
         assert!(!world.ever_populated);
         step(&mut world, &config);
         assert!(world.ever_populated);
+    }
+
+    /// Task 103 follow-up: the catalog's "seeded era" label must not appear
+    /// for a species still sitting in the available roster with nothing
+    /// ever placed; must show the era it was *actually placed* in, not the
+    /// era it was merely added to the registry (the original bug — a
+    /// species from the starting roster is always registered at era 0
+    /// regardless of when the player later seeds one); and must keep
+    /// showing that era once set, even after the species later goes fully
+    /// extinct.
+    #[test]
+    fn species_seeded_era_tracks_actual_placement_not_registry_creation() {
+        let (mut world, mut config) = world_with_one_organism(0.2, 0.5, 5.0);
+        config.environment.diffusion_rate = 0.0;
+        // A second species, registered (era 0) but never placed on the grid.
+        world.push_species(Species {
+            name: "Unplaced".to_string(),
+            metabolism: Metabolism::Photolithic,
+            temp_optimum: 0.5,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: Vec::new(),
+        });
+
+        step(&mut world, &config);
+        assert_eq!(world.species_seeded_era, vec![Some(0), None]);
+
+        // Simulate several eras having passed, then the player finally
+        // seeding species 1 mid-run — its seeded era must be the current
+        // era, not the era it was registered in (0).
+        world.era = 3;
+        let target = world
+            .cells
+            .iter()
+            .position(|c| c.organism.is_none())
+            .expect("an empty cell exists");
+        world.cells[target].organism = Some(Organism {
+            species: SpeciesId(1),
+            energy: config.energy.seed_energy,
+            born_era: world.era,
+        });
+        step(&mut world, &config);
+        assert_eq!(
+            world.species_seeded_era[1],
+            Some(3),
+            "must record the era it was actually placed in, not registry-creation era 0"
+        );
+
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        for _ in 0..200 {
+            if world.get(cx, cy).organism.is_none() {
+                break;
+            }
+            step(&mut world, &config);
+        }
+        assert!(
+            world.get(cx, cy).organism.is_none(),
+            "organism should have starved in the dark"
+        );
+        assert_eq!(
+            world.species_seeded_era[0],
+            Some(0),
+            "species_seeded_era must not reset once set, even after extinction"
+        );
     }
 
     /// Drives `advance_tick` on `Update` (rather than `FixedUpdate`) so the

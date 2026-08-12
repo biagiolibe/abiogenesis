@@ -433,8 +433,17 @@ pub(crate) fn hud_panel(
                     for (species, population, avg_energy) in &stats {
                         ui.horizontal(|ui| {
                             ui.colored_label(species_color(*species), SPECIES_GLYPH);
+                            // Bare species name, not `species_label`'s "Name
+                            // (species N)" (task 105 follow-up): the row
+                            // already carries population, energy, a trend
+                            // glyph, and sometimes a cause label — the
+                            // "(species N)" suffix cost width without
+                            // adding information here (it disambiguates in
+                            // logs where the same-named case matters, not
+                            // in a live per-tick readout) and was a
+                            // contributor to the row overflowing `HUD_WIDTH`.
                             ui.label(text::population_line(
-                                &species_label(&world, *species),
+                                &world.species[species.0 as usize].name,
                                 *population,
                                 *avg_energy,
                             ));

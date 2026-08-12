@@ -558,7 +558,17 @@ restored green (`0/50` across all four balance properties).
 - `[x]` Temperature-spread fix (no task file — small, contained, fixed same
   session as diagnosed; see `worldgen.rs`'s `placeable_temperature_distribution`/
   `temp_optimum_at_percentile` and `tests/balance.rs`'s `place_starting_organisms`)
-- `[ ]` 115 — Grid clicks leak through the HUD panel when the camera is zoomed → [115](tasks/115-egui-panel-click-through-when-zoomed.md)
+- `[x]` Task 103 follow-up (no task file — reported live 2026-08-12, fixed
+  same session): catalog's "seeded era" label showed for species never
+  actually placed on the grid. Added `SimWorld::species_ever_placed`
+  (`world.rs`), set in `sim::step`; `species_population_line` now takes
+  `Option<u32>` and omits the era when unset (`text.rs`, `notebook.rs`).
+- `[x]` Task 105 follow-up (no task file — reported live 2026-08-12, fixed
+  same session): the Biosphere row's cause label overflowed past
+  `HUD_WIDTH` instead of wrapping. Switched the row's `ui.horizontal` to
+  `ui.horizontal_wrapped` (`ui.rs`).
+- `[ ]` 115 — Grid input (clicks and scroll-zoom) leaks through the HUD panel → [115](tasks/115-egui-panel-click-through-when-zoomed.md)
+- `[ ]` 121 — Conditional-tag catalog badge never renders in a live playtest (reported 2026-08-12, static review inconclusive — needs live repro) → [121](tasks/121-terrain-badge-missing-in-catalog.md)
 
 ### 🎚️ Final tuning — *the real art*
 
