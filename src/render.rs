@@ -1551,33 +1551,40 @@ fn cell_color(
 /// Flat per-biome color (task 112, `redesign/abiogenesis-biomes.md`,
 /// superseding task 066/068's `terrain_color`/`TerrainKind`-only bands —
 /// `Biome` is now the primary environmental classification, `TerrainKind`
-/// stays as Stage A's input to it). Desaturated tones from the same
-/// console/lab palette family as the rest of the HUD, not a new palette —
-/// **except Distesa di cristalli** (`CrystalField`), the design doc's
-/// deliberate exception: "tonalità visivamente aliena, fuori dalla
-/// palette naturale," picked to read as a chemistry anomaly worth
-/// investigating on sight, not a rendering inconsistency.
+/// stays as Stage A's input to it).
+///
+/// Every value below is read directly from `redesign/biome-reference-sheet.svg`
+/// (averaging each swatch's two dither tones, task 112's original pass
+/// invented its own hues instead and drifted from the doc — a 2026-08-12
+/// playtest follow-up caught the mismatch, in particular Roccia
+/// nuda/Montagna sharing a hue and being hard to tell apart), with one
+/// deliberate exception: **Distesa di cristalli** (`CrystalField`) keeps a
+/// vivid alien violet rather than the reference sheet's own muted indigo
+/// swatch, following the design doc's *text* ("tonalità visivamente
+/// aliena, fuori dalla palette naturale") over its swatch — the two
+/// disagree with each other, and the text is the more deliberate design
+/// intent (a chemistry anomaly worth investigating on sight).
 ///
 /// `DeepWater`/`ShallowWater` continue task 093's "Sea reads as a dark
 /// blue, not a void" fix (that finding predates the areal/feature biome
 /// split but still applies to both).
 fn biome_color(biome: Biome) -> Color {
     match biome {
-        Biome::DeepWater => Color::hsl(215.0, 0.40, 0.07),
-        Biome::ShallowWater => Color::hsl(200.0, 0.35, 0.14),
-        Biome::Plain => Color::hsl(130.0, 0.20, 0.09),
-        Biome::Hill => Color::hsl(125.0, 0.22, 0.14),
-        Biome::Mountain => Color::hsl(30.0, 0.10, 0.19),
-        Biome::Peak => Color::hsl(200.0, 0.10, 0.30),
-        Biome::Desert => Color::hsl(45.0, 0.35, 0.20),
-        Biome::Tundra => Color::hsl(200.0, 0.15, 0.20),
-        Biome::BareRock => Color::hsl(30.0, 0.05, 0.15),
-        Biome::Forest => Color::hsl(130.0, 0.30, 0.06),
-        Biome::Swamp => Color::hsl(90.0, 0.25, 0.10),
-        Biome::Crater => Color::hsl(15.0, 0.20, 0.07),
+        Biome::DeepWater => Color::hsl(215.2, 0.56, 0.13),
+        Biome::ShallowWater => Color::hsl(211.8, 0.51, 0.23),
+        Biome::Plain => Color::hsl(116.5, 0.27, 0.19),
+        Biome::Hill => Color::hsl(92.7, 0.20, 0.22),
+        Biome::Mountain => Color::hsl(37.2, 0.11, 0.25),
+        Biome::Peak => Color::hsl(46.4, 0.06, 0.36),
+        Biome::Desert => Color::hsl(42.7, 0.35, 0.22),
+        Biome::Tundra => Color::hsl(199.3, 0.10, 0.27),
+        Biome::BareRock => Color::hsl(285.0, 0.03, 0.27),
+        Biome::Forest => Color::hsl(127.7, 0.24, 0.16),
+        Biome::Swamp => Color::hsl(87.1, 0.24, 0.17),
+        Biome::Crater => Color::hsl(10.5, 0.44, 0.13),
         Biome::CrystalField => Color::hsl(280.0, 0.55, 0.35),
-        Biome::Lake => Color::hsl(190.0, 0.30, 0.12),
-        Biome::VolcanicVent => Color::hsl(15.0, 0.55, 0.20),
+        Biome::Lake => Color::hsl(166.3, 0.36, 0.16),
+        Biome::VolcanicVent => Color::hsl(17.6, 0.72, 0.21),
     }
 }
 

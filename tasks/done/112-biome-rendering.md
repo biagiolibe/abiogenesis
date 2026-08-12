@@ -13,9 +13,19 @@
 ## ✅ Implementation notes (2026-08-12)
 
 - `terrain_color(TerrainKind)` replaced by `biome_color(Biome) -> Color`
-  (all 15 in-scope biomes; Geyser stays out per task 114). `CrystalField`
-  is the deliberate alien-hue exception (`hsl(280, 0.55, 0.35)`) — every
-  other biome stays in the existing low-lightness console/lab family.
+  (all 15 in-scope biomes; Geyser stays out per task 114).
+- **2026-08-12 follow-up correction (same day, live-playtest finding):**
+  the first pass invented its own hue/saturation/lightness per biome
+  instead of reading `redesign/biome-reference-sheet.svg`'s actual swatch
+  colors — caught when the user couldn't reliably tell Roccia
+  nuda/Montagna apart (both landed on the same hue). Recomputed every
+  value directly from the reference sheet's hex swatches (averaging each
+  swatch's two dither tones into one HSL base), except `CrystalField`,
+  which deliberately keeps a vivid alien violet (`hsl(280, 0.55, 0.35)`)
+  rather than the reference sheet's own muted indigo swatch — the doc's
+  *text* ("tonalità visivamente aliena, fuori dalla palette naturale")
+  and its *swatch* disagree with each other, and the text was judged the
+  more deliberate intent, confirmed with the user.
 - `cell_color`'s empty-cell branch now calls `dithered_biome_color`
   (`biome_color` + a fixed `(x + y) % 2` checkerboard lightness offset,
   `DITHER_LIGHTNESS_DELTA = 0.015`) instead of `terrain_color(cell.terrain)`.
