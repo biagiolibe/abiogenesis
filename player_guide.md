@@ -123,7 +123,7 @@ Progress between runs is deliberately light: clearing worlds unlocks a few extra
 - Don't crowd your first few placements. A lone organism (or an isolated pair) gives you the cleanest possible read on what's actually happening.
 - Watch for deaths in the observation log, not just population totals — a death tells you *something* interacted badly, even before you know what.
 - If a species is thriving in a spot with the wrong metabolism story (e.g. a photolithic organism doing fine in the dark), suspect a matrix effect, not the environment.
-- The opposite case: if a species keeps *dying* despite its fuel visibly being there (a Decomposer next to residue, a Photolithic in bright light, a Predator with prey nearby), check the death log's gain breakdown before suspecting the matrix — a poor temperature fit silently shrinks that gain toward zero.
+- The opposite case: if a species keeps *dying* despite its fuel visibly being there (a Decomposer next to residue, a Photolithic in bright light, a Predator with prey nearby), read the death log's cause — if it names temperature rather than the matrix, a poor temperature fit is silently shrinking that gain toward zero even though the resource itself is present.
 - Budget is tight on purpose. One well-chosen experiment beats three scattered ones.
 
 ---

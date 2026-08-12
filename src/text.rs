@@ -11,7 +11,7 @@
 
 use crate::ui::ActionMode;
 use abiogenesis::objectives::ZoneKind;
-use abiogenesis::world::{Metabolism, TerrainKind};
+use abiogenesis::world::{Metabolism, Mode, TerrainKind};
 
 // --- Main menu (`menu.rs::main_menu_ui`) ---
 
@@ -60,8 +60,8 @@ pub const HOW_TO_PLAY_SECTIONS: &[(&str, &str)] = &[
          Decomposer from residue in its own or a neighboring cell. Every one of these gains \
          is then multiplied by how close that cell's temperature is to the species' comfort \
          zone — not added as a separate cost. An organism can die right next to its fuel \
-         (residue, light, prey) if the temperature fit is poor; check the death log's gain \
-         number before suspecting a hidden matrix effect.",
+         (residue, light, prey) if the temperature fit is poor; check the death log's stated \
+         cause before suspecting a hidden matrix effect.",
     ),
     (
         "Actions and budget",
@@ -380,30 +380,140 @@ pub fn species_created_message(species_label: &str) -> String {
     format!("{species_label} created via Splice")
 }
 
-/// Breaks a death down into the energy-update terms that caused it (GDD
-/// §5.6 step 5), so the log answers "why" instead of only "what": each term
-/// is shown as its actual net contribution (costs negated), not the raw
-/// magnitude stored on `OrganismDied`.
+/// `env_fit` below this counts as a "poor" fit rather than a "decent" one
+/// (task 104) — `env_fit` is a Gaussian in `(0, 1]`, `1.0` at the species'
+/// exact temperature optimum, so the midpoint is a reasonable first-pass
+/// cutoff between "temperature actively hurt this organism" and "roughly
+/// fine, something else (an absent resource) is the real problem." Tune if
+/// playtesting finds it misclassifies.
+const POOR_ENV_FIT_THRESHOLD: f32 = 0.5;
+
+/// Which energy-update term (GDD §5.6 step 5) dominated a death, for
+/// `player_organism_death_message`'s qualitative phrasing (task 104).
+/// `TemperatureOrResource` covers `gain` shortfall — a single upstream
+/// signal `env_fit` then splits into the two player-facing causes below.
+enum DominantDeathCause {
+    Temperature,
+    ResourceAbsence,
+    Predation,
+    Crowding,
+    /// The hidden tag×tag matrix (GDD §11), phrased to the player as a
+    /// vague "interaction" — the game's own diegetic term for it (GDD's
+    /// "hidden biochemical interaction rules", `abiogenesis-gdd.md:23`) —
+    /// deliberately the one cause that stays vague: no number, sign, or tag
+    /// identity, unlike every other branch.
+    Interaction,
+}
+
+/// Picks the single dominant negative contributor to a death (task 104),
+/// GDD §7's "metabolisms and environmental ranges always remain readable as
+/// anchors — only the hidden matrix stays a mystery" applied to the death
+/// message. First-pass dominance rule (tune if playtesting finds it
+/// unconvincing): compare four magnitudes —
+/// - a gain shortfall, `(upkeep - gain).max(0.0)` (how much of the baseline
+///   upkeep cost this organism's metabolism failed to cover, folding
+///   `Predator`/`Decomposer`'s `env_fit`-multiplied gain and
+///   `Photolithic`'s directly into one comparable number);
+/// - `predation_loss`;
+/// - `crowding_penalty`;
+/// - the matrix's harmful share, `(-interaction_delta).max(0.0)` (a
+///   *positive* `interaction_delta` helped, so it's never a cause of
+///   death);
+///
+/// the largest wins; ties are broken by checking in this fixed order
+/// (temperature/resource, predation, crowding, interaction) and only replacing
+/// the current leader on a strictly larger magnitude. The gain-shortfall
+/// branch further splits into `Temperature` vs. `ResourceAbsence` purely
+/// from `env_fit` (`POOR_ENV_FIT_THRESHOLD`), independent of its own
+/// magnitude in the comparison above.
+fn dominant_death_cause(
+    gain: f32,
+    env_fit: f32,
+    interaction_delta: f32,
+    upkeep: f32,
+    crowding_penalty: f32,
+    predation_loss: f32,
+) -> DominantDeathCause {
+    let gain_shortfall = (upkeep - gain).max(0.0);
+    let interaction_harm = (-interaction_delta).max(0.0);
+
+    let mut magnitude = gain_shortfall;
+    let mut cause = if env_fit < POOR_ENV_FIT_THRESHOLD {
+        DominantDeathCause::Temperature
+    } else {
+        DominantDeathCause::ResourceAbsence
+    };
+    if predation_loss > magnitude {
+        magnitude = predation_loss;
+        cause = DominantDeathCause::Predation;
+    }
+    if crowding_penalty > magnitude {
+        magnitude = crowding_penalty;
+        cause = DominantDeathCause::Crowding;
+    }
+    if interaction_harm > magnitude {
+        cause = DominantDeathCause::Interaction;
+    }
+    cause
+}
+
+/// A metabolism's plain-language "what wasn't there" phrase for
+/// `DominantDeathCause::ResourceAbsence` (task 104, GDD §7's readable-anchor
+/// rule) — the resource each metabolism actually draws gain from (GDD §5.3).
+fn resource_absence_phrase(metabolism: Metabolism) -> &'static str {
+    match metabolism {
+        Metabolism::Photolithic => "there was no light here",
+        Metabolism::Predator => "there was no prey nearby",
+        Metabolism::Decomposer => "there was no residue to feed on",
+    }
+}
+
+/// The plain-language phrase for one `DominantDeathCause` (task 104) — split
+/// out from `player_organism_death_message` so the interaction branch's "no
+/// numeric value, no tag identity, no sign" rule is directly unit-testable
+/// on its own, without the surrounding sentence's `(x, y)` position (which
+/// legitimately does contain digits and always has, pre-104).
+fn death_cause_phrase(cause: DominantDeathCause, metabolism: Metabolism) -> &'static str {
+    match cause {
+        DominantDeathCause::Temperature => "the temperature here didn't suit it",
+        DominantDeathCause::ResourceAbsence => resource_absence_phrase(metabolism),
+        DominantDeathCause::Predation => "eaten by a predator",
+        DominantDeathCause::Crowding => "too crowded here",
+        DominantDeathCause::Interaction => "harmed by an interaction with a nearby species",
+    }
+}
+
+/// One plain-language sentence naming the single dominant cause of a death
+/// (task 104), replacing the previous five-raw-number breakdown — GDD §7's
+/// "metabolisms and environmental ranges always remain readable as anchors"
+/// applies directly here, so every cause except the hidden matrix is spelled
+/// out in direct language with no numbers at all. The matrix cause is the
+/// one deliberate exception (GDD §11): no number, sign, or tag identity,
+/// phrased as a vague "interaction" (the game's own diegetic term for it) —
+/// see `dominant_death_cause` for the classification rule.
 #[allow(clippy::too_many_arguments)]
 pub fn player_organism_death_message(
     species_label: &str,
     x: usize,
     y: usize,
+    metabolism: Metabolism,
     gain: f32,
+    env_fit: f32,
     interaction_delta: f32,
     upkeep: f32,
     crowding_penalty: f32,
     predation_loss: f32,
 ) -> String {
-    // `+ 0.0` folds away IEEE-754 negative zero (e.g. `-upkeep` when
-    // `upkeep == 0.0`) so the message never reads "predation -0.00".
-    format!(
-        "your {species_label} organism at ({x}, {y}) died: gain {gain:+.2}, \
-         matrix {interaction_delta:+.2}, upkeep {:+.2}, crowding {:+.2}, predation {:+.2}",
-        -upkeep + 0.0,
-        -crowding_penalty + 0.0,
-        -predation_loss + 0.0,
-    )
+    let cause = dominant_death_cause(
+        gain,
+        env_fit,
+        interaction_delta,
+        upkeep,
+        crowding_penalty,
+        predation_loss,
+    );
+    let cause = death_cause_phrase(cause, metabolism);
+    format!("your {species_label} organism at ({x}, {y}) died: {cause}")
 }
 
 /// A matrix cell crossing the confirmation threshold (GDD §7's "aha"
@@ -443,6 +553,22 @@ pub fn terrain_reveal_message(
     format!("Revealed: {species_label}'s tag {tag_glyph} is conditioned by {terrain}")
 }
 
+/// A `(TagSlot, TerrainKind)` pair's evidence crossing task 097's
+/// confirmation threshold — the gradual, exposure-based counterpart to
+/// `terrain_reveal_message`'s deterministic zone-entry beat (task 099).
+/// Not about any one species (the fact is world-level, like
+/// `confirmation_message`'s tag pairs), so it's phrased the same
+/// "Confirmed: ..." way rather than reusing `terrain_reveal_message`'s
+/// species-subject wording.
+pub fn terrain_gate_confirmed_message(tag_glyph: &str, terrain: TerrainKind, mode: Mode) -> String {
+    let terrain = terrain_label(terrain);
+    let effect = match mode {
+        Mode::Inducible => "turns on",
+        Mode::Repressible => "turns off",
+    };
+    format!("Confirmed: tag {tag_glyph} {effect} on {terrain}")
+}
+
 // --- Notebook — hypothesis graph (`notebook.rs::hypothesis_grid`) ---
 
 pub const HEADING_HYPOTHESIS_GRID: &str = "Hypothesis grid";
@@ -476,6 +602,7 @@ pub fn partial_relation_line(from_glyph: &str, to_glyph: &str, confidence_pct: u
 pub const HEADING_CATALOG: &str = "Catalog";
 pub const ACTIVE_TAGS_LABEL: &str = "Active tags";
 pub const SPECIES_HEADING: &str = "Species";
+pub const METABOLISM_LEGEND_HEADING: &str = "Metabolisms";
 
 pub fn species_catalog_line(
     species_label: &str,
@@ -490,40 +617,45 @@ pub fn species_catalog_line(
     )
 }
 
-/// A short natural-language description of a species' genome (task 095),
-/// alongside — not replacing — `species_catalog_line`'s precise stat line
-/// above (`Splice`'s `ShiftTempOptimum` math still needs the exact numbers
-/// visible somewhere). A pure function of the same readable fields
-/// `species_catalog_line` already takes (`temp_label` is
-/// `notebook.rs::temperature_label`'s existing cold/temperate/hot band), so
-/// it stays deterministic and unit-testable without touching `SimWorld`.
-pub fn species_description(
-    metabolism: Metabolism,
-    temp_label: &str,
-    repro_threshold: f32,
-) -> String {
+/// Population and origin era for one species' catalog row (task 103's
+/// extension) — separate from `species_catalog_line` since those two fields
+/// come from different sources (`world.cells` scan vs.
+/// `SimWorld::species_origin_era`) and are easier to reason about as their
+/// own small line.
+pub fn species_population_line(population: usize, origin_era: u32) -> String {
+    format!("Population {population} · seeded era {origin_era}")
+}
+
+/// One line per metabolism kind, shown once in the catalog's legend section
+/// rather than repeated on every species row sharing that metabolism (task
+/// 103 — a live screenshot review found the old per-row
+/// `species_description` printing the same diet sentence for every species
+/// of a given metabolism, differing only in the temp-band word and
+/// threshold number, which is text noise once read once). The diet clause
+/// itself is unchanged from `species_description`'s wording, just no longer
+/// tied to a specific species' temp band or threshold.
+pub fn metabolism_legend_line(metabolism: Metabolism) -> String {
     let diet = match metabolism {
         Metabolism::Photolithic => "draws its energy from light",
         Metabolism::Predator => "hunts adjacent organisms for energy",
         Metabolism::Decomposer => "feeds on residue left behind by the dead",
     };
-    format!(
-        "A {temp_label}-adapted species that {diet}, reproducing once its energy reaches {repro_threshold:.1}."
-    )
+    format!("{diet}, reproducing once its energy reaches its threshold.")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Task 095: the description must actually reflect which metabolism it
-    /// was given, not a generic sentence — a player reading three different
-    /// species' catalog entries should see three different diets.
+    /// Task 095, updated by 103's legend consolidation: the line must
+    /// actually reflect which metabolism it was given, not a generic
+    /// sentence — a player reading the legend should see three different
+    /// diets, one per metabolism.
     #[test]
-    fn species_description_mentions_the_right_diet_per_metabolism() {
-        let photolithic = species_description(Metabolism::Photolithic, "temperate", 10.0);
-        let predator = species_description(Metabolism::Predator, "temperate", 10.0);
-        let decomposer = species_description(Metabolism::Decomposer, "temperate", 10.0);
+    fn metabolism_legend_line_mentions_the_right_diet_per_metabolism() {
+        let photolithic = metabolism_legend_line(Metabolism::Photolithic);
+        let predator = metabolism_legend_line(Metabolism::Predator);
+        let decomposer = metabolism_legend_line(Metabolism::Decomposer);
 
         assert!(photolithic.contains("light"), "got: {photolithic}");
         assert!(predator.contains("hunts"), "got: {predator}");
@@ -533,24 +665,138 @@ mod tests {
     }
 
     #[test]
-    fn death_message_shows_costs_as_negative_net_contributions() {
-        let message =
-            player_organism_death_message("Nyx (species 0)", 3, 4, 0.40, 0.0, 0.70, 0.15, 0.0);
-        assert!(
-            message.contains("gain +0.40"),
-            "gain should show its raw positive contribution: {message}"
+    fn death_message_names_temperature_when_gain_is_short_and_fit_is_poor() {
+        // gain 0.0 vs. upkeep 0.7: a 0.7 shortfall, dominant over the
+        // zeroed-out predation/crowding/matrix terms. env_fit 0.1 is below
+        // `POOR_ENV_FIT_THRESHOLD`, so this reads as temperature, not
+        // resource absence.
+        let message = player_organism_death_message(
+            "Nyx (species 0)",
+            3,
+            4,
+            Metabolism::Photolithic,
+            0.0,
+            0.1,
+            0.0,
+            0.7,
+            0.0,
+            0.0,
+        );
+        assert!(message.contains("temperature"), "got: {message}");
+    }
+
+    #[test]
+    fn death_message_names_the_missing_resource_per_metabolism_when_fit_is_decent() {
+        // Same gain shortfall as above, but env_fit 0.9 is well above the
+        // threshold — a fine temperature fit, so the gain shortfall reads as
+        // an absent resource instead, phrased per metabolism.
+        let photolithic = player_organism_death_message(
+            "A",
+            0,
+            0,
+            Metabolism::Photolithic,
+            0.0,
+            0.9,
+            0.0,
+            0.7,
+            0.0,
+            0.0,
+        );
+        let predator = player_organism_death_message(
+            "B",
+            0,
+            0,
+            Metabolism::Predator,
+            0.0,
+            0.9,
+            0.0,
+            0.7,
+            0.0,
+            0.0,
+        );
+        let decomposer = player_organism_death_message(
+            "C",
+            0,
+            0,
+            Metabolism::Decomposer,
+            0.0,
+            0.9,
+            0.0,
+            0.7,
+            0.0,
+            0.0,
+        );
+        assert!(photolithic.contains("light"), "got: {photolithic}");
+        assert!(predator.contains("prey"), "got: {predator}");
+        assert!(decomposer.contains("residue"), "got: {decomposer}");
+    }
+
+    #[test]
+    fn death_message_names_predation_when_it_dominates() {
+        // gain covers upkeep exactly (no shortfall), crowding/matrix are
+        // zero, only predation_loss pulls energy down.
+        let message = player_organism_death_message(
+            "Nyx",
+            0,
+            0,
+            Metabolism::Predator,
+            0.5,
+            0.9,
+            0.0,
+            0.5,
+            0.0,
+            2.0,
+        );
+        assert!(message.contains("predator"), "got: {message}");
+    }
+
+    #[test]
+    fn death_message_names_crowding_when_it_dominates() {
+        let message = player_organism_death_message(
+            "Nyx",
+            0,
+            0,
+            Metabolism::Photolithic,
+            0.5,
+            0.9,
+            0.0,
+            0.5,
+            2.0,
+            0.0,
+        );
+        assert!(message.contains("crowded"), "got: {message}");
+    }
+
+    #[test]
+    fn death_message_names_the_interaction_when_it_dominates() {
+        let message = player_organism_death_message(
+            "Nyx",
+            0,
+            0,
+            Metabolism::Photolithic,
+            0.5,
+            0.9,
+            -2.0,
+            0.5,
+            0.0,
+            0.0,
         );
         assert!(
-            message.contains("upkeep -0.70"),
-            "upkeep is a cost, must show as negative: {message}"
+            message.contains("interaction") && message.contains("nearby species"),
+            "the hidden-matrix cause should stay vague, phrased as an interaction, no tag/sign: {message}"
         );
+    }
+
+    #[test]
+    fn interaction_dominant_cause_phrase_contains_no_digit_characters() {
+        // Task 104: the one deliberate mystery-preservation boundary — no
+        // numeric value, no tag identity, no sign for the hidden-matrix
+        // cause. Checked on the cause phrase itself (not the full sentence,
+        // whose `(x, y)` position has always legitimately contained digits).
+        let phrase = death_cause_phrase(DominantDeathCause::Interaction, Metabolism::Photolithic);
         assert!(
-            message.contains("crowding -0.15"),
-            "crowding is a cost, must show as negative: {message}"
-        );
-        assert!(
-            message.contains("predation +0.00"),
-            "zero predation loss must not print as negative zero: {message}"
+            !phrase.chars().any(|c| c.is_ascii_digit()),
+            "interaction cause phrase must contain no numbers at all: {phrase}"
         );
     }
 }

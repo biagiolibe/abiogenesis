@@ -11,12 +11,13 @@ use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::ObjectiveAdvanced;
 use abiogenesis::sim::{
-    AdjacencyObserved, EraCompleted, OrganismBorn, OrganismDied, SpeciesExtinct, TerrainRevealed,
+    AdjacencyObserved, EraCompleted, OrganismBorn, OrganismDied, SpeciesExtinct,
+    TerrainGateObserved, TerrainRevealed,
 };
 use abiogenesis::state::GameState;
-use abiogenesis::world::{SimWorld, SpeciesId, TagId, TagSlot};
+use abiogenesis::world::{Metabolism, Mode, SimWorld, SpeciesId, TagId, TagSlot, TerrainKind};
 
-use crate::render::{species_color, species_label};
+use crate::render::{metabolism_glyph, species_color, species_label, terrain_glyph};
 use crate::text;
 use crate::ui::{hud_panel, HudControlIntents};
 
@@ -163,6 +164,78 @@ impl MatrixKnowledge {
     }
 }
 
+/// Number of `TerrainKind` variants (`Sea`/`Plain`/`Hill`/`Mountain`,
+/// `world.rs:163-168`) — `TerrainKnowledge`'s per-tag row width.
+const TERRAIN_KIND_COUNT: usize = 4;
+
+fn terrain_index(terrain: TerrainKind) -> usize {
+    match terrain {
+        TerrainKind::Sea => 0,
+        TerrainKind::Plain => 1,
+        TerrainKind::Hill => 2,
+        TerrainKind::Mountain => 3,
+    }
+}
+
+/// Cumulative weighted evidence for every `(TagSlot, TerrainKind)` pair
+/// (task 097, `redesign/abiogenesis-living-world.md` §1) — the gradual,
+/// exposure-based counterpart to `MatrixKnowledge`, but keyed on a tag's
+/// terrain gate instead of a tag pair. A separate, small resource rather
+/// than a `MatrixKnowledge` rework: conditionality is a per-tag fact ("does
+/// conditional glyph G require/exclude which terrain"), much smaller than
+/// the per-pair matrix hypothesis space, so the two stay additive instead
+/// of inflating the pair matrix with a terrain axis it was never designed
+/// to carry.
+///
+/// Distinct from task 099's zone-entry reveal: that one fires once,
+/// deterministically, the first time a species' lineage sets foot on a
+/// trigger terrain. This one accumulates evidence from every
+/// `TerrainGateObserved` (`sim.rs`'s `tag_gate_satisfied`), pass or fail,
+/// the same "an observation is evidence regardless of outcome" reasoning
+/// `AdjacencyObserved`/`MatrixKnowledge` already use — so a species that
+/// never enters the trigger terrain can still, eventually, have its
+/// catalog badge confirmed purely from evaluations on other terrain (each
+/// a data point about where the tag *isn't* active, per `Mode::Repressible`'s
+/// framing).
+#[derive(Resource)]
+pub struct TerrainKnowledge {
+    threshold: f32,
+    evidence: Vec<f32>,
+}
+
+impl TerrainKnowledge {
+    pub fn new(active_tags: usize, threshold: f32) -> Self {
+        Self {
+            threshold,
+            evidence: vec![0.0; active_tags * TERRAIN_KIND_COUNT],
+        }
+    }
+
+    fn index(&self, tag: TagSlot, terrain: TerrainKind) -> usize {
+        tag.0 as usize * TERRAIN_KIND_COUNT + terrain_index(terrain)
+    }
+
+    /// Adds `weight` to a `(tag, terrain)` pair's evidence, returning `true`
+    /// if this call is the one that pushed it from below `threshold` to
+    /// at/above it — `false` on every other call, including repeat
+    /// evidence for an already-confirmed pair. Mirrors
+    /// `MatrixKnowledge::record` exactly.
+    pub fn record(&mut self, tag: TagSlot, terrain: TerrainKind, weight: f32) -> bool {
+        let idx = self.index(tag, terrain);
+        let was_confirmed = self.evidence[idx] >= self.threshold;
+        self.evidence[idx] += weight;
+        !was_confirmed && self.evidence[idx] >= self.threshold
+    }
+
+    pub fn evidence(&self, tag: TagSlot, terrain: TerrainKind) -> f32 {
+        self.evidence[self.index(tag, terrain)]
+    }
+
+    pub fn is_confirmed(&self, tag: TagSlot, terrain: TerrainKind) -> bool {
+        self.evidence(tag, terrain) >= self.threshold
+    }
+}
+
 pub struct NotebookPlugin;
 
 impl Plugin for NotebookPlugin {
@@ -181,7 +254,12 @@ impl Plugin for NotebookPlugin {
             config.tags.active_tags_early as usize,
             config.notebook.confirmation_threshold,
         );
+        let terrain_knowledge = TerrainKnowledge::new(
+            config.tags.active_tags_early as usize,
+            config.notebook.confirmation_threshold,
+        );
         app.insert_resource(knowledge)
+            .insert_resource(terrain_knowledge)
             .init_resource::<ObservationLog>()
             .init_resource::<NotebookWindowOpen>()
             .init_resource::<NotebookEverOpened>()
@@ -195,6 +273,7 @@ impl Plugin for NotebookPlugin {
                     toggle_notebook,
                     record_events,
                     accumulate_evidence,
+                    accumulate_terrain_evidence,
                     tally_births,
                 )
                     .run_if(in_state(GameState::Playing)),
@@ -235,6 +314,51 @@ fn accumulate_evidence(
                 text: text::confirmation_message(from_glyph, to_glyph, positive),
             });
             unseen.0 = true;
+        }
+    }
+}
+
+/// Drains `TerrainGateObserved` (task 097, `sim.rs`'s `tag_gate_satisfied`)
+/// into `TerrainKnowledge`, mirroring `accumulate_evidence`'s shape with a
+/// flat `observation_weight_numerator` weight — a gate evaluation has no
+/// `AdjacencyObserved`-style confounder count to divide by, so this is the
+/// `n_confounders = 0` case of the same formula. Every pair `record`
+/// reports as newly confirmed gets its own log entry (distinct from task
+/// 099's zone-entry reveal, which fires on a different, deterministic
+/// trigger) and raises the same HUD unseen-confirmation badge.
+fn accumulate_terrain_evidence(
+    config: Res<SimConfig>,
+    world: Res<SimWorld>,
+    mut observed: MessageReader<TerrainGateObserved>,
+    mut knowledge: ResMut<TerrainKnowledge>,
+    mut log: ResMut<ObservationLog>,
+    mut unseen: ResMut<NotebookHasUnseenConfirmation>,
+) {
+    for event in observed.read() {
+        let newly_confirmed = knowledge.record(
+            event.tag,
+            event.terrain,
+            config.notebook.observation_weight_numerator,
+        );
+        if newly_confirmed {
+            let glyph = tag_glyph(world.active_tags[event.tag.0 as usize]);
+            let tag_id = world.active_tags[event.tag.0 as usize];
+            // `event.tag` only ever carries a `TerrainGateObserved` when
+            // `SimWorld::conditional_gate` returned `Some` at emission time
+            // (`sim.rs::tag_gate_satisfied`) — the mode is always available
+            // here.
+            if let Some(conditional) = world.conditional_gate(tag_id) {
+                log.entries.push(LogEntry {
+                    era: world.era,
+                    species: None,
+                    text: text::terrain_gate_confirmed_message(
+                        glyph,
+                        event.terrain,
+                        conditional.mode,
+                    ),
+                });
+                unseen.0 = true;
+            }
         }
     }
 }
@@ -340,6 +464,7 @@ fn record_events(
     for event in deaths.read() {
         if placed.0.remove(&event.cell) {
             let (x, y) = (event.cell % world.width, event.cell / world.width);
+            let metabolism = world.species[event.species.0 as usize].metabolism;
             log.entries.push(LogEntry {
                 era: world.era,
                 species: Some(event.species),
@@ -347,7 +472,9 @@ fn record_events(
                     &species_label(&world, event.species),
                     x,
                     y,
+                    metabolism,
                     event.gain,
+                    event.env_fit,
                     event.interaction_delta,
                     event.upkeep,
                     event.crowding_penalty,
@@ -447,6 +574,7 @@ fn notebook_window(
     log: Res<ObservationLog>,
     world: Res<SimWorld>,
     knowledge: Res<MatrixKnowledge>,
+    terrain_knowledge: Res<TerrainKnowledge>,
     config: Res<SimConfig>,
 ) -> Result {
     if !open.0 {
@@ -486,7 +614,7 @@ fn notebook_window(
 
             ui.separator();
             ui.heading(text::HEADING_CATALOG);
-            catalog_panel(ui, &world, &config);
+            catalog_panel(ui, &world, &config, &terrain_knowledge);
         });
     Ok(())
 }
@@ -915,7 +1043,12 @@ fn temperature_label(
     }
 }
 
-fn catalog_panel(ui: &mut egui::Ui, world: &SimWorld, config: &SimConfig) {
+fn catalog_panel(
+    ui: &mut egui::Ui,
+    world: &SimWorld,
+    config: &SimConfig,
+    terrain_knowledge: &TerrainKnowledge,
+) {
     ui.label(text::ACTIVE_TAGS_LABEL);
     ui.horizontal(|ui| {
         for &tag in &world.active_tags {
@@ -924,31 +1057,87 @@ fn catalog_panel(ui: &mut egui::Ui, world: &SimWorld, config: &SimConfig) {
     });
 
     ui.add_space(4.0);
+    ui.label(text::METABOLISM_LEGEND_HEADING);
+    let mut seen_metabolisms: Vec<Metabolism> = Vec::new();
+    for species in &world.species {
+        if !seen_metabolisms.contains(&species.metabolism) {
+            seen_metabolisms.push(species.metabolism);
+        }
+    }
+    for metabolism in seen_metabolisms {
+        ui.horizontal(|ui| {
+            ui.label(metabolism_glyph(metabolism));
+            ui.weak(text::metabolism_legend_line(metabolism));
+        });
+    }
+
+    ui.add_space(4.0);
     ui.label(text::SPECIES_HEADING);
     for (id, species) in world.species.iter().enumerate() {
+        let species_id = SpeciesId(id as u8);
+        let population = world
+            .cells
+            .iter()
+            .filter(|c| c.organism.is_some_and(|o| o.species == species_id))
+            .count();
+        let origin_era = world
+            .species_origin_era
+            .get(id)
+            .copied()
+            .unwrap_or_default();
         ui.horizontal(|ui| {
-            ui.colored_label(species_color(SpeciesId(id as u8)), TAG_GLYPH);
+            ui.colored_label(species_color(species_id), TAG_GLYPH);
+            ui.label(metabolism_glyph(species.metabolism));
             ui.vertical(|ui| {
                 ui.label(text::species_catalog_line(
-                    &species_label(world, SpeciesId(id as u8)),
+                    &species_label(world, species_id),
                     species.metabolism,
                     species.temp_optimum,
                     species.temp_tolerance,
                     temperature_label(species.temp_optimum, &config.environment),
-                    config.energy.repro_threshold,
-                ));
-                ui.weak(text::species_description(
-                    species.metabolism,
-                    temperature_label(species.temp_optimum, &config.environment),
                     species.repro_threshold,
                 ));
+                ui.weak(text::species_population_line(population, origin_era));
             });
             for &slot in &species.tags {
                 let tag = world.active_tags[slot.0 as usize];
                 ui.colored_label(tag_color(tag), format!("{TAG_GLYPH} {}", tag_glyph(tag)));
+                conditional_tag_badge(ui, world, terrain_knowledge, slot, tag);
             }
         });
     }
+}
+
+/// Task 097's catalog badge: a terrain glyph plus an inducible/repressible
+/// marker next to a conditional tag, shown only once `terrain_knowledge`
+/// reports the `(slot, terrain)` fact confirmed — no leak of which terrain
+/// or mode before that, the same discovery discipline `MatrixKnowledge`
+/// already enforces for tag pairs. `tag`/`conditional.terrain`/`.mode` are
+/// read straight off `world.conditional_tags` (task 096's per-world roll),
+/// gated purely by the confirmation check, the same "reads through instead
+/// of storing a copy" pattern `MatrixKnowledge::revealed_value` uses. A
+/// non-conditional tag (`conditional_gate` returns `None`) renders nothing.
+fn conditional_tag_badge(
+    ui: &mut egui::Ui,
+    world: &SimWorld,
+    terrain_knowledge: &TerrainKnowledge,
+    slot: TagSlot,
+    tag: TagId,
+) {
+    let Some(conditional) = world.conditional_gate(tag) else {
+        return;
+    };
+    if !terrain_knowledge.is_confirmed(slot, conditional.terrain) {
+        return;
+    }
+    let marker = match conditional.mode {
+        Mode::Inducible => "↑",
+        Mode::Repressible => "↓",
+    };
+    ui.colored_label(
+        tag_color(tag),
+        format!("{}{marker}", terrain_glyph(conditional.terrain)),
+    );
 }
 
 #[cfg(test)]
@@ -978,7 +1167,7 @@ mod tests {
         // id, so events naming a species need a real entry there.
         let config = SimConfig::default();
         for _ in 0..3 {
-            world.species.push(abiogenesis::world::Species {
+            world.push_species(abiogenesis::world::Species {
                 name: "Test".to_string(),
                 metabolism: abiogenesis::world::Metabolism::Photolithic,
                 temp_optimum: 0.5,
@@ -1060,6 +1249,7 @@ mod tests {
                 cell: 137,
                 species: SpeciesId(0),
                 gain: 0.4,
+                env_fit: 0.9,
                 interaction_delta: 0.0,
                 upkeep: 0.5,
                 crowding_penalty: 0.15,
@@ -1077,8 +1267,9 @@ mod tests {
             log.entries[0].text
         );
         assert!(
-            log.entries[0].text.contains("gain") && log.entries[0].text.contains("upkeep"),
-            "the death message should carry the energy breakdown: {}",
+            log.entries[0].text.contains("crowded"),
+            "crowding_penalty (0.15) dominates gain's 0.1 shortfall here, \
+             so the message should name it: {}",
             log.entries[0].text
         );
         let placed = app.world().resource::<PlayerPlacedCells>();
@@ -1103,6 +1294,7 @@ mod tests {
                 cell: 42,
                 species: SpeciesId(0),
                 gain: 0.0,
+                env_fit: 0.9,
                 interaction_delta: 0.0,
                 upkeep: 0.5,
                 crowding_penalty: 0.0,
@@ -1144,6 +1336,7 @@ mod tests {
                 cell: 9,
                 species: SpeciesId(1),
                 gain: 0.0,
+                env_fit: 0.9,
                 interaction_delta: 0.0,
                 upkeep: 0.7,
                 crowding_penalty: 0.0,
@@ -1197,6 +1390,68 @@ mod tests {
         assert!(
             knowledge.is_confirmed(TagSlot(0), TagSlot(1)),
             "the 12th observation crosses the threshold"
+        );
+    }
+
+    #[test]
+    fn terrain_knowledge_record_reports_the_confirmation_transition_exactly_once() {
+        // Task 097: mirrors `record_reports_the_confirmation_transition_exactly_once`
+        // above, just keyed on `(TagSlot, TerrainKind)` instead of a tag pair.
+        let mut knowledge = TerrainKnowledge::new(2, THRESHOLD);
+        assert!(!knowledge.record(TagSlot(0), TerrainKind::Hill, 1.0));
+        assert!(!knowledge.record(TagSlot(0), TerrainKind::Hill, 1.0));
+        assert!(knowledge.record(TagSlot(0), TerrainKind::Hill, 1.0));
+        // Already confirmed: further evidence keeps accumulating but no
+        // longer reports a fresh transition.
+        assert!(!knowledge.record(TagSlot(0), TerrainKind::Hill, 1.0));
+        // A different terrain for the same tag is a distinct cell — no
+        // cross-contamination between terrains.
+        assert!(!knowledge.is_confirmed(TagSlot(0), TerrainKind::Plain));
+    }
+
+    #[test]
+    fn accumulate_terrain_evidence_confirms_and_logs_once() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.active_tags = vec![TagId(0)];
+        world.conditional_tags = vec![abiogenesis::world::ConditionalTag {
+            tag: TagId(0),
+            terrain: TerrainKind::Hill,
+            mode: Mode::Inducible,
+        }];
+        let mut app = App::new();
+        app.insert_resource(config.clone());
+        app.insert_resource(TerrainKnowledge::new(
+            world.active_tags.len(),
+            config.notebook.confirmation_threshold,
+        ));
+        app.insert_resource(world);
+        app.init_resource::<ObservationLog>();
+        app.init_resource::<NotebookHasUnseenConfirmation>();
+        app.add_message::<TerrainGateObserved>();
+        app.add_systems(Update, accumulate_terrain_evidence);
+
+        for _ in 0..(config.notebook.confirmation_threshold
+            / config.notebook.observation_weight_numerator)
+            .ceil() as u32
+        {
+            app.world_mut()
+                .resource_mut::<Messages<TerrainGateObserved>>()
+                .write(TerrainGateObserved {
+                    tag: TagSlot(0),
+                    terrain: TerrainKind::Hill,
+                    passed: true,
+                });
+            app.update();
+        }
+
+        let knowledge = app.world().resource::<TerrainKnowledge>();
+        assert!(knowledge.is_confirmed(TagSlot(0), TerrainKind::Hill));
+        let log = app.world().resource::<ObservationLog>();
+        assert_eq!(
+            log.entries.len(),
+            1,
+            "exactly one log entry for the confirmation transition, not one per observation"
         );
     }
 
@@ -1303,7 +1558,7 @@ mod tests {
         // `species_label` (task 095) indexes `world.species` by id, so it
         // needs real entries here, not just the id numbers.
         for _ in 0..2 {
-            world.species.push(abiogenesis::world::Species {
+            world.push_species(abiogenesis::world::Species {
                 name: "Test".to_string(),
                 metabolism: abiogenesis::world::Metabolism::Photolithic,
                 temp_optimum: 0.5,

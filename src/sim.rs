@@ -21,6 +21,13 @@ pub struct OrganismDied {
     pub species: SpeciesId,
     /// Metabolic gain (step 1-2, `Metabolism`-dependent).
     pub gain: f32,
+    /// Environmental fitness (step 1, `env_fit`) at the organism's own cell
+    /// this tick — task 104: distinguishes a poor temperature fit from a
+    /// genuinely absent resource, which otherwise collapse into the same
+    /// small `gain` number (Predator/Decomposer fold `fit` into
+    /// `predation_gain`/`decomposition_gain` before `gain` is set, so this
+    /// field is the only place it survives to `player_organism_death_message`).
+    pub env_fit: f32,
     /// Net hidden-matrix effect summed over Moore neighbours (step 3).
     pub interaction_delta: f32,
     /// Base/predator/decomposer upkeep (step 4).
@@ -102,6 +109,28 @@ pub struct TerrainRevealed {
     pub terrain: TerrainKind,
 }
 
+/// One raw piece of evidence for task 097's `TerrainKnowledge`: a
+/// conditional tag's gate was evaluated for an organism standing on
+/// `terrain`, and `passed` records whether the gate let the tag
+/// participate this time. Emitted regardless of pass/fail — a failed gate
+/// is itself evidence about the terrain's exclusion (`Mode::Repressible`'s
+/// "turns off here" framing) — and only for tags that actually are
+/// conditional (`SimWorld::conditional_gate` returns `Some`); an
+/// unconditional tag never produces this event at all, so
+/// `TerrainKnowledge` never accumulates evidence for it. Distinct from
+/// `TerrainRevealed` (task 099): that one fires once per (species, tag,
+/// terrain) the instant a lineage first sets foot on the trigger terrain, a
+/// deterministic narrative beat; this one is the gradual,
+/// exposure-weighted evidence track behind the catalog's confirmed-badge
+/// reveal, mirroring `AdjacencyObserved`'s relationship to
+/// `MatrixKnowledge`.
+#[derive(Debug, Clone, Copy, Message)]
+pub struct TerrainGateObserved {
+    pub tag: TagSlot,
+    pub terrain: TerrainKind,
+    pub passed: bool,
+}
+
 /// Everything `step()` produced this tick, for `advance_tick` to drain into
 /// Bevy `MessageWriter`s. Kept as a plain struct (not `MessageWriter`
 /// parameters on `step()` itself) so `step()` stays callable without a Bevy
@@ -113,6 +142,7 @@ pub struct TickEvents {
     pub adjacencies: Vec<AdjacencyObserved>,
     pub births: Vec<OrganismBorn>,
     pub reveals: Vec<TerrainRevealed>,
+    pub terrain_gates: Vec<TerrainGateObserved>,
 }
 
 /// Advances the simulation by one tick: for each occupied cell, computes
@@ -127,15 +157,30 @@ pub struct TickEvents {
 /// always pass, matching pre-096 behaviour exactly. `Inducible` requires the
 /// carrier to be on the trigger terrain; `Repressible` requires the
 /// opposite.
-fn tag_gate_satisfied(world: &SimWorld, tag: TagSlot, carrier_terrain: TerrainKind) -> bool {
+/// Also pushes a `TerrainGateObserved` event when `tag` is conditional
+/// (task 097) — the raw evidence behind `TerrainKnowledge`'s catalog badge,
+/// gathered at the exact point the gate is evaluated. Unconditional tags
+/// keep short-circuiting to `true` with no event, same as before 097.
+fn tag_gate_satisfied(
+    world: &SimWorld,
+    tag: TagSlot,
+    carrier_terrain: TerrainKind,
+    gate_events: &mut Vec<TerrainGateObserved>,
+) -> bool {
     let tag_id = world.active_tags[tag.0 as usize];
     let Some(conditional) = world.conditional_gate(tag_id) else {
         return true;
     };
-    match conditional.mode {
+    let passed = match conditional.mode {
         Mode::Inducible => carrier_terrain == conditional.terrain,
         Mode::Repressible => carrier_terrain != conditional.terrain,
-    }
+    };
+    gate_events.push(TerrainGateObserved {
+        tag,
+        terrain: carrier_terrain,
+        passed,
+    });
+    passed
 }
 
 /// Marks `species_id`'s occupancy of `terrain` (task 099) and, if this is
@@ -372,11 +417,16 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
             };
             let neighbour_species = &world.species[neighbour.species.0 as usize];
             for &their_tag in &neighbour_species.tags {
-                if !tag_gate_satisfied(world, their_tag, world.cells[neighbour_idx].terrain) {
+                if !tag_gate_satisfied(
+                    world,
+                    their_tag,
+                    world.cells[neighbour_idx].terrain,
+                    &mut events.terrain_gates,
+                ) {
                     continue;
                 }
                 for &my_tag in &species.tags {
-                    if !tag_gate_satisfied(world, my_tag, cell.terrain) {
+                    if !tag_gate_satisfied(world, my_tag, cell.terrain, &mut events.terrain_gates) {
                         continue;
                     }
                     let entry = world.matrix.get(their_tag, my_tag);
@@ -426,6 +476,7 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
                 cell: idx,
                 species: organism.species,
                 gain,
+                env_fit: fit,
                 interaction_delta,
                 upkeep,
                 crowding_penalty,
@@ -592,6 +643,7 @@ impl Plugin for SimPlugin {
         app.add_message::<EraCompleted>();
         app.add_message::<OrganismBorn>();
         app.add_message::<TerrainRevealed>();
+        app.add_message::<TerrainGateObserved>();
         app.add_systems(
             FixedUpdate,
             advance_tick
@@ -644,6 +696,7 @@ fn advance_tick(
     mut era_completed: MessageWriter<EraCompleted>,
     mut born: MessageWriter<OrganismBorn>,
     mut revealed: MessageWriter<TerrainRevealed>,
+    mut terrain_gates: MessageWriter<TerrainGateObserved>,
 ) {
     if progress.remaining() == 0 {
         return;
@@ -660,6 +713,7 @@ fn advance_tick(
     adjacencies.write_batch(events.adjacencies);
     born.write_batch(events.births);
     revealed.write_batch(events.reveals);
+    terrain_gates.write_batch(events.terrain_gates);
     if progress.remaining() == 0 {
         next_state.set(EraState::Observing);
     }
@@ -689,7 +743,7 @@ mod tests {
             cell.terrain = TerrainKind::Plain;
             cell.is_peak = false;
         }
-        world.species.push(Species {
+        world.push_species(Species {
             name: "Test".to_string(),
             metabolism: Metabolism::Photolithic,
             temp_optimum: temperature,
@@ -879,6 +933,7 @@ mod tests {
         app.add_message::<EraCompleted>();
         app.add_message::<OrganismBorn>();
         app.add_message::<TerrainRevealed>();
+        app.add_message::<TerrainGateObserved>();
         app.add_systems(Update, advance_tick.run_if(in_state(EraState::Advancing)));
 
         app.world_mut()
@@ -944,7 +999,7 @@ mod tests {
         let mut world = SimWorld::new(42, &config);
         world.matrix = matrix;
         for tags in [tags_a, tags_b] {
-            world.species.push(Species {
+            world.push_species(Species {
                 name: "Test".to_string(),
                 metabolism: Metabolism::Photolithic,
                 temp_optimum: temperature,
@@ -1054,7 +1109,7 @@ mod tests {
             "conditional_tag_count = 0 should roll no conditional tags"
         );
         for tags in [vec![TagSlot(0)], vec![TagSlot(1)]] {
-            world.species.push(Species {
+            world.push_species(Species {
                 name: "Test".to_string(),
                 metabolism: Metabolism::Photolithic,
                 temp_optimum: 0.5,
@@ -1205,6 +1260,99 @@ mod tests {
     }
 
     #[test]
+    fn conditional_tag_gate_evaluation_emits_a_terrain_gate_observed_event() {
+        // Task 097: `TerrainGateObserved` is the raw evidence
+        // `TerrainKnowledge` accumulates for the catalog badge — it must
+        // fire from both the pass and fail case, carrying the terrain the
+        // gate was actually evaluated on.
+        let conditional = ConditionalTag {
+            tag: TagId(0),
+            terrain: TerrainKind::Hill,
+            mode: Mode::Inducible,
+        };
+        let matrix = TagMatrix {
+            size: 2,
+            values: vec![0, -2, 0, 0],
+        };
+
+        let (mut world, config) = world_with_two_neighbours(
+            matrix.clone(),
+            vec![TagSlot(0)],
+            vec![TagSlot(1)],
+            0.7,
+            0.5,
+            5.0,
+            5.0,
+        );
+        world.active_tags = vec![TagId(0), TagId(1)];
+        world.conditional_tags = vec![conditional];
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let a_idx = world.index(cx, cy);
+        world.cells[a_idx].terrain = TerrainKind::Hill;
+        let events = step(&mut world, &config);
+        assert!(
+            events
+                .terrain_gates
+                .iter()
+                .any(|e| e.tag == TagSlot(0) && e.terrain == TerrainKind::Hill && e.passed),
+            "gate evaluated on the trigger terrain should be observed as passed: {:?}",
+            events.terrain_gates
+        );
+
+        let (mut world, config) = world_with_two_neighbours(
+            matrix,
+            vec![TagSlot(0)],
+            vec![TagSlot(1)],
+            0.7,
+            0.5,
+            5.0,
+            5.0,
+        );
+        world.active_tags = vec![TagId(0), TagId(1)];
+        world.conditional_tags = vec![conditional];
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let a_idx = world.index(cx, cy);
+        world.cells[a_idx].terrain = TerrainKind::Plain;
+        let events = step(&mut world, &config);
+        assert!(
+            events
+                .terrain_gates
+                .iter()
+                .any(|e| e.tag == TagSlot(0) && e.terrain == TerrainKind::Plain && !e.passed),
+            "gate evaluated off the trigger terrain should be observed as failed: {:?}",
+            events.terrain_gates
+        );
+    }
+
+    #[test]
+    fn unconditional_tag_never_emits_a_terrain_gate_observed_event() {
+        // Task 097's `TerrainKnowledge` must never accumulate evidence for
+        // an unconditional tag — verified here at the emission site itself,
+        // not just at the accumulation system.
+        let matrix = TagMatrix {
+            size: 2,
+            values: vec![0, -2, 0, 0],
+        };
+        let (mut world, config) = world_with_two_neighbours(
+            matrix,
+            vec![TagSlot(0)],
+            vec![TagSlot(1)],
+            0.7,
+            0.5,
+            5.0,
+            5.0,
+        );
+        world.active_tags = vec![TagId(0), TagId(1)];
+        world.conditional_tags = Vec::new();
+        let events = step(&mut world, &config);
+        assert!(
+            events.terrain_gates.is_empty(),
+            "no conditional tags in this world, so no terrain-gate evidence should be emitted: {:?}",
+            events.terrain_gates
+        );
+    }
+
+    #[test]
     fn conditional_tag_not_in_active_set_does_not_panic_or_affect_delta() {
         // TagId(0) is conditional in this world's roll, but the two active
         // slots resolve to TagId(5)/TagId(6) — neither is TagId(0), so the
@@ -1246,7 +1394,7 @@ mod tests {
             cell.terrain = TerrainKind::Plain;
             cell.is_peak = false;
         }
-        world.species.push(Species {
+        world.push_species(Species {
             name: "Test".to_string(),
             metabolism: Metabolism::Photolithic,
             temp_optimum: 0.5,
@@ -1329,7 +1477,7 @@ mod tests {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
         world.matrix = matrix;
-        world.species.push(Species {
+        world.push_species(Species {
             name: "Test".to_string(),
             metabolism: Metabolism::Photolithic,
             temp_optimum: 0.5,
@@ -1337,7 +1485,7 @@ mod tests {
             repro_threshold: config.energy.repro_threshold,
             tags: vec![TagSlot(0)],
         });
-        world.species.push(Species {
+        world.push_species(Species {
             name: "Test".to_string(),
             metabolism: Metabolism::Photolithic,
             temp_optimum: 0.5,
@@ -1374,7 +1522,7 @@ mod tests {
     fn world_with_one_predator(temperature: f32, energy: f32) -> (SimWorld, SimConfig) {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
-        world.species.push(Species {
+        world.push_species(Species {
             name: "Test".to_string(),
             metabolism: Metabolism::Predator,
             temp_optimum: temperature,
@@ -1424,7 +1572,7 @@ mod tests {
         let (mut world, config) = world_with_one_predator(0.5, 5.0);
         let (cx, cy) = (world.width / 2, world.height / 2);
 
-        world.species.push(Species {
+        world.push_species(Species {
             name: "Test".to_string(),
             metabolism: Metabolism::Photolithic,
             temp_optimum: 0.5,
@@ -1458,7 +1606,7 @@ mod tests {
     fn two_predators_sharing_one_prey_split_deterministically() {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
-        world.species.push(Species {
+        world.push_species(Species {
             name: "Test".to_string(),
             metabolism: Metabolism::Predator,
             temp_optimum: 0.5,
@@ -1466,7 +1614,7 @@ mod tests {
             repro_threshold: config.energy.repro_threshold,
             tags: Vec::new(),
         });
-        world.species.push(Species {
+        world.push_species(Species {
             name: "Test".to_string(),
             metabolism: Metabolism::Photolithic,
             temp_optimum: 0.5,
@@ -1531,7 +1679,7 @@ mod tests {
     fn world_with_one_decomposer(temperature: f32, energy: f32) -> (SimWorld, SimConfig) {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
-        world.species.push(Species {
+        world.push_species(Species {
             name: "Test".to_string(),
             metabolism: Metabolism::Decomposer,
             temp_optimum: temperature,
@@ -1659,7 +1807,7 @@ mod tests {
     fn residue_never_goes_negative_under_competing_decomposers() {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
-        world.species.push(Species {
+        world.push_species(Species {
             name: "Test".to_string(),
             metabolism: Metabolism::Decomposer,
             temp_optimum: 0.5,
@@ -1726,7 +1874,7 @@ mod tests {
         // the species survives (population 2 -> 1), so no extinction.
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
-        world.species.push(Species {
+        world.push_species(Species {
             name: "Test".to_string(),
             metabolism: Metabolism::Photolithic,
             temp_optimum: 0.5,
@@ -1869,7 +2017,7 @@ mod tests {
             vec![TagSlot(3)],
             vec![TagSlot(4)],
         ] {
-            world.species.push(Species {
+            world.push_species(Species {
                 name: "Test".to_string(),
                 metabolism: Metabolism::Photolithic,
                 temp_optimum: 0.5,

@@ -16,7 +16,7 @@ use abiogenesis::objectives::{
 use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::{
     tick_and_complete_era, ActionBudget, AdjacencyObserved, EraCompleted, EraProgress,
-    OrganismBorn, OrganismDied, SpeciesExtinct, TerrainRevealed,
+    OrganismBorn, OrganismDied, SpeciesExtinct, TerrainGateObserved, TerrainRevealed,
 };
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{draw_species_name, net_self_interaction, Organism, SimWorld, SpeciesId};
@@ -141,6 +141,7 @@ fn single_tick(
     mut era_completed: MessageWriter<EraCompleted>,
     mut born: MessageWriter<OrganismBorn>,
     mut revealed: MessageWriter<TerrainRevealed>,
+    mut terrain_gates: MessageWriter<TerrainGateObserved>,
     mut objective_outcome: ObjectiveOutcomeParams,
     run_progress: Res<RunProgress>,
     mut intents: ResMut<HudControlIntents>,
@@ -168,6 +169,7 @@ fn single_tick(
     adjacencies.write_batch(events.adjacencies);
     born.write_batch(events.births);
     revealed.write_batch(events.reveals);
+    terrain_gates.write_batch(events.terrain_gates);
     apply_tick_outcome(&world, &config, &mut objective_outcome);
 }
 
@@ -569,8 +571,7 @@ fn apply_splice(
     if budget.points_remaining < config.time.action_costs.splice {
         return;
     }
-    world.species.push(new_species);
-    let new_species_id = SpeciesId(world.species.len() as u8 - 1);
+    let new_species_id = world.push_species(new_species);
     log.entries.push(LogEntry {
         era: world.era,
         species: Some(new_species_id),
@@ -608,7 +609,7 @@ mod tests {
         let mut world = SimWorld::new(42, &config);
         world.active_tags = vec![TagId(0), TagId(1)];
         world.matrix = TagMatrix::from_values(2, vec![0, 0, 0, 0]);
-        world.species.push(Species {
+        world.push_species(Species {
             name: "Test".to_string(),
             metabolism: abiogenesis::world::Metabolism::Photolithic,
             temp_optimum: 0.5,
@@ -1069,7 +1070,7 @@ mod tests {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
         generate_starting_palette(&mut world, &config);
-        world.species.push(world.species[0].clone()); // pretend a splice happened
+        world.push_species(world.species[0].clone()); // pretend a splice happened
 
         let mut keys = ButtonInput::<KeyCode>::default();
         keys.press(KeyCode::KeyR);
@@ -1081,6 +1082,7 @@ mod tests {
         app.insert_resource(EraProgress::default());
         app.insert_resource(NextState::<EraState>::default());
         app.insert_resource(MatrixKnowledge::new(5, 3.0));
+        app.insert_resource(crate::notebook::TerrainKnowledge::new(5, 3.0));
         app.insert_resource(ObservationLog::default());
         app.insert_resource(ActionBudget::default());
         app.insert_resource(SelectedSpecies(SpeciesId(5)));
@@ -1149,6 +1151,7 @@ mod tests {
         app.add_message::<EraCompleted>();
         app.add_message::<OrganismBorn>();
         app.add_message::<TerrainRevealed>();
+        app.add_message::<TerrainGateObserved>();
         app.add_message::<ObjectiveAdvanced>();
         app.insert_resource(CurrentObjective::default());
         app.insert_resource(ObjectiveProgress::default());

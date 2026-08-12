@@ -25,6 +25,7 @@ use bevy::prelude::*;
 
 use crate::notebook::{
     BirthTally, MatrixKnowledge, NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells,
+    TerrainKnowledge,
 };
 use crate::render::SeenRelations;
 use crate::ui::{IsolationHint, PopulationTrends, SelectedSpecies, SpliceDraft};
@@ -39,6 +40,7 @@ use crate::ui::{IsolationHint, PopulationTrends, SelectedSpecies, SpliceDraft};
 #[derive(SystemParam)]
 pub struct WorldResetParams<'w> {
     pub knowledge: ResMut<'w, MatrixKnowledge>,
+    pub terrain_knowledge: ResMut<'w, TerrainKnowledge>,
     pub log: ResMut<'w, ObservationLog>,
     pub budget: ResMut<'w, ActionBudget>,
     pub selected: ResMut<'w, SelectedSpecies>,
@@ -83,6 +85,10 @@ pub fn start_world(
     era_next_state.set(EraState::Observing);
 
     *reset.knowledge = MatrixKnowledge::new(
+        world.active_tags.len(),
+        config.notebook.confirmation_threshold,
+    );
+    *reset.terrain_knowledge = TerrainKnowledge::new(
         world.active_tags.len(),
         config.notebook.confirmation_threshold,
     );
@@ -191,6 +197,7 @@ mod tests {
     ) -> World {
         let mut ecs_world = World::new();
         ecs_world.insert_resource(MatrixKnowledge::new(5, 3.0));
+        ecs_world.insert_resource(TerrainKnowledge::new(5, 3.0));
         ecs_world.insert_resource(ObservationLog::default());
         ecs_world.insert_resource(ActionBudget::default());
         ecs_world.insert_resource(SelectedSpecies(SpeciesId(0)));

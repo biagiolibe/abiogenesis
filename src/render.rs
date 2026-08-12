@@ -66,6 +66,21 @@ pub fn metabolism_glyph(metabolism: Metabolism) -> &'static str {
     }
 }
 
+/// A single glyph per `TerrainKind` (task 097 — the catalog's confirmed
+/// conditional-tag badge needs a way to show *which* terrain a tag is
+/// gated on without inventing a new icon language mid-panel). First-pass
+/// iconography, same status as `metabolism_glyph`'s original pick: waves
+/// for `Sea`, a flat dot for `Plain`, an arc for `Hill`, a peak for
+/// `Mountain`.
+pub fn terrain_glyph(terrain: TerrainKind) -> &'static str {
+    match terrain {
+        TerrainKind::Sea => "≈",
+        TerrainKind::Plain => "·",
+        TerrainKind::Hill => "⌒",
+        TerrainKind::Mountain => "▲",
+    }
+}
+
 /// Blue (0.0, cold/low) to red (1.0, hot/high) through the hue wheel — a
 /// standard heatmap gradient, not tied to any in-game color meaning. Shared
 /// by the dev-only `debug_view` cycle and the player-facing temperature/light

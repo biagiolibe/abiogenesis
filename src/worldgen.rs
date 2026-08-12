@@ -210,7 +210,7 @@ pub fn generate_starting_palette(world: &mut SimWorld, config: &SimConfig) {
         let temp_optimum = temp_optimum_at_percentile(&distribution, weight);
         let tags = draw_species_tags(world, config);
         let name = draw_species_name(world);
-        world.species.push(Species {
+        world.push_species(Species {
             name,
             metabolism: Metabolism::Photolithic,
             temp_optimum,
@@ -252,7 +252,7 @@ pub fn add_bonus_species(world: &mut SimWorld, config: &SimConfig, count: u32) {
         let temp_optimum = temp_optimum_at_percentile(&distribution, weight);
         let tags = draw_species_tags(world, config);
         let name = draw_species_name(world);
-        world.species.push(Species {
+        world.push_species(Species {
             name,
             metabolism,
             temp_optimum,
@@ -342,8 +342,7 @@ fn place_wild_species(world: &mut SimWorld, config: &SimConfig) {
         let name = draw_species_name(world);
         let weight: f32 = world.rng_mut().random_range(0.0..=1.0);
         let temp_optimum = temp_optimum_at_percentile(&distribution, weight);
-        let species_id = SpeciesId(world.species.len() as u8);
-        world.species.push(Species {
+        let species_id = world.push_species(Species {
             name,
             metabolism: Metabolism::Photolithic,
             temp_optimum,
@@ -961,7 +960,7 @@ mod tests {
         // by which variant the RNG happened to draw.
         let build = |severity: f32| {
             let mut world = SimWorld::new(42, &config);
-            world.species.push(Species {
+            world.push_species(Species {
                 name: "Test".to_string(),
                 metabolism: Metabolism::Photolithic,
                 temp_optimum: 0.5,

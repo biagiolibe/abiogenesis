@@ -12,6 +12,7 @@ use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
 use crate::notebook::{
     MatrixKnowledge, NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells,
+    TerrainKnowledge,
 };
 use crate::render::SeenRelations;
 use crate::text;
@@ -146,6 +147,14 @@ fn start_run(commands: &mut Commands, config: &SimConfig, meta: &MetaProgress, r
         run_progress.unlocks.bonus_available_species,
     );
     commands.insert_resource(MatrixKnowledge::new(
+        world.active_tags.len(),
+        config.notebook.confirmation_threshold,
+    ));
+    // Same staleness risk `MatrixKnowledge` above guards against — task
+    // 097's `TerrainKnowledge` is sized off the same `active_tags_early`
+    // constant at `Startup`, which world 0's actual tag count isn't
+    // guaranteed to match.
+    commands.insert_resource(TerrainKnowledge::new(
         world.active_tags.len(),
         config.notebook.confirmation_threshold,
     ));

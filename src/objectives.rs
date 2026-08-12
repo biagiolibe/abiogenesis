@@ -503,7 +503,7 @@ mod tests {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
         for _ in 0..count {
-            world.species.push(Species {
+            world.push_species(Species {
                 name: "Test".to_string(),
                 metabolism: Metabolism::Photolithic,
                 temp_optimum: 0.5,
@@ -673,7 +673,7 @@ mod tests {
     fn diffused_toxicity_outside_the_zone_does_not_satisfy_survive_in() {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
-        world.species.push(Species {
+        world.push_species(Species {
             name: "Test".to_string(),
             metabolism: Metabolism::Photolithic,
             temp_optimum: 0.5,

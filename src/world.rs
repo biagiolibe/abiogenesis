@@ -291,6 +291,12 @@ pub struct SimWorld {
     /// `TerrainOccupancy`'s own doc comment for why this is shaped
     /// generically rather than reveal-specific.
     pub terrain_occupancy: Vec<TerrainOccupancy>,
+    /// Per-`SpeciesId` origin era (task 103) — `species_origin_era[id.0]` is
+    /// the `era` this world was on when that species was first pushed onto
+    /// `species`. Can't be reconstructed after the fact, so every
+    /// `species.push` call site goes through `push_species` instead, which
+    /// records both in the same step.
+    pub species_origin_era: Vec<u32>,
     rng: StdRng,
     /// Write-side double buffer for the tick (TECH_DESIGN.md §6). `pub(crate)`
     /// so `sim::step` can read/write it directly without a cell-by-cell API.
@@ -344,6 +350,7 @@ impl SimWorld {
             ever_populated: false,
             wild_species: Vec::new(),
             terrain_occupancy: Vec::new(),
+            species_origin_era: Vec::new(),
             rng,
         };
         world.generate_terrain(config);
@@ -822,6 +829,18 @@ impl SimWorld {
     /// populations (task 098) rather than a player-seedable one.
     pub fn is_wild(&self, species: SpeciesId) -> bool {
         self.wild_species.contains(&species)
+    }
+
+    /// Pushes `species` onto `self.species` and records the current `era`
+    /// as its origin in `species_origin_era` (task 103) — the only place
+    /// that era is captured, since it can't be reconstructed after the
+    /// fact. Every call site that adds a new species (worldgen, `Splice`,
+    /// tests) should go through this instead of `species.push` directly.
+    pub fn push_species(&mut self, species: Species) -> SpeciesId {
+        let id = SpeciesId(self.species.len() as u8);
+        self.species.push(species);
+        self.species_origin_era.push(self.era);
+        id
     }
 
     /// Whether `species`'s lineage has ever occupied `terrain` this run
