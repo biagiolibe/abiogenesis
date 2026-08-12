@@ -275,7 +275,7 @@ full reasoning). Dependency order: 110 unblocks 111 and 113; 112 depends on both
 110 and 111; 114 is scoped for reference but blocked on an unscoped small/pulsing
 heat-source category.
 
-- `[ ]` 110 — Biome enum + two-stage classification (areal biomes) → [110](tasks/110-biome-classification-two-stage.md)
+- `[x]` 110 — Biome enum + two-stage classification (areal biomes) → [110](tasks/done/110-biome-classification-two-stage.md)
 - `[ ]` 111 — Explicit placement for feature biomes (depends on 110) → [111](tasks/111-biome-feature-placement.md)
 - `[ ]` 112 — Biome rendering: flat color, dithering, borders, tree overlay (depends on 110, 111) → [112](tasks/112-biome-rendering.md)
 - `[ ]` 113 — Palude replaces `toxic_zone` (depends on 110) → [113](tasks/113-swamp-replaces-toxic-zone.md)

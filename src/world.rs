@@ -202,6 +202,35 @@ impl TerrainKind {
     }
 }
 
+/// A cell's discrete biome (task 110, `redesign/abiogenesis-biomes.md`):
+/// refines the base `TerrainKind` landform with the ambient scalars
+/// (`temperature`/`light`/`toxicity`) into one of 16 design-doc biomes.
+/// Only the 11 "areal" biomes that emerge from elevation + scalars are
+/// covered by this task — the 4 explicitly-placed "feature" biomes (Cratere
+/// profondo, Distesa di cristalli, Lago, Bocca vulcanica) are added by task
+/// 111, and Geyser (task 114) stays blocked. Decided once at generation
+/// time (`SimWorld::classify_biomes`) and stored here, never recomputed
+/// from live `Cell` scalars — the same reasoning `objectives.rs:318-320`
+/// gives for why `SurviveIn` reads `ToxicZoneBounds` instead of live
+/// `toxicity`: `diffuse_environment` blends scalars toward neighbours every
+/// tick, so a threshold read at query time would drift away from the
+/// biome's actual shape over a long-running world.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Biome {
+    DeepWater,
+    ShallowWater,
+    #[default]
+    Plain,
+    Hill,
+    Mountain,
+    Peak,
+    Desert,
+    Tundra,
+    BareRock,
+    Forest,
+    Swamp,
+}
+
 /// Which `TerrainKind` bands a species' lineage has ever occupied this run
 /// (task 099) — a tiny bitmask over `TerrainKind`'s 4 variants, one entry
 /// per `SpeciesId` in `SimWorld::terrain_occupancy`. Deliberately named and
@@ -298,6 +327,16 @@ pub struct Cell {
     /// re-derived later by rendering or gameplay code. Peaks are
     /// unplaceable regardless of `terrain` (task 067).
     pub is_peak: bool,
+    /// Raw normalized elevation (task 110), kept alongside the coarser
+    /// `terrain` band it was classified from — `classify_elevation`
+    /// otherwise discards this value once it picks a `TerrainKind`, leaving
+    /// no way to split `TerrainKind::Sea` into Acqua profonda/Acqua bassa by
+    /// depth. Mirrors `is_peak`: one extra bit of generation-time data kept
+    /// around instead of derived from distance-to-land at query time.
+    pub elevation: f32,
+    /// This cell's discrete biome (task 110), classified once at generation
+    /// time. See `Biome`'s own doc comment for why it isn't re-derived live.
+    pub biome: Biome,
 }
 
 /// The simulated world: a dense grid, the species registry, and the seeded
@@ -478,6 +517,7 @@ impl SimWorld {
         world.generate_terrain(config);
         world.apply_environment_sources(config, &params);
         world.place_toxic_zone(config, &params);
+        world.classify_biomes(config);
         world
     }
 
@@ -504,7 +544,10 @@ impl SimWorld {
         let mut rng = StdRng::seed_from_u64(self.seed ^ TERRAIN_SEED_OFFSET);
         let cell_count = self.width * self.height;
 
-        let mut best: Option<(Vec<TerrainKind>, Vec<bool>, f32)> = None;
+        // (kinds, peaks, elevations, placeable fraction) — the best draw
+        // seen so far, kept in case no attempt clears `min_placeable_fraction`.
+        type TerrainDraw = (Vec<TerrainKind>, Vec<bool>, Vec<f32>, f32);
+        let mut best: Option<TerrainDraw> = None;
         for _ in 0..terrain_cfg.max_generation_attempts.max(1) {
             let continent_waves = terrain_waves(
                 &mut rng,
@@ -561,24 +604,25 @@ impl SimWorld {
             let fraction = placeable as f32 / cell_count as f32;
 
             if fraction >= terrain_cfg.min_placeable_fraction {
-                self.write_terrain(&kinds, &peaks);
+                self.write_terrain(&kinds, &peaks, &elevations);
                 return;
             }
             if best
                 .as_ref()
-                .is_none_or(|&(_, _, best_fraction)| fraction > best_fraction)
+                .is_none_or(|&(_, _, _, best_fraction)| fraction > best_fraction)
             {
-                best = Some((kinds, peaks, fraction));
+                best = Some((kinds, peaks, elevations, fraction));
             }
         }
-        let (kinds, peaks, _) = best.expect("the loop above runs at least once");
-        self.write_terrain(&kinds, &peaks);
+        let (kinds, peaks, elevations, _) = best.expect("the loop above runs at least once");
+        self.write_terrain(&kinds, &peaks, &elevations);
     }
 
-    fn write_terrain(&mut self, kinds: &[TerrainKind], peaks: &[bool]) {
+    fn write_terrain(&mut self, kinds: &[TerrainKind], peaks: &[bool], elevations: &[f32]) {
         for (idx, cell) in self.cells.iter_mut().enumerate() {
             cell.terrain = kinds[idx];
             cell.is_peak = peaks[idx];
+            cell.elevation = elevations[idx];
         }
     }
 
@@ -648,6 +692,102 @@ impl SimWorld {
                 let idx = self.index(x, y);
                 self.cells[idx].toxicity = value;
             }
+        }
+    }
+
+    /// Classifies every cell's `Biome` (task 110,
+    /// `redesign/abiogenesis-biomes.md`) — the two-stage architecture the
+    /// design doc calls for: Stage A (`TerrainKind` + `is_peak` + the raw
+    /// `elevation` this task adds) gives the base landform, Stage B refines
+    /// it with the ambient scalars (`temperature`/`light`/`toxicity`) that
+    /// `apply_environment_sources`/`place_toxic_zone` have already written.
+    /// Must run last in `new_for_world`: it's the only step that reads the
+    /// *final* generation-time `toxicity` (Palude's gate), so running it
+    /// before `place_toxic_zone` would see every cell at `0.0`.
+    ///
+    /// Foresta/Palude additionally require a patch-level gate, not a
+    /// per-cell scalar threshold alone (a per-cell threshold on a noisy
+    /// scalar field produces checkerboard speckle, not organic patches) —
+    /// reuses `terrain_elevation`'s summed-plane-wave technique
+    /// (`world.rs:842-887`ish) for two independent low-frequency masks, on
+    /// their own derived RNG stream (`BIOME_SEED_OFFSET`, never `self.rng`
+    /// or `generate_terrain`'s local stream — sharing a stream with a
+    /// bounded-resample loop would make the draw depend on how many resample
+    /// attempts that loop happened to take).
+    fn classify_biomes(&mut self, config: &SimConfig) {
+        let biome_cfg = &config.biome;
+        let mut rng = StdRng::seed_from_u64(self.seed ^ BIOME_SEED_OFFSET);
+        let forest_waves = terrain_waves(
+            &mut rng,
+            biome_cfg.patch_wave_count as usize,
+            biome_cfg.patch_freq_min,
+            biome_cfg.patch_freq_max,
+        );
+        let swamp_waves = terrain_waves(
+            &mut rng,
+            biome_cfg.patch_wave_count as usize,
+            biome_cfg.patch_freq_min,
+            biome_cfg.patch_freq_max,
+        );
+
+        let mut biomes = vec![Biome::default(); self.cells.len()];
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = self.index(x, y);
+                let cell = self.cells[idx];
+                let nx = x as f32 / (self.width - 1).max(1) as f32;
+                let ny = y as f32 / (self.height - 1).max(1) as f32;
+                biomes[idx] = match cell.terrain {
+                    TerrainKind::Sea => {
+                        if cell.elevation < biome_cfg.deep_water_elevation_max {
+                            Biome::DeepWater
+                        } else {
+                            Biome::ShallowWater
+                        }
+                    }
+                    TerrainKind::Mountain => {
+                        if cell.is_peak {
+                            Biome::Peak
+                        } else {
+                            Biome::Mountain
+                        }
+                    }
+                    TerrainKind::Hill => {
+                        if cell.light <= biome_cfg.bare_rock_light_max {
+                            Biome::BareRock
+                        } else {
+                            Biome::Hill
+                        }
+                    }
+                    TerrainKind::Plain => {
+                        let swamp_patch =
+                            wave_band_sum(&swamp_waves, nx, ny) > biome_cfg.patch_threshold;
+                        let forest_patch =
+                            wave_band_sum(&forest_waves, nx, ny) > biome_cfg.patch_threshold;
+                        if swamp_patch && cell.toxicity >= biome_cfg.swamp_toxicity_min {
+                            Biome::Swamp
+                        } else if cell.temperature >= biome_cfg.desert_temperature_min
+                            && cell.light >= biome_cfg.desert_light_min
+                        {
+                            Biome::Desert
+                        } else if cell.temperature <= biome_cfg.tundra_temperature_max {
+                            Biome::Tundra
+                        } else if forest_patch
+                            && (biome_cfg.forest_temperature_min..=biome_cfg.forest_temperature_max)
+                                .contains(&cell.temperature)
+                            && (biome_cfg.forest_light_min..=biome_cfg.forest_light_max)
+                                .contains(&cell.light)
+                        {
+                            Biome::Forest
+                        } else {
+                            Biome::Plain
+                        }
+                    }
+                };
+            }
+        }
+        for (idx, cell) in self.cells.iter_mut().enumerate() {
+            cell.biome = biomes[idx];
         }
     }
 
@@ -1084,6 +1224,11 @@ const TEMPERATURE_SOURCE_SEED_OFFSET: u64 = 0x1656_67B1_9E37_79F9;
 /// rather than sharing its stream, so hot/bright regions don't always
 /// correlate spatially — an open question the design doc left to scoping.
 const SUN_DIRECTION_SEED_OFFSET: u64 = 0x9E97_79B9_7F4A_1656;
+
+/// Same purpose as `TERRAIN_SEED_OFFSET`, for the biome patch-noise masks
+/// (task 110) — a different constant so this stream doesn't start in
+/// lockstep with the others.
+const BIOME_SEED_OFFSET: u64 = 0x2545_F491_4F6C_DD1D;
 
 /// Dims `light` near `Mountain` peaks (task 085's "mountain shading"):
 /// linear falloff from `mountain_shade_strength` at a peak's own cell to `0`
@@ -1689,6 +1834,47 @@ mod tests {
         let terrain_a: Vec<TerrainKind> = a.cells.iter().map(|c| c.terrain).collect();
         let terrain_b: Vec<TerrainKind> = b.cells.iter().map(|c| c.terrain).collect();
         assert_ne!(terrain_a, terrain_b);
+    }
+
+    #[test]
+    fn biome_classification_is_deterministic_for_a_given_seed() {
+        let config = test_config();
+        let a = SimWorld::new(7, &config);
+        let b = SimWorld::new(7, &config);
+
+        let biomes_a: Vec<Biome> = a.cells.iter().map(|c| c.biome).collect();
+        let biomes_b: Vec<Biome> = b.cells.iter().map(|c| c.biome).collect();
+        assert_eq!(biomes_a, biomes_b);
+    }
+
+    #[test]
+    fn every_areal_biome_is_reachable_across_seeds() {
+        let config = test_config();
+        let mut seen = std::collections::HashSet::new();
+        for seed in 0..40u64 {
+            let world = SimWorld::new(seed, &config);
+            for cell in &world.cells {
+                seen.insert(cell.biome);
+            }
+        }
+        for biome in [
+            Biome::DeepWater,
+            Biome::ShallowWater,
+            Biome::Plain,
+            Biome::Hill,
+            Biome::Mountain,
+            Biome::Peak,
+            Biome::Desert,
+            Biome::Tundra,
+            Biome::BareRock,
+            Biome::Forest,
+            Biome::Swamp,
+        ] {
+            assert!(
+                seen.contains(&biome),
+                "{biome:?} never reached across 40 seeds"
+            );
+        }
     }
 
     #[test]

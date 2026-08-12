@@ -28,6 +28,7 @@ pub struct SimConfig {
     pub objectives: ObjectiveConfig,
     pub terrain: TerrainConfig,
     pub source: SourceConfig,
+    pub biome: BiomeConfig,
     pub evolution: EvolutionConfig,
 }
 
@@ -686,6 +687,97 @@ impl Default for TerrainConfig {
             max_generation_attempts: 8,
             min_toxic_zone_placeable_fraction: 0.5,
             max_toxic_zone_placement_attempts: 24,
+        }
+    }
+}
+
+/// Biome classification (task 110, `redesign/abiogenesis-biomes.md`): a
+/// two-stage refinement of `TerrainConfig`'s landform bands into the 11
+/// "areal" biomes, using the ambient scalars generation already writes
+/// (`temperature`/`light`/`toxicity`). Only covers the areal biomes — the
+/// explicitly-placed "feature" biomes (Cratere profondo, Distesa di
+/// cristalli, Lago, Bocca vulcanica) are task 111's scope, and their config
+/// lives there, not here. Every threshold below is a first-pass baseline
+/// from the design doc's target-value table, explicitly not a finished
+/// balance pass (the doc itself flags `toxicity`-derived values, in
+/// particular, as needing a joint retune with task 108's chemolithotroph
+/// metabolism).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BiomeConfig {
+    /// Within `TerrainKind::Sea`, elevation below this becomes Acqua
+    /// profonda; at/above it becomes Acqua bassa. An absolute elevation
+    /// value, not a fraction of `TerrainConfig::sea_threshold` — the raw
+    /// `Cell::elevation` field (task 110) this compares against is already
+    /// normalized to `[0, 1]` per world by `normalize_elevations`.
+    pub deep_water_elevation_max: f32,
+    /// Within `TerrainKind::Hill`, `light` at/below this becomes Roccia
+    /// nuda instead of Collina — a placeholder stand-in for "low organic
+    /// viability" (the design doc's own framing) until task 108's
+    /// chemolithotroph retune gives it a firmer basis.
+    pub bare_rock_light_max: f32,
+    /// Within `TerrainKind::Plain`, `temperature` at/above this (together
+    /// with `desert_light_min`) becomes Deserto.
+    pub desert_temperature_min: f32,
+    /// Within `TerrainKind::Plain`, `light` at/above this (together with
+    /// `desert_temperature_min`) becomes Deserto.
+    pub desert_light_min: f32,
+    /// Within `TerrainKind::Plain`, `temperature` at/below this becomes
+    /// Tundra (checked after Deserto, so a cell can't satisfy both).
+    pub tundra_temperature_max: f32,
+    /// How many low-frequency plane waves make up each of Foresta's and
+    /// Palude's patch-gating mask (task 110) — same summed-plane-wave
+    /// technique as `TerrainConfig::continent_wave_count`, reused so
+    /// per-cell scalar thresholds don't produce checkerboard speckle
+    /// instead of organic patches. Foresta and Palude each draw their own
+    /// independent mask from this many waves, off the same `BIOME_SEED_OFFSET`
+    /// stream.
+    pub patch_wave_count: u32,
+    /// Lower bound of the patch mask's spatial frequency range.
+    pub patch_freq_min: f32,
+    /// Upper bound of the patch mask's spatial frequency range.
+    pub patch_freq_max: f32,
+    /// `wave_band_sum` output threshold above which a cell falls inside a
+    /// patch mask ("can occur here"). Shared by both the Foresta and Palude
+    /// masks.
+    pub patch_threshold: f32,
+    /// Within `TerrainKind::Plain` and inside its patch mask, `temperature`
+    /// must fall in `[forest_temperature_min, forest_temperature_max]` to
+    /// become Foresta.
+    pub forest_temperature_min: f32,
+    /// See `forest_temperature_min`.
+    pub forest_temperature_max: f32,
+    /// Within `TerrainKind::Plain` and inside its patch mask, `light` must
+    /// fall in `[forest_light_min, forest_light_max]` to become Foresta.
+    pub forest_light_min: f32,
+    /// See `forest_light_min`.
+    pub forest_light_max: f32,
+    /// Within `TerrainKind::Plain` and inside its patch mask, `toxicity`
+    /// at/above this becomes Palude. Checked ahead of Deserto/Tundra/Foresta
+    /// (a toxic cell reads as Palude regardless of temperature/light).
+    /// `EnvironmentConfig::toxic_zone_value` (0.7 by default) is the only
+    /// source of nonzero `toxicity` at generation time today, so Palude
+    /// only ever appears as an organic sub-region of the toxic zone's
+    /// footprint until task 113 rewires the two apart.
+    pub swamp_toxicity_min: f32,
+}
+
+impl Default for BiomeConfig {
+    fn default() -> Self {
+        Self {
+            deep_water_elevation_max: 0.15,
+            bare_rock_light_max: 0.4,
+            desert_temperature_min: 0.75,
+            desert_light_min: 0.75,
+            tundra_temperature_max: 0.2,
+            patch_wave_count: 6,
+            patch_freq_min: 6.0,
+            patch_freq_max: 10.0,
+            patch_threshold: 0.2,
+            forest_temperature_min: 0.35,
+            forest_temperature_max: 0.65,
+            forest_light_min: 0.25,
+            forest_light_max: 0.45,
+            swamp_toxicity_min: 0.3,
         }
     }
 }

@@ -88,7 +88,7 @@ small/pulsing heat-source category exists yet to back it.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 110 | Biome enum + two-stage classification (areal biomes) | — | [110](110-biome-classification-two-stage.md) |
+| `[x]` | 110 | Biome enum + two-stage classification (areal biomes) | — | [110](done/110-biome-classification-two-stage.md) |
 | `[ ]` | 111 | Explicit placement for feature biomes (Cratere, Distesa di cristalli, Lago, Bocca vulcanica) | 110 | [111](111-biome-feature-placement.md) |
 | `[ ]` | 112 | Biome rendering (flat color, dithering, borders, tree overlay) | 110, 111 | [112](112-biome-rendering.md) |
 | `[ ]` | 113 | Palude replaces `toxic_zone` | 110 | [113](113-swamp-replaces-toxic-zone.md) |
@@ -150,7 +150,14 @@ Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN
 
 ---
 
-*Last updated: 2026-08-12 (116-120 added: HUD & Notebook redesign
+*Last updated: 2026-08-12 (110, biome enum + two-stage areal classification,
+completed and archived to `tasks/done/` — adds `Biome`/`Cell::biome`/
+`Cell::elevation`/`BiomeConfig`, and a `classify_biomes` generation step
+run after `place_toxic_zone` so Stage B reads real generation-time
+`toxicity`. Palude currently only appears as an organic sub-region of the
+toxic zone's footprint, since that's still the only nonzero-`toxicity`
+source at generation time — task 113 decouples the two. Unblocks 111 and
+113. 116-120 added: HUD & Notebook redesign
 follow-up, scoped from `redesign/abiogenesis-hud-notebook.md` after a
 discrepancy-check pass against tasks 097/100-103 — see `PROJECT_PLAN.md`
 for the full discrepancy list and resolutions. Task 103 extended in place
