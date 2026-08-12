@@ -611,14 +611,13 @@ mod terrain_overlay {
         }
     }
 
-    /// Monochrome club glyph (task 112) — a card-suit dingbat, not an emoji,
-    /// so it renders as a real glyph rather than a tofu box (the same
-    /// concern `ui.rs`'s `DEJAVU_SANS` doc comment raises about
-    /// `ACTION_GLYPHS`' 🌱💀🔬: egui has no COLR/bitmap emoji rendering path
-    /// at all). Doubles as a stylized tree/shrub mark.
-    const TREE_GLYPH: &str = "♣";
-    const TREE_GLYPH_FONT_SIZE: f32 = 8.0;
-    const TREE_GLYPH_COLOR: egui::Color32 = egui::Color32::from_rgb(90, 130, 80);
+    /// Upward-pointing isosceles triangle, drawn as a real filled polygon
+    /// (not a glyph — the earlier "♣" card-suit dingbat read as a clover,
+    /// not a tree). Fixed pixel size, matching `PEAK_GLYPH`'s screen-space
+    /// (zoom-independent) sizing.
+    const TREE_TRIANGLE_HALF_WIDTH: f32 = 4.0;
+    const TREE_TRIANGLE_HEIGHT: f32 = 8.0;
+    const TREE_COLOR: egui::Color32 = egui::Color32::from_rgb(90, 130, 80);
 
     /// Sparse-density biomes (task 112, design doc's tree-overlay table):
     /// Pianura, Collina, Montagna, Palude.
@@ -687,13 +686,16 @@ mod terrain_overlay {
                 let Some(pos) = project(cell_position(x, y, world.width, world.height)) else {
                     continue;
                 };
-                painter.text(
-                    pos,
-                    egui::Align2::CENTER_CENTER,
-                    TREE_GLYPH,
-                    egui::FontId::monospace(TREE_GLYPH_FONT_SIZE),
-                    TREE_GLYPH_COLOR,
-                );
+                let half_height = TREE_TRIANGLE_HEIGHT / 2.0;
+                painter.add(egui::Shape::convex_polygon(
+                    vec![
+                        egui::pos2(pos.x, pos.y - half_height),
+                        egui::pos2(pos.x + TREE_TRIANGLE_HALF_WIDTH, pos.y + half_height),
+                        egui::pos2(pos.x - TREE_TRIANGLE_HALF_WIDTH, pos.y + half_height),
+                    ],
+                    TREE_COLOR,
+                    egui::Stroke::NONE,
+                ));
             }
         }
     }
