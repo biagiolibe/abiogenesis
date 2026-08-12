@@ -15,8 +15,12 @@ use abiogenesis::objectives::{
 };
 use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::{
-    tick_and_complete_era, ActionBudget, AdjacencyObserved, EraCompleted, EraProgress,
-    OrganismBorn, OrganismDied, SpeciesExtinct, TerrainGateObserved, TerrainRevealed,
+    tick_and_complete_era, ActionBudget, EraCompleted, EraProgress, TickEventWriters,
+};
+#[cfg(test)]
+use abiogenesis::sim::{
+    AdjacencyObserved, OrganismBorn, OrganismDied, SelectionThresholdCrossed, SpeciesExtinct,
+    TerrainGateObserved, TerrainRevealed,
 };
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{draw_species_name, net_self_interaction, Organism, SimWorld, SpeciesId};
@@ -135,13 +139,8 @@ fn single_tick(
     config: Res<SimConfig>,
     mut progress: ResMut<EraProgress>,
     mut budget: ResMut<ActionBudget>,
-    mut died: MessageWriter<OrganismDied>,
-    mut extinct: MessageWriter<SpeciesExtinct>,
-    mut adjacencies: MessageWriter<AdjacencyObserved>,
     mut era_completed: MessageWriter<EraCompleted>,
-    mut born: MessageWriter<OrganismBorn>,
-    mut revealed: MessageWriter<TerrainRevealed>,
-    mut terrain_gates: MessageWriter<TerrainGateObserved>,
+    mut writers: TickEventWriters,
     mut objective_outcome: ObjectiveOutcomeParams,
     run_progress: Res<RunProgress>,
     mut intents: ResMut<HudControlIntents>,
@@ -164,12 +163,7 @@ fn single_tick(
         &mut budget,
         &mut era_completed,
     );
-    died.write_batch(events.deaths);
-    extinct.write_batch(events.extinctions);
-    adjacencies.write_batch(events.adjacencies);
-    born.write_batch(events.births);
-    revealed.write_batch(events.reveals);
-    terrain_gates.write_batch(events.terrain_gates);
+    writers.write_all(events);
     apply_tick_outcome(&world, &config, &mut objective_outcome);
 }
 
@@ -1153,6 +1147,7 @@ mod tests {
         app.add_message::<OrganismBorn>();
         app.add_message::<TerrainRevealed>();
         app.add_message::<TerrainGateObserved>();
+        app.add_message::<SelectionThresholdCrossed>();
         app.add_message::<ObjectiveAdvanced>();
         app.insert_resource(CurrentObjective::default());
         app.insert_resource(ObjectiveProgress::default());

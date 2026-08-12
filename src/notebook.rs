@@ -15,7 +15,9 @@ use abiogenesis::sim::{
     TerrainGateObserved, TerrainRevealed,
 };
 use abiogenesis::state::GameState;
-use abiogenesis::world::{Metabolism, Mode, SimWorld, SpeciesId, TagId, TagSlot, TerrainKind};
+use abiogenesis::world::{
+    Metabolism, Mode, SimWorld, SpeciesId, TagId, TagSlot, TerrainKind, TERRAIN_KIND_COUNT,
+};
 
 use crate::render::{metabolism_glyph, species_color, species_label, terrain_glyph};
 use crate::text;
@@ -164,19 +166,6 @@ impl MatrixKnowledge {
     }
 }
 
-/// Number of `TerrainKind` variants (`Sea`/`Plain`/`Hill`/`Mountain`,
-/// `world.rs:163-168`) — `TerrainKnowledge`'s per-tag row width.
-const TERRAIN_KIND_COUNT: usize = 4;
-
-fn terrain_index(terrain: TerrainKind) -> usize {
-    match terrain {
-        TerrainKind::Sea => 0,
-        TerrainKind::Plain => 1,
-        TerrainKind::Hill => 2,
-        TerrainKind::Mountain => 3,
-    }
-}
-
 /// Cumulative weighted evidence for every `(TagSlot, TerrainKind)` pair
 /// (task 097, `redesign/abiogenesis-living-world.md` §1) — the gradual,
 /// exposure-based counterpart to `MatrixKnowledge`, but keyed on a tag's
@@ -212,7 +201,7 @@ impl TerrainKnowledge {
     }
 
     fn index(&self, tag: TagSlot, terrain: TerrainKind) -> usize {
-        tag.0 as usize * TERRAIN_KIND_COUNT + terrain_index(terrain)
+        tag.0 as usize * TERRAIN_KIND_COUNT + terrain.index()
     }
 
     /// Adds `weight` to a `(tag, terrain)` pair's evidence, returning `true`

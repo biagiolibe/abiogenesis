@@ -215,7 +215,7 @@ redesign — all explicitly flagged as not design-ready in their source docs.
 - `[x]` 103 — Catalog: one-time metabolism legend, trimmed species rows, population + origin era (extended 2026-08-12, see "HUD & Notebook redesign follow-up" below) → [103](tasks/done/103-notebook-catalog-cleanup.md)
 - `[x]` 104 — Plain-language death message for player-placed organisms → [104](tasks/done/104-death-message-plain-language.md)
 - `[x]` 105 — Cause label on the Biosphere panel for a species taking deaths (depends on 104) → [105](tasks/done/105-death-biosphere-trend-diagnosis.md)
-- `[ ]` 106 — Selection pressure accumulation + threshold-crossing trigger → [106](tasks/106-evolution-selection-pressure-trigger.md)
+- `[x]` 106 — Selection pressure accumulation + threshold-crossing trigger → [106](tasks/done/106-evolution-selection-pressure-trigger.md)
 - `[ ]` 107 — Evolution by speciation: a new descendant species from selection pressure (depends on 106) → [107](tasks/107-evolution-speciation.md)
 - `[ ]` 108 — Fourth metabolism: chemolithotroph, gain from toxicity → [108](tasks/108-chemolithotroph-metabolism.md)
 - `[ ]` ⏸ 109 — BLOCKED — Long-term objective tier + within-run energy economy (depends on 096-099/106-107 shipping, not just scoping) → [109](tasks/109-progression-long-term-objective-energy.md)

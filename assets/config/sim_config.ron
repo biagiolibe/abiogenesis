@@ -73,10 +73,10 @@
         effect_intensity_min: -2,
         effect_intensity_max: 2,
         matrix_density: 0.4,
-        conditional_tag_count: 1,
+        conditional_tag_count: 4,
     ),
     notebook: (
-        confirmation_threshold: 3.0,
+        confirmation_threshold: 1.0,
         observation_weight_numerator: 1.0,
     ),
     difficulty: (
@@ -134,5 +134,11 @@
         sea_coolant_radius: 12.0,
         mountain_shade_radius: 8.0,
         mountain_shade_strength: 0.3,
+    ),
+    evolution: (
+        selection_pressure_threshold: 20.0,
+        interaction_harm_weight: 1.0,
+        terrain_mismatch_weight: 1.0,
+        toxicity_weight: 1.0,
     ),
 )

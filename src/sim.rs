@@ -1,14 +1,15 @@
 // Advances the simulation by one tick (GDD §5.6). Pure Rust, no Bevy App
 // required, so determinism and balance can be tested headless.
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use rand::RngExt;
 
-use crate::config::SimConfig;
+use crate::config::{EvolutionConfig, SimConfig};
 use crate::state::EraState;
 use crate::world::{
-    ConditionalTag, Metabolism, Mode, Organism, SimWorld, SpeciesId, TagId, TagSlot, TerrainKind,
-    TerrainOccupancy,
+    ConditionalTag, Metabolism, Mode, Organism, SelectionPressure, SimWorld, SpeciesId, TagId,
+    TagSlot, TerrainKind, TerrainOccupancy,
 };
 
 /// One organism's energy reached zero and it was removed this tick, with
@@ -131,6 +132,39 @@ pub struct TerrainGateObserved {
     pub passed: bool,
 }
 
+/// A species' accumulated selection pressure (task 106,
+/// `redesign/abiogenesis-evolution-xenotypes.md`) crossed
+/// `EvolutionConfig::selection_pressure_threshold`. Mirrors `OrganismDied`'s
+/// shape: a discrete signal carrying the exact terms that led to it, so a
+/// consumer (task 107, speciation) doesn't have to re-derive them. Fires at
+/// most once per species — see `SelectionPressure::crossed`.
+///
+/// **Deciding what happens on a crossing is explicitly out of scope for
+/// this task** — that's task 107's job, the same way `OrganismDied` signals
+/// a death without itself deciding what `notebook.rs` does with it.
+#[derive(Debug, Clone, Copy, Message)]
+pub struct SelectionThresholdCrossed {
+    pub species: SpeciesId,
+    /// Cell of the organism whose tick pushed this species' tally over the
+    /// threshold — a representative location, not necessarily where the
+    /// pressure was mostly accrued.
+    pub cell: usize,
+    /// This species' accumulated harm from negative `interaction_delta`, at
+    /// the moment of crossing.
+    pub interaction_harm: f32,
+    /// This species' total accumulated temperature-mismatch pressure
+    /// (summed across all `TerrainKind`s), at the moment of crossing.
+    pub terrain_mismatch: f32,
+    /// Which `TerrainKind` contributed the largest share of
+    /// `terrain_mismatch` — task 107 needs this to know *which* terrain's
+    /// temperature to shift `temp_optimum` toward, not just how much
+    /// mismatch pressure built up.
+    pub dominant_terrain: TerrainKind,
+    /// This species' accumulated toxicity exposure, at the moment of
+    /// crossing.
+    pub toxicity: f32,
+}
+
 /// Everything `step()` produced this tick, for `advance_tick` to drain into
 /// Bevy `MessageWriter`s. Kept as a plain struct (not `MessageWriter`
 /// parameters on `step()` itself) so `step()` stays callable without a Bevy
@@ -143,6 +177,38 @@ pub struct TickEvents {
     pub births: Vec<OrganismBorn>,
     pub reveals: Vec<TerrainRevealed>,
     pub terrain_gates: Vec<TerrainGateObserved>,
+    pub selection_thresholds: Vec<SelectionThresholdCrossed>,
+}
+
+/// Every `MessageWriter` `TickEvents` drains into, bundled into one
+/// `SystemParam` (mirrors `objectives.rs`'s `ObjectiveOutcomeParams`,
+/// task 059's fix for the same problem): `advance_tick`/`single_tick` were
+/// already at Bevy's per-system parameter ceiling before task 106 added
+/// `SelectionThresholdCrossed`'s writer, which pushed both over it.
+/// Bundling here is what lets a ninth event type get added later without
+/// hitting the ceiling again.
+#[derive(SystemParam)]
+pub struct TickEventWriters<'w> {
+    died: MessageWriter<'w, OrganismDied>,
+    extinct: MessageWriter<'w, SpeciesExtinct>,
+    adjacencies: MessageWriter<'w, AdjacencyObserved>,
+    born: MessageWriter<'w, OrganismBorn>,
+    revealed: MessageWriter<'w, TerrainRevealed>,
+    terrain_gates: MessageWriter<'w, TerrainGateObserved>,
+    selection_thresholds: MessageWriter<'w, SelectionThresholdCrossed>,
+}
+
+impl TickEventWriters<'_> {
+    pub fn write_all(&mut self, events: TickEvents) {
+        self.died.write_batch(events.deaths);
+        self.extinct.write_batch(events.extinctions);
+        self.adjacencies.write_batch(events.adjacencies);
+        self.born.write_batch(events.births);
+        self.revealed.write_batch(events.reveals);
+        self.terrain_gates.write_batch(events.terrain_gates);
+        self.selection_thresholds
+            .write_batch(events.selection_thresholds);
+    }
 }
 
 /// Advances the simulation by one tick: for each occupied cell, computes
@@ -221,6 +287,65 @@ fn mark_terrain_and_maybe_reveal(
             }
         }
     }
+}
+
+/// Accumulates one organism-tick's worth of selection pressure (task 106)
+/// into its species' running tally, growing `pressures` lazily the same way
+/// `mark_terrain_and_maybe_reveal` grows `terrain_occupancy`. Returns
+/// `Some(SelectionThresholdCrossed)` exactly on the tick this species'
+/// total pressure first reaches `threshold` — `None` on every other call,
+/// including repeat calls once already crossed (`SelectionPressure::crossed`
+/// guards this, mirroring `MatrixKnowledge::record`'s `was_confirmed` guard).
+///
+/// Takes each stimulus pre-computed (`interaction_delta`, `fit`) rather than
+/// recomputing them — both are already in scope in `step`'s per-organism
+/// loop, so this must not re-derive them (no duplicate matrix-neighbour
+/// scan).
+#[allow(clippy::too_many_arguments)]
+fn accumulate_selection_pressure(
+    pressures: &mut Vec<SelectionPressure>,
+    evolution: &EvolutionConfig,
+    species_len: usize,
+    species_id: SpeciesId,
+    cell: usize,
+    interaction_delta: f32,
+    fit: f32,
+    terrain: TerrainKind,
+    toxicity: f32,
+) -> Option<SelectionThresholdCrossed> {
+    if pressures.len() < species_len {
+        pressures.resize(species_len, SelectionPressure::default());
+    }
+    let pressure = &mut pressures[species_id.0 as usize];
+    if pressure.crossed {
+        return None;
+    }
+
+    pressure.interaction_harm += (-interaction_delta).max(0.0) * evolution.interaction_harm_weight;
+    pressure.terrain_mismatch[terrain.index()] += (1.0 - fit) * evolution.terrain_mismatch_weight;
+    pressure.toxicity += toxicity * evolution.toxicity_weight;
+
+    if pressure.total() < evolution.selection_pressure_threshold {
+        return None;
+    }
+    pressure.crossed = true;
+
+    let dominant_terrain_idx = pressure
+        .terrain_mismatch
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.total_cmp(b))
+        .map(|(idx, _)| idx)
+        .expect("terrain_mismatch is a fixed non-empty array");
+
+    Some(SelectionThresholdCrossed {
+        species: species_id,
+        cell,
+        interaction_harm: pressure.interaction_harm,
+        terrain_mismatch: pressure.terrain_mismatch.iter().sum(),
+        dominant_terrain: TerrainKind::from_index(dominant_terrain_idx),
+        toxicity: pressure.toxicity,
+    })
 }
 
 pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
@@ -446,6 +571,25 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
             }
         }
 
+        // Task 106: accumulate this tick's selection-pressure stimuli
+        // (interaction harm, terrain/temp-optimum mismatch, toxicity) into
+        // the organism's species tally, before costs/death are resolved —
+        // the pressure reflects exposure this tick regardless of whether
+        // the organism survives it.
+        if let Some(crossed) = accumulate_selection_pressure(
+            &mut world.selection_pressure,
+            &config.evolution,
+            world.species.len(),
+            organism.species,
+            idx,
+            interaction_delta,
+            fit,
+            cell.terrain,
+            cell.toxicity,
+        ) {
+            events.selection_thresholds.push(crossed);
+        }
+
         // 4. Costs: base upkeep plus a carrying-capacity penalty per
         // occupied neighbour, read from the snapshot so the tick stays
         // order-independent.
@@ -644,6 +788,7 @@ impl Plugin for SimPlugin {
         app.add_message::<OrganismBorn>();
         app.add_message::<TerrainRevealed>();
         app.add_message::<TerrainGateObserved>();
+        app.add_message::<SelectionThresholdCrossed>();
         app.add_systems(
             FixedUpdate,
             advance_tick
@@ -683,20 +828,14 @@ pub fn tick_and_complete_era(
     events
 }
 
-#[allow(clippy::too_many_arguments)]
 fn advance_tick(
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
     mut progress: ResMut<EraProgress>,
     mut next_state: ResMut<NextState<EraState>>,
     mut budget: ResMut<ActionBudget>,
-    mut died: MessageWriter<OrganismDied>,
-    mut extinct: MessageWriter<SpeciesExtinct>,
-    mut adjacencies: MessageWriter<AdjacencyObserved>,
     mut era_completed: MessageWriter<EraCompleted>,
-    mut born: MessageWriter<OrganismBorn>,
-    mut revealed: MessageWriter<TerrainRevealed>,
-    mut terrain_gates: MessageWriter<TerrainGateObserved>,
+    mut writers: TickEventWriters,
 ) {
     if progress.remaining() == 0 {
         return;
@@ -708,12 +847,7 @@ fn advance_tick(
         &mut budget,
         &mut era_completed,
     );
-    died.write_batch(events.deaths);
-    extinct.write_batch(events.extinctions);
-    adjacencies.write_batch(events.adjacencies);
-    born.write_batch(events.births);
-    revealed.write_batch(events.reveals);
-    terrain_gates.write_batch(events.terrain_gates);
+    writers.write_all(events);
     if progress.remaining() == 0 {
         next_state.set(EraState::Observing);
     }
@@ -934,6 +1068,7 @@ mod tests {
         app.add_message::<OrganismBorn>();
         app.add_message::<TerrainRevealed>();
         app.add_message::<TerrainGateObserved>();
+        app.add_message::<SelectionThresholdCrossed>();
         app.add_systems(Update, advance_tick.run_if(in_state(EraState::Advancing)));
 
         app.world_mut()
@@ -2096,5 +2231,237 @@ mod tests {
         };
         budget.refill(3);
         assert_eq!(budget.points_remaining, 3);
+    }
+
+    fn test_evolution_config(threshold: f32) -> EvolutionConfig {
+        EvolutionConfig {
+            selection_pressure_threshold: threshold,
+            interaction_harm_weight: 1.0,
+            terrain_mismatch_weight: 1.0,
+            toxicity_weight: 1.0,
+        }
+    }
+
+    #[test]
+    fn selection_pressure_accumulates_from_each_stimulus_independently() {
+        let evolution = test_evolution_config(1000.0);
+        let mut pressures = Vec::new();
+
+        // Negative interaction_delta contributes to interaction_harm only.
+        accumulate_selection_pressure(
+            &mut pressures,
+            &evolution,
+            1,
+            SpeciesId(0),
+            0,
+            -3.0,
+            1.0,
+            TerrainKind::Plain,
+            0.0,
+        );
+        assert_eq!(pressures[0].interaction_harm, 3.0);
+        assert_eq!(pressures[0].terrain_mismatch, [0.0; 4]);
+        assert_eq!(pressures[0].toxicity, 0.0);
+
+        // Positive interaction_delta is a benefit, not harm — must not add.
+        accumulate_selection_pressure(
+            &mut pressures,
+            &evolution,
+            1,
+            SpeciesId(0),
+            0,
+            5.0,
+            1.0,
+            TerrainKind::Plain,
+            0.0,
+        );
+        assert_eq!(
+            pressures[0].interaction_harm, 3.0,
+            "positive interaction_delta must not add harm"
+        );
+
+        // Poor fit (0.4) while on Hill contributes to terrain_mismatch[Hill] only.
+        accumulate_selection_pressure(
+            &mut pressures,
+            &evolution,
+            1,
+            SpeciesId(0),
+            0,
+            0.0,
+            0.4,
+            TerrainKind::Hill,
+            0.0,
+        );
+        assert!((pressures[0].terrain_mismatch[TerrainKind::Hill.index()] - 0.6).abs() < TOLERANCE);
+        assert_eq!(
+            pressures[0].terrain_mismatch[TerrainKind::Plain.index()],
+            0.0
+        );
+
+        // Toxicity exposure contributes to toxicity only.
+        accumulate_selection_pressure(
+            &mut pressures,
+            &evolution,
+            1,
+            SpeciesId(0),
+            0,
+            0.0,
+            1.0,
+            TerrainKind::Plain,
+            0.7,
+        );
+        assert!((pressures[0].toxicity - 0.7).abs() < TOLERANCE);
+    }
+
+    #[test]
+    fn selection_threshold_crossed_fires_exactly_once_at_crossing() {
+        let evolution = test_evolution_config(10.0);
+        let mut pressures = Vec::new();
+
+        // 9 units of harm: below threshold, no event yet.
+        let below = accumulate_selection_pressure(
+            &mut pressures,
+            &evolution,
+            1,
+            SpeciesId(0),
+            42,
+            -9.0,
+            1.0,
+            TerrainKind::Plain,
+            0.0,
+        );
+        assert!(below.is_none());
+
+        // +2 more units of harm crosses 10.0: the event fires on this call.
+        let crossed = accumulate_selection_pressure(
+            &mut pressures,
+            &evolution,
+            1,
+            SpeciesId(0),
+            42,
+            -2.0,
+            1.0,
+            TerrainKind::Plain,
+            0.0,
+        )
+        .expect("threshold crossed this call");
+        assert_eq!(crossed.species, SpeciesId(0));
+        assert_eq!(crossed.cell, 42);
+        assert!((crossed.interaction_harm - 11.0).abs() < TOLERANCE);
+    }
+
+    #[test]
+    fn selection_pressure_does_not_refire_after_crossing() {
+        let evolution = test_evolution_config(5.0);
+        let mut pressures = Vec::new();
+
+        let first = accumulate_selection_pressure(
+            &mut pressures,
+            &evolution,
+            1,
+            SpeciesId(0),
+            0,
+            -6.0,
+            1.0,
+            TerrainKind::Plain,
+            0.0,
+        );
+        assert!(first.is_some(), "first call crosses the threshold");
+
+        let second = accumulate_selection_pressure(
+            &mut pressures,
+            &evolution,
+            1,
+            SpeciesId(0),
+            0,
+            -6.0,
+            1.0,
+            TerrainKind::Plain,
+            0.0,
+        );
+        assert!(second.is_none(), "must not re-fire once already crossed");
+        assert!(pressures[0].crossed);
+    }
+
+    #[test]
+    fn selection_threshold_crossed_reports_the_dominant_mismatch_terrain() {
+        let evolution = test_evolution_config(1.0);
+        let mut pressures = Vec::new();
+
+        // Small mismatch on Plain (0.1), larger on Mountain (0.8) — total
+        // 0.9, still below threshold.
+        accumulate_selection_pressure(
+            &mut pressures,
+            &evolution,
+            1,
+            SpeciesId(0),
+            0,
+            0.0,
+            0.9,
+            TerrainKind::Plain,
+            0.0,
+        );
+        accumulate_selection_pressure(
+            &mut pressures,
+            &evolution,
+            1,
+            SpeciesId(0),
+            0,
+            0.0,
+            0.2,
+            TerrainKind::Mountain,
+            0.0,
+        );
+        // Toxicity 0.2 tips the total to 1.1, crossing the threshold.
+        let crossed = accumulate_selection_pressure(
+            &mut pressures,
+            &evolution,
+            1,
+            SpeciesId(0),
+            0,
+            0.0,
+            1.0,
+            TerrainKind::Plain,
+            0.2,
+        )
+        .expect("threshold crossed this call");
+        assert_eq!(
+            crossed.dominant_terrain,
+            TerrainKind::Mountain,
+            "Mountain accrued the larger mismatch share"
+        );
+    }
+
+    /// End-to-end verification (task 106's live-verification acceptance
+    /// criterion, exercised here as an automated integration test instead of
+    /// a manual `cargo run` session, since this feature has no player-facing
+    /// UI yet — presentation is task 107's concern): a lineage sustaining
+    /// maximum toxicity exposure through `step` itself, not the pure
+    /// accumulator directly, eventually crosses the threshold and the event
+    /// surfaces through `TickEvents` exactly like `OrganismDied` does.
+    #[test]
+    fn sustained_toxicity_exposure_crosses_the_threshold_through_step() {
+        let (mut world, config) = world_with_one_organism(0.7, 0.5, 5.0);
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let idx = world.index(cx, cy);
+
+        let mut crossed = None;
+        for _ in 0..200 {
+            // Reset every tick: `diffuse_environment` would otherwise erode
+            // this cell's toxicity before the accumulator reads it.
+            world.cells[idx].toxicity = 1.0;
+            let events = step(&mut world, &config);
+            if let Some(event) = events.selection_thresholds.into_iter().next() {
+                crossed = Some(event);
+                break;
+            }
+            if world.get(cx, cy).organism.is_none() {
+                panic!("organism must not die from toxicity alone in this test setup");
+            }
+        }
+
+        let crossed = crossed.expect("sustained toxicity exposure should cross the threshold");
+        assert_eq!(crossed.species, SpeciesId(0));
+        assert!(crossed.toxicity > 0.0);
     }
 }

@@ -28,6 +28,7 @@ pub struct SimConfig {
     pub objectives: ObjectiveConfig,
     pub terrain: TerrainConfig,
     pub source: SourceConfig,
+    pub evolution: EvolutionConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -364,6 +365,36 @@ impl Default for TagConfig {
             effect_intensity_max: 2,
             matrix_density: 0.4,
             conditional_tag_count: 1,
+        }
+    }
+}
+
+/// Task 106's selection-pressure accumulator (`redesign/abiogenesis-evolution-xenotypes.md`):
+/// per-stimulus weights and the crossing threshold. First-pass, tunable
+/// values — not derived from any GDD formula yet.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EvolutionConfig {
+    /// Total accumulated pressure (sum of all three weighted stimuli) needed
+    /// to fire `SelectionThresholdCrossed` for a species.
+    pub selection_pressure_threshold: f32,
+    /// Weight applied to a tick's harmful (negative) `interaction_delta`
+    /// share before accumulating.
+    pub interaction_harm_weight: f32,
+    /// Weight applied to a tick's temperature mismatch (`1.0 - env_fit`)
+    /// before accumulating.
+    pub terrain_mismatch_weight: f32,
+    /// Weight applied to a tick's `Cell::toxicity` exposure before
+    /// accumulating.
+    pub toxicity_weight: f32,
+}
+
+impl Default for EvolutionConfig {
+    fn default() -> Self {
+        Self {
+            selection_pressure_threshold: 20.0,
+            interaction_harm_weight: 1.0,
+            terrain_mismatch_weight: 1.0,
+            toxicity_weight: 1.0,
         }
     }
 }

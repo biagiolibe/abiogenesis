@@ -73,7 +73,7 @@ but blocked.
 | `[x]` | 103 | Catalog: one-time metabolism legend, trimmed species rows, population + origin era | — | [103](done/103-notebook-catalog-cleanup.md) |
 | `[x]` | 104 | Plain-language death message for player-placed organisms | — | [104](done/104-death-message-plain-language.md) |
 | `[x]` | 105 | Cause label on the Biosphere panel for a species taking deaths | 104 | [105](done/105-death-biosphere-trend-diagnosis.md) |
-| `[ ]` | 106 | Selection pressure accumulation + threshold-crossing trigger | — | [106](106-evolution-selection-pressure-trigger.md) |
+| `[x]` | 106 | Selection pressure accumulation + threshold-crossing trigger | — | [106](done/106-evolution-selection-pressure-trigger.md) |
 | `[ ]` | 107 | Evolution by speciation: a new descendant species | 106 | [107](107-evolution-speciation.md) |
 | `[ ]` | 108 | Fourth metabolism: chemolithotroph, gain from toxicity | — | [108](108-chemolithotroph-metabolism.md) |
 | `[ ]` ⏸ | 109 | BLOCKED — Long-term objective tier + within-run energy economy | 096-099/106-107 (shipped, not just scoped) | [109](109-progression-long-term-objective-energy.md) |

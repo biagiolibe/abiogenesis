@@ -168,6 +168,36 @@ pub enum TerrainKind {
     Mountain,
 }
 
+/// Number of `TerrainKind` variants — the width of any per-terrain array
+/// (`TerrainOccupancy`'s bitmask, `notebook.rs`'s `TerrainKnowledge` rows,
+/// task 106's `SelectionPressure::terrain_mismatch`). One definition so the
+/// variant-to-index mapping can't drift between them.
+pub const TERRAIN_KIND_COUNT: usize = 4;
+
+impl TerrainKind {
+    /// This variant's position in any `[T; TERRAIN_KIND_COUNT]` array.
+    pub fn index(self) -> usize {
+        match self {
+            TerrainKind::Sea => 0,
+            TerrainKind::Plain => 1,
+            TerrainKind::Hill => 2,
+            TerrainKind::Mountain => 3,
+        }
+    }
+
+    /// Inverse of `index` — panics on an out-of-range index, which should
+    /// never happen since every caller derives `index` from this same enum.
+    pub fn from_index(index: usize) -> Self {
+        match index {
+            0 => TerrainKind::Sea,
+            1 => TerrainKind::Plain,
+            2 => TerrainKind::Hill,
+            3 => TerrainKind::Mountain,
+            _ => panic!("terrain index out of range: {index}"),
+        }
+    }
+}
+
 /// Which `TerrainKind` bands a species' lineage has ever occupied this run
 /// (task 099) — a tiny bitmask over `TerrainKind`'s 4 variants, one entry
 /// per `SpeciesId` in `SimWorld::terrain_occupancy`. Deliberately named and
@@ -199,6 +229,50 @@ impl TerrainOccupancy {
         let newly_set = self.0 & bit == 0;
         self.0 |= bit;
         newly_set
+    }
+}
+
+/// Per-species accumulated selection pressure (task 106,
+/// `redesign/abiogenesis-evolution-xenotypes.md`), one entry per `SpeciesId`
+/// in `SimWorld::selection_pressure`, grown lazily the same way as
+/// `terrain_occupancy`. Lineage-scoped (per `SpeciesId`, shared by every
+/// individual of that species), not per-organism: `Organism` stays a small
+/// `Copy` snapshot value (`sim.rs`'s tick relies on cheaply copying it out of
+/// the grid every iteration) and the doc's own framing talks about a
+/// *lineage* being repeatedly exposed to a stimulus, not one individual's
+/// luck.
+///
+/// Deliberately a new, separate accumulator, not a `MatrixKnowledge` reuse —
+/// that one tracks tag-pair evidence, this tracks organism/lineage stimulus
+/// exposure. Also deliberately separate from `TerrainOccupancy`: that one is
+/// a "has this lineage ever set foot here" bitmask with no magnitude, so it
+/// can't carry a pressure value — this one *is* the magnitude, keyed the
+/// same way (`TerrainKind::index`) so the two stay parallel without
+/// duplicating tracking.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct SelectionPressure {
+    /// Accumulated harm from negative `interaction_delta` (GDD §5.6 step 3)
+    /// — only the harmful (negative) share counts, so a lineage that's
+    /// mostly helped by adjacency never accrues pressure from this stimulus.
+    pub interaction_harm: f32,
+    /// Accumulated temperature mismatch (`1.0 - env_fit`), bucketed by the
+    /// `TerrainKind` occupied at the time — task 107 needs to know not just
+    /// how much mismatch pressure built up, but *where*, to shift
+    /// `temp_optimum` toward the terrain actually occupied.
+    pub terrain_mismatch: [f32; TERRAIN_KIND_COUNT],
+    /// Accumulated `Cell::toxicity` exposure.
+    pub toxicity: f32,
+    /// Set once this species' total pressure has crossed
+    /// `EvolutionConfig::selection_pressure_threshold` — mirrors
+    /// `MatrixKnowledge::record`'s `was_confirmed` guard: once true, this
+    /// species' crossing never fires `SelectionThresholdCrossed` again, even
+    /// though the tallies above keep accumulating.
+    pub crossed: bool,
+}
+
+impl SelectionPressure {
+    pub fn total(&self) -> f32 {
+        self.interaction_harm + self.terrain_mismatch.iter().sum::<f32>() + self.toxicity
     }
 }
 
@@ -291,6 +365,11 @@ pub struct SimWorld {
     /// `TerrainOccupancy`'s own doc comment for why this is shaped
     /// generically rather than reveal-specific.
     pub terrain_occupancy: Vec<TerrainOccupancy>,
+    /// Per-`SpeciesId` accumulated selection pressure (task 106), indexed by
+    /// `SpeciesId.0`, grown lazily as `species` grows — see
+    /// `SelectionPressure`'s own doc comment for the lineage-scoping
+    /// rationale.
+    pub selection_pressure: Vec<SelectionPressure>,
     /// Per-`SpeciesId` origin era (task 103) — `species_origin_era[id.0]` is
     /// the `era` this world was on when that species was first pushed onto
     /// `species`. Can't be reconstructed after the fact, so every
@@ -350,6 +429,7 @@ impl SimWorld {
             ever_populated: false,
             wild_species: Vec::new(),
             terrain_occupancy: Vec::new(),
+            selection_pressure: Vec::new(),
             species_origin_era: Vec::new(),
             rng,
         };
