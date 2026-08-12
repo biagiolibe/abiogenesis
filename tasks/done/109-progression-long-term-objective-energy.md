@@ -1,11 +1,52 @@
-# Task 109 — Long-term objective tier + within-run energy economy (BLOCKED)
+# Task 109 — Long-term objective tier + within-run energy economy
 
 > **ID**: `109`
 > **Category**: Feature / Progression / Objectives
 > **Priority**: 🟡 P2
-> **Estimate**: ~3h (once unblocked)
-> **Assigned to**: unassigned — **do not start**, see Dependencies
-> **Session**: 2026-08-11 (scoped from `redesign/abiogenesis-progression-pacing.md`)
+> **Estimate**: ~3h
+> **Assigned to**: done
+> **Session**: 2026-08-11 (scoped from `redesign/abiogenesis-progression-pacing.md`),
+> unblocked and implemented 2026-08-12 once 096-099/106-107 all shipped.
+
+---
+
+## ✅ Implementation notes (2026-08-12)
+
+Unblocked once 096-099 and 106-107 landed. Picked `Objective::Speciation`
+("a descendant species has evolved") as the long-term objective's content —
+the design doc's own example, and structurally available in every world
+(unlike a conditional-tag confirmation, which isn't guaranteed to exist in
+a given world's active tag subset).
+
+- `Objective::Speciation` (`objectives.rs`) — a one-shot condition like
+  `TriggerBloom`, backed by a new `SimWorld::has_speciated` flag
+  (`world.rs`) set once by `sim::speciate` on a successful descendant
+  creation.
+- `worldgen::generate_objectives` now unconditionally appends
+  `Objective::Speciation` as the sequence's true final entry, after the
+  existing short-term draw loop — this alone restructures what triggers
+  `WorldCleared` (`CurrentObjective::is_last()`), with zero changes needed
+  to `apply_tick_outcome`'s control flow itself.
+- `apply_tick_outcome` grants `ObjectiveConfig::objective_clear_energy_reward`
+  to the new `RunProgress::energy` field on every `Ongoing -> Cleared`
+  edge, short- or long-term tier alike.
+- `RunProgress::splice_cost` picks `ActionCosts::splice_upgraded` once
+  `ObjectiveConfig::splice_upgrade_energy_threshold` is banked — an
+  unlocked capability, never consumed. Wired into both
+  `input.rs::apply_splice` (what it actually charges) and the HUD's action
+  tooltip (what it displays), single source of truth.
+- HUD: `ui::ObjectiveReadouts` (new bundled `SystemParam`, needed to stay
+  under Bevy's 16-parameter system ceiling once `RunProgress` joined
+  `hud_panel`) and an `"Energy: N"` line next to the seed line. Verified
+  live via `cargo run` + screenshot: HUD shows `Energy: 0` and
+  `Objective 1 / 3` (2 short-term + 1 long-term).
+- Evolved-species run-to-run persistence (mentioned in the design doc's
+  "Decided in discussion" section) was **not** implemented — it isn't in
+  this task file's own Acceptance Criteria list, only in the source doc's
+  broader discussion notes.
+- Balance (energy reward amount, upgrade threshold, how achievable
+  `Speciation` is within a typical era budget) is first-pass and untuned,
+  consistent with the design doc's own "pure balance, not decided here."
 
 ---
 
@@ -37,40 +78,45 @@ behavior but start granting an energy reward. Full reasoning in
 
 ## 📋 Acceptance Criteria (once unblocked)
 
-- [ ] A new long-term `Objective` variant (or variants) exists, checking
+- [x] A new long-term `Objective` variant (or variants) exists, checking
       state from whichever of 096-099/106-107 has landed (e.g. "a
       zone-conditional relation has been confirmed," "a speciation event
       has occurred") — exact variant(s) depend on what's actually
       available at implementation time, not prescribed further here.
-- [ ] `CurrentObjective`'s sequence (`objectives.rs:136-166`) is restructured
+- [x] `CurrentObjective`'s sequence (`objectives.rs:136-166`) is restructured
       so the long-term objective is what triggers `WorldCleared`
       (`apply_tick_outcome`, `objectives.rs:403-467`) — existing short-term
       objectives (`Coexistence`/`SurviveIn`/`TriggerBloom`) keep their
       current in-place-advance behavior (index increments, progress
       resets, no world reset) when cleared, unchanged from today.
-- [ ] Clearing **any** objective (short- or long-term tier) grants an
+- [x] Clearing **any** objective (short- or long-term tier) grants an
       energy reward — a new field, first-pass tunable amount in
       `SimConfig`, no magic numbers.
-- [ ] A new energy resource lives at the `RunProgress` level (`run.rs:15-21`)
+- [x] A new energy resource lives at the `RunProgress` level (`run.rs:15-21`)
       — persists across world resets within a run (like `worlds_cleared`
       already does), resets at run start/end like the rest of
       `RunProgress`.
-- [ ] `Splice`'s existing cost gate (`input.rs:567`,
+- [x] `Splice`'s existing cost gate (`input.rs:567`,
       `config.action_costs.splice`) gains an energy-funded upgraded tier
       (e.g. more simultaneous `SpliceEditChoice` edits per use, or a
       reduced action-point cost) once enough energy is banked — `Splice`
       itself stays available from world 0, unchanged (no gating of the
       action's existence, per the doc's explicit decision to avoid
       touching onboarding).
-- [ ] Unit tests: energy accumulates correctly across objective clears and
+- [x] Unit tests: energy accumulates correctly across objective clears and
       survives a world reset within a run (mirrors existing
       `RunProgress`/`worlds_cleared` test coverage); `Splice`'s upgraded
       tier only activates once threshold is met.
-- [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
-- [ ] Verified live via `cargo run`: a full run showing a short-term
-      objective clear granting energy without a world reset, and (once the
-      long-term objective's underlying content exists) the long-term
-      objective eventually triggering the reset.
+- [x] `cargo test` and `cargo clippy -- -D warnings` clean.
+- [x] Verified live via `cargo run` + screenshot (2026-08-12): confirmed
+      the HUD renders `Energy: 0` and `Objective 1 / 3` (2 short-term + 1
+      long-term) at world start. **Not** verified live: an actual
+      short-term clear granting energy in place, or the long-term
+      objective triggering `WorldCleared` — both require playing far
+      enough into a run for their trigger conditions to fire, which wasn't
+      practical in this session. Covered instead by the unit tests above
+      (`apply_tick_outcome`'s energy-grant tests exercise both edges
+      directly against a hand-built `SimWorld`/ECS `World`).
 
 ---
 

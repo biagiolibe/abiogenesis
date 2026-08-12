@@ -234,6 +234,7 @@ mod tests {
             world_seed: 123,
             worlds_cleared: 0,
             unlocks: Default::default(),
+            energy: 0.0,
         };
         let mut era_progress = EraProgress::default();
         let mut era_next_state = NextState::default();
@@ -316,6 +317,7 @@ mod tests {
             world_seed: 11,
             worlds_cleared: 0,
             unlocks: Default::default(),
+            energy: 0.0,
         };
         let mut era_progress = EraProgress::default();
         let mut era_next_state = NextState::default();
@@ -353,6 +355,7 @@ mod tests {
             world_seed: 11,
             worlds_cleared: 0,
             unlocks: Default::default(),
+            energy: 0.0,
         };
         let mut era_progress = EraProgress::default();
         let mut era_next_state = NextState::default();
@@ -392,6 +395,7 @@ mod tests {
             world_seed: 13,
             worlds_cleared: 0,
             unlocks: Default::default(),
+            energy: 0.0,
         };
         let mut era_progress = EraProgress::default();
         let mut era_next_state = NextState::default();
@@ -430,6 +434,7 @@ mod tests {
             world_seed: 7,
             worlds_cleared: 0,
             unlocks: Default::default(),
+            energy: 0.0,
         };
         let mut era_progress = EraProgress::default();
         let mut era_next_state = NextState::default();
@@ -474,6 +479,7 @@ mod tests {
             world_seed: 99,
             worlds_cleared: 3,
             unlocks: Default::default(),
+            energy: 0.0,
         };
         let mut era_progress = EraProgress::default();
         let mut era_next_state = NextState::default();
@@ -508,5 +514,47 @@ mod tests {
         assert_eq!(reset.objective.index, 0);
         assert_eq!(reset.objective_progress.consecutive_ticks, 0);
         assert_eq!(reset.outcome.0, WorldOutcome::Ongoing);
+    }
+
+    /// Task 109: `RunProgress::energy` must survive `start_world`'s
+    /// per-world reset — it isn't part of `WorldResetParams` at all, the
+    /// same "persists across worlds within a run" shape `worlds_cleared`
+    /// already has (unlike `MatrixKnowledge`/`ObjectiveProgress`/etc.,
+    /// which every assertion above confirms *does* get wiped).
+    #[test]
+    fn advancing_to_the_next_world_leaves_banked_energy_untouched() {
+        let config = SimConfig::default();
+        let (mut world, objectives) = build_world(5, 0, &config, 0);
+        let mut run_progress = RunProgress {
+            run_seed: 5,
+            world_index: 0,
+            world_seed: 5,
+            worlds_cleared: 0,
+            unlocks: Default::default(),
+            energy: 4.0,
+        };
+        let mut era_progress = EraProgress::default();
+        let mut era_next_state = NextState::default();
+        let mut ecs_world = resource_world(
+            objectives,
+            ObjectiveProgress::default(),
+            CurrentWorldOutcome::default(),
+        );
+        let mut state = SystemState::<WorldResetParams>::new(&mut ecs_world);
+        let mut reset = state.get_mut(&mut ecs_world).unwrap();
+
+        advance_to_next_world(
+            &mut world,
+            &mut run_progress,
+            &config,
+            &mut era_progress,
+            &mut era_next_state,
+            &mut reset,
+        );
+
+        assert_eq!(
+            run_progress.energy, 4.0,
+            "energy banked before the reset must still be there after it"
+        );
     }
 }

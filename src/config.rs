@@ -236,6 +236,11 @@ pub struct ActionCosts {
     pub stress: u32,
     pub cull: u32,
     pub splice: u32,
+    /// `Splice`'s action-point cost once `ObjectiveConfig::
+    /// splice_upgrade_energy_threshold` is banked (task 109,
+    /// `RunProgress::splice_cost`) — cheaper than `splice`, never gates the
+    /// action's base availability (unchanged from world 0 onward).
+    pub splice_upgraded: u32,
 }
 
 impl Default for ActionCosts {
@@ -245,6 +250,7 @@ impl Default for ActionCosts {
             stress: 1,
             cull: 1,
             splice: 2,
+            splice_upgraded: 1,
         }
     }
 }
@@ -577,6 +583,17 @@ pub struct ObjectiveConfig {
     pub survive_in_ticks_base: u32,
     /// `Objective::TriggerBloom`'s `population_threshold` at severity 1.0.
     pub trigger_bloom_population_threshold_base: u32,
+    /// Energy granted to `RunProgress::energy` when any objective clears —
+    /// short- or long-term tier alike (task 109,
+    /// `redesign/abiogenesis-progression-pacing.md`). First-pass tunable
+    /// amount, not derived — pure balance, left open by the design doc.
+    pub objective_clear_energy_reward: f32,
+    /// `RunProgress::energy` banked threshold at which `Splice`'s upgraded,
+    /// cheaper action-point cost (`ActionCosts::splice_upgraded`) becomes
+    /// available (task 109) — an unlocked capability, not a spent
+    /// currency (GDD §10's "unlock capabilities, not answers"): crossing
+    /// this never subtracts from `energy`.
+    pub splice_upgrade_energy_threshold: f32,
 }
 
 impl Default for ObjectiveConfig {
@@ -586,6 +603,11 @@ impl Default for ObjectiveConfig {
             coexistence_ticks_base: 100,
             survive_in_ticks_base: 75,
             trigger_bloom_population_threshold_base: 8,
+            objective_clear_energy_reward: 1.0,
+            // 3 objective clears' worth of energy at the default reward —
+            // reachable within a single world's short-term sequence plus
+            // one more, not locked behind a whole extra world.
+            splice_upgrade_energy_threshold: 3.0,
         }
     }
 }

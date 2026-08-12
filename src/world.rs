@@ -455,6 +455,13 @@ pub struct SimWorld {
     /// a true historical fact even after the species later goes fully
     /// extinct.
     pub species_seeded_era: Vec<Option<u32>>,
+    /// Whether `sim::speciate` has successfully created a descendant
+    /// species in this world (task 109) — set once, never cleared for the
+    /// rest of this world's life, mirroring `ever_populated`'s shape.
+    /// Backs `Objective::Speciation`, the long-term objective's default
+    /// content: a per-world flag, not a run-level one, since the objective
+    /// itself resets fresh with every new world like the short-term tier.
+    pub has_speciated: bool,
     rng: StdRng,
     /// Write-side double buffer for the tick (TECH_DESIGN.md §6). `pub(crate)`
     /// so `sim::step` can read/write it directly without a cell-by-cell API.
@@ -512,6 +519,7 @@ impl SimWorld {
             selection_pressure: Vec::new(),
             species_origin_era: Vec::new(),
             species_seeded_era: Vec::new(),
+            has_speciated: false,
             rng,
         };
         world.generate_terrain(config);

@@ -40,6 +40,7 @@
             stress: 1,
             cull: 1,
             splice: 2,
+            splice_upgraded: 1,
         ),
         era_tick_hz: 8.0,
         grace_eras: 3,
@@ -103,6 +104,8 @@
         coexistence_ticks_base: 100,
         survive_in_ticks_base: 75,
         trigger_bloom_population_threshold_base: 8,
+        objective_clear_energy_reward: 1.0,
+        splice_upgrade_energy_threshold: 3.0,
     ),
     terrain: (
         continent_wave_count: 3,

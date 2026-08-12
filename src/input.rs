@@ -142,7 +142,6 @@ fn single_tick(
     mut era_completed: MessageWriter<EraCompleted>,
     mut writers: TickEventWriters,
     mut objective_outcome: ObjectiveOutcomeParams,
-    run_progress: Res<RunProgress>,
     mut intents: ResMut<HudControlIntents>,
 ) {
     if *era_state.get() == EraState::Advancing {
@@ -154,7 +153,11 @@ fn single_tick(
         return;
     }
     if progress.remaining() == 0 {
-        progress.start(era_ticks_for(run_progress.world_index, world.era, &config));
+        progress.start(era_ticks_for(
+            objective_outcome.run_progress.world_index,
+            world.era,
+            &config,
+        ));
     }
     let events = tick_and_complete_era(
         &mut world,
@@ -505,6 +508,7 @@ fn apply_splice(
     mut draft: ResMut<SpliceDraft>,
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
+    run_progress: Res<RunProgress>,
     mut budget: ResMut<ActionBudget>,
     mut log: ResMut<ObservationLog>,
 ) {
@@ -562,7 +566,8 @@ fn apply_splice(
         // Incomplete SwapTag/AddTag selection (missing tag(s)).
         SpliceEditChoice::SwapTag { .. } | SpliceEditChoice::AddTag { tag: None } => return,
     }
-    if budget.points_remaining < config.time.action_costs.splice {
+    let splice_cost = run_progress.splice_cost(&config);
+    if budget.points_remaining < splice_cost {
         return;
     }
     let new_species_id = world.push_species(new_species);
@@ -571,7 +576,7 @@ fn apply_splice(
         species: Some(new_species_id),
         text: text::species_created_message(&species_label(&world, new_species_id)),
     });
-    budget.points_remaining -= config.time.action_costs.splice;
+    budget.points_remaining -= splice_cost;
     *draft = SpliceDraft::default();
 }
 
@@ -624,6 +629,7 @@ mod tests {
         });
         app.insert_resource(draft);
         app.insert_resource(ObservationLog::default());
+        app.insert_resource(RunProgress::default());
         app.add_systems(Update, apply_splice);
         app
     }

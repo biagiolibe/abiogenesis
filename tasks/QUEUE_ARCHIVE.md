@@ -8,6 +8,34 @@ it only when you need the history/rationale behind a specific past phase.
 
 ---
 
+**Mondo vivo, notebook, death legibility, evolution & progression**
+(2026-08-11, full scoping pass over five redesign docs from this
+session's design discussion — see `PROJECT_PLAN.md` SECTION 1 for the
+reasoning and SECTION 2 for the grouped backlog entry; closed 2026-08-12
+once 109 unblocked and landed). Dependency order: 096 unblocks 099 and 097
+(097 also depends on 103); 098, 100-106, 108 are independently startable;
+107 depends on 106; 109 depended on 096-099/106-107 shipping and was
+blocked until then.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[x]` | 096 | Conditional tags: terrain-gated matrix participation | — | [096](done/096-mondo-vivo-conditional-tags-core.md) |
+| `[x]` | 097 | Conditional tag catalog badge + (tag, terrain) evidence track | 096, 103 | [097](done/097-mondo-vivo-conditional-tag-catalog-badge.md) |
+| `[x]` | 098 | Wild, pre-existing species at world generation | — | [098](done/098-mondo-vivo-wild-species.md) |
+| `[x]` | 099 | Reveal-on-first-zone-entry for conditional tags | 096 | [099](done/099-mondo-vivo-zone-entry-reveal.md) |
+| `[x]` | 100 | Strip raw per-tick noise from the observation log | — | [100](done/100-notebook-log-rework.md) |
+| `[x]` | 101 | Hypothesis grid: reveal-on-first-observation, layout over visible subset only | — | [101](done/101-notebook-grid-visibility-layout.md) |
+| `[x]` | 102 | Hypothesis grid: edge grammar rewrite | 101 (soft) | [102](done/102-notebook-grid-edge-grammar.md) |
+| `[x]` | 103 | Catalog: one-time metabolism legend, trimmed species rows, population + origin era | — | [103](done/103-notebook-catalog-cleanup.md) |
+| `[x]` | 104 | Plain-language death message for player-placed organisms | — | [104](done/104-death-message-plain-language.md) |
+| `[x]` | 105 | Cause label on the Biosphere panel for a species taking deaths | 104 | [105](done/105-death-biosphere-trend-diagnosis.md) |
+| `[x]` | 106 | Selection pressure accumulation + threshold-crossing trigger | — | [106](done/106-evolution-selection-pressure-trigger.md) |
+| `[x]` | 107 | Evolution by speciation: a new descendant species | 106 | [107](done/107-evolution-speciation.md) |
+| `[x]` | 108 | Fourth metabolism: chemolithotroph, gain from toxicity | — | [108](done/108-chemolithotroph-metabolism.md) |
+| `[x]` | 109 | Long-term objective tier + within-run energy economy | 096-099/106-107 (shipped) | [109](done/109-progression-long-term-objective-energy.md) |
+
+---
+
 **Self-interaction balance bug** (2026-08-10, user-reported live: starting species growing explosively despite task 083's incubation). Root cause traced to `draw_species_tags`'s task-048 mitigation being combinatorially unable to reach `net_self_interaction == 0` in ~15% of worlds given the default 5-tag active pool at world 0 (not a rare edge case — a guaranteed outcome whenever no zero-net 3-tag combination exists at all). 088 fixed the worldgen path with an exhaustive deterministic search (always terminates at exact zero); 089 closed the same gap on the separate Splice path (`apply_splice` never checked this at all).
 
 | Status | ID | Title | Depends on | File |

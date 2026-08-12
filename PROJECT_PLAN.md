@@ -154,9 +154,9 @@ mechanics existing.
 - `[?]` **New within-run energy resource**: distinct from the per-era-resetting `ActionBudget` (`sim.rs:436-445`), lives at the `RunProgress` level (`run.rs:15-21`, already survives world-to-world resets within a run).
 - `[?]` **`Splice` stays available from world 0**: energy unlocks a more powerful tier (more simultaneous edits, reduced action-point cost) instead of gating the action's existence — deliberately avoids touching the already-tuned onboarding (tasks 082/083, grace period).
 
-**Scoped for reference as task 109 (2026-08-11), but BLOCKED**: needs at
-least one of 096-099/106-107 to actually ship (not merely scope) before
-it has real state to check — see the task file.
+**Implemented as task 109 (unblocked and shipped 2026-08-12)** once
+096-099/106-107 all landed — see the task file for the concrete
+`Objective::Speciation` content and energy-economy wiring.
 
 ### Biomes (2026-08-11, from `redesign/abiogenesis-biomes.md`)
 
@@ -182,7 +182,7 @@ values load-bearing rather than cosmetic. Full reasoning in the linked doc.
 **Scoped as tasks 110-114 (2026-08-11)**: 110 (classification data layer), 111
 (feature placement), 112 (rendering), 113 (Palude/`toxic_zone`) are startable per
 the dependency order in the tasks themselves; 114 (Geyser) is scoped for reference
-but BLOCKED, same pattern as 084/109.
+but BLOCKED, same pattern as 084.
 
 ---
 
@@ -198,8 +198,9 @@ discussion (`redesign/abiogenesis-living-world.md`,
 `abiogenesis-evolution-xenotypes.md`, `abiogenesis-progression-pacing.md`
 — SECTION 1 above has the full reasoning). Dependency order: 096
 (conditional tags core) unblocks 099 and 097 (097 also depends on 103);
-098, 100-106, 108 are independently startable; 107 depends on 106; 109 is
-scoped for reference but blocked until 096-099/106-107 actually ship.
+098, 100-106, 108 are independently startable; 107 depends on 106; 109
+was blocked until 096-099/106-107 actually shipped, then implemented
+2026-08-12.
 Intentionally **not** scoped: transient world features/residues (needs a
 shared design pass with the Precursor), the notebook's visual polish pass,
 evolution's new-species presentation moment, and the full xenotype naming
@@ -218,7 +219,7 @@ redesign — all explicitly flagged as not design-ready in their source docs.
 - `[x]` 106 — Selection pressure accumulation + threshold-crossing trigger → [106](tasks/done/106-evolution-selection-pressure-trigger.md)
 - `[x]` 107 — Evolution by speciation: a new descendant species from selection pressure (depends on 106) → [107](tasks/done/107-evolution-speciation.md)
 - `[x]` 108 — Fourth metabolism: chemolithotroph, gain from toxicity → [108](tasks/done/108-chemolithotroph-metabolism.md)
-- `[ ]` ⏸ 109 — BLOCKED — Long-term objective tier + within-run energy economy (depends on 096-099/106-107 shipping, not just scoping) → [109](tasks/109-progression-long-term-objective-energy.md)
+- `[x]` 109 — Long-term objective tier + within-run energy economy (depended on 096-099/106-107 shipping) → [109](tasks/done/109-progression-long-term-objective-energy.md)
 
 ### 🖥️ HUD & Notebook redesign follow-up (2026-08-12, from `redesign/abiogenesis-hud-notebook.md`)
 

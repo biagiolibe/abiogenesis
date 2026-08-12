@@ -5,6 +5,8 @@
 
 use bevy::prelude::*;
 
+use crate::config::SimConfig;
+
 /// Tracks progress through a run (a sequence of worlds, GDD §8: "success ->
 /// next world... failure -> the run ends"). `run_seed` is chosen once, at
 /// the main menu (task 044) — the one legitimate point outside the
@@ -18,6 +20,16 @@ pub struct RunProgress {
     pub world_seed: u64,
     pub worlds_cleared: u32,
     pub unlocks: Unlocks,
+    /// Within-run energy economy (task 109,
+    /// `redesign/abiogenesis-progression-pacing.md`): a new accumulating
+    /// currency, distinct from `sim::ActionBudget`'s per-era-resetting
+    /// points, granted on every `Objective` clear (short- or long-term
+    /// tier, `objectives::apply_tick_outcome`). Lives here rather than on
+    /// `SimWorld` specifically so it survives the per-world reset
+    /// `run_flow::start_world` performs — the same "persists across worlds
+    /// within a run, resets at run start/end" shape `worlds_cleared`
+    /// already has.
+    pub energy: f32,
 }
 
 impl RunProgress {
@@ -44,6 +56,24 @@ impl RunProgress {
             unlocks: Unlocks {
                 bonus_available_species: meta.bonus_available_species,
             },
+            energy: 0.0,
+        }
+    }
+
+    /// `Splice`'s action-point cost given this run's currently banked
+    /// `energy` (task 109): the normal `ActionCosts::splice` below
+    /// `ObjectiveConfig::splice_upgrade_energy_threshold`, the cheaper
+    /// `ActionCosts::splice_upgraded` at or above it. An unlocked
+    /// capability once banked, not a spent currency (GDD §10's "unlock
+    /// capabilities, not answers") — crossing the threshold never consumes
+    /// `energy`. Single source of truth shared by `input.rs::apply_splice`
+    /// (what it actually charges) and `ui.rs`'s action-cost tooltip (what
+    /// it displays), so the two can't drift apart.
+    pub fn splice_cost(&self, config: &SimConfig) -> u32 {
+        if self.energy >= config.objectives.splice_upgrade_energy_threshold {
+            config.time.action_costs.splice_upgraded
+        } else {
+            config.time.action_costs.splice
         }
     }
 }
@@ -104,6 +134,26 @@ impl Plugin for RunPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::SimConfig;
+
+    #[test]
+    fn splice_cost_stays_at_the_base_rate_below_the_energy_threshold() {
+        let config = SimConfig::default();
+        let mut run = RunProgress::default();
+        run.energy = config.objectives.splice_upgrade_energy_threshold - 0.01;
+        assert_eq!(run.splice_cost(&config), config.time.action_costs.splice);
+    }
+
+    #[test]
+    fn splice_cost_drops_to_the_upgraded_rate_once_the_threshold_is_met() {
+        let config = SimConfig::default();
+        let mut run = RunProgress::default();
+        run.energy = config.objectives.splice_upgrade_energy_threshold;
+        assert_eq!(
+            run.splice_cost(&config),
+            config.time.action_costs.splice_upgraded
+        );
+    }
 
     #[test]
     fn absorb_grants_one_bonus_species_per_two_worlds_cleared() {

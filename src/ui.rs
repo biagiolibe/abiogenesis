@@ -15,6 +15,7 @@ use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::{
     is_grace_active, CurrentObjective, GraceProgress, Objective, ObjectiveProgress,
 };
+use abiogenesis::run::RunProgress;
 use abiogenesis::sim::{ActionBudget, EraCompleted, OrganismDied};
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{SimWorld, SpeciesId, TagSlot};
@@ -344,6 +345,20 @@ pub struct BiosphereReadouts<'w> {
     pub death_causes: Res<'w, DeathCauseTally>,
 }
 
+/// Objective/run-progress readouts bundled into one `SystemParam` (task
+/// 109, same rationale as `WorldResetParams`/`ObjectiveOutcomeParams`):
+/// adding `RunProgress` as `hud_panel`'s own parameter for the energy
+/// readout pushed it to 17 individual parameters, past Bevy's tuple-based
+/// `IntoSystem` ceiling of 16 — bundling these four (which `objective_panel`
+/// already reads together) brings it back under.
+#[derive(SystemParam)]
+pub struct ObjectiveReadouts<'w> {
+    pub run_progress: Res<'w, RunProgress>,
+    pub objective: Res<'w, CurrentObjective>,
+    pub objective_progress: Res<'w, ObjectiveProgress>,
+    pub grace: Res<'w, GraceProgress>,
+}
+
 #[allow(clippy::too_many_arguments)]
 /// `pub(crate)` (task 091) so `notebook.rs` can order its stray-focus-clear
 /// system `.after(hud_panel)` — the sidebar action buttons this draws are
@@ -358,9 +373,7 @@ pub(crate) fn hud_panel(
     mut splice_draft: ResMut<SpliceDraft>,
     budget: Res<ActionBudget>,
     config: Res<SimConfig>,
-    objective: Res<CurrentObjective>,
-    objective_progress: Res<ObjectiveProgress>,
-    grace: Res<GraceProgress>,
+    readouts: ObjectiveReadouts,
     unseen_confirmation: Res<NotebookHasUnseenConfirmation>,
     biosphere: BiosphereReadouts,
     mode: Res<MapViewMode>,
@@ -396,7 +409,7 @@ pub(crate) fn hud_panel(
             ui.heading(text::HEADING_TITLE);
             ui.label(text::era_tick_line(world.era, world.tick));
             ui.label(text::state_line(era_state.get()));
-            if is_grace_active(world.era, config.time.grace_eras, &grace) {
+            if is_grace_active(world.era, config.time.grace_eras, &readouts.grace) {
                 ui.weak(text::GRACE_PERIOD_LINE);
             }
             time_control_row(
@@ -408,7 +421,13 @@ pub(crate) fn hud_panel(
 
             hairline(ui);
             ui.strong(text::HEADING_ACTION);
-            action_icon_row(ui, &mut selected_action, &config, *mode);
+            action_icon_row(
+                ui,
+                &mut selected_action,
+                &config,
+                &readouts.run_progress,
+                *mode,
+            );
 
             let total = config.time.point_budget_per_era;
             dot_row(ui, budget.points_remaining, total, DotShape::Tick)
@@ -486,10 +505,10 @@ pub(crate) fn hud_panel(
             objective_panel(
                 ui,
                 &world,
-                objective.current(),
-                objective.index,
-                objective.total(),
-                &objective_progress,
+                readouts.objective.current(),
+                readouts.objective.index,
+                readouts.objective.total(),
+                &readouts.objective_progress,
                 config.time.era_ticks,
             );
 
@@ -497,6 +516,7 @@ pub(crate) fn hud_panel(
                 ui.weak(text::KEYBOARD_HINT_PRIMARY);
                 ui.weak(text::KEYBOARD_HINT_SECONDARY);
                 ui.weak(text::seed_line(world.seed));
+                ui.weak(text::energy_line(readouts.run_progress.energy));
                 ui.horizontal(|ui| {
                     ui.weak(text::NOTEBOOK_AFFORDANCE_LABEL);
                     if unseen_confirmation.0 {
@@ -632,6 +652,7 @@ fn objective_panel(
         } => {
             text::trigger_bloom_objective_line(&species_label(world, species), population_threshold)
         }
+        Objective::Speciation => text::speciation_objective_line(),
     };
     // The redesign's one deliberate break from the panel-wide monospace
     // style (task 064 §5, "da usare con parsimonia" — used sparingly,
@@ -670,6 +691,11 @@ fn objective_panel(
         // the whole story, no indicator of any shape needed.
         Objective::TriggerBloom { .. } => {
             ui.weak(text::BLOOM_NOT_TRIGGERED);
+        }
+        // Also a one-shot triggering event, not a sustained count — same
+        // reasoning as `TriggerBloom` above.
+        Objective::Speciation => {
+            ui.weak(text::SPECIATION_NOT_TRIGGERED);
         }
     }
 }
@@ -893,11 +919,12 @@ fn action_icon_row(
     ui: &mut egui::Ui,
     selected_action: &mut SelectedAction,
     config: &SimConfig,
+    run_progress: &RunProgress,
     view_mode: MapViewMode,
 ) {
     ui.horizontal(|ui| {
         for (action_mode, glyph) in ACTION_GLYPHS {
-            let cost = action_cost(action_mode, config);
+            let cost = action_cost(action_mode, config, run_progress);
             // Stress/Cull need per-organism precision Overview's
             // cluster-heatmap aggregation (task 076) doesn't preserve, so
             // they're disabled outside Detail (task 077) — same
@@ -933,13 +960,16 @@ fn action_icon_row(
 
 /// Action-point cost for one `ActionMode`, read from `SimConfig` so the
 /// icon tooltips (task 030) never hardcode a number that could drift from
-/// `ActionCosts` (GDD §5.9).
-fn action_cost(mode: ActionMode, config: &SimConfig) -> u32 {
+/// `ActionCosts` (GDD §5.9). `Splice`'s cost goes through
+/// `RunProgress::splice_cost` (task 109) rather than reading
+/// `action_costs.splice` directly, so the tooltip reflects the same
+/// energy-gated upgraded tier `input.rs::apply_splice` actually charges.
+fn action_cost(mode: ActionMode, config: &SimConfig, run_progress: &RunProgress) -> u32 {
     match mode {
         ActionMode::Seed => config.time.action_costs.seed,
         ActionMode::Stress => config.time.action_costs.stress,
         ActionMode::Cull => config.time.action_costs.cull,
-        ActionMode::Splice => config.time.action_costs.splice,
+        ActionMode::Splice => run_progress.splice_cost(config),
     }
 }
 

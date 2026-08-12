@@ -432,7 +432,7 @@ pub fn generate_objectives(
     config: &SimConfig,
     world_index: u32,
 ) -> Vec<Objective> {
-    let mut objectives = Vec::with_capacity(params.objective_count as usize);
+    let mut objectives = Vec::with_capacity(params.objective_count as usize + 1);
     let mut previous_kind = None;
     for i in 0..params.objective_count {
         let (objective, kind) = if i == 0 && world_index == 0 && world.species.len() as u32 >= 2 {
@@ -443,6 +443,12 @@ pub fn generate_objectives(
         objectives.push(objective);
         previous_kind = Some(kind);
     }
+    // Task 109: the long-term objective tier is always the sequence's true
+    // final entry, restructuring what actually triggers `WorldCleared`
+    // (`objectives::apply_tick_outcome`'s `is_last()` check) — every
+    // short-term objective above keeps its existing in-place-advance
+    // behavior unchanged, regardless of `params.objective_count`.
+    objectives.push(Objective::Speciation);
     objectives
 }
 
@@ -1064,7 +1070,7 @@ mod tests {
                             "seed {seed}: species {species:?} out of bounds for pool of {species_count}"
                         );
                     }
-                    Objective::Coexistence { .. } => {}
+                    Objective::Coexistence { .. } | Objective::Speciation => {}
                 }
             }
         }
@@ -1090,6 +1096,27 @@ mod tests {
                     ticks: expected_ticks,
                 },
                 "seed {seed}: world 0's first objective must always be a gentle 2-species coexistence"
+            );
+        }
+    }
+
+    #[test]
+    fn generated_objectives_always_end_with_the_long_term_speciation_objective() {
+        let config = SimConfig::default();
+        for seed in 0..30u64 {
+            let mut world = SimWorld::new(seed, &config);
+            generate_starting_palette(&mut world, &config);
+            let params = world_params(0, &config);
+            let objectives = generate_objectives(&mut world, &params, &config, 0);
+            assert_eq!(
+                objectives.last(),
+                Some(&Objective::Speciation),
+                "seed {seed}: the long-term objective must always be the sequence's final entry"
+            );
+            assert_eq!(
+                objectives.len(),
+                params.objective_count as usize + 1,
+                "seed {seed}: short-term count plus exactly one long-term entry"
             );
         }
     }

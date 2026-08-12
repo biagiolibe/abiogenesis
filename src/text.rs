@@ -287,6 +287,9 @@ pub fn narrative_quote(description: &str) -> String {
 
 pub const OBJECTIVE_CLEARED: &str = "Cleared!";
 pub const BLOOM_NOT_TRIGGERED: &str = "not yet triggered";
+/// `Objective::Speciation`'s state label (task 109) — a one-shot event like
+/// `TriggerBloom`'s, so the same "not yet" phrasing applies.
+pub const SPECIATION_NOT_TRIGGERED: &str = "no speciation event yet";
 
 /// "Objective i/N" (task 059): shown only when a world poses more than one
 /// objective in sequence, so the player knows there's more to come after the
@@ -311,6 +314,20 @@ pub fn survive_in_objective_line(species_label: &str, zone_label: &str) -> Strin
 
 pub fn trigger_bloom_objective_line(species_label: &str, population_threshold: u32) -> String {
     format!("{species_label} population reaches {population_threshold}")
+}
+
+/// `Objective::Speciation`'s narrative line (task 109): the long-term
+/// objective tier, always the sequence's final entry.
+pub fn speciation_objective_line() -> String {
+    "A species evolves through natural selection".to_string()
+}
+
+/// Within-run energy readout (task 109), shown alongside the seed line —
+/// `RunProgress::energy`, whole units (the reward is always a round number
+/// today, but this formats defensively in case a future balance pass makes
+/// it fractional).
+pub fn energy_line(energy: f32) -> String {
+    format!("Energy: {energy:.0}")
 }
 
 /// `eras_held`/`eras_required` (task 049) — whole eras, not raw ticks: the

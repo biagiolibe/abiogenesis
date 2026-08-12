@@ -477,6 +477,9 @@ pub fn speciate(
             organism.species = new_species_id;
         }
     }
+    // Task 109: backs `Objective::Speciation`, the long-term objective's
+    // default content.
+    world.has_speciated = true;
     Some(new_species_id)
 }
 
@@ -2913,6 +2916,8 @@ mod tests {
         // the descendant (this task's documented "simpler of two options"
         // choice — no new placement logic).
         assert_eq!(world.cells[idx].organism.unwrap().species, new_id);
+        // Task 109: backs `Objective::Speciation`.
+        assert!(world.has_speciated);
     }
 
     #[test]
@@ -2961,6 +2966,8 @@ mod tests {
 
         assert!(speciate(&mut world, &config, &event).is_none());
         assert_eq!(world.species.len(), 1);
+        // Task 109: a no-op attempt must never set `has_speciated`.
+        assert!(!world.has_speciated);
     }
 
     #[test]

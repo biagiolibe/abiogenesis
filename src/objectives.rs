@@ -49,6 +49,20 @@ pub enum Objective {
         species: SpeciesId,
         population_threshold: u32,
     },
+    /// "A speciation event has occurred": long-term objective tier (task
+    /// 109, `redesign/abiogenesis-progression-pacing.md`) — the design
+    /// doc's own example of a "mondo vivo"/evolution milestone worth a
+    /// world lasting long enough to reach. Unlike the three short-term
+    /// variants above, this is always the sequence's true final entry
+    /// (`worldgen::generate_objectives` appends it unconditionally after
+    /// the short-term draw loop), making it the real world-clear trigger —
+    /// existing short-term objectives keep their current in-place-advance
+    /// behavior regardless of how many precede it. A one-shot triggering
+    /// event like `TriggerBloom`, not a sustained condition: checks
+    /// `SimWorld::has_speciated`, set once by `sim::speciate` on a
+    /// successful descendant creation and never cleared for the rest of
+    /// that world's life.
+    Speciation,
 }
 
 /// Why a world's outcome became `WorldOutcome::Failed` (GDD §8): the two
@@ -215,6 +229,14 @@ pub fn evaluate(
             population_threshold,
         } => {
             if population_of(world, species) >= population_threshold {
+                progress.satisfied = true;
+                WorldOutcome::Cleared
+            } else {
+                WorldOutcome::Ongoing
+            }
+        }
+        Objective::Speciation => {
+            if world.has_speciated {
                 progress.satisfied = true;
                 WorldOutcome::Cleared
             } else {
@@ -411,7 +433,10 @@ pub struct ObjectiveOutcomeParams<'w> {
     pub objective: ResMut<'w, CurrentObjective>,
     pub progress: ResMut<'w, ObjectiveProgress>,
     pub outcome: ResMut<'w, CurrentWorldOutcome>,
-    pub run_progress: Res<'w, RunProgress>,
+    /// `ResMut`, not `Res` (task 109): `apply_tick_outcome` now grants an
+    /// energy reward here on every objective clear, short- or long-term
+    /// tier.
+    pub run_progress: ResMut<'w, RunProgress>,
     pub meta: ResMut<'w, MetaProgress>,
     pub next_game_state: ResMut<'w, NextState<GameState>>,
     pub advanced: MessageWriter<'w, ObjectiveAdvanced>,
@@ -445,6 +470,14 @@ pub fn apply_tick_outcome(
     // does `Cleared`, so this can't rely on that alone).
     if previous_outcome != WorldOutcome::Ongoing {
         return;
+    }
+    // Task 109: every objective clear grants an energy reward, short- or
+    // long-term tier alike — granted here, once, rather than duplicated in
+    // both the advance-in-place and world-cleared arms below, since the
+    // `previous_outcome` guard above already ensures this only fires on the
+    // `Ongoing -> Cleared` edge.
+    if new_outcome == WorldOutcome::Cleared {
+        params.run_progress.energy += config.objectives.objective_clear_energy_reward;
     }
     match new_outcome {
         // Total extinction ends this world, not the run (task 051): a
@@ -498,6 +531,24 @@ mod tests {
     use super::*;
     use crate::config::SimConfig;
     use crate::world::{Cell, Metabolism, Organism, Species, ToxicZoneBounds};
+    use bevy::ecs::system::SystemState;
+
+    /// Builds a scratch ECS `World` with every resource `ObjectiveOutcomeParams`
+    /// bundles (task 109), mirroring `run_flow.rs::resource_world` — lets
+    /// `apply_tick_outcome` be exercised exactly as the real systems call it,
+    /// without a full `App`/schedule.
+    fn objective_outcome_world(objectives: Vec<Objective>) -> World {
+        let mut ecs_world = World::new();
+        ecs_world.insert_resource(CurrentObjective::new(objectives));
+        ecs_world.insert_resource(ObjectiveProgress::default());
+        ecs_world.insert_resource(CurrentWorldOutcome::default());
+        ecs_world.insert_resource(RunProgress::default());
+        ecs_world.insert_resource(MetaProgress::default());
+        ecs_world.insert_resource(NextState::<GameState>::default());
+        ecs_world.insert_resource(GraceProgress::default());
+        ecs_world.insert_resource(Messages::<ObjectiveAdvanced>::default());
+        ecs_world
+    }
 
     fn world_with_species(count: usize) -> SimWorld {
         let config = SimConfig::default();
@@ -766,6 +817,23 @@ mod tests {
         place(&mut world, 4, 0, SpeciesId(0));
         assert_eq!(
             evaluate(&objective, &world, &mut progress),
+            WorldOutcome::Cleared
+        );
+    }
+
+    #[test]
+    fn speciation_objective_stays_ongoing_until_a_descendant_has_evolved() {
+        let mut world = world_with_species(1);
+        let mut progress = ObjectiveProgress::default();
+
+        assert_eq!(
+            evaluate(&Objective::Speciation, &world, &mut progress),
+            WorldOutcome::Ongoing
+        );
+
+        world.has_speciated = true;
+        assert_eq!(
+            evaluate(&Objective::Speciation, &world, &mut progress),
             WorldOutcome::Cleared
         );
     }
@@ -1120,5 +1188,67 @@ mod tests {
             grace.foothold_reached,
             "once reached, the foothold must stay true even after a later extinction"
         );
+    }
+
+    #[test]
+    fn clearing_a_non_final_objective_grants_energy_and_advances_in_place() {
+        let config = SimConfig::default();
+        let mut world = world_with_species(1);
+        for x in 0..4 {
+            place(&mut world, x, 0, SpeciesId(0));
+        }
+        let objectives = vec![
+            Objective::TriggerBloom {
+                species: SpeciesId(0),
+                population_threshold: 4,
+            },
+            Objective::Speciation,
+        ];
+        let mut ecs_world = objective_outcome_world(objectives);
+        let mut state = SystemState::<ObjectiveOutcomeParams>::new(&mut ecs_world);
+        let mut params = state.get_mut(&mut ecs_world).unwrap();
+
+        apply_tick_outcome(&world, &config, &mut params);
+
+        assert_eq!(
+            params.run_progress.energy, config.objectives.objective_clear_energy_reward,
+            "the non-final clear must still grant the energy reward"
+        );
+        assert_eq!(
+            params.objective.index, 1,
+            "must advance in place, not reset"
+        );
+        assert!(!params.progress.satisfied);
+
+        // A second tick evaluated against the same still-population-4 world
+        // must not grant a second reward — only the `Ongoing -> Cleared`
+        // edge does.
+        apply_tick_outcome(&world, &config, &mut params);
+        assert_eq!(
+            params.run_progress.energy,
+            config.objectives.objective_clear_energy_reward
+        );
+    }
+
+    #[test]
+    fn clearing_the_final_long_term_objective_grants_energy_and_ends_the_world() {
+        let config = SimConfig::default();
+        let mut world = world_with_species(1);
+        world.has_speciated = true;
+        let objectives = vec![Objective::Speciation];
+        let mut ecs_world = objective_outcome_world(objectives);
+        let mut state = SystemState::<ObjectiveOutcomeParams>::new(&mut ecs_world);
+        let mut params = state.get_mut(&mut ecs_world).unwrap();
+
+        apply_tick_outcome(&world, &config, &mut params);
+
+        assert_eq!(
+            params.run_progress.energy,
+            config.objectives.objective_clear_energy_reward
+        );
+        assert!(matches!(
+            *params.next_game_state,
+            NextState::Pending(GameState::WorldCleared)
+        ));
     }
 }
