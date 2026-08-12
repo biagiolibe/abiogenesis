@@ -146,6 +146,10 @@ impl MatrixKnowledge {
         self.evidence(exerter, receiver) >= self.threshold
     }
 
+    pub fn threshold(&self) -> f32 {
+        self.threshold
+    }
+
     /// The real matrix value for a confirmed pair, `None` if not yet
     /// confirmed. Reads through `world.matrix`, not a stored snapshot.
     pub fn revealed_value(
@@ -478,7 +482,7 @@ fn notebook_window(
 
             ui.separator();
             ui.heading(text::HEADING_HYPOTHESIS_GRID);
-            hypothesis_grid(ui, &world, &knowledge);
+            hypothesis_grid(ui, &world, &knowledge, &config);
 
             ui.separator();
             ui.heading(text::HEADING_CATALOG);
@@ -490,30 +494,35 @@ fn notebook_window(
 /// Node radius for the hypothesis graph (task 031), in points.
 const NODE_RADIUS: f32 = 14.0;
 
-/// Perpendicular offset applied to an edge so that `A → B` and `B → A`
-/// (when both are confirmed) render as two parallel lines instead of
-/// overlapping into one — the offset direction is derived from each edge's
-/// own travel direction, so the pair separates symmetrically without
-/// needing to special-case "is the reverse edge also present."
-const EDGE_OFFSET: f32 = 4.0;
-
 const ARROW_LENGTH: f32 = 8.0;
 const ARROW_WIDTH: f32 = 6.0;
 
 const EDGE_POSITIVE_COLOR: egui::Color32 = egui::Color32::from_rgb(96, 200, 120);
 const EDGE_NEGATIVE_COLOR: egui::Color32 = egui::Color32::from_rgb(220, 96, 96);
 
-/// Marker for a pair with `evidence > 0.0` but not yet confirmed (task 028):
-/// a small neutral-gray dot, never a line or arrowhead — visually distinct
-/// from a confirmed edge at a glance, so it can never be mistaken for one.
-/// Carries no sign/magnitude, only "something has been observed here."
+/// Color for a pair with `evidence > 0.0` but not yet confirmed (task 028,
+/// dashed line since task 102): carries no sign/magnitude, only "something
+/// has been observed here" — visually distinct from a confirmed edge (no
+/// arrowhead, uniform thickness) so it can never be mistaken for one.
 const PARTIAL_EVIDENCE_COLOR: egui::Color32 = egui::Color32::from_gray(130);
-const PARTIAL_MARKER_RADIUS: f32 = 3.0;
-/// Placed most of the way toward the receiver (rather than centered) so the
-/// marker still reads as "evidence exists in *this* direction," the same
-/// directionality the pre-031 spreadsheet table conveyed via row/column —
-/// without a sign or an arrowhead, so it can't be confused for confirmation.
-const PARTIAL_MARKER_T: f32 = 0.65;
+const PARTIAL_EDGE_STROKE: f32 = 1.5;
+
+/// Perpendicular bow distance (task 102) applied to a confirmed/partial edge
+/// when the reverse direction between the same two tags also has something
+/// to draw — the two directions curve apart into two arcs instead of
+/// overlapping straight lines. Tuned by eye against the densest live case
+/// (a 5-6 active-tag world with several confirmed bidirectional pairs):
+/// large enough that the two arcs and their arrowheads/dashes are
+/// unambiguously separate at `NODE_RADIUS`-scale node spacing, small enough
+/// that a curve still reads as "the same short hop, bent" rather than a
+/// wide detour.
+const EDGE_BOW: f32 = 16.0;
+
+/// Points sampled along a curved edge to approximate it as short straight
+/// segments for both dashing (`draw_dashed_line`) and arrowhead-tangent
+/// lookup (`draw_edge`) — egui's `Painter` draws bezier shapes directly for
+/// solid strokes, but dashing needs the flattened point list to step along.
+const CURVE_FLATTEN_TOLERANCE: f32 = 0.5;
 
 /// The hypothesis graph (GDD §7, §5.9), replacing task 021's
 /// `active_tags x active_tags` spreadsheet table: `world.active_tags` as
@@ -543,7 +552,12 @@ const PARTIAL_MARKER_T: f32 = 0.65;
 /// Player-authored conjectures (GDD §5.9's `±?` state — marking a guess
 /// before it's confirmed) aren't implemented: cut for this task, left as a
 /// follow-up rather than a half-built annotation feature.
-fn hypothesis_grid(ui: &mut egui::Ui, world: &SimWorld, knowledge: &MatrixKnowledge) {
+fn hypothesis_grid(
+    ui: &mut egui::Ui,
+    world: &SimWorld,
+    knowledge: &MatrixKnowledge,
+    config: &SimConfig,
+) {
     let tags = &world.active_tags;
     let desired_size = egui::vec2(ui.available_width().clamp(200.0, 320.0), 240.0);
     let (response, painter) = ui.allocate_painter(desired_size, egui::Sense::hover());
@@ -579,21 +593,57 @@ fn hypothesis_grid(ui: &mut egui::Ui, world: &SimWorld, knowledge: &MatrixKnowle
         positions[i] = center + radius * egui::vec2(angle.cos(), angle.sin());
     }
 
+    // A pair has "something to draw" in a direction once it's confirmed or
+    // has any partial evidence — used both to decide what to draw and,
+    // below, whether the *reverse* direction also draws something (task
+    // 102's bidirectional-bow case).
+    let has_something = |exerter: TagSlot, receiver: TagSlot| {
+        knowledge.revealed_value(exerter, receiver, world).is_some()
+            || knowledge.evidence(exerter, receiver) > 0.0
+    };
+
     for &ei in &visible {
         for &ri in &visible {
             if ei == ri {
                 continue;
             }
             let (exerter, receiver) = (TagSlot(ei as u8), TagSlot(ri as u8));
+            if !has_something(exerter, receiver) {
+                continue;
+            }
+            // Bow apart only when the reverse direction also has something
+            // to draw — a lone direction stays a straight line (no
+            // unnecessary curvature). Sign keyed off index order (not which
+            // direction is "first") so the two directions of the same pair
+            // always bow to opposite sides regardless of draw order.
+            let bidirectional = has_something(receiver, exerter);
+            let curvature = if bidirectional {
+                if ei < ri {
+                    EDGE_BOW
+                } else {
+                    -EDGE_BOW
+                }
+            } else {
+                0.0
+            };
+
             if let Some(value) = knowledge.revealed_value(exerter, receiver, world) {
                 let color = if value > 0 {
                     EDGE_POSITIVE_COLOR
                 } else {
                     EDGE_NEGATIVE_COLOR
                 };
-                draw_edge(&painter, positions[ei], positions[ri], color, value);
-            } else if knowledge.evidence(exerter, receiver) > 0.0 {
-                draw_partial_marker(&painter, positions[ei], positions[ri]);
+                draw_edge(
+                    &painter,
+                    positions[ei],
+                    positions[ri],
+                    color,
+                    value,
+                    config,
+                    curvature,
+                );
+            } else {
+                draw_dashed_line(&painter, positions[ei], positions[ri], curvature);
             }
         }
     }
@@ -618,61 +668,75 @@ fn hypothesis_grid(ui: &mut egui::Ui, world: &SimWorld, knowledge: &MatrixKnowle
     }
 }
 
-/// Stroke width for a confirmed edge of magnitude 1 vs. magnitude 2 (task
-/// 061) — tuned by eye, pure presentation, no config entry warranted.
+/// Stroke width range for a confirmed edge (task 061, re-tuned task 102):
+/// since the `±N` numeric label is gone, thickness is the *only* remaining
+/// carrier of magnitude, so the weak↔strong gap widens from the original
+/// 1.5pt to 4.5pt — clearly distinguishable at a glance without text.
 const EDGE_STROKE_WEAK: f32 = 1.5;
-const EDGE_STROKE_STRONG: f32 = 3.0;
+const EDGE_STROKE_STRONG: f32 = 6.0;
 
-/// Draws one directed edge as a line stopping short of both node
-/// boundaries, capped with a small triangular arrowhead at the receiver
-/// end. Offset perpendicular to its own travel direction by `EDGE_OFFSET`
-/// so a confirmed `A → B` and a confirmed `B → A` render as two distinct
-/// parallel lines rather than overlapping. `value` is the confirmed matrix
-/// entry (`±1` or `±2`): its magnitude sets the stroke width, and a
-/// magnitude-2 edge additionally gets a signed numeric label near its
-/// midpoint — magnitude-1 edges stay unlabeled to avoid clutter.
+/// Draws one directed edge, straight or bowed (`curvature != 0.0`, task
+/// 102), capped with a small triangular arrowhead at the receiver end.
+/// `value` is the confirmed matrix entry (`±1` or `±2` at the default
+/// config): its magnitude, scaled against `config.tags.effect_intensity_max`
+/// rather than a hardcoded `2`, linearly interpolates the stroke width
+/// between `EDGE_STROKE_WEAK` and `EDGE_STROKE_STRONG` — color (sign) and
+/// thickness (magnitude) are the edge's entire grammar now, no on-grid text.
 fn draw_edge(
     painter: &egui::Painter,
     from: egui::Pos2,
     to: egui::Pos2,
     color: egui::Color32,
     value: i8,
+    config: &SimConfig,
+    curvature: f32,
 ) {
     let dir = (to - from).normalized();
-    let perp = egui::vec2(-dir.y, dir.x);
-    let offset = perp * EDGE_OFFSET;
+    let start = from + dir * NODE_RADIUS;
+    let end = to - dir * NODE_RADIUS;
 
-    let start = from + offset + dir * NODE_RADIUS;
-    let tip = to + offset - dir * NODE_RADIUS;
-    let base = tip - dir * ARROW_LENGTH;
+    let intensity_max = (config.tags.effect_intensity_max.max(1)) as f32;
+    let t = (value.unsigned_abs() as f32 / intensity_max).clamp(0.0, 1.0);
+    let width = EDGE_STROKE_WEAK + (EDGE_STROKE_STRONG - EDGE_STROKE_WEAK) * t;
+    let stroke = egui::Stroke::new(width, color);
 
-    let magnitude = value.unsigned_abs();
-    let width = if magnitude >= 2 {
-        EDGE_STROKE_STRONG
+    // Tangent direction at the endpoint, used for the arrowhead — the
+    // straight chord direction for an uncurved edge, or the curve's local
+    // direction just before `end` once it's bowed (an arrowhead aligned to
+    // the chord instead would visibly point off the curve).
+    let tangent = if curvature.abs() < f32::EPSILON {
+        painter.line_segment([start, end], stroke);
+        dir
     } else {
-        EDGE_STROKE_WEAK
+        let control = start.lerp(end, 0.5) + perp(dir) * curvature;
+        let bezier = egui::epaint::QuadraticBezierShape::from_points_stroke(
+            [start, control, end],
+            false,
+            egui::Color32::TRANSPARENT,
+            stroke,
+        );
+        let near_end = bezier.sample(0.9);
+        painter.add(egui::Shape::QuadraticBezier(bezier));
+        (end - near_end).normalized()
     };
-    painter.line_segment([start, base], egui::Stroke::new(width, color));
+
+    let perp_t = perp(tangent);
     painter.add(egui::Shape::convex_polygon(
         vec![
-            tip,
-            base + perp * ARROW_WIDTH * 0.5,
-            base - perp * ARROW_WIDTH * 0.5,
+            end,
+            end - tangent * ARROW_LENGTH + perp_t * ARROW_WIDTH * 0.5,
+            end - tangent * ARROW_LENGTH - perp_t * ARROW_WIDTH * 0.5,
         ],
         color,
         egui::Stroke::NONE,
     ));
+}
 
-    if magnitude >= 2 {
-        let mid = start.lerp(base, 0.5) + perp * 6.0;
-        painter.text(
-            mid,
-            egui::Align2::CENTER_CENTER,
-            format!("{value:+}"),
-            egui::FontId::proportional(10.0),
-            color,
-        );
-    }
+/// Perpendicular of a normalized direction vector, rotated 90° — the same
+/// "which side does this bow/offset toward" primitive `draw_edge` and
+/// `draw_dashed_line` both need.
+fn perp(dir: egui::Vec2) -> egui::Vec2 {
+    egui::vec2(-dir.y, dir.x)
 }
 
 /// Whether a tag has zero evidence in *every* direction against every other
@@ -689,13 +753,82 @@ fn has_no_evidence(slot: TagSlot, tag_count: usize, knowledge: &MatrixKnowledge)
     })
 }
 
-/// A small, dim, lineless dot (task 028) marking a pair with `evidence >
-/// 0.0` but not yet confirmed — deliberately nothing like `draw_edge`'s
-/// line-plus-arrowhead, so it reads as a different kind of thing at a
-/// glance rather than a weaker version of a confirmed edge.
-fn draw_partial_marker(painter: &egui::Painter, from: egui::Pos2, to: egui::Pos2) {
-    let point = from.lerp(to, PARTIAL_MARKER_T);
-    painter.circle_filled(point, PARTIAL_MARKER_RADIUS, PARTIAL_EVIDENCE_COLOR);
+/// Dash segment/gap length (task 102) — tuned by eye alongside `EDGE_BOW`:
+/// short enough to read as "dashed, not solid" even at the shortest edges
+/// this grid draws, even-ish so a dash never degenerates to a stub at
+/// awkward edge lengths.
+const DASH_LENGTH: f32 = 5.0;
+const DASH_GAP: f32 = 4.0;
+
+/// A dashed line (task 102, replacing task 028's lineless dot) marking a
+/// pair with `evidence > 0.0` but not yet confirmed: "a relationship exists
+/// here, details pending." Deliberately no arrowhead and uniform thickness
+/// — sign and magnitude genuinely aren't known pre-confirmation, so there's
+/// nothing for either to encode, and the missing arrowhead keeps a partial
+/// edge from reading as a weaker confirmed one at a glance. Straight when
+/// `curvature == 0.0`, otherwise flattened from the same bow curve
+/// `draw_edge` uses for its bidirectional case, so a confirmed/partial pair
+/// bows apart consistently regardless of which direction is which.
+fn draw_dashed_line(painter: &egui::Painter, from: egui::Pos2, to: egui::Pos2, curvature: f32) {
+    let dir = (to - from).normalized();
+    let start = from + dir * NODE_RADIUS;
+    let end = to - dir * NODE_RADIUS;
+
+    let points = if curvature.abs() < f32::EPSILON {
+        vec![start, end]
+    } else {
+        let control = start.lerp(end, 0.5) + perp(dir) * curvature;
+        let bezier = egui::epaint::QuadraticBezierShape::from_points_stroke(
+            [start, control, end],
+            false,
+            egui::Color32::TRANSPARENT,
+            egui::Stroke::NONE,
+        );
+        bezier.flatten(Some(CURVE_FLATTEN_TOLERANCE))
+    };
+    draw_dashed_polyline(
+        painter,
+        &points,
+        egui::Stroke::new(PARTIAL_EDGE_STROKE, PARTIAL_EVIDENCE_COLOR),
+    );
+}
+
+/// Steps along a polyline (straight, 2 points, or a flattened curve) in
+/// alternating `DASH_LENGTH`/`DASH_GAP` stretches — the shared primitive
+/// behind `draw_dashed_line`, working the same way regardless of whether
+/// the underlying path is straight or curved.
+fn draw_dashed_polyline(painter: &egui::Painter, points: &[egui::Pos2], stroke: egui::Stroke) {
+    let mut on = true;
+    let mut budget = DASH_LENGTH;
+    for pair in points.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        let seg_len = (b - a).length();
+        if seg_len <= f32::EPSILON {
+            continue;
+        }
+        let dir = (b - a) / seg_len;
+        let mut traveled = 0.0;
+        while traveled < seg_len {
+            let step = budget.min(seg_len - traveled);
+            if on {
+                painter.line_segment([a + dir * traveled, a + dir * (traveled + step)], stroke);
+            }
+            traveled += step;
+            budget -= step;
+            if budget <= f32::EPSILON {
+                on = !on;
+                budget = if on { DASH_LENGTH } else { DASH_GAP };
+            }
+        }
+    }
+}
+
+/// `evidence / threshold` as a rounded percentage (task 102) — how close an
+/// unconfirmed pair is to crossing `MatrixKnowledge`'s confirmation
+/// threshold. Exposes numbers `MatrixKnowledge` already tracks; doesn't
+/// change evidence accumulation itself.
+fn confidence_pct(knowledge: &MatrixKnowledge, exerter: TagSlot, receiver: TagSlot) -> u32 {
+    (knowledge.evidence(exerter, receiver) / knowledge.threshold() * 100.0).round() as u32
 }
 
 /// Hover fallback for a node (acceptance criterion: the graph must not be
@@ -720,11 +853,13 @@ fn node_tooltip_text(
                 tag_glyph(tag),
                 tag_glyph(other),
                 value > 0,
+                value.unsigned_abs() as i8,
             ));
         } else if knowledge.evidence(slot, other_slot) > 0.0 {
             lines.push(text::partial_relation_line(
                 tag_glyph(tag),
                 tag_glyph(other),
+                confidence_pct(knowledge, slot, other_slot),
             ));
         }
         if let Some(value) = knowledge.revealed_value(other_slot, slot, world) {
@@ -732,11 +867,13 @@ fn node_tooltip_text(
                 tag_glyph(other),
                 tag_glyph(tag),
                 value > 0,
+                value.unsigned_abs() as i8,
             ));
         } else if knowledge.evidence(other_slot, slot) > 0.0 {
             lines.push(text::partial_relation_line(
                 tag_glyph(other),
                 tag_glyph(tag),
+                confidence_pct(knowledge, other_slot, slot),
             ));
         }
     }

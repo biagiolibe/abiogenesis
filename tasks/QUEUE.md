@@ -69,7 +69,7 @@ but blocked.
 | `[x]` | 099 | Reveal-on-first-zone-entry for conditional tags | 096 | [099](done/099-mondo-vivo-zone-entry-reveal.md) |
 | `[x]` | 100 | Strip raw per-tick noise from the observation log | — | [100](done/100-notebook-log-rework.md) |
 | `[x]` | 101 | Hypothesis grid: reveal-on-first-observation, layout over visible subset only | — | [101](done/101-notebook-grid-visibility-layout.md) |
-| `[ ]` | 102 | Hypothesis grid: edge grammar rewrite | 101 (soft) | [102](102-notebook-grid-edge-grammar.md) |
+| `[x]` | 102 | Hypothesis grid: edge grammar rewrite | 101 (soft) | [102](done/102-notebook-grid-edge-grammar.md) |
 | `[ ]` | 103 | Catalog: one-time metabolism legend, trimmed species rows, population + origin era | — | [103](103-notebook-catalog-cleanup.md) |
 | `[ ]` | 104 | Plain-language death message for player-placed organisms | — | [104](104-death-message-plain-language.md) |
 | `[ ]` | 105 | Cause label on the Biosphere panel for a species taking deaths | 104 | [105](105-death-biosphere-trend-diagnosis.md) |

@@ -451,13 +451,24 @@ pub fn node_tag_line(glyph: &str) -> String {
     format!("Tag {glyph}")
 }
 
-pub fn confirmed_relation_line(from_glyph: &str, to_glyph: &str, positive: bool) -> String {
+/// `magnitude` is the confirmed matrix entry's absolute value (task 102:
+/// once the on-grid edge label is gone, this tooltip line is the only place
+/// the number is still readable, per the "graph is never the only source"
+/// constraint task 031 established).
+pub fn confirmed_relation_line(
+    from_glyph: &str,
+    to_glyph: &str,
+    positive: bool,
+    magnitude: i8,
+) -> String {
     let sign = if positive { "+" } else { "-" };
-    format!("{from_glyph} → {to_glyph} ({sign})")
+    format!("{from_glyph} → {to_glyph} ({sign}{magnitude})")
 }
 
-pub fn partial_relation_line(from_glyph: &str, to_glyph: &str) -> String {
-    format!("{from_glyph} → {to_glyph} (some evidence)")
+/// `confidence_pct` is `evidence / threshold` as a rounded percentage (task
+/// 102) — how close this pair is to crossing the confirmation threshold.
+pub fn partial_relation_line(from_glyph: &str, to_glyph: &str, confidence_pct: u32) -> String {
+    format!("{from_glyph} → {to_glyph} (some evidence, ~{confidence_pct}%)")
 }
 
 // --- Notebook — catalog (`notebook.rs::catalog_panel`) ---

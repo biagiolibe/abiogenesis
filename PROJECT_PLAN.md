@@ -211,7 +211,7 @@ redesign — all explicitly flagged as not design-ready in their source docs.
 - `[x]` 099 — Reveal-on-first-zone-entry for conditional tags (depends on 096) → [099](tasks/done/099-mondo-vivo-zone-entry-reveal.md)
 - `[x]` 100 — Strip raw per-tick noise from the observation log → [100](tasks/done/100-notebook-log-rework.md)
 - `[x]` 101 — Hypothesis grid: reveal-on-first-observation, layout over visible subset only → [101](tasks/done/101-notebook-grid-visibility-layout.md)
-- `[ ]` 102 — Hypothesis grid: edge grammar rewrite (thickness, dashed partial lines, curved bidirectional arcs) → [102](tasks/102-notebook-grid-edge-grammar.md)
+- `[x]` 102 — Hypothesis grid: edge grammar rewrite (thickness, dashed partial lines, curved bidirectional arcs) → [102](tasks/done/102-notebook-grid-edge-grammar.md)
 - `[ ]` 103 — Catalog: one-time metabolism legend, trimmed species rows, population + origin era (extended 2026-08-12, see "HUD & Notebook redesign follow-up" below) → [103](tasks/103-notebook-catalog-cleanup.md)
 - `[ ]` 104 — Plain-language death message for player-placed organisms → [104](tasks/104-death-message-plain-language.md)
 - `[ ]` 105 — Cause label on the Biosphere panel for a species taking deaths (depends on 104) → [105](tasks/105-death-biosphere-trend-diagnosis.md)

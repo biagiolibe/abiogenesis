@@ -13,6 +13,67 @@
 
 ---
 
+## ✅ Outcome (2026-08-12)
+
+Implemented all four points. Key decisions/parameters, since several are
+tuned by eye rather than derived:
+
+- **Bidirectional detection is per-ordered-pair, not a separate pass**: in
+  `hypothesis_grid`'s edge loop, each direction checks whether its own
+  reverse direction also has "something to draw" (confirmed or partial);
+  if so both bow apart via `EDGE_BOW = 16.0` points, signed by tag-index
+  order (`ei < ri` bows one way, the reverse pair bows the other) so the
+  two directions of any pair always separate regardless of draw order. A
+  unidirectional pair gets `curvature = 0.0` and stays a straight line —
+  no separate "is this pair unidirectional" branch needed.
+- **Curves use egui's native `QuadraticBezierShape`** for confirmed (solid)
+  edges — no manual flattening needed, egui tessellates it directly.
+  Partial (dashed) edges *do* need flattening (`flatten(Some(0.5))`,
+  `CURVE_FLATTEN_TOLERANCE`) since dashing steps along explicit points; a
+  straight partial edge skips the bezier machinery entirely (2-point
+  polyline).
+- **Arrowhead tangent on curved edges** is sampled at `t = 0.9` on the
+  bezier rather than the straight chord direction — visibly correct
+  alignment with the curve's end tangent at `EDGE_BOW`'s scale; no need for
+  exact end-tangent calculus at this curvature.
+- **`EDGE_STROKE_WEAK`/`STRONG` re-tuned from `1.5`/`3.0` to `1.5`/`6.0`**
+  (previously the `±N` label did most of the "which one is which" work) —
+  confirmed via `cargo run` that magnitude 1 vs. 2 read as clearly
+  different line weights with no text present. Width now interpolates
+  linearly against `config.tags.effect_intensity_max`, not a hardcoded `2`.
+- **Dash parameters**: `DASH_LENGTH = 5.0`, `DASH_GAP = 4.0` — reads as
+  "dashed" rather than "sparse dots" at the grid's typical edge length.
+- **`draw_partial_marker`/`PARTIAL_MARKER_RADIUS`/`PARTIAL_MARKER_T`**
+  removed, replaced by `draw_dashed_line` (works for both curved and
+  straight paths) + a generic `draw_dashed_polyline` stepper. `EDGE_OFFSET`
+  removed — offsetting is now curvature-based, not a fixed perpendicular
+  shift.
+- **Tooltip text** (`text::confirmed_relation_line`/`partial_relation_line`)
+  updated: confirmed lines now include magnitude (`"ζ → ε (+2)"`); partial
+  lines include the confidence percentage from `MatrixKnowledge::threshold()`
+  (new getter) — `"ζ → ε (some evidence, ~40%)"`.
+- Partial (dashed) edges deliberately get **no arrowhead** — direction is
+  implied contextually (which node the dashed line touches), keeping the
+  "can never be mistaken for a confirmed edge" property from the original
+  dot marker.
+- `draw_edge`/`draw_dashed_line` draw their curve/line all the way to the
+  node-radius-adjusted endpoint rather than stopping short for the
+  arrowhead's footprint (as the old straight-line code did) — the
+  same-color arrowhead simply overlays the last few points of the
+  line/curve, which is visually seamless and avoids the extra geometry
+  needed to trim a bezier's end.
+
+`cargo test`/`cargo clippy -- -D warnings` clean. Live `cargo run` check
+limited to a clean-boot smoke test — same sandbox constraint as tasks
+100/101 (no interactive window automation available to force and inspect a
+bidirectional pair on screen). The stroke-width and dash tuning above was
+judged by re-deriving the same visual math a `cargo run` pass would check
+(the label→thickness handoff, dash cadence relative to node spacing), not
+by an actual screenshot comparison — flagged here in case a future
+playtest wants to revisit these numbers with eyes on the real grid.
+
+---
+
 ## 🎯 Objective
 
 Live screenshot review (redesign doc) found the hypothesis grid's edge
