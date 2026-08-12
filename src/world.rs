@@ -205,16 +205,18 @@ impl TerrainKind {
 /// A cell's discrete biome (task 110, `redesign/abiogenesis-biomes.md`):
 /// refines the base `TerrainKind` landform with the ambient scalars
 /// (`temperature`/`light`/`toxicity`) into one of 16 design-doc biomes.
-/// Only the 11 "areal" biomes that emerge from elevation + scalars are
-/// covered by this task — the 4 explicitly-placed "feature" biomes (Cratere
-/// profondo, Distesa di cristalli, Lago, Bocca vulcanica) are added by task
-/// 111, and Geyser (task 114) stays blocked. Decided once at generation
-/// time (`SimWorld::classify_biomes`) and stored here, never recomputed
-/// from live `Cell` scalars — the same reasoning `objectives.rs:318-320`
-/// gives for why `SurviveIn` reads `ToxicZoneBounds` instead of live
-/// `toxicity`: `diffuse_environment` blends scalars toward neighbours every
-/// tick, so a threshold read at query time would drift away from the
-/// biome's actual shape over a long-running world.
+/// The 11 "areal" biomes emerge from elevation + scalars
+/// (`SimWorld::classify_biomes`, task 110); the 4 "feature" biomes below
+/// (Cratere profondo, Distesa di cristalli, Lago, Bocca vulcanica) are
+/// placed explicitly instead (`SimWorld::place_feature_biomes`, task 111),
+/// overriding whatever the areal pass produced there. Geyser (task 114)
+/// stays blocked. Decided once at generation time and stored here, never
+/// recomputed from live `Cell` scalars — the same reasoning
+/// `objectives.rs:318-320` gives for why `SurviveIn` reads
+/// `ToxicZoneBounds` instead of live `toxicity`: `diffuse_environment`
+/// blends scalars toward neighbours every tick, so a threshold read at
+/// query time would drift away from the biome's actual shape over a
+/// long-running world.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Biome {
     DeepWater,
@@ -229,6 +231,21 @@ pub enum Biome {
     BareRock,
     Forest,
     Swamp,
+    /// Cratere profondo (task 111): bounded-retry rectangle placement,
+    /// same pattern as the toxic zone.
+    Crater,
+    /// Distesa di cristalli (task 111): bounded-retry rectangle placement
+    /// — the design doc's "visually alien" biome, a candidate hook for a
+    /// rare genetic tag in a future task, not resolved here.
+    CrystalField,
+    /// Lago (task 111): bounded-retry rectangle placement — a standalone
+    /// inland body of still water, distinct from `DeepWater`/`ShallowWater`
+    /// (which come from `TerrainKind::Sea`).
+    Lake,
+    /// Bocca vulcanica (task 111): no placement search — directly hooks
+    /// into `SimWorld::heat_sources` (task 085), which already exist by
+    /// generation time.
+    VolcanicVent,
 }
 
 /// Which `TerrainKind` bands a species' lineage has ever occupied this run
@@ -526,6 +543,7 @@ impl SimWorld {
         world.apply_environment_sources(config, &params);
         world.place_toxic_zone(config, &params);
         world.classify_biomes(config);
+        world.place_feature_biomes(config);
         world
     }
 
@@ -796,6 +814,182 @@ impl SimWorld {
         }
         for (idx, cell) in self.cells.iter_mut().enumerate() {
             cell.biome = biomes[idx];
+        }
+    }
+
+    /// Places the four "feature" biomes task 111 covers
+    /// (`redesign/abiogenesis-biomes.md`): Cratere profondo, Distesa di
+    /// cristalli, and Lago via bounded-retry rectangle search (same
+    /// pattern as `place_toxic_zone`), and Bocca vulcanica by hooking
+    /// directly into the point heat sources `apply_environment_sources`
+    /// already placed — no search needed there. Must run after
+    /// `classify_biomes`: every cell touched here overrides whatever
+    /// Stage A/B produced, not the other way round (the design doc's
+    /// explicit "placed, not derived" distinction for these four biomes).
+    ///
+    /// `reserved` tracks every cell already claimed by an earlier feature
+    /// in this same call so the three searched rectangles (and the vent
+    /// footprint placed first) never overlap each other — each search
+    /// requires zero overlap with `reserved` before accepting a candidate,
+    /// falling back to the lowest-overlap candidate seen if none reaches
+    /// zero within its attempt budget (vanishingly unlikely given these
+    /// footprints are tiny relative to the grid).
+    fn place_feature_biomes(&mut self, config: &SimConfig) {
+        let biome_cfg = &config.biome;
+        let cell_count = self.cells.len();
+        let mut reserved = vec![false; cell_count];
+
+        // Bocca vulcanica: a small radius around each heat source,
+        // deliberately independent from `SourceConfig::heat_source_radius`
+        // (that's the temperature falloff footprint, not a biome-sized
+        // patch — task 111's own acceptance criteria calls out not
+        // perturbing it). Biome only, no scalar override:
+        // `apply_environment_sources`/`reinject_environment_sources`
+        // already keep these cells hot.
+        for &source_idx in &self.heat_sources.clone() {
+            let (sx, sy) = (source_idx % self.width, source_idx / self.width);
+            for y in 0..self.height {
+                for x in 0..self.width {
+                    let dx = x as f32 - sx as f32;
+                    let dy = y as f32 - sy as f32;
+                    if (dx * dx + dy * dy).sqrt() <= biome_cfg.volcanic_vent_radius {
+                        let idx = self.index(x, y);
+                        self.cells[idx].biome = Biome::VolcanicVent;
+                        reserved[idx] = true;
+                    }
+                }
+            }
+        }
+
+        self.place_feature_rect(
+            &mut reserved,
+            &FeaturePlacement {
+                seed_offset: CRATER_SEED_OFFSET,
+                width: biome_cfg.crater_width as usize,
+                height: biome_cfg.crater_height as usize,
+                min_placeable_fraction: biome_cfg.crater_min_placeable_fraction,
+                max_attempts: biome_cfg.crater_max_placement_attempts,
+                biome: Biome::Crater,
+                temperature: biome_cfg.crater_temperature,
+                light: biome_cfg.crater_light,
+                toxicity: biome_cfg.crater_toxicity,
+            },
+        );
+        self.place_feature_rect(
+            &mut reserved,
+            &FeaturePlacement {
+                seed_offset: CRYSTAL_FIELD_SEED_OFFSET,
+                width: biome_cfg.crystal_field_width as usize,
+                height: biome_cfg.crystal_field_height as usize,
+                min_placeable_fraction: biome_cfg.crystal_field_min_placeable_fraction,
+                max_attempts: biome_cfg.crystal_field_max_placement_attempts,
+                biome: Biome::CrystalField,
+                temperature: biome_cfg.crystal_field_temperature,
+                light: biome_cfg.crystal_field_light,
+                toxicity: biome_cfg.crystal_field_toxicity,
+            },
+        );
+        self.place_feature_rect(
+            &mut reserved,
+            &FeaturePlacement {
+                seed_offset: LAKE_SEED_OFFSET,
+                width: biome_cfg.lake_width as usize,
+                height: biome_cfg.lake_height as usize,
+                min_placeable_fraction: biome_cfg.lake_min_placeable_fraction,
+                max_attempts: biome_cfg.lake_max_placement_attempts,
+                biome: Biome::Lake,
+                temperature: biome_cfg.lake_temperature,
+                light: biome_cfg.lake_light,
+                toxicity: biome_cfg.lake_toxicity,
+            },
+        );
+    }
+
+    /// One bounded-retry rectangle placement for `place_feature_biomes`
+    /// (task 111) — the same attempt-loop/keep-best-seen shape as
+    /// `place_toxic_zone`, extended with a hard zero-overlap requirement
+    /// against `reserved` (other already-placed feature biomes). A
+    /// candidate is accepted immediately once it clears both zero overlap
+    /// and `spec.min_placeable_fraction`; otherwise the best candidate
+    /// seen — ranked by lowest overlap first, then highest placeable
+    /// fraction — is kept once the attempt budget runs out.
+    fn place_feature_rect(&mut self, reserved: &mut [bool], spec: &FeaturePlacement) {
+        let width = spec.width.min(self.width);
+        let height = spec.height.min(self.height);
+        if width == 0 || height == 0 {
+            return;
+        }
+        let mut rng = StdRng::seed_from_u64(self.seed ^ spec.seed_offset);
+        let max_x0 = self.width - width;
+        let max_y0 = self.height - height;
+
+        // (x0, y0, overlap with `reserved`, placeable fraction).
+        let mut best: Option<(usize, usize, usize, f32)> = None;
+        for _ in 0..spec.max_attempts.max(1) {
+            let x0 = rng.random_range(0..=max_x0);
+            let y0 = rng.random_range(0..=max_y0);
+            let overlap = self.reserved_overlap_in(x0, y0, width, height, reserved);
+            let fraction = self.placeable_fraction_in(x0, y0, width, height);
+            if overlap == 0 && fraction >= spec.min_placeable_fraction {
+                self.set_feature_biome(reserved, x0, y0, width, height, spec);
+                return;
+            }
+            let is_better = match best {
+                None => true,
+                Some((_, _, best_overlap, best_fraction)) => {
+                    overlap < best_overlap || (overlap == best_overlap && fraction > best_fraction)
+                }
+            };
+            if is_better {
+                best = Some((x0, y0, overlap, fraction));
+            }
+        }
+        let (x0, y0, _, _) = best.expect("the loop above runs at least once");
+        self.set_feature_biome(reserved, x0, y0, width, height, spec);
+    }
+
+    /// Count of `reserved` cells within `[x0, x0+width) x [y0, y0+height)`
+    /// — the overlap metric `place_feature_rect` searches against.
+    fn reserved_overlap_in(
+        &self,
+        x0: usize,
+        y0: usize,
+        width: usize,
+        height: usize,
+        reserved: &[bool],
+    ) -> usize {
+        let mut count = 0;
+        for y in y0..y0 + height {
+            for x in x0..x0 + width {
+                if reserved[self.index(x, y)] {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
+
+    /// Writes `spec`'s biome and target scalars onto every cell in
+    /// `[x0, x0+width) x [y0, y0+height)`, and marks them `reserved` so a
+    /// later `place_feature_rect` call never overlaps this footprint.
+    fn set_feature_biome(
+        &mut self,
+        reserved: &mut [bool],
+        x0: usize,
+        y0: usize,
+        width: usize,
+        height: usize,
+        spec: &FeaturePlacement,
+    ) {
+        for y in y0..y0 + height {
+            for x in x0..x0 + width {
+                let idx = self.index(x, y);
+                self.cells[idx].biome = spec.biome;
+                self.cells[idx].temperature = spec.temperature;
+                self.cells[idx].light = spec.light;
+                self.cells[idx].toxicity = spec.toxicity;
+                reserved[idx] = true;
+            }
         }
     }
 
@@ -1237,6 +1431,34 @@ const SUN_DIRECTION_SEED_OFFSET: u64 = 0x9E97_79B9_7F4A_1656;
 /// (task 110) — a different constant so this stream doesn't start in
 /// lockstep with the others.
 const BIOME_SEED_OFFSET: u64 = 0x2545_F491_4F6C_DD1D;
+
+/// Same purpose as `TERRAIN_SEED_OFFSET`, for Cratere profondo's placement
+/// search (task 111) — a different constant so this stream doesn't start
+/// in lockstep with the others.
+const CRATER_SEED_OFFSET: u64 = 0x27D4_EB2F_1656_67B1;
+
+/// Same purpose as `TERRAIN_SEED_OFFSET`, for Distesa di cristalli's
+/// placement search (task 111).
+const CRYSTAL_FIELD_SEED_OFFSET: u64 = 0x9E37_79B1_2545_F491;
+
+/// Same purpose as `TERRAIN_SEED_OFFSET`, for Lago's placement search
+/// (task 111).
+const LAKE_SEED_OFFSET: u64 = 0x4F6C_DD1D_C2B2_AE3D;
+
+/// One feature biome's placement parameters (task 111) — bundled so
+/// `place_feature_rect`'s call sites don't need a 9-argument function
+/// signature per feature.
+struct FeaturePlacement {
+    seed_offset: u64,
+    width: usize,
+    height: usize,
+    min_placeable_fraction: f32,
+    max_attempts: u32,
+    biome: Biome,
+    temperature: f32,
+    light: f32,
+    toxicity: f32,
+}
 
 /// Dims `light` near `Mountain` peaks (task 085's "mountain shading"):
 /// linear falloff from `mountain_shade_strength` at a peak's own cell to `0`
@@ -1769,7 +1991,10 @@ mod tests {
     /// Task 066: the zone's position is no longer fixed to the grid's
     /// bottom-right corner, so this checks the general invariant instead —
     /// every cell's toxicity matches `toxic_zone_value` exactly where
-    /// `ToxicZoneBounds::contains` says it should, and `0.0` everywhere else.
+    /// `ToxicZoneBounds::contains` says it should, and `0.0` everywhere else
+    /// — **except** a cell task 111's feature-biome placement (which runs
+    /// after `place_toxic_zone`) has overridden with its own imposed
+    /// toxicity, whether or not that cell sits inside the zone's bounds.
     #[test]
     fn toxic_zone_matches_its_own_bounds() {
         let config = test_config();
@@ -1782,12 +2007,15 @@ mod tests {
         );
         for y in 0..world.height {
             for x in 0..world.width {
-                let expected = if world.toxic_zone.contains(x, y) {
-                    env.toxic_zone_value
-                } else {
-                    0.0
+                let cell = world.get(x, y);
+                let expected = match cell.biome {
+                    Biome::Crater => config.biome.crater_toxicity,
+                    Biome::CrystalField => config.biome.crystal_field_toxicity,
+                    Biome::Lake => config.biome.lake_toxicity,
+                    _ if world.toxic_zone.contains(x, y) => env.toxic_zone_value,
+                    _ => 0.0,
                 };
-                assert_eq!(world.get(x, y).toxicity, expected, "cell ({x}, {y})");
+                assert_eq!(cell.toxicity, expected, "cell ({x}, {y})");
             }
         }
     }
@@ -1883,6 +2111,94 @@ mod tests {
                 "{biome:?} never reached across 40 seeds"
             );
         }
+    }
+
+    #[test]
+    fn feature_biomes_never_overlap_each_other() {
+        // `place_feature_biomes` places Crater/CrystalField/Lake in that
+        // order (Bocca vulcanica's vent footprint first), each requiring
+        // zero overlap with every cell already claimed by an earlier one.
+        // `set_feature_biome` unconditionally paints its whole rectangle,
+        // so if two footprints *did* overlap, the earlier one's final cell
+        // count would come in under its full `width * height` (the later
+        // feature repainting the shared cells) — a `Cell.biome` scan alone
+        // can't see overlap directly (one field, last write wins), but it
+        // can see this undercount, which is exactly what a real overlap
+        // would produce.
+        let config = test_config();
+        for seed in 0..40u64 {
+            let world = SimWorld::new(seed, &config);
+            let count = |biome: Biome| world.cells.iter().filter(|c| c.biome == biome).count();
+
+            assert_eq!(
+                count(Biome::Crater),
+                (config.biome.crater_width * config.biome.crater_height) as usize,
+                "seed {seed}: Crater's footprint was shrunk by a later overlapping feature"
+            );
+            assert_eq!(
+                count(Biome::CrystalField),
+                (config.biome.crystal_field_width * config.biome.crystal_field_height) as usize,
+                "seed {seed}: CrystalField's footprint was shrunk by a later overlapping feature"
+            );
+            assert_eq!(
+                count(Biome::Lake),
+                (config.biome.lake_width * config.biome.lake_height) as usize,
+                "seed {seed}: Lake's footprint was shrunk by an overlapping feature"
+            );
+        }
+    }
+
+    #[test]
+    fn feature_biomes_impose_their_target_scalars() {
+        let config = test_config();
+        for seed in 0..20u64 {
+            let world = SimWorld::new(seed, &config);
+            for cell in &world.cells {
+                match cell.biome {
+                    Biome::Crater => {
+                        assert_eq!(cell.temperature, config.biome.crater_temperature);
+                        assert_eq!(cell.light, config.biome.crater_light);
+                        assert_eq!(cell.toxicity, config.biome.crater_toxicity);
+                    }
+                    Biome::CrystalField => {
+                        assert_eq!(cell.temperature, config.biome.crystal_field_temperature);
+                        assert_eq!(cell.light, config.biome.crystal_field_light);
+                        assert_eq!(cell.toxicity, config.biome.crystal_field_toxicity);
+                    }
+                    Biome::Lake => {
+                        assert_eq!(cell.temperature, config.biome.lake_temperature);
+                        assert_eq!(cell.light, config.biome.lake_light);
+                        assert_eq!(cell.toxicity, config.biome.lake_toxicity);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn volcanic_vent_biome_covers_every_heat_source() {
+        let config = test_config();
+        for seed in 0..20u64 {
+            let world = SimWorld::new(seed, &config);
+            for &idx in &world.heat_sources {
+                assert_eq!(
+                    world.cells[idx].biome,
+                    Biome::VolcanicVent,
+                    "seed {seed}: heat source cell must read as VolcanicVent"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn feature_biome_placement_is_deterministic_for_a_given_seed() {
+        let config = test_config();
+        let a = SimWorld::new(11, &config);
+        let b = SimWorld::new(11, &config);
+        let biomes_a: Vec<Biome> = a.cells.iter().map(|c| c.biome).collect();
+        let biomes_b: Vec<Biome> = b.cells.iter().map(|c| c.biome).collect();
+        assert_eq!(biomes_a, biomes_b);
     }
 
     #[test]

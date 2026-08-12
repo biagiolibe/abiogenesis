@@ -64,7 +64,7 @@ small/pulsing heat-source category exists yet to back it.
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
 | `[x]` | 110 | Biome enum + two-stage classification (areal biomes) | — | [110](done/110-biome-classification-two-stage.md) |
-| `[ ]` | 111 | Explicit placement for feature biomes (Cratere, Distesa di cristalli, Lago, Bocca vulcanica) | 110 | [111](111-biome-feature-placement.md) |
+| `[x]` | 111 | Explicit placement for feature biomes (Cratere, Distesa di cristalli, Lago, Bocca vulcanica) | 110 | [111](done/111-biome-feature-placement.md) |
 | `[ ]` | 112 | Biome rendering (flat color, dithering, borders, tree overlay) | 110, 111 | [112](112-biome-rendering.md) |
 | `[ ]` | 113 | Palude replaces `toxic_zone` | 110 | [113](113-swamp-replaces-toxic-zone.md) |
 | `[ ]` ⏸ | 114 | BLOCKED — Geyser biome (needs a small/pulsing heat-source category, not yet scoped) | 110, 111, unscoped source-model extension | [114](114-geyser-pulsing-source-blocked.md) |
@@ -125,7 +125,12 @@ Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN
 
 ---
 
-*Last updated: 2026-08-12 (110, biome enum + two-stage areal classification,
+*Last updated: 2026-08-12 (111, explicit placement for feature biomes —
+Crater/CrystalField/Lake via bounded-retry rectangles with a hard
+zero-overlap requirement against each other, Bocca vulcanica hooked
+directly into `SimWorld::heat_sources` via a small independent vent
+radius — completed and archived to `tasks/done/`. Unblocks 112 (still
+open). 110, biome enum + two-stage areal classification,
 completed and archived to `tasks/done/` — adds `Biome`/`Cell::biome`/
 `Cell::elevation`/`BiomeConfig`, and a `classify_biomes` generation step
 run after `place_toxic_zone` so Stage B reads real generation-time

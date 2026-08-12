@@ -781,6 +781,60 @@ pub struct BiomeConfig {
     /// only ever appears as an organic sub-region of the toxic zone's
     /// footprint until task 113 rewires the two apart.
     pub swamp_toxicity_min: f32,
+    /// Radius (cells, Euclidean) around each `SimWorld::heat_sources` cell
+    /// that reads as Bocca vulcanica (task 111) — deliberately independent
+    /// from `SourceConfig::heat_source_radius`/`heat_source_radius_late`
+    /// (that's the temperature falloff footprint, load-bearing for task
+    /// 085's balance and not to be perturbed here), and much smaller: a
+    /// biome-sized patch, not a whole thermal gradient.
+    pub volcanic_vent_radius: f32,
+    /// Cratere profondo's placement rectangle width (task 111), same
+    /// bounded-retry pattern as `TerrainConfig`'s toxic-zone fields.
+    pub crater_width: u32,
+    /// Cratere profondo's placement rectangle height.
+    pub crater_height: u32,
+    /// Minimum placeable-land fraction a candidate Cratere profondo
+    /// position must clear.
+    pub crater_min_placeable_fraction: f32,
+    /// Bounded resample attempts for Cratere profondo's placement search.
+    pub crater_max_placement_attempts: u32,
+    /// Cratere profondo's imposed `temperature` (design doc table).
+    pub crater_temperature: f32,
+    /// Cratere profondo's imposed `light`.
+    pub crater_light: f32,
+    /// Cratere profondo's imposed `toxicity`.
+    pub crater_toxicity: f32,
+    /// Distesa di cristalli's placement rectangle width (task 111).
+    pub crystal_field_width: u32,
+    /// Distesa di cristalli's placement rectangle height.
+    pub crystal_field_height: u32,
+    /// Minimum placeable-land fraction a candidate Distesa di cristalli
+    /// position must clear.
+    pub crystal_field_min_placeable_fraction: f32,
+    /// Bounded resample attempts for Distesa di cristalli's placement
+    /// search.
+    pub crystal_field_max_placement_attempts: u32,
+    /// Distesa di cristalli's imposed `temperature` (design doc table).
+    pub crystal_field_temperature: f32,
+    /// Distesa di cristalli's imposed `light`.
+    pub crystal_field_light: f32,
+    /// Distesa di cristalli's imposed `toxicity`.
+    pub crystal_field_toxicity: f32,
+    /// Lago's placement rectangle width (task 111).
+    pub lake_width: u32,
+    /// Lago's placement rectangle height.
+    pub lake_height: u32,
+    /// Minimum placeable-land fraction a candidate Lago position must
+    /// clear.
+    pub lake_min_placeable_fraction: f32,
+    /// Bounded resample attempts for Lago's placement search.
+    pub lake_max_placement_attempts: u32,
+    /// Lago's imposed `temperature` (design doc table).
+    pub lake_temperature: f32,
+    /// Lago's imposed `light`.
+    pub lake_light: f32,
+    /// Lago's imposed `toxicity`.
+    pub lake_toxicity: f32,
 }
 
 impl Default for BiomeConfig {
@@ -800,6 +854,28 @@ impl Default for BiomeConfig {
             forest_light_min: 0.25,
             forest_light_max: 0.45,
             swamp_toxicity_min: 0.3,
+            volcanic_vent_radius: 4.0,
+            crater_width: 9,
+            crater_height: 9,
+            crater_min_placeable_fraction: 0.5,
+            crater_max_placement_attempts: 24,
+            crater_temperature: 0.60,
+            crater_light: 0.20,
+            crater_toxicity: 0.60,
+            crystal_field_width: 7,
+            crystal_field_height: 7,
+            crystal_field_min_placeable_fraction: 0.5,
+            crystal_field_max_placement_attempts: 24,
+            crystal_field_temperature: 0.40,
+            crystal_field_light: 0.60,
+            crystal_field_toxicity: 0.20,
+            lake_width: 11,
+            lake_height: 9,
+            lake_min_placeable_fraction: 0.5,
+            lake_max_placement_attempts: 24,
+            lake_temperature: 0.45,
+            lake_light: 0.40,
+            lake_toxicity: 0.05,
         }
     }
 }
