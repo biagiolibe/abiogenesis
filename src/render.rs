@@ -15,6 +15,9 @@ use abiogenesis::sim::AdjacencyObserved;
 use abiogenesis::state::GameState;
 use abiogenesis::world::{Biome, Metabolism, SimWorld, SpeciesId, TagSlot, TerrainKind};
 
+use crate::notebook::{cursor_over_notebook_panel, NotebookWindowOpen};
+use crate::ui::cursor_over_hud_panel;
+
 /// Pixel size of one grid cell on screen. Presentation-only, not a
 /// simulation coefficient, so it stays local instead of living in
 /// `SimConfig` (invariant 3 covers balance numbers, not pixel sizes).
@@ -432,6 +435,7 @@ mod energy_overlay {
 /// visible, not an instrument reading.
 mod terrain_overlay {
     use super::{cell_position, GridCamera, CELL_SIZE};
+    use crate::notebook::{NotebookWindowOpen, NOTEBOOK_WIDTH};
     use abiogenesis::world::{Biome, SimWorld};
     use bevy::prelude::*;
     use bevy_egui::{egui, EguiContexts};
@@ -469,6 +473,7 @@ mod terrain_overlay {
     pub fn draw_terrain_overlay(
         world: Res<SimWorld>,
         cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
+        notebook_open: Res<NotebookWindowOpen>,
         mut contexts: EguiContexts,
     ) -> Result {
         let Ok((camera, camera_transform)) = cameras.single() else {
@@ -490,6 +495,22 @@ mod terrain_overlay {
                 egui::pos2(viewport_rect.max.x, viewport_rect.max.y),
             )),
             None => painter,
+        };
+        // Task 116: the notebook panel doesn't reserve any camera-viewport
+        // space (`ui::reserve_hud_viewport`'s doc comment explains why —
+        // freezing the map's size/pan/zoom across toggles matters more than
+        // it using every available pixel), so nothing above already
+        // excludes its rect the way the HUD sidebar's clip does. Without
+        // this, boundaries/peaks/trees painted straight through the
+        // notebook panel's own background (bug caught live, 2026-08-13).
+        let painter = if notebook_open.0 {
+            let viewport = ctx.viewport_rect();
+            painter.with_clip_rect(egui::Rect::from_min_max(
+                egui::pos2(viewport.min.x + NOTEBOOK_WIDTH, viewport.min.y),
+                egui::pos2(viewport.max.x, viewport.max.y),
+            ))
+        } else {
+            painter
         };
 
         let project = |pos: Vec3| -> Option<egui::Pos2> {
@@ -1114,6 +1135,7 @@ fn zoom_camera(
     windows: Query<&Window>,
     config: Res<SimConfig>,
     egui_wants_input: Res<EguiWantsInput>,
+    notebook_open: Res<NotebookWindowOpen>,
     mut cameras: Query<
         (&Camera, &GlobalTransform, &mut Projection, &mut Transform),
         With<GridCamera>,
@@ -1137,6 +1159,19 @@ fn zoom_camera(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
+    // Task 115: `EguiWantsInput` doesn't catch the HUD panel — see
+    // `ui::cursor_over_hud_panel`'s doc comment for why (the panel and the
+    // grid's own overlay share a layer, which breaks egui's usual
+    // pointer-over-area bookkeeping for it specifically).
+    if cursor_over_hud_panel(cursor, window.width()) {
+        return;
+    }
+    // Task 116: same gap, for the notebook panel — scrolling its own
+    // Observation log `ScrollArea` otherwise still zooms the dimmed map
+    // underneath.
+    if cursor_over_notebook_panel(cursor, notebook_open.0) {
+        return;
+    }
     let Ok((camera, camera_transform, mut projection, mut transform)) = cameras.single_mut() else {
         return;
     };
@@ -1634,6 +1669,115 @@ fn toxicity_tint(base: Color, toxicity: f32) -> Color {
 mod tests {
     use super::*;
     use abiogenesis::world::{Biome, Cell, Organism, SpeciesId};
+    use bevy::ecs::system::SystemState;
+    use bevy::input::mouse::MouseScrollUnit;
+
+    /// Task 115 regression test, parallel to `input`'s
+    /// `clicked_cell_is_blocked_over_the_hud_panel_even_when_the_grid_extends_there`.
+    /// `zoom_camera` already tolerates an absent `GridCamera` gracefully
+    /// (`let Ok(...) = cameras.single_mut() else { return }`), so an empty
+    /// camera query can't distinguish "the new gate fired" from "there was
+    /// no camera to zoom" the way it can't in the click-side test either —
+    /// what this exercises is that a nonzero scroll with the cursor inside
+    /// the HUD panel's reserved rect runs the system to completion without
+    /// panicking, with `EguiWantsInput` deliberately left at its all-`false`
+    /// default so task 091's pre-existing gate can't be masking anything.
+    /// The actual correctness proof for *where* the boundary sits is
+    /// `cursor_over_hud_panel`'s own exact-math tests in
+    /// `ui::hud_panel_rect_tests` — the same predicate both this system and
+    /// `clicked_cell` call, so proving it right once covers both call sites.
+    #[test]
+    fn zoom_camera_runs_to_completion_with_the_cursor_over_the_hud_panel() {
+        let mut world = World::new();
+        world.insert_resource(SimConfig::default());
+        world.insert_resource(EguiWantsInput::default());
+        world.insert_resource(NotebookWindowOpen(false));
+        world.init_resource::<Messages<MouseWheel>>();
+        let mut window = Window::default();
+        window.resolution.set(1200.0, 800.0);
+        window.set_physical_cursor_position(Some(bevy::math::DVec2::new(1199.0, 400.0)));
+        world.spawn(window);
+        world
+            .resource_mut::<Messages<MouseWheel>>()
+            .write(MouseWheel {
+                unit: MouseScrollUnit::Line,
+                x: 0.0,
+                y: 1.0,
+                window: Entity::PLACEHOLDER,
+                phase: bevy::input::touch::TouchPhase::Moved,
+            });
+
+        let mut state = SystemState::<(
+            MessageReader<MouseWheel>,
+            Query<&Window>,
+            Res<SimConfig>,
+            Res<EguiWantsInput>,
+            Res<NotebookWindowOpen>,
+            Query<(&Camera, &GlobalTransform, &mut Projection, &mut Transform), With<GridCamera>>,
+        )>::new(&mut world);
+        let (wheel, windows, config, egui_wants_input, notebook_open, cameras) =
+            state.get_mut(&mut world).unwrap();
+
+        zoom_camera(
+            wheel,
+            windows,
+            config,
+            egui_wants_input,
+            notebook_open,
+            cameras,
+        );
+    }
+
+    /// Task 116 regression test, parallel to the HUD-panel one above: a
+    /// scroll with the cursor inside the notebook panel's reserved rect
+    /// (left edge of the window) must not reach the camera-zoom math while
+    /// the notebook is open. Same limitation as every other `zoom_camera`
+    /// test in this file — no `GridCamera` is spawned, so this only proves
+    /// the system runs to completion without panicking; the actual
+    /// boundary-correctness proof (both sides of the boundary, and the
+    /// `notebook_open == false` case) lives in `notebook::tests::
+    /// cursor_over_notebook_panel_tests`.
+    #[test]
+    fn zoom_camera_runs_to_completion_with_the_cursor_over_the_notebook_panel() {
+        let mut world = World::new();
+        world.insert_resource(SimConfig::default());
+        world.insert_resource(EguiWantsInput::default());
+        world.insert_resource(NotebookWindowOpen(true));
+        world.init_resource::<Messages<MouseWheel>>();
+        let mut window = Window::default();
+        window.resolution.set(1200.0, 800.0);
+        window.set_physical_cursor_position(Some(bevy::math::DVec2::new(1.0, 400.0)));
+        world.spawn(window);
+        world
+            .resource_mut::<Messages<MouseWheel>>()
+            .write(MouseWheel {
+                unit: MouseScrollUnit::Line,
+                x: 0.0,
+                y: 1.0,
+                window: Entity::PLACEHOLDER,
+                phase: bevy::input::touch::TouchPhase::Moved,
+            });
+
+        let mut state = SystemState::<(
+            MessageReader<MouseWheel>,
+            Query<&Window>,
+            Res<SimConfig>,
+            Res<EguiWantsInput>,
+            Res<NotebookWindowOpen>,
+            Query<(&Camera, &GlobalTransform, &mut Projection, &mut Transform), With<GridCamera>>,
+        )>::new(&mut world);
+        let (wheel, windows, config, egui_wants_input, notebook_open, cameras) =
+            state.get_mut(&mut world).unwrap();
+
+        zoom_camera(
+            wheel,
+            windows,
+            config,
+            egui_wants_input,
+            notebook_open,
+            cameras,
+        );
+    }
 
     /// `cell_color` in `Detail` mode, exactly as it behaved before task 076
     /// added the `Overview` branch — the density argument is unused on this

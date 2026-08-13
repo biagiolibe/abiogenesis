@@ -139,7 +139,7 @@ pub struct SpliceDraft {
 /// budget was tuned against — the Biosphere row (species label + energy +
 /// trend glyph) was clipping its trailing glyph inside the vertical
 /// `ScrollArea`, which also reserves its own scrollbar width.
-const HUD_WIDTH: f32 = 340.0;
+pub(crate) const HUD_WIDTH: f32 = 340.0;
 
 /// `RenderLayers` for the dedicated egui camera: no grid entity is ever
 /// assigned to it, so this camera draws nothing of the scene, only the
@@ -306,6 +306,19 @@ fn spawn_hud_camera(mut commands: Commands) {
 /// window resizes; cheap at this scale and avoids a second source of truth
 /// for the window size. Targets only `GridCamera` — the HUD camera's
 /// viewport must stay full-size, since it doubles as egui's paint canvas.
+///
+/// Deliberately **not** extended for the notebook panel (task 116, tried and
+/// reverted live 2026-08-13): the HUD sidebar is permanent, so resizing the
+/// map to exactly fill what's left of it is the right call — but the
+/// notebook is a toggleable overlay, and shrinking/re-centering the camera
+/// every time it opens and closes made the map visibly resize and rescale
+/// each toggle, which isn't what `redesign/abiogenesis-hud-notebook.md` §9
+/// describes ("the map stays there, dimmed behind it" — same size, just
+/// partially covered). The notebook's own coverage of the map is handled
+/// entirely by drawing on top of it instead: `notebook_window`'s opaque
+/// panel plus dimming rect, and `render.rs::draw_terrain_overlay`'s own clip
+/// (task 116) excluding the notebook's reserved rect so its boundary/tree
+/// painting doesn't bleed through underneath.
 fn reserve_hud_viewport(
     windows: Query<&Window>,
     mut cameras: Query<&mut Camera, With<GridCamera>>,
@@ -329,6 +342,57 @@ fn reserve_hud_viewport(
         physical_size: UVec2::new(full_width - hud_px, full_height),
         ..default()
     });
+}
+
+/// True when `cursor` (logical window coordinates, the space
+/// `Window::cursor_position` returns) falls inside the HUD panel's on-screen
+/// rect — the right `HUD_WIDTH`-wide, full-height strip `hud_panel` reserves.
+///
+/// Task 115: grid click/scroll-zoom handlers (`input.rs::clicked_cell`,
+/// `render.rs::zoom_camera`) can't rely on `EguiWantsInput` alone to exclude
+/// this area. `hud_panel` shows its `Panel::right` into a `Ui` built on
+/// `egui::LayerId::background()` (`ui.rs:384-390`) — the same layer/order the
+/// grid's own terrain overlay paints on — and bevy_egui 0.41's multi-pass
+/// driver (`run_egui_context_pass_loop_system`) discards the real top-level
+/// root `Ui` egui's `Context::is_pointer_over_egui` measures
+/// `root_ui_available_rect` against (it runs `EguiPrimaryContextPass`
+/// directly instead of drawing into that root `Ui`), so that rect never
+/// shrinks to exclude the panel. The upshot: `is_pointer_over_egui` (and thus
+/// `EguiWantsInput::wants_pointer_input`/`is_pointer_over_area`) reports
+/// `false` for the *entire* viewport, panel included, whenever the pointer
+/// resolves to a Background-order layer — plain rect math against the window
+/// sidesteps that egui/bevy_egui interaction entirely instead of working
+/// around it.
+pub(crate) fn cursor_over_hud_panel(cursor: Vec2, window_width: f32) -> bool {
+    cursor.x >= window_width - HUD_WIDTH
+}
+
+#[cfg(test)]
+mod hud_panel_rect_tests {
+    use super::*;
+
+    #[test]
+    fn cursor_inside_the_reserved_hud_strip_is_flagged() {
+        let window_width = 1200.0;
+        assert!(cursor_over_hud_panel(
+            Vec2::new(window_width - 1.0, 400.0),
+            window_width
+        ));
+        assert!(cursor_over_hud_panel(
+            Vec2::new(window_width - HUD_WIDTH, 0.0),
+            window_width
+        ));
+    }
+
+    #[test]
+    fn cursor_left_of_the_reserved_hud_strip_is_not_flagged() {
+        let window_width = 1200.0;
+        assert!(!cursor_over_hud_panel(
+            Vec2::new(window_width - HUD_WIDTH - 1.0, 400.0),
+            window_width
+        ));
+        assert!(!cursor_over_hud_panel(Vec2::ZERO, window_width));
+    }
 }
 
 /// Side panel with the numeric readout of GDD §11. Reads `SimWorld`

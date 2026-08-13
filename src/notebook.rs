@@ -568,10 +568,64 @@ pub fn tag_glyph(tag: TagId) -> &'static str {
     TAG_LETTERS[tag.0 as usize % TAG_LETTERS.len()]
 }
 
-/// Draws the notebook as its own `egui::Window`, sharing the HUD's egui
-/// context (`ui.rs`'s dedicated full-viewport camera) rather than a second
-/// camera — `bevy_egui` supports multiple windows/panels per frame from the
-/// same `EguiPrimaryContextPass` context.
+/// On-screen width of the notebook panel (task 116), mirroring `ui.rs`'s
+/// `HUD_WIDTH` — a fixed budget, not derived from content, so the dimming
+/// overlay and both panels' reserved-rect math stay simple. Raised from an
+/// initial `420.0` to `480.0` (playtest finding, 2026-08-13): the Species
+/// catalog's per-species line (name, metabolism, temperature band, repro
+/// threshold) still wrapped uncomfortably often at `420.0` even after
+/// `catalog_panel` was given explicit `.wrap()`/`horizontal_wrapped`
+/// handling for it — wrapping is now a correctness safety net for
+/// arbitrarily long content, not the primary fit strategy. Retune here if a
+/// future playtest finds it still clipping/wrapping too eagerly, the same
+/// way `HUD_WIDTH` itself has been retuned twice.
+pub(crate) const NOTEBOOK_WIDTH: f32 = 480.0;
+
+/// Dimming color for the map area behind the open notebook (task 116,
+/// `redesign/abiogenesis-hud-notebook.md` §9): semi-transparent black,
+/// signaling "the simulation is still there," not hidden or paused-looking.
+const MAP_DIM_COLOR: egui::Color32 = egui::Color32::from_black_alpha(140);
+
+/// Top clearance for the notebook panel's own content (task 116, bug caught
+/// live 2026-08-13: "Observation log" rendered directly under macOS's
+/// traffic-light window buttons, top-left corner only — see
+/// `notebook_window`'s comment at its `add_space` call for the full
+/// rationale). Sized to a standard macOS title bar's traffic-light row
+/// (~22pt tall, vertically centered a few points below the top edge) plus a
+/// small margin, not measured against this app's actual (currently
+/// `fullsize_content_view`-driven) title bar height — retune here if a
+/// playtest still finds it too tight or unnecessarily generous.
+const TITLEBAR_CLEARANCE: f32 = 28.0;
+
+/// True when `cursor` (logical window coordinates) falls inside the
+/// notebook panel's reserved on-screen rect — always `false` while the
+/// notebook is closed, since the panel doesn't occupy any screen space then.
+/// Mirrors `ui::cursor_over_hud_panel`'s reasoning: `notebook_window` paints
+/// its panel on `egui::LayerId::background()` too, so `EguiWantsInput` can't
+/// be trusted to exclude it either — see that function's doc comment for
+/// why. `render.rs::zoom_camera` gates scroll-zoom on this alongside the HUD
+/// check, so scrolling the Observation log's `ScrollArea` can't also zoom
+/// the dimmed map underneath it.
+pub(crate) fn cursor_over_notebook_panel(cursor: Vec2, notebook_open: bool) -> bool {
+    notebook_open && cursor.x <= NOTEBOOK_WIDTH
+}
+
+/// Draws the notebook as a left-docked panel (task 116,
+/// `redesign/abiogenesis-hud-notebook.md` §9 — replacing the previous
+/// floating `egui::Window`), sharing the HUD's egui context (`ui.rs`'s
+/// dedicated full-viewport camera) rather than a second camera —
+/// `bevy_egui` supports multiple windows/panels per frame from the same
+/// `EguiPrimaryContextPass` context. The map stays visible behind it,
+/// dimmed rather than hidden, and a click on that dimmed area closes the
+/// notebook the same way `Tab` does; the HUD sidebar (`ui.rs::hud_panel`,
+/// its own independent root `Ui`) is untouched by any of this and stays
+/// fully interactive.
+///
+/// **Simulation time while the notebook is open**: deliberately left
+/// unaffected — no new gating on `EraState`/ticking. This is the "world
+/// keeps living while you observe it" reading of §9's dimmed-not-paused
+/// backdrop, and matches today's actual (previously undocumented) behavior,
+/// per this task's own suggested default.
 fn notebook_window(
     mut contexts: EguiContexts,
     mut open: ResMut<NotebookWindowOpen>,
@@ -585,9 +639,56 @@ fn notebook_window(
         return Ok(());
     }
     let ctx = contexts.ctx_mut()?;
-    egui::Window::new("Notebook")
-        .open(&mut open.0)
-        .show(ctx, |ui| {
+    let viewport = ctx.viewport_rect();
+    // The map's remaining visible strip: viewport minus both docked panels'
+    // reserved widths. Both panels build their own independent root `Ui`
+    // (see `hud_panel`'s `viewport_ui`, mirrored below), so nothing here
+    // shrinks automatically — this rect is exactly what's left over once
+    // `NOTEBOOK_WIDTH` (left) and `ui::HUD_WIDTH` (right) are subtracted.
+    let map_rect = egui::Rect::from_min_max(
+        egui::pos2(viewport.min.x + NOTEBOOK_WIDTH, viewport.min.y),
+        egui::pos2(viewport.max.x - crate::ui::HUD_WIDTH, viewport.max.y),
+    );
+
+    // Dimmed first, so the panel drawn afterward (below) lands on top of it
+    // within this same Background-layer pass.
+    ctx.layer_painter(egui::LayerId::background())
+        .rect_filled(map_rect, 0.0, MAP_DIM_COLOR);
+
+    // Click-outside-to-close: a raw click-release detection independent of
+    // `EguiWantsInput` (unreliable here for the same reason `ui::
+    // cursor_over_hud_panel`'s doc comment explains), gated purely on where
+    // the click landed — `map_rect` already excludes both panels, so a
+    // click inside either one is never mistaken for "outside."
+    let closed_by_map_click = ctx.input(|i| i.pointer.button_clicked(egui::PointerButton::Primary))
+        && ctx
+            .input(|i| i.pointer.interact_pos())
+            .is_some_and(|pos| map_rect.contains(pos));
+    if closed_by_map_click {
+        open.0 = false;
+    }
+
+    let mut viewport_ui = egui::Ui::new(
+        ctx.clone(),
+        "notebook_viewport".into(),
+        egui::UiBuilder::new()
+            .layer_id(egui::LayerId::background())
+            .max_rect(viewport),
+    );
+    egui::Panel::left("notebook")
+        .exact_size(NOTEBOOK_WIDTH)
+        .resizable(false)
+        .show(&mut viewport_ui, |ui| {
+            // `main.rs`'s `fullsize_content_view`/`titlebar_transparent`
+            // deliberately let content draw under macOS's transparent title
+            // bar everywhere else (the grid, `hud_panel`'s own top-right
+            // heading) — fine there, since traffic-light buttons only occupy
+            // the top-*left* corner and nothing else in this app puts
+            // interactive/readable content there. The notebook is the one
+            // exception (left-docked, task 116), so its first heading needs
+            // real clearance instead of sitting under the buttons (bug
+            // caught live, 2026-08-13).
+            ui.add_space(TITLEBAR_CLEARANCE);
             ui.heading(text::HEADING_OBSERVATION_LOG);
             egui::ScrollArea::vertical()
                 .id_salt("observation_log")
@@ -1113,21 +1214,44 @@ fn catalog_panel(
             ui.colored_label(species_color(species_id), TAG_GLYPH);
             ui.label(metabolism_glyph(species.metabolism));
             ui.vertical(|ui| {
-                ui.label(text::species_catalog_line(
-                    &species_label(world, species_id),
-                    species.metabolism,
-                    species.temp_optimum,
-                    species.temp_tolerance,
-                    temperature_label(species.temp_optimum, &config.environment),
-                    species.repro_threshold,
-                ));
+                // `.wrap()` (task 116, bug caught live 2026-08-13): this
+                // line — name, metabolism, temperature band, repro
+                // threshold — routinely runs past `NOTEBOOK_WIDTH` once
+                // laid out inside a fixed-width docked panel; it used to fit
+                // fine because the old floating `egui::Window` auto-sized to
+                // whatever content demanded. Plain `ui.label` doesn't wrap
+                // inside a `Ui::horizontal` layout by default (that's for
+                // the *outer* row, LeftToRight, not this nested vertical
+                // block), so it needs to be requested explicitly here.
+                ui.add(
+                    egui::Label::new(text::species_catalog_line(
+                        &species_label(world, species_id),
+                        species.metabolism,
+                        species.temp_optimum,
+                        species.temp_tolerance,
+                        temperature_label(species.temp_optimum, &config.environment),
+                        species.repro_threshold,
+                    ))
+                    .wrap(),
+                );
                 ui.weak(text::species_population_line(population, seeded_era));
+                // Tags moved onto their own wrapped row (was appended to
+                // the outer horizontal row, same overflow bug as above,
+                // worse per extra tag) — `horizontal_wrapped` here can flow
+                // onto a second line instead of running off the panel.
+                if !species.tags.is_empty() {
+                    ui.horizontal_wrapped(|ui| {
+                        for &slot in &species.tags {
+                            let tag = world.active_tags[slot.0 as usize];
+                            ui.colored_label(
+                                tag_color(tag),
+                                format!("{TAG_GLYPH} {}", tag_glyph(tag)),
+                            );
+                            conditional_tag_badge(ui, world, terrain_knowledge, slot, tag);
+                        }
+                    });
+                }
             });
-            for &slot in &species.tags {
-                let tag = world.active_tags[slot.0 as usize];
-                ui.colored_label(tag_color(tag), format!("{TAG_GLYPH} {}", tag_glyph(tag)));
-                conditional_tag_badge(ui, world, terrain_knowledge, slot, tag);
-            }
         });
     }
 }
@@ -1162,6 +1286,31 @@ fn conditional_tag_badge(
         tag_color(tag),
         format!("{}{marker}", terrain_glyph(conditional.terrain)),
     );
+}
+
+#[cfg(test)]
+mod cursor_over_notebook_panel_tests {
+    use super::*;
+
+    #[test]
+    fn flags_the_reserved_strip_only_while_open() {
+        assert!(cursor_over_notebook_panel(Vec2::new(0.0, 400.0), true));
+        assert!(cursor_over_notebook_panel(
+            Vec2::new(NOTEBOOK_WIDTH, 400.0),
+            true
+        ));
+    }
+
+    #[test]
+    fn does_not_flag_past_the_reserved_strip_or_while_closed() {
+        assert!(!cursor_over_notebook_panel(
+            Vec2::new(NOTEBOOK_WIDTH + 1.0, 400.0),
+            true
+        ));
+        // Same position that's flagged while open, above — closed, it must
+        // never fire, since the panel occupies no screen space then.
+        assert!(!cursor_over_notebook_panel(Vec2::new(0.0, 400.0), false));
+    }
 }
 
 #[cfg(test)]

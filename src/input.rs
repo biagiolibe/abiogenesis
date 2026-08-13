@@ -26,13 +26,15 @@ use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{draw_species_name, net_self_interaction, Organism, SimWorld, SpeciesId};
 use abiogenesis::worldgen::era_ticks_for;
 
-use crate::notebook::{EverSeeded, LogEntry, ObservationLog, PlayerPlacedCells};
+use crate::notebook::{
+    EverSeeded, LogEntry, NotebookWindowOpen, ObservationLog, PlayerPlacedCells,
+};
 use crate::render::{species_label, world_to_cell, GridCamera, MapViewMode, PlacementIndicator};
 use crate::run_flow::{start_world, WorldResetParams};
 use crate::text;
 use crate::ui::{
-    ActionMode, HudControlIntents, IsolationHint, SelectedAction, SelectedSpecies, SpliceDraft,
-    SpliceEditChoice,
+    cursor_over_hud_panel, ActionMode, HudControlIntents, IsolationHint, SelectedAction,
+    SelectedSpecies, SpliceDraft, SpliceEditChoice,
 };
 
 pub struct InputPlugin;
@@ -66,6 +68,20 @@ impl Plugin for InputPlugin {
 /// place every map-click action funnels through, so a click on a notebook
 /// widget never also registers as a `Seed`/`Stress`/`Cull` click on the
 /// cell underneath it.
+///
+/// Task 115: `EguiWantsInput` alone doesn't catch clicks landing on the HUD
+/// panel at zoom levels where the grid renders underneath it — see
+/// `ui::cursor_over_hud_panel`'s doc comment for why. Checked as an explicit
+/// second gate, not a replacement: `EguiWantsInput` still correctly excludes
+/// other egui surfaces (e.g. a floating popup) this rect doesn't cover.
+///
+/// Task 116: while the notebook is open, every grid action is disabled
+/// outright (not just over its own panel/dimmed-map rect) — a click on the
+/// dimmed map's job is exclusively "close the notebook"
+/// (`notebook::notebook_window`'s own click-outside-to-close), and letting
+/// that same click also perform whatever `SelectedAction` happens to be
+/// armed would be a surprising double effect the redesign doc never
+/// describes.
 fn clicked_cell(
     buttons: &ButtonInput<MouseButton>,
     windows: &Query<&Window>,
@@ -73,8 +89,12 @@ fn clicked_cell(
     width: usize,
     height: usize,
     egui_wants_input: &EguiWantsInput,
+    notebook_open: &NotebookWindowOpen,
 ) -> Option<(usize, usize)> {
     if !buttons.just_pressed(MouseButton::Left) {
+        return None;
+    }
+    if notebook_open.0 {
         return None;
     }
     if egui_wants_input.wants_pointer_input() {
@@ -82,6 +102,9 @@ fn clicked_cell(
     }
     let window = windows.single().ok()?;
     let cursor = window.cursor_position()?;
+    if cursor_over_hud_panel(cursor, window.width()) {
+        return None;
+    }
     let (camera, camera_transform) = cameras.single().ok()?;
     let world_pos = camera.viewport_to_world_2d(camera_transform, cursor).ok()?;
     world_to_cell(world_pos, width, height)
@@ -281,12 +304,24 @@ struct IsolationHintParams<'w> {
     run_progress: Res<'w, RunProgress>,
 }
 
+/// `era_state` bundled with `NotebookWindowOpen` (task 116, `clicked_cell`'s
+/// new gate) into one `SystemParam` — same param-budget rationale as
+/// `IsolationHintParams`: every `clicked_cell` caller already sat close to
+/// Bevy's per-function system-param ceiling, so a second resource needed by
+/// all three is folded in here instead of added as its own parameter to
+/// each.
+#[derive(SystemParam)]
+struct ClickGateState<'w> {
+    era_state: Res<'w, State<EraState>>,
+    notebook_open: Res<'w, NotebookWindowOpen>,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn seed_organism_on_click(
     buttons: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
-    era_state: Res<State<EraState>>,
+    gate: ClickGateState,
     selected_action: Res<SelectedAction>,
     selected: Res<SelectedSpecies>,
     mut world: ResMut<SimWorld>,
@@ -302,7 +337,7 @@ fn seed_organism_on_click(
     if selected_action.0 != ActionMode::Seed {
         return;
     }
-    if *era_state.get() == EraState::Advancing {
+    if *gate.era_state.get() == EraState::Advancing {
         return;
     }
     let Some((x, y)) = clicked_cell(
@@ -312,6 +347,7 @@ fn seed_organism_on_click(
         world.width,
         world.height,
         &egui_wants_input,
+        &gate.notebook_open,
     ) else {
         return;
     };
@@ -378,7 +414,7 @@ fn stress_on_click(
     buttons: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
-    era_state: Res<State<EraState>>,
+    gate: ClickGateState,
     selected_action: Res<SelectedAction>,
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
@@ -389,7 +425,7 @@ fn stress_on_click(
     if selected_action.0 != ActionMode::Stress {
         return;
     }
-    if *era_state.get() == EraState::Advancing {
+    if *gate.era_state.get() == EraState::Advancing {
         return;
     }
     // Stress needs per-cell precision Overview's cluster-heatmap aggregation
@@ -408,6 +444,7 @@ fn stress_on_click(
         world.width,
         world.height,
         &egui_wants_input,
+        &gate.notebook_open,
     ) else {
         return;
     };
@@ -441,7 +478,7 @@ fn cull_on_click(
     buttons: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
-    era_state: Res<State<EraState>>,
+    gate: ClickGateState,
     selected_action: Res<SelectedAction>,
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
@@ -453,7 +490,7 @@ fn cull_on_click(
     if selected_action.0 != ActionMode::Cull {
         return;
     }
-    if *era_state.get() == EraState::Advancing {
+    if *gate.era_state.get() == EraState::Advancing {
         return;
     }
     // Same Detail-only gating as `stress_on_click` (task 077) — culling a
@@ -469,6 +506,7 @@ fn cull_on_click(
         world.width,
         world.height,
         &egui_wants_input,
+        &gate.notebook_open,
     ) else {
         return;
     };
@@ -594,7 +632,92 @@ mod tests {
     use crate::notebook::{MatrixKnowledge, NotebookHasUnseenConfirmation};
     use abiogenesis::world::{Species, TagId, TagMatrix, TagSlot, TerrainKind};
     use abiogenesis::worldgen::generate_starting_palette;
+    use bevy::ecs::system::SystemState;
     use bevy::state::state::State;
+
+    /// Task 115 regression test: a click at a screen position inside the HUD
+    /// panel's reserved rect must never resolve to a grid cell, even at a
+    /// zoom level where the grid itself would extend under the panel. No
+    /// `GridCamera` entity is spawned — `clicked_cell` must return `None`
+    /// from the new `cursor_over_hud_panel` gate before it ever reaches the
+    /// camera query, so an absent/invalid camera can't mask a regression
+    /// here (unlike `EguiWantsInput::wants_pointer_input`, which this test
+    /// deliberately leaves at its all-`false` default to isolate the new
+    /// gate from the pre-existing one task 091 added).
+    #[test]
+    fn clicked_cell_is_blocked_over_the_hud_panel_even_when_the_grid_extends_there() {
+        let mut world = World::new();
+        let mut window = Window::default();
+        window.resolution.set(1200.0, 800.0);
+        window.set_physical_cursor_position(Some(bevy::math::DVec2::new(1199.0, 400.0)));
+        world.spawn(window);
+        let mut buttons = ButtonInput::<MouseButton>::default();
+        buttons.press(MouseButton::Left);
+
+        let mut state = SystemState::<(
+            Query<&Window>,
+            Query<(&Camera, &GlobalTransform), With<GridCamera>>,
+        )>::new(&mut world);
+        let (windows, cameras) = state.get(&world).unwrap();
+
+        assert_eq!(
+            clicked_cell(
+                &buttons,
+                &windows,
+                &cameras,
+                80,
+                50,
+                &EguiWantsInput::default(),
+                &NotebookWindowOpen(false),
+            ),
+            None,
+        );
+    }
+
+    /// Task 116 regression test: while the notebook is open, a click must
+    /// never resolve to a grid cell, regardless of where it lands — the
+    /// dimmed map area's only job is closing the notebook (`notebook::
+    /// notebook_window`'s own click-outside-to-close), never also acting on
+    /// the grid underneath. Cursor is placed well outside the HUD panel's
+    /// rect (unlike the test above) specifically to isolate this gate from
+    /// `cursor_over_hud_panel`'s.
+    #[test]
+    fn clicked_cell_is_blocked_while_the_notebook_is_open() {
+        let mut world = World::new();
+        let mut window = Window::default();
+        window.resolution.set(1200.0, 800.0);
+        window.set_physical_cursor_position(Some(bevy::math::DVec2::new(600.0, 400.0)));
+        world.spawn(window);
+        let mut buttons = ButtonInput::<MouseButton>::default();
+        buttons.press(MouseButton::Left);
+
+        let mut state = SystemState::<(
+            Query<&Window>,
+            Query<(&Camera, &GlobalTransform), With<GridCamera>>,
+        )>::new(&mut world);
+        let (windows, cameras) = state.get(&world).unwrap();
+
+        assert_eq!(
+            clicked_cell(
+                &buttons,
+                &windows,
+                &cameras,
+                80,
+                50,
+                &EguiWantsInput::default(),
+                &NotebookWindowOpen(true),
+            ),
+            None,
+        );
+    }
+
+    // The complement of the test above — cursor just left of the panel's
+    // reserved rect must not trip `cursor_over_hud_panel` — is covered
+    // precisely (both sides of the boundary, exact math) by
+    // `ui::hud_panel_rect_tests`; faking a `clicked_cell`-level `Some`
+    // result here would require a fully working `GridCamera` (render
+    // target, viewport, projection all resolved), which is `render.rs`'s
+    // concern, not this gate's.
 
     /// A world with two active tags and one species carrying only tag 0,
     /// enough to exercise both `SpliceEditChoice` variants without needing

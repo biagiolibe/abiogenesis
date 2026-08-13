@@ -263,7 +263,7 @@ Discrepancy-check findings and resolutions (decided with the user):
   checking current game state on this specific point, noted here as a
   caution for reading the rest of it).
 
-- `[ ]` 116 — Notebook: left-docked panel with dimmed map behind it, not a floating window → [116](tasks/116-notebook-docked-panel-dimmed-map.md)
+- `[x]` 116 — Notebook: left-docked panel with dimmed map behind it, not a floating window → [116](tasks/done/116-notebook-docked-panel-dimmed-map.md)
 - `[ ]` 117 — Time readout: show progress within the current era, not the run-wide tick counter → [117](tasks/117-time-readout-era-relative-pulse-progress.md)
 - `[ ]` 118 — Rename player-facing "tick" to "pulse" → [118](tasks/118-rename-tick-to-pulse.md)
 - `[ ]` 119 — Moves icons: monochrome glyphs that actually render (fixes a pre-existing tofu-box bug) → [119](tasks/119-moves-icon-restyle-monochrome.md)
@@ -568,7 +568,7 @@ restored green (`0/50` across all four balance properties).
   same session): the Biosphere row's cause label overflowed past
   `HUD_WIDTH` instead of wrapping. Switched the row's `ui.horizontal` to
   `ui.horizontal_wrapped` (`ui.rs`).
-- `[ ]` 115 — Grid input (clicks and scroll-zoom) leaks through the HUD panel → [115](tasks/115-egui-panel-click-through-when-zoomed.md)
+- `[x]` 115 — Grid input (clicks and scroll-zoom) leaks through the HUD panel → [115](tasks/done/115-egui-panel-click-through-when-zoomed.md)
 - `[ ]` 121 — Conditional-tag catalog badge never renders in a live playtest (reported 2026-08-12, static review inconclusive — needs live repro) → [121](tasks/121-terrain-badge-missing-in-catalog.md)
 - `[ ]` 122 — Toxic zone reinjection: toxicity erodes over long runs with no source to counter diffusion, unlike heat sources (found balance-testing task 108's chemolithotroph) → [122](tasks/122-toxic-zone-reinjection.md)
 

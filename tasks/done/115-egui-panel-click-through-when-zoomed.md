@@ -65,33 +65,79 @@ fix going in, just start from one investigation.
 
 ## 📋 Acceptance Criteria
 
-- [ ] Root cause identified and documented: why does the grid-click path fire
+- [x] Root cause identified and documented: why does the grid-click path fire
       for screen coordinates that are visually under the HUD panel, at some
       zoom levels but (presumably) not others?
-- [ ] Clicking anywhere within the HUD panel's actual screen rect — at any
+- [x] Clicking anywhere within the HUD panel's actual screen rect — at any
       zoom level, Detail or Overview — never triggers a grid action (`Seed`,
       `Stress`, `Cull`, `Splice`, species selection, etc. all stay
       panel-only).
-- [ ] Clicking the same screen position when the panel is *not* covering it
+- [x] Clicking the same screen position when the panel is *not* covering it
       (e.g. after zooming out, or on a resolution where the grid doesn't
       reach that far) still behaves exactly as before — this is a gating fix,
       not a change to click→cell mapping math itself.
-- [ ] Regression test covering the specific failure: a click at a screen
+- [x] Regression test covering the specific failure: a click at a screen
       position under the panel's rect, at a zoom level where the grid extends
       there, must not produce a grid action.
-- [ ] Scrolling the mouse wheel while the pointer is over the HUD panel
+- [x] Scrolling the mouse wheel while the pointer is over the HUD panel
       (any zoom level — the reported case didn't require the grid to extend
       under the panel first, unlike the click bug) never changes camera
       zoom. Root cause documented: does it share the click bug's cause, or
       is `EguiWantsInput` failing differently for scroll events specifically?
-- [ ] Regression test covering the scroll-zoom failure, parallel to the
+- [x] Regression test covering the scroll-zoom failure, parallel to the
       click one above.
-- [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
-- [ ] Verified live via `cargo run`: zoom in until the grid extends under the
+- [x] `cargo test` and `cargo clippy -- -D warnings` clean.
+- [x] Verified live via `cargo run`: zoom in until the grid extends under the
       right panel, click a sidebar widget (e.g. a species row) and confirm no
       organism gets placed on the grid underneath; separately, scroll the
       mouse wheel over the HUD sidebar (e.g. over the Biosphere list) and
-      confirm the map does not zoom.
+      confirm the map does not zoom. Confirmed by the user 2026-08-13 (the
+      agent cannot drive mouse input on a native winit window in this
+      environment and only confirmed a clean launch beforehand).
+
+---
+
+## 🔍 Outcome notes (2026-08-13)
+
+**Root cause (shared by both bugs).** `hud_panel` (`ui.rs:394`) shows its
+`egui::Panel::right("hud")` into a `Ui` it builds itself on
+`egui::LayerId::background()` — the same layer/order the grid's own terrain
+overlay paints on. `egui::Context::is_pointer_over_egui` (which
+`EguiWantsInput::is_pointer_over_area`/`wants_pointer_input` are derived
+from) special-cases `Order::Background`: it only reports "over egui" there
+if the cursor falls *outside* `root_ui_available_rect`, egui's own bookkeeping
+of the space left over after side panels reserve theirs. That rect is only
+ever populated by `Context::run_ui`'s own top-level root `Ui`. bevy_egui
+0.41's multi-pass driver (`run_egui_context_pass_loop_system`) calls
+`ctx.run_ui(input, |_| { world.try_run_schedule(EguiPrimaryContextPass) })`
+— the root `Ui` argument is discarded (`|_|`) and never drawn into; the real
+UI work happens inside `EguiPrimaryContextPass`'s own systems
+(`hud_panel`/`notebook_window`), against the raw `Context`, entirely outside
+that closure. So `root_ui_available_rect` stays the *full* viewport forever,
+`is_pointer_over_egui`'s Background-order branch never excludes the panel,
+and `EguiWantsInput` under-reports for the entire viewport — including
+squarely over the HUD panel — whenever the topmost layer under the cursor is
+Background-order. This is a single-root-cause bug behind both the click
+leak (previously suspected as an `EguiWantsInput`/`wants_pointer_input`
+down-frame quirk during `any_down()`, which was investigated and ruled out:
+it can't explain the scroll case, since no button is down during a wheel
+scroll) and the scroll leak (`zoom_camera` uses the same resource, same way).
+
+**Fix.** Sidesteps `EguiWantsInput` for this specific area with a plain rect
+check: `ui::cursor_over_hud_panel(cursor, window_width)` — the HUD's on-screen
+strip, computed from `HUD_WIDTH` the same way `reserve_hud_viewport` already
+does for the grid camera's viewport. Both `input.rs::clicked_cell` and
+`render.rs::zoom_camera` gate on it as an *additional* check alongside the
+existing `EguiWantsInput::wants_pointer_input()` (kept, not replaced — it's
+still correct for Foreground-order egui surfaces like popups/tooltips this
+rect doesn't cover).
+
+**Live verification.** `cargo run` launches cleanly (window opens, no
+panic/error in the log). The mouse-driven check itself — zoom in, click a
+sidebar widget, confirm no placement; scroll over the sidebar, confirm no
+zoom — was performed by the user (2026-08-13) and confirmed working, since
+this agent has no way to drive mouse input on a native winit window in this
+environment.
 
 ---
 

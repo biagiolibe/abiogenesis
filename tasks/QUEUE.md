@@ -81,7 +81,7 @@ neither blocks the other.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 116 | Notebook: left-docked panel with dimmed map behind it, not a floating window | — | [116](116-notebook-docked-panel-dimmed-map.md) |
+| `[x]` | 116 | Notebook: left-docked panel with dimmed map behind it, not a floating window | — | [116](done/116-notebook-docked-panel-dimmed-map.md) |
 | `[ ]` | 117 | Time readout: show progress within the current era, not the run-wide tick counter | — | [117](117-time-readout-era-relative-pulse-progress.md) |
 | `[ ]` | 118 | Rename player-facing "tick" to "pulse" | — | [118](118-rename-tick-to-pulse.md) |
 | `[ ]` | 119 | Moves icons: monochrome glyphs that actually render (fixes a pre-existing tofu-box bug) | — | [119](119-moves-icon-restyle-monochrome.md) |
@@ -98,7 +98,7 @@ pass).
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 115 | Grid input (clicks and scroll-zoom) leaks through the HUD panel | — | [115](115-egui-panel-click-through-when-zoomed.md) |
+| `[x]` | 115 | Grid input (clicks and scroll-zoom) leaks through the HUD panel | — | [115](done/115-egui-panel-click-through-when-zoomed.md) |
 | `[ ]` | 121 | Conditional-tag catalog badge never renders in a live playtest | 096, 097 | [121](121-terrain-badge-missing-in-catalog.md) |
 
 **Balance/persistence** (found while balance-testing task 108).
