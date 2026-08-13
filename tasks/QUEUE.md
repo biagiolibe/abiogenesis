@@ -107,6 +107,48 @@ pass).
 |-------|----|--------|------------|------|
 | `[ ]` | 122 | Toxic zone reinjection (toxicity erodes with no source to counter it) | 072, 085, 108 | [122](122-toxic-zone-reinjection.md) |
 
+**Worldgen pipeline reassessment** (2026-08-13, scoped from
+`redesign/procedural_biome_generation_spec_v2.md` after a design-discussion
+pass comparing its diagnosis against the current 128×80 pipeline; GDD §5.1
+corrected in the same session — the doc's `48×32` grid was stale, task 074
+already raised it to `128×80`). Five phases, ordered lowest- to
+highest-risk: 123 (organic feature masks) is size-independent and purely
+local; 124 (geomorphology fields) is additive-only; 125 (score-based
+classification + drainage-based Palude) is the first to change existing
+biome output and should be sequenced against 113 (both touch Palude
+semantics — see 125's own coordination note); 126/127 (rainfall, then flow
+accumulation/rivers) are the highest-value, highest-complexity phases —
+127 in particular carries a real determinism risk (elevation-sort
+tie-breaking) flagged in its own task file. 126/127 add fields only;
+wiring rainfall/rivers into biome classification or rendering is
+explicitly left as future follow-up in both files' Non-Goals, not
+pre-scoped here.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[ ]` | 123 | Organic masks for placed feature biomes (Cratere, Distesa di cristalli, Lago) — `toxic_zone` explicitly out of scope | 111 | [123](123-organic-feature-biome-masks.md) |
+| `[ ]` | 124 | Derived geomorphology fields (`slope`, `water_distance`) — additive only | 110, 111 | [124](124-geomorphology-fields.md) |
+| `[ ]` | 125 | Score-based biome classification; Palude from drainage instead of toxicity | 110, 111, 124 | [125](125-biome-score-classification.md) |
+| `[ ]` | 126 | Rainfall field (orographic lift, rain shadow) — additive only | 124 | [126](126-rainfall-field.md) |
+| `[ ]` | 127 | Flow accumulation and rivers | 124, 126 | [127](127-hydrology-rivers.md) |
+
+**Worldgen pipeline reassessment — credibility follow-ups** (2026-08-13,
+same session: after scoping 123-127, an explicit pass over what the spec
+still covers that those five don't. Ranked by impact on a *single* world's
+credibility, not variety across worlds — the lower-priority items from that
+ranking (world profiles + biome budget/validation, biome transition/blend,
+erosion, debug metrics tooling) are intentionally not scoped as tasks;
+noted in `VISION.md` instead. 128 is the single highest-value item found in
+that pass — per-cell scoring (125) alone still doesn't produce large
+coherent regions without a macro-region layer above it.).
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[ ]` | 128 | Macro-regions before per-cell biome classification | 125 | [128](128-macro-region-biomes.md) |
+| `[ ]` | 129 | Lakes derived from terrain depressions (123's search becomes fallback) | 123, 127 | [129](129-lakes-from-depressions.md) |
+| `[ ]` | 130 | Mountain sub-banding (Glacier, AlpineMeadow, MountainForest) | 124, 125 | [130](130-mountain-sub-banding.md) |
+| `[ ]` | 131 | Soil moisture (refines Swamp/Forest beyond the slope/water-distance proxy) | 124, 125, 126 | [131](131-soil-moisture.md) |
+
 **Onboarding & engagement rollout** (2026-08-09, from `redesign/abiogenesis-engagement-design.md`, full rationale in `PROJECT_PLAN.md`'s "Onboarding & engagement rollout"): 5 onboarding-foundation proposals scoped after a multi-round discussion. 080 first (diagnostic value for playtesting the rest); 082/083 are numerically coupled — tuned together (2026-08-10), both now done. Live playtest of the combined pacing still pending (082/083 verification steps skipped this session, see below).
 
 | Status | ID | Title | Depends on | File |

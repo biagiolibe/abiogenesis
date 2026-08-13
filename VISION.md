@@ -130,6 +130,87 @@ chemolithotroph) without redesigning the tag/archetype pool itself.
 
 ---
 
+## Phase E — Matrix depth
+
+**Why**: `redesign/life_evolution_mystery_game_design.md` (a broader, mostly
+non-adoptable alternate concept — it assumes aggregate populations per
+habitat on a 128×80 world, which conflicts with GDD §5.1's single-occupancy
+grid) surfaces two mechanics that land cleanly on the *existing* tag×tag
+matrix without any architectural change:
+
+1. **Context-conditional relations.** Today's matrix is a fixed global
+   truth: with 5 active tags ≈ 20 relationships, an attentive player can
+   exhaust the whole checklist in one run (GDD §5.5). Letting a tag pair's
+   effect vary by biome/environmental context would make the matrix
+   non-exhaustible without raising tag count — a cheaper difficulty lever
+   than growing the pool.
+2. **Rewarding refuted hypotheses.** GDD §7's evidence model only
+   accumulates toward a *positive* confirmation; a disproved hypothesis
+   currently deposits nothing. A refuted hypothesis could instead mark a
+   notebook cell as "not this," narrowing the hypothesis space — progress
+   even when the player is wrong, which is pillar 2's own stated goal.
+
+**Risk/tension**: context-conditional relations only work if the notebook
+confirms a cell *per context*, not as one global truth — otherwise a cell
+confirmed `−2` that later behaves as `+1` elsewhere is exactly the
+evidence-staleness failure Phase C ruled out for unprompted genome drift
+(§Phase C above). This needs the same explicit design pass before scoping:
+how a per-context cell is displayed, and whether "confirmed in biome X,
+untested elsewhere" reads as discovery or as UI clutter.
+
+---
+
+## Phase F — Worldgen: variety and validation across worlds
+
+**Why**: `redesign/procedural_biome_generation_spec_v2.md` drove tasks
+123-131 (`tasks/QUEUE.md`, "Worldgen pipeline reassessment"), which cover
+the spec's *causal* geography for a single world — drainage, slope,
+rainfall, rivers, macro-regions, mountain banding. A separate slice of the
+spec is about *variety and validity across worlds*, ranked lower priority
+in the same session because it doesn't change whether any one generated
+map reads as credible, only whether the game guarantees enough variety
+between seeds and rules out degenerate ones:
+
+1. **World profiles (§3)** — a `WorldProfile` enum (temperate island,
+   volcanic archipelago, dry frontier, …) controlling which biomes are
+   required/optional and target fractions per profile, so consecutive
+   worlds don't all draw from the same implicit distribution.
+2. **Biome budget + global validation/retry (§11.2/§11.3/§11.6/§19/§22)** —
+   a `BiomeBudget`-style check run after classification (land fraction,
+   required-biome presence, largest-component size) with a whole-world
+   retry on macroscopic violations, the same keep-best-seen pattern
+   `generate_terrain` already uses for placeable-land fraction. This is the
+   piece that would prevent a degenerate world (no forest at all, no
+   viable niche for a given metabolism) rather than just make plausible
+   worlds prettier.
+3. **Biome transitions/blending (§11.5)** — a `secondary_biome`/`blend`
+   pair for edge cells (Forest → Woodland → Grassland → Steppe → Desert),
+   cosmetic polish on top of whatever 128's macro-regions produce.
+4. **Erosion (§8.4)** — hydraulic/thermal erosion passes over the
+   heightfield. High complexity, judged low marginal value given the
+   existing multi-scale (continent + island) elevation noise already
+   produces varied terrain shape.
+5. **Debug views/metrics (§17 Fase H, §19)** — per-field visualizations
+   and generation-time metrics logging. Useful tooling while tuning 123-131
+   and any of the above, but better added ad hoc during that tuning than
+   pre-built as a standalone task.
+
+**Deliberately not on this list**: the spec's §9.1 temperature model
+(latitude + altitude lapse rate) diverges from the game's actual model
+(point heat sources + wind + sea-coolant falloff, task 085). That's an
+intentional, already-shipped design choice, not a gap — revisiting it isn't
+a worldgen-credibility item, it would be a balance-affecting rework with no
+identified need.
+
+**Risk/tension**: items 1-2 are the ones most likely to eventually matter —
+a game that ships worlds with no viable niche for whatever species the
+player is given is a real failure mode, not just an aesthetic one. Sequence
+them after 123-131 land and have been played, not before: a budget/
+validation system tuned against pre-macro-region biome output would need
+re-tuning once 128 changes the distribution anyway.
+
+---
+
 *This document has no "last updated" convention like `PROJECT_PLAN.md`/
 `tasks/QUEUE.md` — it's revised whenever the vision itself changes, not on
 every session.*

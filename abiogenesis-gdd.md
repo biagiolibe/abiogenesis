@@ -80,7 +80,7 @@ Time advances in **eras**: the player queues one or more actions, then advances 
 - an **environmental layer** (a few continuous scalars);
 - at most **one organism** (single occupancy per cell), with an energy/population level.
 
-**Size [DECIDED / final size empirical]:** **48×32** from the start, as a configuration constant. *(v0.4 revision: the old plan "40×20 in Phase 0 → half-block rendering to reach ~48×32" was entirely a terminal-width constraint — 80 columns at 2 characters per cell. With a graphical window that constraint disappears and we start directly at the target.)* Emergence needs more room: spatial patterns (Lotka–Volterra-like) need breathing space, and grids that are too small die from stochastic noise. The final size remains partly empirical.
+**Size [DECIDED]:** **128×80**, as a configuration constant (raised from the original `48×32` baseline by task 074). Emergence needs room: spatial patterns (Lotka–Volterra-like) need breathing space, and grids that are too small die from stochastic noise. *(This document's §14/§16 examples and some older prose below still reference `48×32` — a documentation lag, not a live decision; the config default and every current worldgen/balance test run at `128×80`.)*
 **Neighborhood [DECIDED]:** Moore (8 neighbors) for interactions and reproduction.
 
 ### 5.2 Environmental layer **[structure DECIDED / parameters in §5.9]**
@@ -233,7 +233,7 @@ Initial values that are mutually coherent (conceptually verified so that a photo
 
 | Constant | Value | Notes |
 |---|---|---|
-| Size | `48×32` | from Phase 0 (v0.4) |
+| Size | `128×80` | task 074 |
 | Neighborhood | Moore (8) | |
 
 ---
