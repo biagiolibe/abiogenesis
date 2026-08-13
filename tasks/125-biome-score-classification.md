@@ -40,10 +40,27 @@ Two changes, done together because they touch the same code:
    toxicity gate with a score built from `slope` (low) and `water_distance`
    (close) — both added by task 124. Toxicity is no longer part of what
    makes a cell Palude; it's applied afterward as a modifier the same way
-   the spec's §12.4 describes (`if biome == Swamp && toxicity >=
-   threshold { /* mark toxic sub-variant / feature */ }`), preserving
-   today's "a toxic swamp reads differently" flavor without it gating
-   identity.
+   the spec's §12.4 describes (`if biome == Swamp { cell.toxicity =
+   toxic_zone_value_or_similar }` over a sub-region of the classified
+   Swamp cells), preserving today's "a toxic swamp reads differently"
+   flavor without it gating identity.
+
+   **This post-classification toxicity imposition is not optional
+   flavor — it is load-bearing and must ship as part of this task.**
+   `place_toxic_zone` is currently the *only* generation-time source of
+   nonzero `Cell.toxicity` in the whole game (see `swamp_toxicity_min`'s
+   own doc comment in `config.rs`). Task 108's `Chemolithotroph`
+   metabolism reads `toxicity` directly for its energy gain, and task 122
+   (toxic-zone reinjection) exists specifically to keep that value from
+   eroding away. Task 113 (queued separately, "Palude replaces
+   `toxic_zone`") plans to remove `place_toxic_zone`/`ToxicZoneBounds`
+   outright. If this task ships *without* a real replacement toxicity
+   source, removing `place_toxic_zone` in 113 would leave `Cell.toxicity`
+   at `0.0` everywhere — silently breaking task 108's metabolism and
+   making task 122 moot for the wrong reason (nothing left to reinject,
+   not because the erosion problem was solved). **Land this task before
+   113** for exactly this reason — see this task's own Dependencies
+   section and 113/122's updated files for the resolved ordering.
 
 ---
 
@@ -61,15 +78,22 @@ Two changes, done together because they touch the same code:
       priority order used only for exact float ties, documented as such —
       not the primary mechanism).
 - [ ] Swamp's score uses `slope`/`water_distance` (task 124), not
-      `toxicity`. `swamp_toxicity_min` config field repurposed as a
-      **post-classification** modifier threshold (e.g. controls whether a
-      `Swamp` cell also gets marked toxic-flavored) rather than removed —
-      confirm interaction with task 113 if it has landed by the time this
-      is picked up (113 re-points `SurviveIn`'s `ZoneKind::Toxic` at
-      `Biome::Palude` membership; if 113 landed first, toxic-flavored-swamp
-      cells are still the same `Biome::Swamp` and remain valid `SurviveIn`
-      targets — this task must not accidentally split "toxic swamp" into a
-      different `Biome` variant, which would break that objective).
+      `toxicity`. `swamp_toxicity_min` config field repurposed: after
+      classification, a sub-region of the cells just classified as `Swamp`
+      (patch-noise-gated, same organic-mask idiom used elsewhere, not
+      every Swamp cell uniformly) has `Cell.toxicity` **set** to
+      `EnvironmentConfig::toxic_zone_value` (or a new dedicated config
+      value if that field is later removed/repurposed by task 113 — check
+      its current state). This cell stays `Biome::Swamp`, not a distinct
+      biome variant — "toxic" is a scalar property of some Swamp cells,
+      not a different classification, so `SurviveIn`'s future
+      `Biome::Swamp`-membership check (task 113) still finds them.
+- [ ] A test confirms that after generation, at least some `Swamp` cells
+      have `toxicity > 0.0` across a sample of seeds (with graceful
+      degradation documented if a given seed's Swamp region is too small
+      to guarantee it — same keep-best-seen spirit as other placement
+      code) — this is the regression test that would have caught the gap
+      described above.
 - [ ] Forest/Swamp patch noise (`forest_waves`/`swamp_waves`) becomes a
       small additive term on the corresponding score, not a hard
       `wave_band_sum(...) > threshold` gate. Confirm the visual effect is
@@ -125,9 +149,11 @@ Two changes, done together because they touch the same code:
 
 - **No magic numbers**: every curve parameter (optimum, tolerance/width,
   weight) lives in `BiomeConfig`.
-- **Coordinate with task 113** if both are open at once — they touch
-  overlapping territory (Palude's identity and what reads it). Land
-  whichever is ready first; the other rebases.
+- **Must land before task 113**, not just "coordinate with" it — see the
+  Objective section's load-bearing note. 113 removes the only current
+  toxicity source (`place_toxic_zone`); this task must already provide the
+  replacement before that removal happens, or Palude generation and task
+  108's chemolithotroph both break silently.
 - Keep `TerrainKind`/Stage A untouched — this task only changes Stage B
   (the `Biome` derivation), not the underlying elevation bands that
   `notebook.rs`'s `TerrainKnowledge` and `SelectionPressure::terrain_mismatch`
@@ -137,13 +163,12 @@ Two changes, done together because they touch the same code:
 
 ## 🔗 Dependencies
 
-- **Depends on**: 110, 111, 124 (`slope`/`water_distance` fields). Should
-  land after or alongside 113 (see coordination note above) — not a hard
-  blocker either direction, but don't develop both in isolation without
-  checking the other's current state first.
-- **Blocks**: none directly, but is a prerequisite for any later
-  hydrology-driven refinement of Swamp (task 127) — that task should use
-  this one's score-based Swamp entry point, not reintroduce a separate gate.
+- **Depends on**: 110, 111, 124 (`slope`/`water_distance` fields).
+- **Blocks**: 113 (Palude replaces `toxic_zone`) — 113 must not remove
+  `place_toxic_zone` until this task's replacement toxicity source exists;
+  land this one first. Also a prerequisite for any later hydrology-driven
+  refinement of Swamp (task 127) — that task should use this one's
+  score-based Swamp entry point, not reintroduce a separate gate.
 
 ---
 

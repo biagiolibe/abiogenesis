@@ -57,16 +57,21 @@ cancelled and not blocked by another task.
 design-discussion pass that reconciled the doc with the current codebase — full
 decision record in the doc itself). Replaces the flat `TerrainKind` bands with 16
 discrete biomes. Dependency order: 110 (data layer, areal biomes) unblocks 111
-(explicit feature placement) and 113 (Palude replaces `toxic_zone`); 112 (rendering)
-depends on both 110 and 111. 114 (Geyser) is scoped for reference but blocked — no
-small/pulsing heat-source category exists yet to back it.
+(explicit feature placement); 112 (rendering) depends on both 110 and 111. 114
+(Geyser) is scoped for reference but blocked — no small/pulsing heat-source category
+exists yet to back it. **113's dependency on 125 resolved 2026-08-13** (dependency
+review, see the "credibility follow-ups" section below and 113/122/125's own files):
+`place_toxic_zone` is currently the only generation-time source of nonzero
+`Cell.toxicity`; removing it (113) before 125 ships a replacement (Swamp-cell
+toxicity) would silently break task 108's chemolithotroph and make 122 moot for the
+wrong reason. Resolved order: **125 → 113 → 122**.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
 | `[x]` | 110 | Biome enum + two-stage classification (areal biomes) | — | [110](done/110-biome-classification-two-stage.md) |
 | `[x]` | 111 | Explicit placement for feature biomes (Cratere, Distesa di cristalli, Lago, Bocca vulcanica) | 110 | [111](done/111-biome-feature-placement.md) |
 | `[x]` | 112 | Biome rendering (flat color, dithering, borders, tree overlay) | 110, 111 | [112](done/112-biome-rendering.md) |
-| `[ ]` | 113 | Palude replaces `toxic_zone` | 110 | [113](113-swamp-replaces-toxic-zone.md) |
+| `[ ]` | 113 | Palude replaces `toxic_zone` | 110, **125 (hard blocker)** | [113](113-swamp-replaces-toxic-zone.md) |
 | `[ ]` ⏸ | 114 | BLOCKED — Geyser biome (needs a small/pulsing heat-source category, not yet scoped) | 110, 111, unscoped source-model extension | [114](114-geyser-pulsing-source-blocked.md) |
 
 **HUD & Notebook redesign follow-up** (2026-08-12, scoped from
@@ -101,11 +106,15 @@ pass).
 | `[x]` | 115 | Grid input (clicks and scroll-zoom) leaks through the HUD panel | — | [115](done/115-egui-panel-click-through-when-zoomed.md) |
 | `[ ]` | 121 | Conditional-tag catalog badge never renders in a live playtest | 096, 097 | [121](121-terrain-badge-missing-in-catalog.md) |
 
-**Balance/persistence** (found while balance-testing task 108).
+**Balance/persistence** (found while balance-testing task 108). **Rescoped
+2026-08-13**: originally targeted `ToxicZoneBounds`; now targets
+`Biome::Swamp` membership instead, since task 113 removes `ToxicZoneBounds`
+and task 125 moves the toxicity source onto Swamp cells. See 122's own file
+for the full rescope note.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 122 | Toxic zone reinjection (toxicity erodes with no source to counter it) | 072, 085, 108 | [122](122-toxic-zone-reinjection.md) |
+| `[ ]` | 122 | Swamp toxicity reinjection (toxicity erodes with no source to counter it) | 085, 108, **113, 125 (hard blockers)** | [122](122-toxic-zone-reinjection.md) |
 
 **Worldgen pipeline reassessment** (2026-08-13, scoped from
 `redesign/procedural_biome_generation_spec_v2.md` after a design-discussion
@@ -115,9 +124,11 @@ already raised it to `128×80`). Five phases, ordered lowest- to
 highest-risk: 123 (organic feature masks) is size-independent and purely
 local; 124 (geomorphology fields) is additive-only; 125 (score-based
 classification + drainage-based Palude) is the first to change existing
-biome output and should be sequenced against 113 (both touch Palude
-semantics — see 125's own coordination note); 126/127 (rainfall, then flow
-accumulation/rivers) are the highest-value, highest-complexity phases —
+biome output — **and, per the 2026-08-13 dependency review, must land
+before 113** (see the "Biomi" section above): 125 is what gives Swamp a
+`toxicity` source that doesn't depend on `place_toxic_zone`, which 113
+removes; 126/127 (rainfall, then flow accumulation/rivers) are the
+highest-value, highest-complexity phases —
 127 in particular carries a real determinism risk (elevation-sort
 tie-breaking) flagged in its own task file. 126/127 add fields only;
 wiring rainfall/rivers into biome classification or rendering is

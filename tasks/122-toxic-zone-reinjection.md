@@ -1,4 +1,4 @@
-# Task 122 — Toxic zone reinjection (toxicity erodes with no source to counter it)
+# Task 122 — Swamp toxicity reinjection (toxicity erodes with no source to counter it)
 
 > **ID**: `122`
 > **Category**: Bugfix / Balance
@@ -6,7 +6,31 @@
 > **Estimate**: ~2h
 > **Assigned to**: unassigned
 > **Session**: 2026-08-12 (found while balance-testing task 108's
-> chemolithotroph metabolism)
+> chemolithotroph metabolism); **rescoped 2026-08-13** after a dependency
+> review with tasks 113/125 — see the note below before implementing.
+
+---
+
+## ⚠️ Rescoped 2026-08-13 — read before starting
+
+This task originally targeted `world.toxic_zone: ToxicZoneBounds`. Task 113
+("Palude replaces `toxic_zone`") removes that struct entirely, and task 125
+(score-based biome classification) moves the only generation-time
+`toxicity` source from `place_toxic_zone`'s rectangle to a post-
+classification step that imposes `toxicity` on a sub-region of `Biome::
+Swamp` cells. **This task must therefore land after both 113 and 125**,
+and targets `Cell.biome == Biome::Swamp` (with whatever toxic-flavor marker
+125 introduces — check its shipped implementation, it may be a plain
+`toxicity > 0.0` check rather than a separate boolean) instead of a
+rectangle. The underlying problem this task fixes — nonzero `toxicity` set
+once at generation, then only ever eroded by `diffuse_environment`, with
+nothing pulling it back — is unchanged by 113/125; only the geometry it
+reinjects into changes. Every reference to `ToxicZoneBounds`/`toxic_zone`
+below describes the *original* (now superseded) scope and needs to be
+re-read as "the Swamp cells 125 marked toxic" once 113/125 have landed —
+rewrite this file's Acceptance Criteria/Relevant Files against the actual
+shipped API at that point rather than following the stale references
+literally.
 
 ---
 
@@ -19,10 +43,10 @@ erosion every tick — documented explicitly as necessary, since diffusion
 alone would flatten a heat source into the ambient gradient over time
 (`src/world.rs:337` doc comment: "counters `diffuse_environment`'s
 erosion"). The toxic zone has no equivalent: `toxicity` is set once at
-world generation (`set_toxic_zone`, `src/world.rs:639`) and then only ever
-diffuses — nothing pulls it back toward
-`EnvironmentConfig::toxic_zone_value` the way `reinject_environment_sources`
-does for heat.
+world generation (originally `set_toxic_zone`, `src/world.rs:639` — after
+113/125, the post-classification Swamp toxicity step) and then only ever
+diffuses — nothing pulls it back toward the intended value the way
+`reinject_environment_sources` does for heat.
 
 **How this was found**: task 108 (chemolithotroph metabolism, gain from
 `Cell.toxicity`) added a balance test seeding a well-matched chemolithotroph
@@ -165,9 +189,12 @@ just work around it in one test.
 
 ## 🔗 Dependencies
 
-- **Depends on**: 072 (toxic zone generation), 085 (the
-  `reinject_environment_sources` pattern this mirrors), 108 (the
-  chemolithotroph metabolism whose balance test surfaced this).
+- **Depends on**: 085 (the `reinject_environment_sources` pattern this
+  mirrors), 108 (the chemolithotroph metabolism whose balance test
+  surfaced this), **113 and 125, hard blockers as of the 2026-08-13
+  rescope** — 125 defines the new toxicity source (Swamp cells), 113
+  removes the old geometry (`ToxicZoneBounds`) this task originally
+  targeted. Do not start this task before both have shipped.
 - **Blocks**: none.
 
 ---

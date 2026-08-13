@@ -23,18 +23,48 @@ rectangle with bounds. Palude can be multi-patch and irregularly shaped (task 11
 Stage B uses patch-gated noise, not a rectangle), so the check becomes cell-membership
 in a biome, not containment in a rectangle.
 
+**⚠️ Hard prerequisite, found 2026-08-13 during a dependency review with task
+122: `place_toxic_zone` is currently the *only* generation-time source of
+nonzero `Cell.toxicity` anywhere in the game** (`swamp_toxicity_min`'s own
+doc comment in `config.rs` says so explicitly). Removing it without a
+replacement would leave every cell's `toxicity` at `0.0` forever, which
+would silently:
+- break task 108's `Chemolithotroph` metabolism (reads `toxicity` directly
+  for its energy gain — nothing left to read);
+- make task 122 (toxic-zone reinjection) irrelevant for the wrong reason
+  (nothing to reinject, not because the erosion problem got solved).
+
+**Task 125 (score-based biome classification) is the task that provides the
+replacement** — it moves Swamp's classification off `toxicity` entirely
+(fixing the causality complaint that motivated this task in the first
+place) and, as part of its own scope, imposes `toxicity` on a sub-region of
+the classified Swamp cells as a post-classification modifier. **This task
+must not land before 125.** Confirm 125 has shipped, and that some `Swamp`
+cells get a real generation-time `toxicity` value, before removing
+`place_toxic_zone` here.
+
 ---
 
 ## 📋 Acceptance Criteria
 
+- [ ] Before removing anything: confirm task 125 has landed and that its
+      post-classification toxicity step actually gives some `Swamp` cells
+      `toxicity > 0.0` at generation time (its own test covers this — check
+      it passes on `main` first). If 125 hasn't landed, stop and pick that
+      up first; this task is blocked on it, not merely related to it.
 - [ ] `toxic_zone: ToxicZoneBounds` field, `ToxicZoneBounds` struct, and
       `place_toxic_zone` (`world.rs:345-403`) removed from `SimWorld`.
       `EnvironmentConfig`'s `toxic_zone_*` fields and `TerrainConfig`'s
       `min_toxic_zone_placeable_fraction`/`max_toxic_zone_placement_attempts`
       (`config.rs:141-146, 572-580`) removed or repurposed for Palude's own placement
       config from task 110, not left dead.
+- [ ] After removal, re-run task 125's "some Swamp cells have `toxicity >
+      0.0`" test (and task 108's chemolithotroph balance test in
+      `tests/balance.rs`) — both must still pass. If they don't, 125's
+      toxicity-imposition step wasn't actually independent of
+      `place_toxic_zone` and needs fixing before this task can proceed.
 - [ ] `cell_in_zone` (`objectives.rs:333-335`) rewritten: `ZoneKind::Toxic =>` checks
-      `world.get(x, y).biome == Biome::Palude` (or equivalent), not a rectangle
+      `world.get(x, y).biome == Biome::Swamp` (or equivalent), not a rectangle
       `.contains`.
 - [ ] The comment on `species_present_in_zone` (`objectives.rs:318-320`) — explaining
       *why* the check uses fixed geometry instead of live `Cell.toxicity` (diffusion
@@ -45,7 +75,7 @@ in a biome, not containment in a rectangle.
       reason the check is correct.
 - [ ] Every test that constructs `ToxicZoneBounds` by hand
       (`objectives.rs:482, 591-593, 623, 627, 676-683, 710` and any others found by
-      `grep -n ToxicZoneBounds src/*.rs`) rewritten to set `Cell.biome = Biome::Palude`
+      `grep -n ToxicZoneBounds src/*.rs`) rewritten to set `Cell.biome = Biome::Swamp`
       on the relevant cells instead.
 - [ ] `draw_toxic_zone` (`render.rs:582+`) removed — coordinate with task 112 so it's
       deleted exactly once (whichever of 112/113 lands second does the deletion; the
@@ -71,5 +101,11 @@ in a biome, not containment in a rectangle.
 ## 🔗 Dependencies
 
 - **Depends on**: 110 (Palude must exist as a `Biome` variant, stably assigned on
-  `Cell.biome`).
-- **Blocks**: none.
+  `Cell.biome`); **125, hard blocker** (found 2026-08-13) — 125 is what
+  gives Swamp a `toxicity` source independent of `place_toxic_zone`. Do not
+  start this task before 125 has shipped and its toxicity-imposition test
+  passes on `main`.
+- **Blocks**: 122 (toxic-zone reinjection) — 122 currently targets
+  `world.toxic_zone`, which this task removes; 122 must be rewritten to
+  target `Biome::Swamp` membership instead, which only makes sense once
+  this task has landed. See 122's own file for its updated scope.
