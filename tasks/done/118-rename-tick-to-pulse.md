@@ -4,11 +4,34 @@
 > **Category**: UI / Terminology
 > **Priority**: 🟢 P3
 > **Estimate**: ~1h
-> **Assigned to**: unassigned
+> **Assigned to**: done
 > **Session**: 2026-08-12 (scoped from `redesign/abiogenesis-hud-notebook.md` §1, after a
-> discrepancy-check pass against tasks 100-103/097)
+> discrepancy-check pass against tasks 100-103/097), implemented 2026-08-13.
 
 ---
+
+## ✅ Implementation notes (2026-08-13)
+
+- Landed after task 117 (era-relative readout), as recommended — no
+  rebase needed.
+- Every player-facing "tick" renamed to "pulse" in `src/text.rs`
+  (`era_tick_line`'s output, `TICK_BUTTON_LABEL`, `TICK_BUTTON_TOOLTIP`,
+  `KEYBOARD_HINT_PRIMARY`, the isolation-hint copy, the "Controls"
+  how-to-play entry) and `player_guide.md` (controls table, loop
+  description). Constant *names* (`TICK_BUTTON_LABEL`, `era_tick_line`)
+  stay as-is, per scope — only string content changed.
+- Internal identifiers confirmed unchanged: `SimWorld::tick`, `sim::step`,
+  `EraProgress`, `single_tick`, doc comments referring to internal
+  mechanics (e.g. `era_tick_line`'s own doc comment, `KEYBOARD_HINT_PRIMARY`'s
+  surrounding "tick/era/notebook shortcuts" comment) all still say "tick" —
+  correctly out of scope.
+- No test asserted on the old exact string content, so no test changes
+  were needed. `cargo build`/`clippy -D warnings`/`fmt`/`test` all clean.
+- **Not verified live** (same environment limitation as task 117 — no
+  Screen Recording permission for an automated screenshot); this is a
+  pure string-literal change with no logic path, so risk is low, but a
+  quick `cargo run` glance at the HUD/how-to-play panel is still worth
+  doing before considering this fully closed.
 
 ## 🎯 Objective
 

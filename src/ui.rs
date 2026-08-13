@@ -16,9 +16,10 @@ use abiogenesis::objectives::{
     is_grace_active, CurrentObjective, GraceProgress, Objective, ObjectiveProgress,
 };
 use abiogenesis::run::RunProgress;
-use abiogenesis::sim::{ActionBudget, EraCompleted, OrganismDied};
+use abiogenesis::sim::{ActionBudget, EraCompleted, EraProgress, OrganismDied};
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{SimWorld, SpeciesId, TagSlot};
+use abiogenesis::worldgen::era_ticks_for;
 
 /// Task 055's guided first-isolation hint: the message to show (isolated vs.
 /// clustered first placement), the `SimWorld::tick` it was set at, and how
@@ -431,6 +432,7 @@ pub struct ObjectiveReadouts<'w> {
 pub(crate) fn hud_panel(
     mut contexts: EguiContexts,
     world: Res<SimWorld>,
+    era_progress: Res<EraProgress>,
     era_state: Res<State<EraState>>,
     mut selected: ResMut<SelectedSpecies>,
     mut selected_action: ResMut<SelectedAction>,
@@ -471,7 +473,13 @@ pub(crate) fn hud_panel(
             }
 
             ui.heading(text::HEADING_TITLE);
-            ui.label(text::era_tick_line(world.era, world.tick));
+            let (era_current, era_total) = era_readout_values(
+                readouts.run_progress.world_index,
+                world.era,
+                era_progress.remaining(),
+                &config,
+            );
+            ui.label(text::era_tick_line(world.era, era_current, era_total));
             ui.label(text::state_line(era_state.get()));
             if is_grace_active(world.era, config.time.grace_eras, &readouts.grace) {
                 ui.weak(text::GRACE_PERIOD_LINE);
@@ -1324,6 +1332,41 @@ fn dominant_cause_with_tiebreak(causes: &[text::DominantDeathCause]) -> text::Do
         .expect("causes is non-empty")
 }
 
+/// `(current, total)` ticks for the era readout (task 117): `total` is this
+/// era's own length (`era_ticks_for`, already accounting for world 0's
+/// shortened onboarding eras, task 082).
+///
+/// `remaining == 0` is treated as "no progress yet in the era currently
+/// shown," not "this era just finished" — `tick_and_complete_era`
+/// (`sim.rs:991-1006`) increments `world.era` in the *same* call that
+/// decrements `remaining` to `0`, atomically, so by the time any frame
+/// renders `remaining == 0`, `world.era` has already moved on to the new
+/// era. There is no observable frame where `remaining == 0` refers to the
+/// era that just completed — every such frame is really "0 ticks played
+/// in the era we're now looking at," whether that's because it hasn't
+/// started (`Observing`, before the next `space`/`n`) or because
+/// `EraProgress` was never started for this world yet. Found live
+/// 2026-08-13 (twice): an `EraState`-based gate here was wrong in the
+/// *other* direction — it hid real progress made via `n`
+/// (`input.rs::single_tick`), which advances `remaining` while
+/// deliberately staying in `Observing` (no `EraState` transition, by
+/// design, for fine-grained single-tick observation). `EraState` doesn't
+/// distinguish "stale" from "real" here at all; `remaining == 0` does.
+fn era_readout_values(
+    world_index: u32,
+    era: u32,
+    remaining: u32,
+    config: &SimConfig,
+) -> (u32, u32) {
+    let total = era_ticks_for(world_index, era, config);
+    let current = if remaining == 0 {
+        0
+    } else {
+        total.saturating_sub(remaining)
+    };
+    (current, total)
+}
+
 /// Drains `OrganismDied` into `DeathCauseTally` every tick (task 105) —
 /// scheduled exactly like `record_events`/`update_population_trends`, not
 /// gated to era-advance ticks only, so deaths from the manual single-tick
@@ -1381,6 +1424,82 @@ fn tally_death_causes(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Task 117: at the instant an era starts (`EraProgress::start` sets
+    /// `remaining` to the era's full length), the readout must show
+    /// `0/{total}`, matching the semantics `tick_and_complete_era` already
+    /// gives `remaining == 0` (see `era_readout_values`'s own doc comment).
+    #[test]
+    fn era_readout_values_shows_zero_progress_at_era_start() {
+        let config = SimConfig::default();
+        let total = era_ticks_for(0, 5, &config);
+        let (current, shown_total) = era_readout_values(0, 5, total, &config);
+        assert_eq!(current, 0);
+        assert_eq!(shown_total, total);
+    }
+
+    /// Mid-era: `current` counts up as `remaining` counts down. Must hold
+    /// whether progress came from `space` (`EraState::Advancing`) or `n`
+    /// (`input.rs::single_tick`, which deliberately stays in `Observing`) —
+    /// this function takes no `EraState` input at all, by design (found
+    /// live 2026-08-13: an earlier version gated on `EraState::Advancing`
+    /// and hid real progress made via `n`).
+    #[test]
+    fn era_readout_values_counts_up_mid_era() {
+        let config = SimConfig::default();
+        let total = era_ticks_for(0, 5, &config);
+        let (current, _) = era_readout_values(0, 5, total / 2, &config);
+        assert_eq!(current, total - total / 2);
+    }
+
+    /// Last tick before completion: `remaining == 1` must show
+    /// `total - 1`, not off by one in either direction.
+    #[test]
+    fn era_readout_values_is_correct_on_the_last_tick_before_completion() {
+        let config = SimConfig::default();
+        let total = era_ticks_for(0, 5, &config);
+        let (current, _) = era_readout_values(0, 5, 1, &config);
+        assert_eq!(current, total - 1);
+    }
+
+    /// `remaining == 0` always reads as "0 progress in the era currently
+    /// shown," never "the previous era, fully done" — `tick_and_complete_era`
+    /// increments `world.era` atomically in the same call that drives
+    /// `remaining` to `0` (`sim.rs:991-1006`), so no observable frame ever
+    /// pairs `remaining == 0` with the era number it just finished. Found
+    /// live 2026-08-13: without this, a fresh era showed e.g. "Era 2 · tick
+    /// 8/8" the instant it began, reusing era 1's fully-depleted `remaining`.
+    #[test]
+    fn era_readout_values_shows_zero_progress_when_remaining_is_zero() {
+        let config = SimConfig::default();
+        let total = era_ticks_for(0, 5, &config);
+        let (current, shown_total) = era_readout_values(0, 5, 0, &config);
+        assert_eq!(current, 0);
+        assert_eq!(shown_total, total);
+    }
+
+    /// The readout composes `era_ticks_for` correctly for both world 0's
+    /// shortened onboarding eras (task 082) and the standard length —
+    /// mirrors `era_ticks_for`'s own coverage, just asserting this
+    /// function's composition of it, not re-deriving the thresholds.
+    #[test]
+    fn era_readout_values_uses_onboarding_length_for_world_zeros_opening_eras() {
+        let config = SimConfig::default();
+        let onboarding_total = era_ticks_for(0, 0, &config);
+        let standard_total = era_ticks_for(0, config.time.onboarding_eras, &config);
+        assert_eq!(
+            era_readout_values(0, 0, onboarding_total, &config).1,
+            onboarding_total
+        );
+        assert_eq!(
+            era_readout_values(0, config.time.onboarding_eras, standard_total, &config).1,
+            standard_total
+        );
+        assert_ne!(
+            onboarding_total, standard_total,
+            "the two eras compared must actually use different lengths, or this test can't tell them apart"
+        );
+    }
 
     #[test]
     fn dominant_cause_with_tiebreak_picks_the_highest_count() {

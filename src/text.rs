@@ -46,7 +46,7 @@ pub const HOW_TO_PLAY_SECTIONS: &[(&str, &str)] = &[
     (
         "Controls",
         "Left click: perform the selected action on a cell. Space: advance one era. \
-         N: advance a single tick. Arrow keys or WASD: pan the camera. Tab: open your notebook. \
+         N: advance a single pulse. Arrow keys or WASD: pan the camera. Tab: open your notebook. \
          R: reseed the current world. Esc: quit.",
     ),
     (
@@ -128,8 +128,12 @@ pub fn unlocks_summary(bonus_available_species: u32) -> String {
 
 pub const HEADING_TITLE: &str = "Abiogenesis";
 
-pub fn era_tick_line(era: u32, tick: u64) -> String {
-    format!("Era {era}  ·  tick {tick}")
+/// `current`/`total` are ticks elapsed / total ticks in the era **currently
+/// being played** (task 117) — not `SimWorld::tick`, the run-wide counter
+/// that never resets between eras and stops being readable at a glance
+/// after a couple of eras.
+pub fn era_tick_line(era: u32, current: u32, total: u32) -> String {
+    format!("Era {era}  ·  pulse {current}/{total}")
 }
 
 pub fn seed_line(seed: u64) -> String {
@@ -154,11 +158,11 @@ pub const GRACE_PERIOD_LINE: &str = "Grace period — this world can't fail from
 // button greyed out, same "why is this not clickable" affordance
 // `DETAIL_MODE_ONLY_HINT` gives the action icon row.
 
-pub const TICK_BUTTON_LABEL: &str = "⏵ Tick";
+pub const TICK_BUTTON_LABEL: &str = "⏵ Pulse";
 pub const ERA_BUTTON_LABEL: &str = "⏩ Era";
 pub const NOTEBOOK_BUTTON_LABEL: &str = "📓 Notebook";
 
-pub const TICK_BUTTON_TOOLTIP: &str = "Advance one tick (N)";
+pub const TICK_BUTTON_TOOLTIP: &str = "Advance one pulse (N)";
 pub const ERA_BUTTON_TOOLTIP: &str = "Start/resume this era (Space)";
 pub const NOTEBOOK_BUTTON_TOOLTIP: &str = "Open/close the notebook (Tab)";
 
@@ -246,7 +250,7 @@ pub const SEED_PALETTE_HOVER: &str = "Click an empty cell to place the selected 
 /// room at `ui::HUD_WIDTH`) rather than relying on `egui`'s label wrap, which
 /// broke mid-word ("t/l temp/light · E" / "quit") instead of at a natural
 /// boundary once the combined text got too long.
-pub const KEYBOARD_HINT_PRIMARY: &str = "space era · n tick · r reseed · wasd pan";
+pub const KEYBOARD_HINT_PRIMARY: &str = "space era · n pulse · r reseed · wasd pan";
 pub const KEYBOARD_HINT_SECONDARY: &str = "t/l temp/light · Esc quit";
 
 // --- Viewport onboarding hints (task 053) ---
@@ -265,7 +269,7 @@ pub const NOTEBOOK_BADGE_HOVER: &str =
 // --- Viewport onboarding hints — guided first-isolation hint (task 055) ---
 
 pub const HINT_ISOLATED_FIRST_PLACEMENT: &str =
-    "You isolated this species — watch its energy over the next few ticks for a clean first reading";
+    "You isolated this species — watch its energy over the next few pulses for a clean first reading";
 pub const HINT_CLUSTERED_FIRST_PLACEMENT: &str =
     "Tip: an isolated species gives cleaner readings — try it in a future era";
 

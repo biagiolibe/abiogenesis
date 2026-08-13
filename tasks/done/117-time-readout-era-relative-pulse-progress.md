@@ -4,9 +4,40 @@
 > **Category**: UI / HUD
 > **Priority**: 🟡 P2
 > **Estimate**: ~1h
-> **Assigned to**: unassigned
+> **Assigned to**: done
 > **Session**: 2026-08-12 (scoped from `redesign/abiogenesis-hud-notebook.md` §2, after a
-> discrepancy-check pass against tasks 100-103/097)
+> discrepancy-check pass against tasks 100-103/097), implemented 2026-08-13.
+
+---
+
+## ✅ Implementation notes (2026-08-13)
+
+- `text::era_tick_line(era, tick: u64)` → `era_tick_line(era, current: u32,
+  total: u32)`; `ui::hud_panel` now takes `EraProgress` as a system
+  parameter and computes both values via a new pure helper,
+  `era_readout_values(world_index, era, remaining, config)`, composing
+  `EraProgress::remaining()` with `worldgen::era_ticks_for` (already
+  onboarding-aware, task 082).
+- **Two live-playtest bugs found and fixed after the first pass**, both
+  around what `remaining == 0` means:
+  1. Between eras (before the next `space`/`n`), `remaining` sits at `0`
+     left over from the just-finished era — naively computing
+     `total - remaining` against the *new* era's `total` showed a
+     misleading "Era 2 · tick 8/8" the instant era 2 began.
+  2. The first fix (gating on `EraState::Advancing`) overcorrected: `n`
+     (`input.rs::single_tick`) advances `EraProgress` while deliberately
+     staying in `Observing` (by design, for fine-grained single-tick
+     observation) — the gate hid real progress made via `n`.
+  Root cause resolved by reading `sim.rs::tick_and_complete_era`
+  (`world.era += 1` happens atomically in the same call that drives
+  `remaining` to `0`) — no `EraState` input is needed at all:
+  `remaining == 0` unambiguously means "0 progress in the era currently
+  shown" in every observable frame, never "the previous era, fully done."
+  See `era_readout_values`'s own doc comment in `ui.rs` for the full
+  reasoning.
+- 6 unit tests added covering era start, mid-era, last-tick-before-
+  completion, the `remaining == 0` semantics, and onboarding vs. standard
+  era-length composition.
 
 ---
 

@@ -11,8 +11,8 @@ There are two mysteries running at once: **what will happen** — the ecosystem 
 | Key / action | Effect |
 |---|---|
 | Left click | Perform the selected action (Seed / Stress / Cull) on the clicked cell |
-| `space` | Advance one full era (a block of ticks, animated) |
-| `n` | Advance a single tick (fine-grained observation) |
+| `space` | Advance one full era (a block of pulses, animated) |
+| `n` | Advance a single pulse (fine-grained observation) |
 | `wasd` / arrow keys | Pan the camera |
 | `tab` | Open / close your notebook |
 | `r` | Reseed the current world (same difficulty, fresh random state) |
@@ -29,7 +29,7 @@ The HUD's right-hand console lets you pick which species to seed (**Species**), 
 Each world plays out as a repeating cycle:
 
 1. **Seed** — place organisms on an empty grid. Nothing starts pre-placed: the first move is always yours.
-2. **Advance an era** — press `space` and watch the ecosystem live for a block of ticks. Organisms gain and lose energy, reproduce, starve, get eaten, decompose.
+2. **Advance an era** — press `space` and watch the ecosystem live for a block of pulses. Organisms gain and lose energy, reproduce, starve, get eaten, decompose.
 3. **Observe** — note what happened: who bloomed, who collapsed, which pairings of species seemed to hurt or help each other.
 4. **Hypothesize and intervene** — spend your era's action budget on a deliberate experiment: seed more of something, stress the environment, cull a species, or splice a genome.
 5. **Repeat** until the world's objective is met — then move on to a harder world.
