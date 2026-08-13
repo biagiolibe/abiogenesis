@@ -1,0 +1,97 @@
+<svg width="730" height="470" viewBox="0 0 730 470" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, Menlo, Consolas, monospace">
+  <rect width="730" height="470" fill="#0d0f14"/>
+  <text x="15" y="24" font-size="11" letter-spacing="1" fill="#5a5c64">SPECIES ICONS &#183; METABOLISMO</text>
+  <text x="15" y="38" font-size="9.5" fill="#4a4c54">colori d'esempio — nel gioco ogni icona prende il colore della specie, non un colore fisso per metabolismo</text>
+
+  <!-- 0: Fotolitico -->
+  <circle cx="102" cy="95" r="26" fill="#15171c" stroke="#2a2c34" stroke-width="0.5"/>
+  <g transform="translate(102,95)" stroke="#E24B4A" stroke-width="1.4">
+    <line x1="-6" y1="0" x2="6" y2="0"/>
+    <line x1="0" y1="-6" x2="0" y2="6"/>
+    <line x1="-4.2" y1="-4.2" x2="4.2" y2="4.2"/>
+    <line x1="-4.2" y1="4.2" x2="4.2" y2="-4.2"/>
+  </g>
+  <text x="102" y="140" font-size="11.5" fill="#c8c9ce" text-anchor="middle">Fotolitico</text>
+  <text x="102" y="155" font-size="9" fill="#6b6d75" text-anchor="middle">energia dalla luce</text>
+  <text x="102" y="167" font-size="8.5" fill="#3a3c44" text-anchor="middle">attivo</text>
+
+  <!-- 1: Predatore -->
+  <circle cx="277" cy="95" r="26" fill="#15171c" stroke="#2a2c34" stroke-width="0.5"/>
+  <g transform="translate(277,95)" fill="#7F77DD">
+    <circle cx="0" cy="-3.5" r="4"/>
+    <circle cx="-3" cy="2" r="4"/>
+    <circle cx="3" cy="2" r="4"/>
+  </g>
+  <text x="277" y="140" font-size="11.5" fill="#c8c9ce" text-anchor="middle">Predatore</text>
+  <text x="277" y="155" font-size="9" fill="#6b6d75" text-anchor="middle">energia dai vicini</text>
+  <text x="277" y="167" font-size="8.5" fill="#3a3c44" text-anchor="middle">attivo</text>
+
+  <!-- 2: Decompositore -->
+  <circle cx="452" cy="95" r="26" fill="#15171c" stroke="#2a2c34" stroke-width="0.5"/>
+  <polygon points="452,87 460,95 452,103 444,95" fill="none" stroke="#639922" stroke-width="1.4"/>
+  <text x="452" y="140" font-size="11.5" fill="#c8c9ce" text-anchor="middle">Decompositore</text>
+  <text x="452" y="155" font-size="9" fill="#6b6d75" text-anchor="middle">energia dal residuo</text>
+  <text x="452" y="167" font-size="8.5" fill="#3a3c44" text-anchor="middle">attivo</text>
+
+  <!-- 3: Chemiolitotrofo -->
+  <circle cx="627" cy="95" r="26" fill="#15171c" stroke="#2a2c34" stroke-width="0.5"/>
+  <polygon points="635,95 631,101.9 623,101.9 619,95 623,88.1 631,88.1" fill="none" stroke="#EF9F27" stroke-width="1.4"/>
+  <text x="627" y="140" font-size="11.5" fill="#c8c9ce" text-anchor="middle">Chemiolitotrofo</text>
+  <text x="627" y="155" font-size="9" fill="#6b6d75" text-anchor="middle">energia dalla tossicità</text>
+  <text x="627" y="167" font-size="8.5" fill="#EF9F27" text-anchor="middle">nuovo &#183; §5.4 GDD, nicchia roccia nuda</text>
+
+  <line x1="15" y1="195" x2="715" y2="195" stroke="#23262e" stroke-width="0.5"/>
+  <text x="15" y="216" font-size="10" letter-spacing="1" fill="#5a5c64">PROPOSTE PER IL FUTURO</text>
+
+  <!-- 4: Parassita -->
+  <circle cx="102" cy="275" r="26" fill="#15171c" stroke="#2a2c34" stroke-width="0.5" stroke-dasharray="3 2"/>
+  <path d="M105,269 C97,269 95,275 99,278 C101,279.5 104,278 103,275" fill="none" stroke="#D4537E" stroke-width="1.4"/>
+  <text x="102" y="320" font-size="11.5" fill="#8f9199" text-anchor="middle">Parassita</text>
+  <text x="102" y="335" font-size="9" fill="#6b6d75" text-anchor="middle">sottrae energia all'ospite</text>
+  <text x="102" y="347" font-size="8.5" fill="#4a4c54" text-anchor="middle">indebolisce senza uccidere subito</text>
+
+  <!-- 5: Simbionte -->
+  <circle cx="277" cy="275" r="26" fill="#15171c" stroke="#2a2c34" stroke-width="0.5" stroke-dasharray="3 2"/>
+  <circle cx="274" cy="275" r="5" fill="none" stroke="#1D9E75" stroke-width="1.4"/>
+  <circle cx="280" cy="275" r="5" fill="none" stroke="#1D9E75" stroke-width="1.4"/>
+  <text x="277" y="320" font-size="11.5" fill="#8f9199" text-anchor="middle">Simbionte</text>
+  <text x="277" y="335" font-size="9" fill="#6b6d75" text-anchor="middle">scambio con una specie associata</text>
+  <text x="277" y="347" font-size="8.5" fill="#4a4c54" text-anchor="middle">beneficio in entrambe le direzioni</text>
+
+  <!-- 6: Estremofilo -->
+  <circle cx="452" cy="275" r="26" fill="#15171c" stroke="#2a2c34" stroke-width="0.5" stroke-dasharray="3 2"/>
+  <path d="M452,267 C457,272 457,278 452,282 C454,279 453,276 450,274 C447,276 447,279 449,282 C444,278 444,272 452,267 Z" fill="none" stroke="#ff8a3c" stroke-width="1.3"/>
+  <text x="452" y="320" font-size="11.5" fill="#8f9199" text-anchor="middle">Estremofilo</text>
+  <text x="452" y="335" font-size="9" fill="#6b6d75" text-anchor="middle">prospera solo in condizioni estreme</text>
+  <text x="452" y="347" font-size="8.5" fill="#4a4c54" text-anchor="middle">bocca vulcanica &#183; vetta &#183; tundra</text>
+
+  <!-- 7: placeholder -->
+  <circle cx="627" cy="275" r="26" fill="none" stroke="#23262e" stroke-width="0.5" stroke-dasharray="2 3"/>
+  <text x="627" y="280" font-size="16" fill="#3a3c44" text-anchor="middle">+</text>
+  <text x="627" y="320" font-size="11.5" fill="#4a4c54" text-anchor="middle">altri</text>
+  <text x="627" y="335" font-size="9" fill="#3a3c44" text-anchor="middle">spazio riservato</text>
+
+  <line x1="15" y1="375" x2="715" y2="375" stroke="#23262e" stroke-width="0.5"/>
+  <text x="15" y="393" font-size="9" fill="#3a3c44">stesso set di icone in HUD (Biosphere/Species) e Notebook (Species catalog) — mai icone diverse per lo stesso metabolismo</text>
+
+  <line x1="15" y1="405" x2="715" y2="405" stroke="#23262e" stroke-width="0.5"/>
+  <text x="15" y="424" font-size="9.5" fill="#4a4c54">stessa icona, tre specie diverse — il colore segue sempre la specie, non il metabolismo:</text>
+
+  <g transform="translate(30,448)" stroke="#F09595" stroke-width="1.3">
+    <line x1="-5" y1="0" x2="5" y2="0"/><line x1="0" y1="-5" x2="0" y2="5"/>
+    <line x1="-3.5" y1="-3.5" x2="3.5" y2="3.5"/><line x1="-3.5" y1="3.5" x2="3.5" y2="-3.5"/>
+  </g>
+  <text x="46" y="452" font-size="10" fill="#F09595">Opal</text>
+
+  <g transform="translate(120,448)" stroke="#97C459" stroke-width="1.3">
+    <line x1="-5" y1="0" x2="5" y2="0"/><line x1="0" y1="-5" x2="0" y2="5"/>
+    <line x1="-3.5" y1="-3.5" x2="3.5" y2="3.5"/><line x1="-3.5" y1="3.5" x2="3.5" y2="-3.5"/>
+  </g>
+  <text x="136" y="452" font-size="10" fill="#97C459">Halo</text>
+
+  <g transform="translate(210,448)" stroke="#F0C382" stroke-width="1.3">
+    <line x1="-5" y1="0" x2="5" y2="0"/><line x1="0" y1="-5" x2="0" y2="5"/>
+    <line x1="-3.5" y1="-3.5" x2="3.5" y2="3.5"/><line x1="-3.5" y1="3.5" x2="3.5" y2="-3.5"/>
+  </g>
+  <text x="226" y="452" font-size="10" fill="#F0C382">Vex</text>
+</svg>
