@@ -47,7 +47,8 @@ Every species has a readable side and a hidden side.
   - *Photolithic* draws energy from local light.
   - *Predator* draws energy from neighboring organisms.
   - *Decomposer* draws energy from residue in its own cell or a neighboring one — it needs to actually be adjacent to leftover residue, not just anywhere.
-- **Preferred temperature** — every metabolism's gain above is *multiplied* by how close the cell's temperature is to the species' comfort zone, not added to as a separate cost. This applies equally to all three: a Decomposer sitting right next to abundant residue can still starve to death if that cell's temperature is far from its optimum — the residue being there isn't enough on its own. If an organism keeps dying despite its metabolism's fuel being visibly present (residue, light, prey), suspect a bad temperature fit before suspecting a hidden matrix effect.
+  - *Chemolithotroph* draws energy from local toxicity — the more hostile the ground, the better it feeds.
+- **Preferred temperature** — every metabolism's gain above is *multiplied* by how close the cell's temperature is to the species' comfort zone, not added to as a separate cost. This applies equally to all four: a Decomposer sitting right next to abundant residue can still starve to death if that cell's temperature is far from its optimum — the residue being there isn't enough on its own. If an organism keeps dying despite its metabolism's fuel being visibly present (residue, light, prey, toxicity), suspect a bad temperature fit before suspecting a hidden matrix effect.
 - **Reproduction threshold** — once an organism has enough energy, it reproduces into an empty neighboring cell. The threshold is the same for every species and shown in the notebook's species catalog (`tab`), alongside metabolism and temperature range. The HUD's Biosphere section instead shows each species' population trend since the last era (▲ rising / ▼ falling / ▬ stable) — actual births are logged as a per-era summary ("Kael: +3 births this era") when they happen.
 
 **Hidden:**
@@ -92,11 +93,12 @@ Once the accumulated evidence for a tag pair crosses a threshold, that relations
 
 ## Objectives, victory, and failure
 
-Every world sets a **sequence of goals** — 2 in the early worlds, 3 once the difficulty ramps up — shown in the HUD one at a time ("Objective i / N"). Each is one of:
+Every world sets a **sequence of goals** — 2 in the early worlds, 3 once the difficulty ramps up, plus one more that's always there — shown in the HUD one at a time ("Objective i / N"). Each is one of:
 
 - **Coexistence** — sustain N species at once for a number of eras.
 - **Survive in a hostile zone** — get a species to survive in the world's toxic zone.
 - **Trigger a bloom** — grow a specific species past a population threshold.
+- **Force a speciation event** (always the sequence's last objective, on every world) — push a species under enough sustained pressure (harmful adjacency, a bad temperature fit, or toxicity exposure) that the simulation itself spins off a new species from it. This one isn't something you build directly like a splice — it's a consequence of how hard you push a species, and it can happen without you asking for it.
 
 Clearing one objective moves you straight to the next in the same world — the world itself only clears once every objective in the sequence has. Meet the last one, and you move to the next world: more active tags, a meaner matrix, a harsher environment.
 

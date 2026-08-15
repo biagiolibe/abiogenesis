@@ -1,7 +1,7 @@
 # Technical Design Document — Abiogenesis
 
 This document describes the technical architecture and implementation choices of the project.
-**Game design** lives in [`abiogenesis-gdd.md`](abiogenesis-gdd.md) (v0.4) and is the source of truth: it is not duplicated here, only referenced.
+**Game design** lives in [`abiogenesis-gdd.md`](abiogenesis-gdd.md) (v0.6) and is the source of truth: it is not duplicated here, only referenced.
 
 ---
 
@@ -81,14 +81,14 @@ Each module has its own `Plugin` to encapsulate its systems.
 | `ObjectivesPlugin` | `objectives` | `Objective`/`ObjectiveProgress` evaluation each tick (task 040/041); drives the `Playing → WorldCleared/Defeat` transitions |
 | `GridRenderPlugin` | `render` | Grid sprites, 2D camera, state → color synchronization |
 | `UiPlugin` | `ui` | `bevy_egui` HUD panels and their dedicated camera (§6 "HUD camera") |
-| `NotebookPlugin` | `notebook` | Observation log, hypothesis grid, matrix-knowledge accumulation |
+| `NotebookPlugin` | `notebook` | Observation log (plain-language death/trend messages, task 104/105), hypothesis grid (reveal-on-observation, edge grammar, tasks 101-102), matrix-knowledge accumulation, tag/species catalog |
 | `InputPlugin` | `input` | Keyboard/mouse → game intents; also the `r`-key reseed (`run_flow::start_world`) |
 | `MenuPlugin` | `menu` | `GameState::MainMenu` UI; `start_run` builds the run's *first* world (task 044) |
 | `ScreensPlugin` | `screens` | `WorldCleared`/`Defeat` interstitial UI (task 045) |
 
 `run_flow` (binary crate) is a deliberate exception to "one module = one `Plugin`" — same rationale as `state.rs`: it holds `start_world`/`advance_to_next_world`, the shared "how a world (re)starts" logic called from both `input.rs` (the `r` key) and `screens.rs` (the world-cleared transition), with no systems or `Plugin` of its own.
 
-`worldgen` (Phase 3) generates a world's content — matrix, tags, environment, starting species, `Objective` — behind a single `worldgen::build_world` entry point; it has no `Plugin` either, since it's pure functions called by `WorldPlugin`-adjacent code (`menu.rs`, `run_flow.rs`) rather than a system-driven module.
+`worldgen` (Phase 3) generates a world's content — matrix, tags (including terrain-conditional ones, task 096), environment, biome classification and feature placement (tasks 110-111), starting species, wild/pre-placed species (task 098), and the `Objective` sequence — behind a single `worldgen::build_world` entry point; it has no `Plugin` either, since it's pure functions called by `WorldPlugin`-adjacent code (`menu.rs`, `run_flow.rs`) rather than a system-driven module. Its scope has grown well past the original Phase-3 description as the mondo-vivo/biome/evolution work (tasks 096-118) landed — see GDD §5.10/§5.11/§9.
 
 ### 3.3 System Ordering (`SystemSets`)
 
@@ -123,6 +123,12 @@ Use Bevy events to decouple modules. Defined from Phase 0 as an integration poin
 | `OrganismDied` | `sim` | `notebook` (Phase 2) |
 | `SpeciesExtinct` | `sim` | `notebook`, failure conditions (Phase 3) |
 | `OrganismBorn` | `sim` | `notebook` (task 063) |
+| `AdjacencyObserved` | `sim` | `notebook` (matrix-knowledge accumulation, GDD §7) |
+| `TerrainRevealed` | `sim` | `notebook` (zone-entry reveal, task 099) |
+| `TerrainGateObserved` | `sim` | `notebook` (conditional-tag gating, task 096) |
+| `SelectionThresholdCrossed` | `sim` | `notebook`, `objectives` (evolution/speciation, GDD §5.11, tasks 106-107) |
+
+All seven are bundled into one `TickEvents` struct (`sim.rs`) and drained through `TickEventWriters`, a single `SystemParam` — added specifically because `advance_tick`/`single_tick` were already at Bevy's per-system parameter ceiling before `SelectionThresholdCrossed` pushed both over it; bundling is what lets a future event type be added without hitting the ceiling again.
 
 These are the foundation of the **observation log** from GDD §7: the notebook is built by consuming events, not by inspecting the grid.
 

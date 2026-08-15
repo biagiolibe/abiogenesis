@@ -5,13 +5,14 @@
 **Platform:** Desktop, 2D graphical window
 **Tech:** Rust + Bevy (ECS)
 **Mode:** Single-player, era-based, with objectives and light meta-progression
-**Document status:** v0.5 — post-Phase-3/playtest alignment (closed decisions + numeric baseline + playthrough example)
+**Document status:** v0.6 — mondo-vivo/biome/evolution alignment (tasks 096-118)
 
 > Legend for the status of each decision:
 > **[DECIDED]** agreed and stable · **[PROPOSED]** baseline I'm proposing, to be approved/corrected · **[OPEN]** to be decided together
 
 ### Changelog
 
+- **v0.6** — **"Mondo vivo," biomes, and evolution land (tasks 096-118).** §5.2/§5.4/§5.6 document `Chemolithotroph`, the fourth metabolism, now reading `toxicity` as a live input (the v0.5 "declared but inert" caveat no longer applies). New §5.10 documents biomes (areal classification layered on the scalar grid) and §5.11 documents evolution by speciation from accumulated selection pressure, including the always-final `Speciation` long-term objective (§8). §5.5/§9 document terrain-conditional tags and wild (pre-placed) species — a narrow, documented exception to the "nothing is auto-placed" rule. §4/§11/§15 rename the player-facing time unit from "tick" to "pulse" (task 118); internal/mechanical uses of "tick" (§5.6, §5.9) are unchanged by design — see the note in §15. §5.9 gains rows for the new metabolism and evolution coefficients.
 - **v0.5** — **Alignment with Phase 3 ("the run") and two rounds of playtest tuning (tasks 035–059).** §5.6 makes explicit that `env_fit` gates all three metabolisms' gain, not just Photolithic's. §5.9 era budget updated to its retuned value. §8 documents the sequential per-world objectives (2→3), the world-level (not run-level) retry on total extinction, and the removal of auto-placed starting species. §5.2 flags `toxicity` as a declared-but-currently-inert scalar. None of this changes the pillars or the core mechanical model — it's the numeric baseline and a few rules catching up to what playtesting settled on.
 - **v0.4** — **Stack change: from terminal (`ratatui`) to a 2D graphical window with Bevy and an ECS model.** This drives revisions to §5.1 (grid size), §11 (presentation), and §12 (stack and architecture), plus a correction to §13 on the scaffold's status. **The design itself does not change:** §§1–10 and §§14–16 — pillars, core loop, simulation model, tick formulas, numeric baseline §5.9, notebook, objectives, playthrough example — remain valid word for word. Pillar 3 ("the fun is in the system, not the graphics") remains fully in effect: colored squares, zero art assets.
 - **v0.3** — Closed design decisions, numeric baseline (§5.9), playthrough example (§16).
@@ -65,8 +66,8 @@ The experiential fulcrum is the sub-loop **hypothesis → experiment → *aha***
 
 Time advances in **eras**: the player queues one or more actions, then advances the simulation by *N* ticks in a block and observes the result. This **makes the time model coincide with the mental loop**: plan (hypothesis), execute (era), observe (result).
 
-- **Animation during the era [DECIDED]:** tick advancement is shown tick-by-tick (fast), preserving the feeling of a "breathing system," while *control* remains deliberately step-wise.
-- **Era length [structure DECIDED / coefficient to be tuned]:** `ERA_TICKS = 25` as default, adjustable; exposed to the player as a choice ("advance by 1 / 10 / 25 ticks"). The exact value is a coefficient to validate in playtesting.
+- **Animation during the era [DECIDED]:** pulse advancement is shown pulse-by-pulse (fast), preserving the feeling of a "breathing system," while *control* remains deliberately step-wise.
+- **Era length [structure DECIDED / coefficient to be tuned]:** `ERA_TICKS = 25` as default, adjustable. The player has two ways to advance: a single pulse (`N`, fine-grained observation) or a full era (`Space`, `ERA_TICKS` pulses animated in a block) — see §11 Controls. The exact `ERA_TICKS` value is a coefficient to validate in playtesting.
 - **Real-time mode [OPEN / future]:** on top of this architecture it's cheap to add later as an option. Not in the MVP.
 
 ---
@@ -91,7 +92,7 @@ A few scalars per cell, in `[0,1]`:
 - `light`
 - `toxicity`
 
-**Current status:** `toxicity` is declared and rendered (toxic zones exist in worldgen, and the Stress action's target scalar could in principle be extended to it), but as implemented it is **not read anywhere in the tick loop** — it has no effect on `env_fit`, gain, or costs. Only `temperature` and `light` are live inputs to the simulation today. Toxicity-driven gameplay (e.g. a chemolithotroph metabolism tied to it) is tracked as a future addition in `VISION.md`, not part of the current baseline.
+**Current status:** `toxicity` is a live input. Toxic zones exist in worldgen, the Stress action's target scalar can raise it, and it now directly drives one metabolism's gain (`Chemolithotroph`, §5.4/§5.6) as well as one of the three stimuli the evolution system (§5.11) accumulates toward speciation. `temperature`, `light`, and `toxicity` are all read in the tick loop today.
 
 **Phase 0:** static gradients (e.g., high light at the top, temperature on a different axis) to create spatial heterogeneity → niches.
 **Phase 1+:** slow diffusion of scalars (averaging with neighbors at a low rate), so environmental interventions propagate over time.
@@ -112,8 +113,7 @@ Metabolisms and environmental ranges are **readable** (anchors for the player). 
 - **Photolithic** (`Photolithic`) — derives energy from local `light`. The primary producer.
 - **Predator** (`Predator`) — derives energy from neighboring organisms (consumes their energy).
 - **Decomposer** (`Decomposer`) — derives energy from dead matter / residue.
-
-*(Starting set. Others can be added — e.g., a chemolithotroph tied to toxicity — as unlockable content.)*
+- **Chemolithotroph** (`Chemolithotroph`, task 108) — derives energy from local `toxicity`, the same role `light` plays for Photolithic. Its niche is the inverse of everyone else's: cells too toxic for other metabolisms to tolerate are where it thrives.
 
 ### 5.5 Tags and the hidden matrix **[DECIDED]** — *the heart of the game*
 
@@ -123,6 +123,8 @@ Two levels are distinguished, so as not to conflate variety and difficulty:
 - **Active tags per world [DECIDED]:** only a subset is actually in play in a given world. **Difficulty grows by increasing active tags, not the pool.** Baseline: **5 active tags** in the first worlds, up to **~8** in late worlds.
 
 Each species carries 1–3 tags (from those active in the world).
+
+**Terrain-conditional tags [DECIDED, task 096]:** a small subset (~1-2 per world) of the active tags are *conditional*: induced or repressed depending on the biome (§5.10) the organism currently occupies, rather than fixed for the species' whole lifetime. A conditional tag's matrix effect only applies while its gating condition holds, adding a spatial dimension to an already-directional mystery — the same species pair can interact differently depending on where on the map they meet.
 
 At the start of each world, a **secret `tag × tag` matrix** is rolled: for each ordered pair of tags, an effect (positive/negative, with intensity) that applies when two organisms carrying those tags are **adjacent**.
 
@@ -142,10 +144,11 @@ The **structure** is decided; the **numeric coefficients** are a baseline to val
 For each occupied cell:
 
 1. **Environmental fitness:** `env_fit = gaussian(temperature, temp_optimum, temp_tolerance)` ∈ `[0,1]`.
-2. **Metabolic gain** (depends on metabolism). `env_fit` gates all three the same way — it multiplies the raw gain, not just Photolithic's — so an organism can be sitting on abundant fuel (light, prey, residue) and still starve if the cell's temperature is far from its optimum:
+2. **Metabolic gain** (depends on metabolism). `env_fit` gates all four the same way — it multiplies the raw gain, not just Photolithic's — so an organism can be sitting on abundant fuel (light, prey, residue, toxicity) and still starve if the cell's temperature is far from its optimum:
    - *Photolithic:* `gain = light * metabolism_gain * env_fit`.
    - *Predator:* draws energy from occupied neighbors (within a cap), weighted by `env_fit`.
    - *Decomposer:* draws from residue/dead matter in the cell or its neighbors, weighted by `env_fit`.
+   - *Chemolithotroph:* `gain = toxicity * chemolithotroph_metabolism_gain * env_fit`.
 3. **Hidden matrix effect:** for each occupied neighbor, for each tag pair (mine × theirs), sum the effect from the secret matrix → `interaction_delta` (can be + or −).
 4. **Costs:** `upkeep` (base cost per tick) + `crowding_penalty = crowd_factor * n_occupied_neighbors` (carrying capacity).
 5. **Energy update:** `energy += gain + interaction_delta − upkeep − crowding_penalty`.
@@ -204,6 +207,7 @@ Initial values that are mutually coherent (conceptually verified so that a photo
 | Photolithic `metabolism_gain` | `2.0` | `gain = light · gain · env_fit` |
 | Predator `drain_cap` | `2.0` / tick, `upkeep 0.7` | draws from neighbors |
 | Decomposer `extract_rate` | `1.5` / tick, `upkeep 0.5` | from residue |
+| Chemolithotroph `metabolism_gain` | `2.0` / tick, `upkeep 0.5` | `gain = toxicity · gain · env_fit` (task 108) |
 | Residue on death | `3.0`, decays `0.2` / tick | feeds decomposers |
 | Residue ambient trickle | `0.05` / tick, per cell | floor against an isolated decomposer starving uninformatively; stays well below the decay rate so it never makes decomposer self-sufficient |
 | `env_fit` | `exp(−(temp−temp_opt)² / (2·temp_tol²))` | `temp_tol` (σ) default `0.15` |
@@ -236,6 +240,31 @@ Initial values that are mutually coherent (conceptually verified so that a photo
 | Size | `128×80` | task 074 |
 | Neighborhood | Moore (8) | |
 
+**Evolution (§5.11)**
+
+| Constant | Value | Notes |
+|---|---|---|
+| `selection_pressure_threshold` | `20.0` | cumulative weighted pressure that fires a speciation event |
+| `interaction_harm_weight` | `1.0` | weight on a tick's harmful `interaction_delta` share |
+| `terrain_mismatch_weight` | `1.0` | weight on a tick's `1.0 - env_fit` |
+| `toxicity_weight` | `1.0` | weight on a tick's `toxicity` exposure |
+| `max_species` | `40` | hard cap on `world.species.len()`, correctness bound (`SpeciesId` is a `u8`) |
+
+### 5.10 Biomes **[DECIDED, tasks 110-112]**
+
+On top of the continuous scalar layer (§5.2), each cell also carries a discrete **biome** — an areal classification (water depth, elevation bands, and feature biomes like `Forest`, `Swamp`, `Crater`, `CrystalField`, `Lake`) assigned by a **two-stage** generation pass: a base classification derived from elevation/moisture-like scalars, then explicit feature placement (bounded-retry rectangles, the same pattern the toxic zone already used) for the biomes that read as discrete "spots" rather than smooth bands. Biomes are primarily a **legibility and worldbuilding layer** — dithered flat-color rendering with borders and a tree overlay for `Forest` (task 112) so the map reads as terrain, not a heatmap — but also the gating surface for terrain-conditional tags (§5.5) and the placement substrate wild species (§9) require. The separate, older `toxic_zone` (a fixed hostile rectangle, §5.9) is not yet folded into the biome enum — it currently coexists with it as its own mechanic.
+
+### 5.11 Evolution by speciation **[DECIDED, tasks 106-109]**
+
+A species under sustained pressure can **speciate**: the simulation itself creates a new species, distinct from any player action (`Splice` remains the player's own, budgeted tool — this is separate and free).
+
+- **Selection pressure accumulator:** each tick, every species accumulates weighted pressure from three stimuli — harmful `interaction_delta` share, environmental (temperature) mismatch (`1 - env_fit`), and `toxicity` exposure (§5.9's `EvolutionConfig` weights, default `1.0` each).
+- **Threshold crossing:** once a species' cumulative pressure crosses `selection_pressure_threshold` (`20.0` baseline), a `SelectionThresholdCrossed` event fires, tagged with whichever of the three stimuli was **dominant** for that species.
+- **Speciation:** the dominant stimulus determines the kind of edit made to a copy of the parent species' genome (e.g. a toxicity-dominant crossing can grant the new species tolerance to hostile terrain) — the new species is added to `world.species` (capped at `max_species`, a correctness bound: `SpeciesId` is a `u8`) and starts appearing in the population going forward.
+- **Long-term objective:** `Objective::Speciation` (§8) is a fourth objective kind — a within-world **long-term** tier, always appended as the sequence's final entry regardless of what the earlier (short-term, randomly drawn) objectives are. It clears once the world has produced at least one speciation event (`SimWorld::has_speciated`).
+
+This is the game's only source of genuinely new species mid-run: worldgen (§9) decides the *starting* palette, but a hostile-enough world can grow its own species the player never seeded.
+
 ---
 
 ## 6. Player actions (interventions) **[DECIDED]**
@@ -265,11 +294,12 @@ This is the heart of progression (§ pillar 2) and turns observation into a *ded
 
 ## 8. Objectives, victory, and defeat **[DECIDED]**
 
-Each world poses a **sequence of explicit requirements**, resolved in order: **2** objectives in early worlds, ramping to **3** in late worlds (task 059). Clearing a non-final objective in the sequence advances to the next one and resets its progress — it does not clear the world by itself. No two consecutive objectives in a world share the same kind. Examples of the kind of objective:
+Each world poses a **sequence of explicit requirements**, resolved in order: **2** objectives in early worlds, ramping to **3** in late worlds (task 059), drawn from `Coexistence`/`SurviveIn`/`TriggerBloom` — plus, since task 109, a **long-term** `Speciation` objective (§5.11) always appended as the sequence's true final entry, on every world, regardless of the earlier draw. Clearing a non-final objective in the sequence advances to the next one and resets its progress — it does not clear the world by itself. No two consecutive short-term objectives in a world share the same kind. Examples of the kind of objective:
 
-- "Achieve a biosphere with **≥3 coexisting species** for **4 eras**." *(2026-08-06 playtest: the requirement is tuned and displayed in eras, the player's own unit of interaction — not raw ticks, which the player never consciously operates in.)*
+- "Achieve a biosphere with **≥3 coexisting species** for **4 eras**." *(2026-08-06 playtest: the requirement is tuned and displayed in eras, the player's own unit of interaction — not raw pulses, which the player never consciously operates in.)*
 - "Grow a species that **survives in the toxic zone**."
 - "**Trigger a bloom** of a specific type."
+- (always last) "**Force a speciation event** through sustained pressure."
 
 - **Success** (every objective in the world's sequence cleared) → move to the next world (more active tags, meaner matrix, more hostile environment).
 - **Failure** → the current world must be retried; a new attempt keeps the run's meta-progression but re-seeds the world (task 051). The run itself only ends by the player's own choice to stop, not automatically on a single world's failure.
@@ -290,9 +320,9 @@ Each world poses a **sequence of explicit requirements**, resolved in order: **2
 Each world is generated procedurally:
 
 - New **biochemical matrix** (asymmetric, with the cyclicity constraint of §5.8).
-- **Environment** (gradients, extreme zones) with increasing hostility.
-- **Active tags** (subset of the pool) and a pool of **available starting species**. *(Task 050: none of them are auto-placed — the player seeds every organism in the world manually, including the first ones. Worldgen only decides what's available to seed, not what's on the grid.)*
-- World **objective(s)**, resolved in sequence (§8).
+- **Environment** (gradients, extreme zones, biomes — §5.10) with increasing hostility.
+- **Active tags** (subset of the pool, including any terrain-conditional ones, §5.5) and a pool of **available starting species**. *(Task 050: the player seeds every organism in the world manually, including the first ones — worldgen only decides what's available to seed, not what's on the grid, **with one narrow exception**: task 098's **wild species**, a small pre-existing population placed directly onto the grid at generation time, tracked separately from the player-seedable roster. Every other species still starts unplaced.)*
+- World **objective(s)**, resolved in sequence (§8), always closed out by the long-term `Speciation` objective (§5.11).
 
 **First-world softening [DECIDED, task 079]:** world 0's opening objective is always forced to the gentlest possible requirement — `Coexistence` with `min_species = 2` — rather than the normal random draw, which could otherwise open a run with a demanding `SurviveIn` (a hostile zone the player hasn't even seen yet) or a `Coexistence` requiring every generated species including a harder-to-keep-alive Decomposer.
 
@@ -321,13 +351,13 @@ Progression *between* runs, deliberately **light**:
   - Occupied cells: color = species/tag; brightness = energy.
   - Empty cells: faint background reflecting the environment (e.g., brightness = `light`).
 - **Alien tags:** nameless glyphs/colors, learned empirically.
-- **UI panels:** current tick, era number, populations per species, average energy, current objective, action budget, command hints.
+- **UI panels:** era-relative time readout (era number + current pulse/total, task 117), populations per species, average energy, current objective, action budget, command hints.
 - **Notebook:** dedicated window (log + `tag × tag` hypothesis grid + catalog). The hypothesis grid is a dense, interactive table: it's the use case where immediate-mode UI (egui) is clearly better suited than a persistent-widget UI.
 
 ### Controls **[PROPOSED]**
 
-- `space` — advance one era (*N* ticks).
-- `n` — advance a single tick (fine observation / debug).
+- `space` — advance one era (*N* pulses).
+- `n` — advance a single pulse (fine observation / debug). *(Task 118: the player-facing unit is "pulse"; §5.6's internal tick algorithm and `SimConfig`'s `ERA_TICKS` are unchanged — see §15.)*
 - `wasd` / arrow keys — pan the camera (task 087).
 - (Phase 2+) keys to enter action mode: seed, stress, cull, splice; **mouse cell selection**.
 - `tab` — open/close notebook.
@@ -404,13 +434,16 @@ Maximum mystery (§5.5) may end up too raw. Mitigation: progressive revelation o
 
 ## 15. Glossary
 
-- **Tick:** the atomic unit of simulation.
-- **Era:** a block of *N* ticks advanced at once; the player's unit of interaction.
-- **Tag:** an abstract biochemical marker of a species; the only thing that matters for interactions between species.
+- **Tick:** the atomic unit of simulation (internal/mechanical term — `SimWorld::tick`, `sim::step`, GDD §5.6's algorithm). Since task 118, the player never sees this word: the UI and player-facing prose say **pulse** instead. Same concept, two names for two audiences.
+- **Pulse:** the player-facing name for a tick (task 118). What advances one at a time with `N`, or `ERA_TICKS` at a time with `Space`.
+- **Era:** a block of *N* pulses advanced at once; the player's unit of interaction.
+- **Tag:** an abstract biochemical marker of a species; the only thing that matters for interactions between species. May be terrain-conditional (§5.5).
 - **Hidden matrix:** the secret `tag × tag` table of adjacency effects, different for every world.
-- **Metabolism:** how a species derives energy (photolithic / predator / decomposer).
+- **Metabolism:** how a species derives energy (photolithic / predator / decomposer / chemolithotroph, §5.4).
+- **Biome:** a discrete areal classification of a cell (water, elevation band, or feature biome), layered on top of the continuous environmental scalars (§5.10).
 - **Carrying capacity:** the population ceiling imposed by the crowding penalty.
 - **env_fit:** an organism's environmental fitness for the cell it occupies.
+- **Speciation:** a simulation-driven creation of a new species from sustained selection pressure, distinct from the player's `Splice` action (§5.11).
 
 ---
 
@@ -609,4 +642,4 @@ In this run the player confirmed only **3–4 cells** out of the ~20 in the matr
 
 ---
 
-*End of document — v0.4. All design decisions are closed and backed by a numeric baseline (§5.9) and a played example (§16). Next step: implement Phase 0 following the operational queue in `tasks/QUEUE.md`, with this GDD as the design reference and `TECH_DESIGN.md` as the architecture reference.*
+*End of document — v0.6. All design decisions are closed and backed by a numeric baseline (§5.9) and a played example (§16). Ongoing work tracks against `tasks/QUEUE.md`, with this GDD as the design reference and `TECH_DESIGN.md` as the architecture reference.*
