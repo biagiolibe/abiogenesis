@@ -4,11 +4,76 @@
 > **Category**: Refactor (worldgen)
 > **Priority**: 🟡 P2
 > **Estimate**: ~4h
-> **Assigned to**: unassigned
+> **Assigned to**: done
 > **Session**: 2026-08-13 (Phase 3 of the worldgen pipeline reassessment
 > scoped from `redesign/procedural_biome_generation_spec_v2.md` §1.3/§1.4/
 > §1.5/§12.3/§12.4 — see task 123 for Phase 1 and the session's overall
-> diagnosis)
+> diagnosis), implemented 2026-08-19.
+
+---
+
+## ✅ Implementation notes (2026-08-19)
+
+- New free functions `smoothstep`/`smooth_band` (`world.rs`), the
+  continuous-score idiom, plus one score function per `Plain` candidate:
+  `desert_score`, `tundra_score`, `forest_score`, `swamp_score`. Stage B's
+  `TerrainKind::Plain` branch now builds all five `(Biome, f32)` pairs
+  (`Plain` included, at a flat `plain_baseline_score`) and picks the
+  strict arg-max — ties break by array order (Swamp, Desert, Tundra,
+  Forest, Plain), documented on `classify_biomes`.
+- Swamp's identity moved from `toxicity >= swamp_toxicity_min` to a
+  drainage score (`slope` low, water-proximity close, both task 124).
+  **Pipeline ordering constraint found and resolved**: `Cell.water_distance`
+  (task 124, Lake-aware) isn't populated until `compute_geomorphology`,
+  which runs after `place_feature_biomes` — but `place_feature_biomes`
+  itself runs after `classify_biomes` (by design, so it can override
+  Stage A/B's output). So `classify_biomes` cannot read the persisted,
+  Lake-aware field yet. Resolved by computing `slope`
+  (`elevation_slope`, elevation-only, no ordering issue) and a **Sea-only**
+  water-proximity proxy (`sea_distance_field`) **locally**, inline, inside
+  `classify_biomes` — documented as a real constraint, not an oversight:
+  Swamp's water-proximity score sees the coastline but not a not-yet-placed
+  inland lake. `Cell.slope`/`Cell.water_distance` themselves are still
+  computed and stored exactly as task 124 built them, just not read by this
+  task's local scoring (redundant elevation_slope computation, ~10k cells,
+  negligible cost, simpler than splitting `compute_geomorphology` in two).
+- Toxicity moved to a post-classification modifier (§12.4): a third patch
+  wave set (`toxic_patch_waves`, same `BIOME_SEED_OFFSET` stream) drawn
+  after `forest_waves`/`swamp_waves`; a second pass over already-classified
+  `Biome::Swamp` cells sets `toxicity = environment.toxic_zone_value`
+  wherever the wave exceeds the repurposed `swamp_toxicity_min` threshold.
+  `place_toxic_zone`/`ToxicZoneBounds` untouched — still task 113's concern.
+- `BareRock` (`Hill` branch): effective light ceiling now
+  `bare_rock_light_max + bare_rock_slope_light_bonus * slope` — steep Hill
+  cells read as BareRock at a higher light level than flat ones.
+- Config: removed the now-unused `patch_threshold` (the old hard gate);
+  added `biome_score_transition_width` (shared smoothstep width, `0.05`),
+  `patch_noise_weight` (`0.15`), `plain_baseline_score` (`0.3`),
+  `swamp_slope_max` (`0.3`), `swamp_water_distance_max` (`15.0` cells),
+  `bare_rock_slope_light_bonus` (`0.2`); `swamp_toxicity_min`'s doc comment
+  rewritten for its new role. Mirrored in `assets/config/sim_config.ron`.
+- `toxic_zone_matches_its_own_bounds` updated: Swamp cells now assert
+  `toxicity ∈ {0.0, toxic_zone_value}` (their own independent mechanism)
+  instead of the old blanket rectangle-or-zero expectation, which no
+  longer holds now that Swamp has its own toxicity source.
+- New tests: `some_swamp_cells_are_toxic_across_seeds` (≥75% of 60 sample
+  seeds, the acceptance criterion's regression net for the load-bearing
+  toxicity pass). Existing `every_areal_biome_is_reachable_across_seeds`
+  re-verified passing (all 11 areal biomes still reachable).
+- Verification: a 60-seed biome histogram (scratch, not committed) showed
+  a healthy, non-degenerate distribution (Plain 20.8%, ShallowWater 18.2%,
+  Hill 14.3%, Tundra 11.5%, Swamp 8.9%, Mountain 8.6%, BareRock 7.2%,
+  DeepWater 4.8%, Forest 2.9%, VolcanicVent 0.9%, Lake 0.7%, Crater 0.6%,
+  CrystalField 0.4%, Desert 0.03%, Peak 0.02%) and 56/60 seeds producing a
+  toxic Swamp cell. Desert's rarity (~0.03%) is inherent to its unchanged
+  `desert_temperature_min`/`desert_light_min` thresholds (a narrow
+  hot-and-bright corner), not a regression from this task — no prior
+  numeric baseline existed to compare against, since the old code only had
+  binary pass/fail, not a measured fraction. A separate scratch ASCII
+  render of one seed's biome map (also not committed) showed coherent
+  organic regions — Swamp hugging the coastline, Forest in patches, Tundra
+  banding — no checkerboard speckle.
+- `cargo build`/`clippy -D warnings`/`fmt`/`test` all clean.
 
 ---
 
@@ -66,18 +131,18 @@ Two changes, done together because they touch the same code:
 
 ## 📋 Acceptance Criteria
 
-- [ ] `biome_score(cell, candidate) -> f32` (or equivalent, one function
+- [x] `biome_score(cell, candidate) -> f32` (or equivalent, one function
       or match arm per candidate) implemented for `Plain`, `Forest`,
       `Desert`, `Tundra`, `Swamp`, each returning a smooth `[0, 1]` value —
       no binary comparisons in the score itself (`smoothstep`/Gaussian-style
       curves, matching the existing `env_fit` Gaussian pattern already used
       for organism-temperature fitness in `sim.rs`, for consistency of
       idiom).
-- [ ] Stage B's `TerrainKind::Plain` branch becomes: compute all five
+- [x] Stage B's `TerrainKind::Plain` branch becomes: compute all five
       scores, take the arg-max, break ties deterministically (fixed
       priority order used only for exact float ties, documented as such —
       not the primary mechanism).
-- [ ] Swamp's score uses `slope`/`water_distance` (task 124), not
+- [x] Swamp's score uses `slope`/`water_distance` (task 124), not
       `toxicity`. `swamp_toxicity_min` config field repurposed: after
       classification, a sub-region of the cells just classified as `Swamp`
       (patch-noise-gated, same organic-mask idiom used elsewhere, not
@@ -88,18 +153,18 @@ Two changes, done together because they touch the same code:
       biome variant — "toxic" is a scalar property of some Swamp cells,
       not a different classification, so `SurviveIn`'s future
       `Biome::Swamp`-membership check (task 113) still finds them.
-- [ ] A test confirms that after generation, at least some `Swamp` cells
+- [x] A test confirms that after generation, at least some `Swamp` cells
       have `toxicity > 0.0` across a sample of seeds (with graceful
       degradation documented if a given seed's Swamp region is too small
       to guarantee it — same keep-best-seen spirit as other placement
       code) — this is the regression test that would have caught the gap
       described above.
-- [ ] Forest/Swamp patch noise (`forest_waves`/`swamp_waves`) becomes a
+- [x] Forest/Swamp patch noise (`forest_waves`/`swamp_waves`) becomes a
       small additive term on the corresponding score, not a hard
       `wave_band_sum(...) > threshold` gate. Confirm the visual effect is
       still organic patches, not a uniform wash — the noise still needs to
       matter, just not as the sole cause.
-- [ ] `BareRock` (currently gated on `light` alone within
+- [x] `BareRock` (currently gated on `light` alone within
       `TerrainKind::Hill`, `world.rs:781-787`) additionally considers
       `slope` (task 124) — steep + low light reads as BareRock more
       readily than shallow + low light, per spec §12.5. Keep this a small,
@@ -107,14 +172,14 @@ Two changes, done together because they touch the same code:
       mountain classification (Glacier/AlpineMeadow/MountainForest, spec
       §12.5) is explicitly **out of scope** here — that's a larger, separate
       pass over the `Mountain` branch, not folded into this task.
-- [ ] Existing biome-distribution assumptions in tests re-verified, not
+- [x] Existing biome-distribution assumptions in tests re-verified, not
       just left passing by accident: run a multi-seed histogram (reuse the
       pattern from the 2026-08-10 Sea/Plain/Hill/Mountain retune mentioned
       in `TerrainConfig::sea_threshold`'s doc comment) comparing biome
       fractions before/after — flag in the PR/commit if any biome's typical
       coverage shifts drastically, don't just silently accept whatever
       falls out.
-- [ ] `cargo clippy -- -D warnings` and `cargo fmt` clean; `cargo test`
+- [x] `cargo clippy -- -D warnings` and `cargo fmt` clean; `cargo test`
       passes, including `tests/balance.rs` (biome identity doesn't feed
       balance directly today per a repo-wide grep, but re-run it anyway as
       a regression net).

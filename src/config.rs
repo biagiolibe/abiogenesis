@@ -743,8 +743,17 @@ pub struct BiomeConfig {
     /// Within `TerrainKind::Hill`, `light` at/below this becomes Roccia
     /// nuda instead of Collina — a placeholder stand-in for "low organic
     /// viability" (the design doc's own framing) until task 108's
-    /// chemolithotroph retune gives it a firmer basis.
+    /// chemolithotroph retune gives it a firmer basis. Task 125: the
+    /// *effective* ceiling a cell is compared against also grows with
+    /// `slope` — see `bare_rock_slope_light_bonus`.
     pub bare_rock_light_max: f32,
+    /// Task 125 (§12.5): how much `bare_rock_light_max`'s effective
+    /// ceiling rises per unit of normalized `slope` — steep terrain reads
+    /// as Roccia nuda at a higher light level than flat terrain would need
+    /// to. Kept as a small, contained addition to the existing `Hill`
+    /// branch; full multi-band mountain classification is a separate,
+    /// larger future pass, not this task's scope.
+    pub bare_rock_slope_light_bonus: f32,
     /// Within `TerrainKind::Plain`, `temperature` at/above this (together
     /// with `desert_light_min`) becomes Deserto.
     pub desert_temperature_min: f32,
@@ -754,22 +763,36 @@ pub struct BiomeConfig {
     /// Within `TerrainKind::Plain`, `temperature` at/below this becomes
     /// Tundra (checked after Deserto, so a cell can't satisfy both).
     pub tundra_temperature_max: f32,
-    /// How many low-frequency plane waves make up each of Foresta's and
-    /// Palude's patch-gating mask (task 110) — same summed-plane-wave
-    /// technique as `TerrainConfig::continent_wave_count`, reused so
-    /// per-cell scalar thresholds don't produce checkerboard speckle
-    /// instead of organic patches. Foresta and Palude each draw their own
-    /// independent mask from this many waves, off the same `BIOME_SEED_OFFSET`
-    /// stream.
+    /// How many low-frequency plane waves make up each of Foresta's,
+    /// Palude's, and Palude's toxic-sub-region patch mask (task 110/125) —
+    /// same summed-plane-wave technique as `TerrainConfig::continent_wave_count`,
+    /// reused so per-cell scalar thresholds don't produce checkerboard
+    /// speckle instead of organic patches. Each mask draws its own
+    /// independent wave set from this many waves, off the same
+    /// `BIOME_SEED_OFFSET` stream.
     pub patch_wave_count: u32,
     /// Lower bound of the patch mask's spatial frequency range.
     pub patch_freq_min: f32,
     /// Upper bound of the patch mask's spatial frequency range.
     pub patch_freq_max: f32,
-    /// `wave_band_sum` output threshold above which a cell falls inside a
-    /// patch mask ("can occur here"). Shared by both the Foresta and Palude
-    /// masks.
-    pub patch_threshold: f32,
+    /// Task 125: half-width of the smooth transition every biome score's
+    /// `smoothstep`/`smooth_band` curve uses, in the same `[0, 1]` units as
+    /// `temperature`/`light`/normalized `slope` — one shared knob rather
+    /// than one per threshold, since there's no reason each biome boundary
+    /// should read as sharper or softer than the others.
+    pub biome_score_transition_width: f32,
+    /// Task 125: amplitude of the small additive patch-noise term
+    /// (`wave_band_sum`'s `[-1, 1]` output, positive half only) added to
+    /// Forest's and Palude's climate/drainage score before picking an
+    /// arg-max — texture on top of the climate fit, not the primary gate
+    /// (`redesign/procedural_biome_generation_spec_v2.md` §1.4).
+    pub patch_noise_weight: f32,
+    /// Task 125: `TerrainKind::Plain`'s baseline score before any of the
+    /// other four candidates' scores are compared against it — the
+    /// "boring generic terrain" fallback only wins when nothing else fits
+    /// well. Deliberately below `1.0` so a cell with even a middling
+    /// Desert/Tundra/Forest/Swamp fit still wins the arg-max.
+    pub plain_baseline_score: f32,
     /// Within `TerrainKind::Plain` and inside its patch mask, `temperature`
     /// must fall in `[forest_temperature_min, forest_temperature_max]` to
     /// become Foresta.
@@ -781,13 +804,25 @@ pub struct BiomeConfig {
     pub forest_light_min: f32,
     /// See `forest_light_min`.
     pub forest_light_max: f32,
-    /// Within `TerrainKind::Plain` and inside its patch mask, `toxicity`
-    /// at/above this becomes Palude. Checked ahead of Deserto/Tundra/Foresta
-    /// (a toxic cell reads as Palude regardless of temperature/light).
-    /// `EnvironmentConfig::toxic_zone_value` (0.7 by default) is the only
-    /// source of nonzero `toxicity` at generation time today, so Palude
-    /// only ever appears as an organic sub-region of the toxic zone's
-    /// footprint until task 113 rewires the two apart.
+    /// Task 125: Palude's drainage score falls smoothly to `0` as
+    /// normalized `slope` (task 124) rises past this — flat ground drains
+    /// poorly and pools, steep ground doesn't.
+    pub swamp_slope_max: f32,
+    /// Task 125: Palude's drainage score falls smoothly to `0` as
+    /// water-proximity distance (grid cells, task 124's BFS units) rises
+    /// past this — close to water scores well, far from it doesn't.
+    pub swamp_water_distance_max: f32,
+    /// Task 125: repurposed from "toxicity level a cell must already have
+    /// to read as Palude" (the old gate) to "`wave_band_sum` threshold
+    /// selecting which fraction of the cells just classified as Palude get
+    /// `toxicity` imposed as a post-classification modifier." Palude's
+    /// *identity* no longer depends on toxicity at all (`swamp_slope_max`/
+    /// `swamp_water_distance_max` above are the real drainage-based gate);
+    /// this only decides which sub-region of an already-classified Palude
+    /// reads as toxic, same organic-sub-region idiom the design doc's
+    /// §12.4 describes. `EnvironmentConfig::toxic_zone_value` (0.7 by
+    /// default) is still the only *value* imposed — this field only
+    /// selects *where*.
     pub swamp_toxicity_min: f32,
     /// Radius (cells, Euclidean) around each `SimWorld::heat_sources` cell
     /// that reads as Bocca vulcanica (task 111) — deliberately independent
@@ -860,17 +895,22 @@ impl Default for BiomeConfig {
         Self {
             deep_water_elevation_max: 0.15,
             bare_rock_light_max: 0.4,
+            bare_rock_slope_light_bonus: 0.2,
             desert_temperature_min: 0.75,
             desert_light_min: 0.75,
             tundra_temperature_max: 0.2,
             patch_wave_count: 6,
             patch_freq_min: 6.0,
             patch_freq_max: 10.0,
-            patch_threshold: 0.2,
+            biome_score_transition_width: 0.05,
+            patch_noise_weight: 0.15,
+            plain_baseline_score: 0.3,
             forest_temperature_min: 0.35,
             forest_temperature_max: 0.65,
             forest_light_min: 0.25,
             forest_light_max: 0.45,
+            swamp_slope_max: 0.3,
+            swamp_water_distance_max: 15.0,
             swamp_toxicity_min: 0.3,
             volcanic_vent_radius: 4.0,
             crater_radius: 4.5,

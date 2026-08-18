@@ -744,23 +744,45 @@ impl SimWorld {
     /// `redesign/abiogenesis-biomes.md`) — the two-stage architecture the
     /// design doc calls for: Stage A (`TerrainKind` + `is_peak` + the raw
     /// `elevation` this task adds) gives the base landform, Stage B refines
-    /// it with the ambient scalars (`temperature`/`light`/`toxicity`) that
-    /// `apply_environment_sources`/`place_toxic_zone` have already written.
-    /// Must run last in `new_for_world`: it's the only step that reads the
-    /// *final* generation-time `toxicity` (Palude's gate), so running it
-    /// before `place_toxic_zone` would see every cell at `0.0`.
+    /// it with the ambient scalars and geomorphology that
+    /// `apply_environment_sources`/`place_toxic_zone`/`generate_terrain`
+    /// have already written. Runs before `place_feature_biomes`, which
+    /// overrides whatever this produces for its own footprints (task 111) —
+    /// so this method must never assume it's writing the *final* biome for
+    /// every cell.
     ///
-    /// Foresta/Palude additionally require a patch-level gate, not a
-    /// per-cell scalar threshold alone (a per-cell threshold on a noisy
-    /// scalar field produces checkerboard speckle, not organic patches) —
-    /// reuses `terrain_elevation`'s summed-plane-wave technique
-    /// (`world.rs:842-887`ish) for two independent low-frequency masks, on
-    /// their own derived RNG stream (`BIOME_SEED_OFFSET`, never `self.rng`
-    /// or `generate_terrain`'s local stream — sharing a stream with a
-    /// bounded-resample loop would make the draw depend on how many resample
-    /// attempts that loop happened to take).
+    /// Stage B picks each `TerrainKind::Plain` cell's biome by continuous
+    /// score, not a priority chain of hard comparisons (task 125,
+    /// `redesign/procedural_biome_generation_spec_v2.md` §1.5): every
+    /// candidate (Swamp, Desert, Tundra, Forest, Plain) gets a `[0, 1]`
+    /// fitness from smooth curves (`smoothstep`/`smooth_band`, the same
+    /// idiom `sim.rs`'s `env_fit` Gaussian serves for organism fitness),
+    /// and the arg-max wins — ties (exact float equality, vanishingly
+    /// rare) break by this fixed priority order: Swamp, Desert, Tundra,
+    /// Forest, Plain. Forest/Palude's patch-noise masks
+    /// (`forest_waves`/`swamp_waves`) are a small additive term on the
+    /// score now, not the primary gate — same dependent-noise-sum
+    /// technique as `terrain_elevation`, on their own derived RNG stream
+    /// (`BIOME_SEED_OFFSET`, never `self.rng` or `generate_terrain`'s local
+    /// stream — sharing a stream with a bounded-resample loop would make
+    /// the draw depend on how many resample attempts that loop happened to
+    /// take).
+    ///
+    /// Palude's drainage inputs (`slope`, a Sea-only water-proximity proxy)
+    /// are computed **locally** here via `elevation_slope`/
+    /// `sea_distance_field`, not read from `Cell.slope`/`Cell.water_distance`
+    /// (task 124): those persisted fields aren't populated until
+    /// `compute_geomorphology`, which runs *after* `place_feature_biomes`
+    /// (its `water_distance` needs `Biome::Lake` cells to exist as a BFS
+    /// source) — a genuine pipeline ordering constraint, not an oversight.
+    /// One consequence: Swamp's water-proximity score only "sees" the sea
+    /// coastline here, not a newly-placed inland lake (lakes don't exist
+    /// yet at this point) — acceptable, since the sea coastline is the
+    /// dominant "near water" signal for a whole world and lakes are a
+    /// small, rare feature.
     fn classify_biomes(&mut self, config: &SimConfig) {
         let biome_cfg = &config.biome;
+        let terrain_cfg = &config.terrain;
         let mut rng = StdRng::seed_from_u64(self.seed ^ BIOME_SEED_OFFSET);
         let forest_waves = terrain_waves(
             &mut rng,
@@ -774,6 +796,15 @@ impl SimWorld {
             biome_cfg.patch_freq_min,
             biome_cfg.patch_freq_max,
         );
+        let toxic_patch_waves = terrain_waves(
+            &mut rng,
+            biome_cfg.patch_wave_count as usize,
+            biome_cfg.patch_freq_min,
+            biome_cfg.patch_freq_max,
+        );
+
+        let elevations: Vec<f32> = self.cells.iter().map(|c| c.elevation).collect();
+        let sea_proximity = self.sea_distance_field();
 
         let mut biomes = vec![Biome::default(); self.cells.len()];
         for y in 0..self.height {
@@ -798,41 +829,89 @@ impl SimWorld {
                         }
                     }
                     TerrainKind::Hill => {
-                        if cell.light <= biome_cfg.bare_rock_light_max {
+                        // Task 125 §12.5: steep + low light reads as
+                        // BareRock more readily than shallow + low light —
+                        // a slope-raised effective light ceiling, not a
+                        // second independent gate (kept small/contained
+                        // per the task's own scope; full mountain
+                        // sub-banding is a separate future pass).
+                        let raw_slope = self.elevation_slope(x, y, &elevations);
+                        let slope = (raw_slope / terrain_cfg.slope_normalization.max(f32::EPSILON))
+                            .clamp(0.0, 1.0);
+                        let effective_light_max = biome_cfg.bare_rock_light_max
+                            + biome_cfg.bare_rock_slope_light_bonus * slope;
+                        if cell.light <= effective_light_max {
                             Biome::BareRock
                         } else {
                             Biome::Hill
                         }
                     }
                     TerrainKind::Plain => {
-                        let swamp_patch =
-                            wave_band_sum(&swamp_waves, nx, ny) > biome_cfg.patch_threshold;
-                        let forest_patch =
-                            wave_band_sum(&forest_waves, nx, ny) > biome_cfg.patch_threshold;
-                        if swamp_patch && cell.toxicity >= biome_cfg.swamp_toxicity_min {
-                            Biome::Swamp
-                        } else if cell.temperature >= biome_cfg.desert_temperature_min
-                            && cell.light >= biome_cfg.desert_light_min
-                        {
-                            Biome::Desert
-                        } else if cell.temperature <= biome_cfg.tundra_temperature_max {
-                            Biome::Tundra
-                        } else if forest_patch
-                            && (biome_cfg.forest_temperature_min..=biome_cfg.forest_temperature_max)
-                                .contains(&cell.temperature)
-                            && (biome_cfg.forest_light_min..=biome_cfg.forest_light_max)
-                                .contains(&cell.light)
-                        {
-                            Biome::Forest
-                        } else {
-                            Biome::Plain
+                        let raw_slope = self.elevation_slope(x, y, &elevations);
+                        let slope = (raw_slope / terrain_cfg.slope_normalization.max(f32::EPSILON))
+                            .clamp(0.0, 1.0);
+                        let water_distance = sea_proximity[idx];
+                        let scores = [
+                            (
+                                Biome::Swamp,
+                                swamp_score(
+                                    slope,
+                                    water_distance,
+                                    biome_cfg,
+                                    wave_band_sum(&swamp_waves, nx, ny),
+                                ),
+                            ),
+                            (
+                                Biome::Desert,
+                                desert_score(cell.temperature, cell.light, biome_cfg),
+                            ),
+                            (Biome::Tundra, tundra_score(cell.temperature, biome_cfg)),
+                            (
+                                Biome::Forest,
+                                forest_score(
+                                    cell.temperature,
+                                    cell.light,
+                                    biome_cfg,
+                                    wave_band_sum(&forest_waves, nx, ny),
+                                ),
+                            ),
+                            (Biome::Plain, biome_cfg.plain_baseline_score),
+                        ];
+                        let mut best = scores[0];
+                        for &candidate in &scores[1..] {
+                            if candidate.1 > best.1 {
+                                best = candidate;
+                            }
                         }
+                        best.0
                     }
                 };
             }
         }
         for (idx, cell) in self.cells.iter_mut().enumerate() {
             cell.biome = biomes[idx];
+        }
+
+        // Task 125 §12.4: toxicity is a modifier on a sub-region of the
+        // Swamp cells just classified, not part of what makes a cell
+        // Swamp in the first place — `swamp_toxicity_min` is repurposed
+        // from "toxicity level a cell must already have" to "patch-noise
+        // threshold selecting which fraction of Swamp reads as toxic."
+        // `place_toxic_zone`'s separate rectangle-based toxicity is
+        // untouched by this pass (still the `SurviveIn`/`ZoneKind::Toxic`
+        // objective's own geometry, task 113's concern, not this one's).
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = self.index(x, y);
+                if self.cells[idx].biome != Biome::Swamp {
+                    continue;
+                }
+                let nx = x as f32 / (self.width - 1).max(1) as f32;
+                let ny = y as f32 / (self.height - 1).max(1) as f32;
+                if wave_band_sum(&toxic_patch_waves, nx, ny) > biome_cfg.swamp_toxicity_min {
+                    self.cells[idx].toxicity = config.environment.toxic_zone_value;
+                }
+            }
         }
     }
 
@@ -1803,6 +1882,86 @@ fn is_placeable_kind(kind: TerrainKind, is_peak: bool) -> bool {
     kind != TerrainKind::Sea && !is_peak
 }
 
+/// Smooth 0->1 rise between `edge0` and `edge1` (cubic Hermite
+/// smoothstep) — task 125's replacement for `classify_biomes`'
+/// old hard threshold comparisons, so a biome's fitness for a cell
+/// doesn't jump discontinuously as a scalar crosses a boundary.
+/// `edge0 > edge1` flips the direction into a smooth *fall* instead
+/// of a rise (used by every "lower is better" score below).
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    if (edge1 - edge0).abs() < f32::EPSILON {
+        return if x < edge0 { 0.0 } else { 1.0 };
+    }
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Smooth "is `x` within `[min, max]`" band (task 125): rises from 0 to 1
+/// over `width` below `min`, plateaus at 1 inside the band, falls back to
+/// 0 over `width` above `max`. The banded counterpart of `smoothstep`'s
+/// single-edge transition, for scores that want a preferred *range*
+/// (Forest's temperature/light bands) rather than a one-sided threshold.
+fn smooth_band(min: f32, max: f32, width: f32, x: f32) -> f32 {
+    smoothstep(min - width, min, x) * (1.0 - smoothstep(max, max + width, x))
+}
+
+/// Desert's `[0, 1]` fitness score (task 125): high temperature and high
+/// light, both smooth rises from `BiomeConfig`'s existing threshold pair.
+fn desert_score(temperature: f32, light: f32, cfg: &BiomeConfig) -> f32 {
+    let w = cfg.biome_score_transition_width;
+    smoothstep(
+        cfg.desert_temperature_min,
+        cfg.desert_temperature_min + w,
+        temperature,
+    ) * smoothstep(cfg.desert_light_min, cfg.desert_light_min + w, light)
+}
+
+/// Tundra's `[0, 1]` fitness score (task 125): a smooth *fall* as
+/// temperature rises past `tundra_temperature_max` — the mirror of
+/// Desert's rise.
+fn tundra_score(temperature: f32, cfg: &BiomeConfig) -> f32 {
+    let w = cfg.biome_score_transition_width;
+    smoothstep(
+        cfg.tundra_temperature_max,
+        cfg.tundra_temperature_max - w,
+        temperature,
+    )
+}
+
+/// Forest's `[0, 1]` fitness score (task 125): a climate term (smooth
+/// temperature/light bands) plus a small additive patch-noise term — the
+/// noise is no longer the primary gate (`redesign/procedural_biome_generation_spec_v2.md`
+/// §1.4), just texture on top of the climate fit, so it can nudge which
+/// side of a close climate call a cell lands on without being able to
+/// conjure Forest somewhere climatically hostile to it.
+fn forest_score(temperature: f32, light: f32, cfg: &BiomeConfig, noise: f32) -> f32 {
+    let w = cfg.biome_score_transition_width;
+    let climate = smooth_band(
+        cfg.forest_temperature_min,
+        cfg.forest_temperature_max,
+        w,
+        temperature,
+    ) * smooth_band(cfg.forest_light_min, cfg.forest_light_max, w, light);
+    (climate + noise.max(0.0) * cfg.patch_noise_weight).min(1.0)
+}
+
+/// Swamp's `[0, 1]` fitness score (task 125): a drainage term — low
+/// `slope`, close `water_distance` (both task 124) — instead of the old
+/// `toxicity` gate, plus the same small additive patch-noise term Forest
+/// uses. Palude is a wetland/drainage fact now, not a toxicity readout;
+/// toxicity is imposed as a separate post-classification modifier on a
+/// sub-region of the cells this score selects (see `classify_biomes`).
+fn swamp_score(slope: f32, water_distance: f32, cfg: &BiomeConfig, noise: f32) -> f32 {
+    let w = cfg.biome_score_transition_width;
+    let drainage = smoothstep(cfg.swamp_slope_max, cfg.swamp_slope_max - w, slope)
+        * smoothstep(
+            cfg.swamp_water_distance_max,
+            cfg.swamp_water_distance_max - w,
+            water_distance,
+        );
+    (drainage + noise.max(0.0) * cfg.patch_noise_weight).min(1.0)
+}
+
 /// No longer spawns a `SimWorld` at `Startup` (task 044): the first world
 /// now comes into being when the player presses "New run" at the main menu
 /// (`menu.rs::start_run`), so `Res<SimWorld>` genuinely doesn't exist until
@@ -2220,14 +2379,35 @@ mod tests {
         for y in 0..world.height {
             for x in 0..world.width {
                 let cell = world.get(x, y);
-                let expected = match cell.biome {
-                    Biome::Crater => config.biome.crater_toxicity,
-                    Biome::CrystalField => config.biome.crystal_field_toxicity,
-                    Biome::Lake => config.biome.lake_toxicity,
-                    _ if world.toxic_zone.contains(x, y) => env.toxic_zone_value,
-                    _ => 0.0,
-                };
-                assert_eq!(cell.toxicity, expected, "cell ({x}, {y})");
+                match cell.biome {
+                    Biome::Crater => {
+                        assert_eq!(
+                            cell.toxicity, config.biome.crater_toxicity,
+                            "cell ({x}, {y})"
+                        )
+                    }
+                    Biome::CrystalField => assert_eq!(
+                        cell.toxicity, config.biome.crystal_field_toxicity,
+                        "cell ({x}, {y})"
+                    ),
+                    Biome::Lake => {
+                        assert_eq!(cell.toxicity, config.biome.lake_toxicity, "cell ({x}, {y})")
+                    }
+                    // Task 125: Swamp's toxicity is a post-classification
+                    // modifier on a noise-gated sub-region, independent of
+                    // `toxic_zone` — either ambient 0.0 or the imposed
+                    // `toxic_zone_value` (both mechanisms write the same
+                    // constant, so there's nothing else it could be).
+                    Biome::Swamp => assert!(
+                        cell.toxicity == 0.0 || cell.toxicity == env.toxic_zone_value,
+                        "cell ({x}, {y}): unexpected Swamp toxicity {}",
+                        cell.toxicity
+                    ),
+                    _ if world.toxic_zone.contains(x, y) => {
+                        assert_eq!(cell.toxicity, env.toxic_zone_value, "cell ({x}, {y})")
+                    }
+                    _ => assert_eq!(cell.toxicity, 0.0, "cell ({x}, {y})"),
+                }
             }
         }
     }
@@ -3004,5 +3184,35 @@ mod tests {
         let distances_a: Vec<f32> = a.cells.iter().map(|c| c.water_distance).collect();
         let distances_b: Vec<f32> = b.cells.iter().map(|c| c.water_distance).collect();
         assert_eq!(distances_a, distances_b);
+    }
+
+    /// Task 125 (§12.4): the toxicity-imposition pass is load-bearing, not
+    /// optional flavor — `place_toxic_zone` won't be the only toxicity
+    /// source forever (task 113 removes it), so Swamp's own toxic
+    /// sub-region must actually produce nonzero toxicity somewhere across
+    /// a run of seeds. A single seed's Swamp region could in principle be
+    /// too small/oddly-shaped for the noise mask to select any of it (same
+    /// keep-best-seen spirit as other placement code, not a hard
+    /// per-seed guarantee) — checked as a comfortable majority across a
+    /// generous sample instead of every seed.
+    #[test]
+    fn some_swamp_cells_are_toxic_across_seeds() {
+        let config = test_config();
+        let n_seeds = 60u64;
+        let mut seeds_with_toxic_swamp = 0u64;
+        for seed in 0..n_seeds {
+            let world = SimWorld::new(seed, &config);
+            if world
+                .cells
+                .iter()
+                .any(|c| c.biome == Biome::Swamp && c.toxicity > 0.0)
+            {
+                seeds_with_toxic_swamp += 1;
+            }
+        }
+        assert!(
+            seeds_with_toxic_swamp >= n_seeds * 3 / 4,
+            "only {seeds_with_toxic_swamp}/{n_seeds} seeds produced a toxic Swamp cell"
+        );
     }
 }
