@@ -689,6 +689,13 @@ pub struct TerrainConfig {
     /// meeting `min_toxic_zone_placeable_fraction`. The best position seen
     /// is kept if none clears the floor within this many attempts.
     pub max_toxic_zone_placement_attempts: u32,
+    /// Task 124: divides the raw elevation-gradient magnitude
+    /// (`SimWorld::elevation_slope`, a central difference over one grid
+    /// step) before clamping to `[0, 1]`, so `Cell.slope` reads as a plain
+    /// normalized number future thresholds (task 125) can be tuned against,
+    /// instead of a raw per-cell elevation delta whose scale depends on the
+    /// wave field's frequency mix.
+    pub slope_normalization: f32,
 }
 
 impl Default for TerrainConfig {
@@ -709,6 +716,7 @@ impl Default for TerrainConfig {
             max_generation_attempts: 8,
             min_toxic_zone_placeable_fraction: 0.5,
             max_toxic_zone_placement_attempts: 24,
+            slope_normalization: 0.05,
         }
     }
 }

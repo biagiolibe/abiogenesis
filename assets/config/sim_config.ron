@@ -123,6 +123,7 @@
         max_generation_attempts: 8,
         min_toxic_zone_placeable_fraction: 0.5,
         max_toxic_zone_placement_attempts: 24,
+        slope_normalization: 0.05,
     ),
     source: (
         heat_source_count_early: 2,

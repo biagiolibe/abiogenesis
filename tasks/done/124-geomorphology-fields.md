@@ -4,10 +4,48 @@
 > **Category**: Feature (worldgen)
 > **Priority**: 🟡 P2
 > **Estimate**: ~2h
-> **Assigned to**: unassigned
+> **Assigned to**: done
 > **Session**: 2026-08-13 (Phase 2 of the worldgen pipeline reassessment
 > scoped from `redesign/procedural_biome_generation_spec_v2.md` §8.3/§1.1 —
-> see task 123 for Phase 1 and the session's overall diagnosis)
+> see task 123 for Phase 1 and the session's overall diagnosis), implemented
+> 2026-08-19.
+
+---
+
+## ✅ Implementation notes (2026-08-19)
+
+- `Cell` gains `slope: f32` and `water_distance: f32` (both default `0.0`
+  via `Cell`'s existing `#[derive(Default)]`).
+- `slope`: `SimWorld::elevation_slope` computes a 4-neighbour central
+  difference over `Cell.elevation` (one-sided at grid edges, no
+  wraparound), then `compute_geomorphology` divides by the new
+  `TerrainConfig::slope_normalization` (`0.05`, calibrated numerically
+  against a few sample seeds — raw gradient magnitude runs roughly
+  `0.0-0.05`, so this spreads the normalized value across most of `[0,1]`
+  without excessive clamping) and clamps to `[0, 1]`.
+- `water_distance`: generalized the existing `sea_distance_field`'s
+  multi-source-BFS pattern into a shared `bfs_distance_from(is_source)`
+  helper, then added `water_distance_field` on top of it, sourced from
+  `Biome::DeepWater`/`ShallowWater`/`Lake` (not just `TerrainKind::Sea`).
+  `sea_distance_field` itself is unchanged in behavior — still Sea-only,
+  still feeds `apply_environment_sources`' coastal-cooling model — per the
+  task's explicit caution against an unreviewed change to that balance.
+- Both computed in the new `compute_geomorphology` step, called from
+  `new_for_world` right after `place_feature_biomes` (needs `Biome::Lake`
+  cells to exist as a BFS source) — nothing else in the pipeline reads
+  either field yet.
+- `slope_normalization` added to `TerrainConfig`, mirrored in
+  `assets/config/sim_config.ron`.
+- New tests: `slope_and_water_distance_do_not_affect_biome_classification`
+  (calls `classify_biomes` twice on the same cell state, once with the two
+  new fields corrupted to `999.0`, and asserts the areal output is
+  unchanged — this is the actual scope-creep guard, stronger than a
+  before/after snapshot since a hidden read of these fields would show up
+  even though both runs used the same underlying data),
+  `slope_stays_within_the_normalized_unit_range`,
+  `water_distance_is_zero_on_every_water_cell_and_finite_elsewhere`,
+  `water_distance_is_deterministic_for_a_given_seed`.
+- `cargo build`/`clippy -D warnings`/`fmt`/`test` all clean.
 
 ---
 
@@ -29,14 +67,14 @@ below). Task 125 is what actually uses these fields to reclassify.
 
 ## 📋 Acceptance Criteria
 
-- [ ] `Cell` gains `slope: f32` — local elevation gradient magnitude,
+- [x] `Cell` gains `slope: f32` — local elevation gradient magnitude,
       computed from `Cell.elevation` (already stored per task 110) via a
       finite-difference gradient over the Moore neighbourhood (or a
       cheaper 4-neighbour central difference — either is fine, document
       the choice). Normalize to a sane range so `BiomeConfig` thresholds
       added in task 125 can be tuned as plain `[0, ~1]` numbers, not raw
       per-cell elevation differences.
-- [ ] `Cell` gains `water_distance: f32` — generalizes the existing
+- [x] `Cell` gains `water_distance: f32` — generalizes the existing
       `sea_distance_field` (`world.rs:1079`, currently Sea-only) to a
       multi-source BFS from every cell whose `Biome` is `DeepWater`,
       `ShallowWater`, or `Lake` (not just `TerrainKind::Sea`), so a cell
@@ -49,21 +87,21 @@ below). Task 125 is what actually uses these fields to reclassify.
       as-is for temperature and add `water_distance` as a separate field
       used only by biome classification, rather than risk an unreviewed
       change to `apply_environment_sources`'s temperature model).
-- [ ] Both fields computed in `SimWorld::new_for_world`'s generation
+- [x] Both fields computed in `SimWorld::new_for_world`'s generation
       pipeline **after** `place_feature_biomes` (task 111) — `water_distance`
       needs `Lake` cells to already exist as a source, and `slope` needs
       final `elevation`, which is set by `generate_terrain` and never
       touched afterward, so ordering relative to `slope` alone is more
       flexible, but keep both in the same new pipeline step for clarity.
-- [ ] New fields are **read nowhere yet** in this task — `classify_biomes`,
+- [x] New fields are **read nowhere yet** in this task — `classify_biomes`,
       rendering, and every existing system stay untouched. A test asserting
       that biome/terrain output is byte-identical before and after this
       change (e.g. reusing an existing seed-determinism test's world and
       comparing `Vec<Biome>` snapshots) confirms this task is additive only.
-- [ ] New config knobs (if any — e.g. a normalization constant for `slope`)
+- [x] New config knobs (if any — e.g. a normalization constant for `slope`)
       go in `SimConfig`/`TerrainConfig`, mirrored in
       `assets/config/sim_config.ron`. No inline magic numbers.
-- [ ] `cargo clippy -- -D warnings` and `cargo fmt` clean; `cargo test`
+- [x] `cargo clippy -- -D warnings` and `cargo fmt` clean; `cargo test`
       passes.
 
 ---

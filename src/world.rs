@@ -356,6 +356,22 @@ pub struct Cell {
     /// This cell's discrete biome (task 110), classified once at generation
     /// time. See `Biome`'s own doc comment for why it isn't re-derived live.
     pub biome: Biome,
+    /// Local elevation-gradient magnitude (task 124), normalized to
+    /// `[0, 1]` via `TerrainConfig::slope_normalization` — a plain
+    /// "how steep is this cell" number for task 125's classification to
+    /// threshold against. Computed once at generation time
+    /// (`SimWorld::compute_geomorphology`), read nowhere yet.
+    pub slope: f32,
+    /// Grid (Moore-neighbour-step) distance to the nearest water cell
+    /// (`Biome::DeepWater`/`ShallowWater`/`Lake`) — task 124's
+    /// generalization of `SimWorld::sea_distance_field`'s Sea-only BFS to
+    /// every water source, including inland lakes. Kept as a separate field
+    /// rather than folded into `sea_distance_field` itself: that field
+    /// already feeds `apply_environment_sources`' coastal-cooling model,
+    /// and widening its source set to lakes would be an unreviewed change
+    /// to the temperature balance, out of scope here. Computed once at
+    /// generation time, read nowhere yet.
+    pub water_distance: f32,
 }
 
 /// The simulated world: a dense grid, the species registry, and the seeded
@@ -546,6 +562,7 @@ impl SimWorld {
         world.place_toxic_zone(config, &params);
         world.classify_biomes(config);
         world.place_feature_biomes(config);
+        world.compute_geomorphology(config);
         world
     }
 
@@ -907,6 +924,53 @@ impl SimWorld {
         );
     }
 
+    /// Computes and stores two purely-derived per-cell fields (task 124):
+    /// `Cell.slope` (local elevation-gradient magnitude, normalized) and
+    /// `Cell.water_distance` (grid distance to the nearest water cell).
+    /// Both are pure functions of already-deterministic generation-time
+    /// data (`elevation`, `Biome`), so no new RNG stream is needed. Must
+    /// run after `place_feature_biomes`: `water_distance` needs
+    /// `Biome::Lake` cells to already exist as a BFS source. Purely
+    /// additive — read nowhere yet; task 125 is what actually uses these
+    /// for reclassification.
+    fn compute_geomorphology(&mut self, config: &SimConfig) {
+        let terrain_cfg = &config.terrain;
+        let elevations: Vec<f32> = self.cells.iter().map(|c| c.elevation).collect();
+        let water_distance = self.water_distance_field();
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = self.index(x, y);
+                let raw_slope = self.elevation_slope(x, y, &elevations);
+                self.cells[idx].slope =
+                    (raw_slope / terrain_cfg.slope_normalization.max(f32::EPSILON)).clamp(0.0, 1.0);
+                self.cells[idx].water_distance = water_distance[idx];
+            }
+        }
+    }
+
+    /// Local elevation-gradient magnitude at `(x, y)` (task 124): a
+    /// 4-neighbour central difference, cheaper than a full Moore gradient
+    /// and accurate enough for a coarse per-cell terrain-roughness proxy.
+    /// Edge cells fall back to a one-sided difference (no wraparound).
+    fn elevation_slope(&self, x: usize, y: usize, elevations: &[f32]) -> f32 {
+        let e = |xx: usize, yy: usize| elevations[self.index(xx, yy)];
+        let dx = if x == 0 {
+            e(x + 1, y) - e(x, y)
+        } else if x == self.width - 1 {
+            e(x, y) - e(x - 1, y)
+        } else {
+            (e(x + 1, y) - e(x - 1, y)) / 2.0
+        };
+        let dy = if y == 0 {
+            e(x, y + 1) - e(x, y)
+        } else if y == self.height - 1 {
+            e(x, y) - e(x, y - 1)
+        } else {
+            (e(x, y + 1) - e(x, y - 1)) / 2.0
+        };
+        (dx * dx + dy * dy).sqrt()
+    }
+
     /// One bounded-retry deformed-disk placement for `place_feature_biomes`
     /// (task 111; organic footprint since task 123) — the same
     /// attempt-loop/keep-best-seen shape the old rectangle version used,
@@ -1121,19 +1185,19 @@ impl SimWorld {
         self.sea_distance = sea_distance;
     }
 
-    /// Grid distance from every cell to its nearest `TerrainKind::Sea` cell
-    /// (task 086 playtest follow-up), via multi-source BFS seeded from every
-    /// `Sea` cell at once — `O(cells)`, not `O(cells * sea_cells)` a
-    /// point-by-point nearest-search would cost with a large sea. Distance
-    /// is in Moore-neighbour steps (matching `diffuse_environment`'s own
-    /// 8-connectivity), so it composes directly with
-    /// `SourceConfig::sea_coolant_radius`, a cell count like
-    /// `heat_source_radius`.
-    fn sea_distance_field(&self) -> Vec<f32> {
+    /// Grid distance from every cell to the nearest cell satisfying
+    /// `is_source`, via multi-source BFS seeded from every matching cell at
+    /// once — `O(cells)`, not `O(cells * sources)` a point-by-point
+    /// nearest-search would cost with a large source set. Distance is in
+    /// Moore-neighbour steps (matching `diffuse_environment`'s own
+    /// 8-connectivity). Shared by `sea_distance_field` and
+    /// `water_distance_field` (task 124), which differ only in which cells
+    /// count as a source.
+    fn bfs_distance_from(&self, is_source: impl Fn(&Cell) -> bool) -> Vec<f32> {
         let mut distance = vec![f32::INFINITY; self.cells.len()];
         let mut queue: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
         for (idx, cell) in self.cells.iter().enumerate() {
-            if cell.terrain == TerrainKind::Sea {
+            if is_source(cell) {
                 distance[idx] = 0.0;
                 queue.push_back(idx);
             }
@@ -1149,6 +1213,33 @@ impl SimWorld {
             }
         }
         distance
+    }
+
+    /// Grid distance from every cell to its nearest `TerrainKind::Sea` cell
+    /// (task 086 playtest follow-up) — feeds `apply_environment_sources`'
+    /// coastal-cooling falloff, so it composes directly with
+    /// `SourceConfig::sea_coolant_radius`, a cell count like
+    /// `heat_source_radius`. Deliberately Sea-only, not folded into
+    /// `water_distance_field`'s wider water set: widening this field's
+    /// source set to lakes would be an unreviewed change to the
+    /// temperature balance (task 124 note).
+    fn sea_distance_field(&self) -> Vec<f32> {
+        self.bfs_distance_from(|cell| cell.terrain == TerrainKind::Sea)
+    }
+
+    /// Grid distance from every cell to its nearest water cell — task 124's
+    /// generalization of `sea_distance_field` to every `Biome` that reads as
+    /// water (`DeepWater`, `ShallowWater`, `Lake`), not just
+    /// `TerrainKind::Sea`, so a cell near an inland lake reads as "near
+    /// water" the same way a coastal cell does. Must run after
+    /// `place_feature_biomes`, which is what actually places `Biome::Lake`.
+    fn water_distance_field(&self) -> Vec<f32> {
+        self.bfs_distance_from(|cell| {
+            matches!(
+                cell.biome,
+                Biome::DeepWater | Biome::ShallowWater | Biome::Lake
+            )
+        })
     }
 
     /// Places `params.heat_source_count` point sources via bounded-retry
@@ -2833,5 +2924,85 @@ mod tests {
         let b = SimWorld::new(42, &config);
 
         assert_eq!(a.matrix, b.matrix);
+    }
+
+    /// Task 124: `slope`/`water_distance` are purely additive derived
+    /// fields — `classify_biomes` must never read them. Corrupting both
+    /// after generation and re-running classification directly (rather
+    /// than just comparing two independent generation runs, which
+    /// wouldn't catch a hidden read of these fields since they'd hold the
+    /// same values both times) is the actual guard against scope creep
+    /// into task 125's territory. Compares `classify_biomes`'s *own* areal
+    /// output run twice on the same cell state (not the full-pipeline
+    /// biome, which includes `place_feature_biomes`' overrides that
+    /// `classify_biomes` would itself strip on a second call — that's a
+    /// pre-existing property of re-running Stage A/B alone, unrelated to
+    /// this task, and not what this test is checking).
+    #[test]
+    fn slope_and_water_distance_do_not_affect_biome_classification() {
+        let config = test_config();
+        for seed in 0..10u64 {
+            let mut world = SimWorld::new(seed, &config);
+            world.classify_biomes(&config);
+            let areal_before: Vec<Biome> = world.cells.iter().map(|c| c.biome).collect();
+            for cell in world.cells.iter_mut() {
+                cell.slope = 999.0;
+                cell.water_distance = 999.0;
+            }
+            world.classify_biomes(&config);
+            let areal_after: Vec<Biome> = world.cells.iter().map(|c| c.biome).collect();
+            assert_eq!(
+                areal_before, areal_after,
+                "seed {seed}: biome classification changed"
+            );
+        }
+    }
+
+    #[test]
+    fn slope_stays_within_the_normalized_unit_range() {
+        let config = test_config();
+        for seed in 0..10u64 {
+            let world = SimWorld::new(seed, &config);
+            for cell in &world.cells {
+                assert!(
+                    (0.0..=1.0).contains(&cell.slope),
+                    "seed {seed}: slope {} outside [0, 1]",
+                    cell.slope
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn water_distance_is_zero_on_every_water_cell_and_finite_elsewhere() {
+        let config = test_config();
+        for seed in 0..10u64 {
+            let world = SimWorld::new(seed, &config);
+            for cell in &world.cells {
+                assert!(
+                    cell.water_distance.is_finite(),
+                    "seed {seed}: water_distance should always be finite on a world with sea"
+                );
+                if matches!(
+                    cell.biome,
+                    Biome::DeepWater | Biome::ShallowWater | Biome::Lake
+                ) {
+                    assert_eq!(
+                        cell.water_distance, 0.0,
+                        "seed {seed}: a water cell itself must have water_distance 0"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn water_distance_is_deterministic_for_a_given_seed() {
+        let config = test_config();
+        let a = SimWorld::new(11, &config);
+        let b = SimWorld::new(11, &config);
+        let distances_a: Vec<f32> = a.cells.iter().map(|c| c.water_distance).collect();
+        let distances_b: Vec<f32> = b.cells.iter().map(|c| c.water_distance).collect();
+        assert_eq!(distances_a, distances_b);
     }
 }
