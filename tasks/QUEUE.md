@@ -137,7 +137,7 @@ pre-scoped here.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 123 | Organic masks for placed feature biomes (Cratere, Distesa di cristalli, Lago) — `toxic_zone` explicitly out of scope | 111 | [123](123-organic-feature-biome-masks.md) |
+| `[x]` | 123 | Organic masks for placed feature biomes (Cratere, Distesa di cristalli, Lago) — `toxic_zone` explicitly out of scope | 111 | [123](done/123-organic-feature-biome-masks.md) |
 | `[ ]` | 124 | Derived geomorphology fields (`slope`, `water_distance`) — additive only | 110, 111 | [124](124-geomorphology-fields.md) |
 | `[ ]` | 125 | Score-based biome classification; Palude from drainage instead of toxicity | 110, 111, 124 | [125](125-biome-score-classification.md) |
 | `[ ]` | 126 | Rainfall field (orographic lift, rain shadow) — additive only | 124 | [126](126-rainfall-field.md) |

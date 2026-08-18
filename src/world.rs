@@ -10,7 +10,9 @@ use rand::seq::IndexedRandom;
 use rand::RngExt;
 use rand::SeedableRng;
 
-use crate::config::{EnvironmentConfig, SimConfig, SourceConfig, TagConfig, TerrainConfig};
+use crate::config::{
+    BiomeConfig, EnvironmentConfig, SimConfig, SourceConfig, TagConfig, TerrainConfig,
+};
 use crate::worldgen::{world_params, WorldParams};
 
 /// How a species derives energy (GDD §5.4). Only `Photolithic` is active in
@@ -861,12 +863,11 @@ impl SimWorld {
             }
         }
 
-        self.place_feature_rect(
+        self.place_feature_organic(
             &mut reserved,
             &FeaturePlacement {
                 seed_offset: CRATER_SEED_OFFSET,
-                width: biome_cfg.crater_width as usize,
-                height: biome_cfg.crater_height as usize,
+                radius: biome_cfg.crater_radius,
                 min_placeable_fraction: biome_cfg.crater_min_placeable_fraction,
                 max_attempts: biome_cfg.crater_max_placement_attempts,
                 biome: Biome::Crater,
@@ -874,13 +875,13 @@ impl SimWorld {
                 light: biome_cfg.crater_light,
                 toxicity: biome_cfg.crater_toxicity,
             },
+            biome_cfg,
         );
-        self.place_feature_rect(
+        self.place_feature_organic(
             &mut reserved,
             &FeaturePlacement {
                 seed_offset: CRYSTAL_FIELD_SEED_OFFSET,
-                width: biome_cfg.crystal_field_width as usize,
-                height: biome_cfg.crystal_field_height as usize,
+                radius: biome_cfg.crystal_field_radius,
                 min_placeable_fraction: biome_cfg.crystal_field_min_placeable_fraction,
                 max_attempts: biome_cfg.crystal_field_max_placement_attempts,
                 biome: Biome::CrystalField,
@@ -888,13 +889,13 @@ impl SimWorld {
                 light: biome_cfg.crystal_field_light,
                 toxicity: biome_cfg.crystal_field_toxicity,
             },
+            biome_cfg,
         );
-        self.place_feature_rect(
+        self.place_feature_organic(
             &mut reserved,
             &FeaturePlacement {
                 seed_offset: LAKE_SEED_OFFSET,
-                width: biome_cfg.lake_width as usize,
-                height: biome_cfg.lake_height as usize,
+                radius: biome_cfg.lake_radius,
                 min_placeable_fraction: biome_cfg.lake_min_placeable_fraction,
                 max_attempts: biome_cfg.lake_max_placement_attempts,
                 biome: Biome::Lake,
@@ -902,36 +903,43 @@ impl SimWorld {
                 light: biome_cfg.lake_light,
                 toxicity: biome_cfg.lake_toxicity,
             },
+            biome_cfg,
         );
     }
 
-    /// One bounded-retry rectangle placement for `place_feature_biomes`
-    /// (task 111) — the same attempt-loop/keep-best-seen shape as
-    /// `place_toxic_zone`, extended with a hard zero-overlap requirement
-    /// against `reserved` (other already-placed feature biomes). A
-    /// candidate is accepted immediately once it clears both zero overlap
-    /// and `spec.min_placeable_fraction`; otherwise the best candidate
-    /// seen — ranked by lowest overlap first, then highest placeable
-    /// fraction — is kept once the attempt budget runs out.
-    fn place_feature_rect(&mut self, reserved: &mut [bool], spec: &FeaturePlacement) {
-        let width = spec.width.min(self.width);
-        let height = spec.height.min(self.height);
-        if width == 0 || height == 0 {
+    /// One bounded-retry deformed-disk placement for `place_feature_biomes`
+    /// (task 111; organic footprint since task 123) — the same
+    /// attempt-loop/keep-best-seen shape the old rectangle version used,
+    /// extended with a hard zero-overlap requirement against `reserved`
+    /// (other already-placed feature biomes). A candidate is accepted
+    /// immediately once it clears both zero overlap and
+    /// `spec.min_placeable_fraction`; otherwise the best candidate seen —
+    /// ranked by lowest overlap first, then highest placeable fraction — is
+    /// kept once the attempt budget runs out. The mask's angular-distortion
+    /// waves are drawn once, up front, from the feature's own seed stream —
+    /// same silhouette for every candidate center tried this call.
+    fn place_feature_organic(
+        &mut self,
+        reserved: &mut [bool],
+        spec: &FeaturePlacement,
+        biome_cfg: &BiomeConfig,
+    ) {
+        if spec.radius <= 0.0 || self.width == 0 || self.height == 0 {
             return;
         }
         let mut rng = StdRng::seed_from_u64(self.seed ^ spec.seed_offset);
-        let max_x0 = self.width - width;
-        let max_y0 = self.height - height;
+        let waves = angle_waves(&mut rng, biome_cfg.feature_mask_wave_count as usize);
+        let mask = FeatureMask::new(spec.radius, biome_cfg.feature_mask_distortion, &waves);
 
-        // (x0, y0, overlap with `reserved`, placeable fraction).
+        // (cx, cy, overlap with `reserved`, placeable fraction).
         let mut best: Option<(usize, usize, usize, f32)> = None;
         for _ in 0..spec.max_attempts.max(1) {
-            let x0 = rng.random_range(0..=max_x0);
-            let y0 = rng.random_range(0..=max_y0);
-            let overlap = self.reserved_overlap_in(x0, y0, width, height, reserved);
-            let fraction = self.placeable_fraction_in(x0, y0, width, height);
+            let cx = rng.random_range(0..self.width);
+            let cy = rng.random_range(0..self.height);
+            let overlap = self.reserved_overlap_in_mask(cx, cy, &mask, reserved);
+            let fraction = self.placeable_fraction_in_mask(cx, cy, &mask);
             if overlap == 0 && fraction >= spec.min_placeable_fraction {
-                self.set_feature_biome(reserved, x0, y0, width, height, spec);
+                self.set_feature_biome_mask(reserved, cx, cy, &mask, spec);
                 return;
             }
             let is_better = match best {
@@ -941,27 +949,43 @@ impl SimWorld {
                 }
             };
             if is_better {
-                best = Some((x0, y0, overlap, fraction));
+                best = Some((cx, cy, overlap, fraction));
             }
         }
-        let (x0, y0, _, _) = best.expect("the loop above runs at least once");
-        self.set_feature_biome(reserved, x0, y0, width, height, spec);
+        let (cx, cy, _, _) = best.expect("the loop above runs at least once");
+        self.set_feature_biome_mask(reserved, cx, cy, &mask, spec);
     }
 
-    /// Count of `reserved` cells within `[x0, x0+width) x [y0, y0+height)`
-    /// — the overlap metric `place_feature_rect` searches against.
-    fn reserved_overlap_in(
+    /// Bounding box (`[x0, x1) x [y0, y1)`) of `mask` centered at
+    /// `(cx, cy)`, clamped to grid bounds.
+    fn feature_mask_bounds(
         &self,
-        x0: usize,
-        y0: usize,
-        width: usize,
-        height: usize,
+        cx: usize,
+        cy: usize,
+        mask: &FeatureMask,
+    ) -> (usize, usize, usize, usize) {
+        let x0 = cx.saturating_sub(mask.extent);
+        let y0 = cy.saturating_sub(mask.extent);
+        let x1 = (cx + mask.extent + 1).min(self.width);
+        let y1 = (cy + mask.extent + 1).min(self.height);
+        (x0, y0, x1, y1)
+    }
+
+    /// Count of `reserved` cells within `mask` centered at `(cx, cy)` — the
+    /// overlap metric `place_feature_organic` searches against.
+    fn reserved_overlap_in_mask(
+        &self,
+        cx: usize,
+        cy: usize,
+        mask: &FeatureMask,
         reserved: &[bool],
     ) -> usize {
+        let (x0, y0, x1, y1) = self.feature_mask_bounds(cx, cy, mask);
         let mut count = 0;
-        for y in y0..y0 + height {
-            for x in x0..x0 + width {
-                if reserved[self.index(x, y)] {
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let (dx, dy) = (x as f32 - cx as f32, y as f32 - cy as f32);
+                if mask.contains(dx, dy) && reserved[self.index(x, y)] {
                     count += 1;
                 }
             }
@@ -969,26 +993,55 @@ impl SimWorld {
         count
     }
 
-    /// Writes `spec`'s biome and target scalars onto every cell in
-    /// `[x0, x0+width) x [y0, y0+height)`, and marks them `reserved` so a
-    /// later `place_feature_rect` call never overlaps this footprint.
-    fn set_feature_biome(
+    /// Fraction of `mask`'s own cells (not its bounding box) that are
+    /// placeable terrain — the metric `place_feature_organic` searches
+    /// against. `0.0` for a mask with no cells at all (fully off-grid).
+    fn placeable_fraction_in_mask(&self, cx: usize, cy: usize, mask: &FeatureMask) -> f32 {
+        let (x0, y0, x1, y1) = self.feature_mask_bounds(cx, cy, mask);
+        let mut total = 0usize;
+        let mut placeable = 0usize;
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let (dx, dy) = (x as f32 - cx as f32, y as f32 - cy as f32);
+                if mask.contains(dx, dy) {
+                    total += 1;
+                    let cell = self.get(x, y);
+                    if is_placeable_kind(cell.terrain, cell.is_peak) {
+                        placeable += 1;
+                    }
+                }
+            }
+        }
+        if total == 0 {
+            0.0
+        } else {
+            placeable as f32 / total as f32
+        }
+    }
+
+    /// Writes `spec`'s biome and target scalars onto every cell inside
+    /// `mask` centered at `(cx, cy)`, and marks them `reserved` so a later
+    /// `place_feature_organic` call never overlaps this footprint.
+    fn set_feature_biome_mask(
         &mut self,
         reserved: &mut [bool],
-        x0: usize,
-        y0: usize,
-        width: usize,
-        height: usize,
+        cx: usize,
+        cy: usize,
+        mask: &FeatureMask,
         spec: &FeaturePlacement,
     ) {
-        for y in y0..y0 + height {
-            for x in x0..x0 + width {
-                let idx = self.index(x, y);
-                self.cells[idx].biome = spec.biome;
-                self.cells[idx].temperature = spec.temperature;
-                self.cells[idx].light = spec.light;
-                self.cells[idx].toxicity = spec.toxicity;
-                reserved[idx] = true;
+        let (x0, y0, x1, y1) = self.feature_mask_bounds(cx, cy, mask);
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let (dx, dy) = (x as f32 - cx as f32, y as f32 - cy as f32);
+                if mask.contains(dx, dy) {
+                    let idx = self.index(x, y);
+                    self.cells[idx].biome = spec.biome;
+                    self.cells[idx].temperature = spec.temperature;
+                    self.cells[idx].light = spec.light;
+                    self.cells[idx].toxicity = spec.toxicity;
+                    reserved[idx] = true;
+                }
             }
         }
     }
@@ -1446,18 +1499,86 @@ const CRYSTAL_FIELD_SEED_OFFSET: u64 = 0x9E37_79B1_2545_F491;
 const LAKE_SEED_OFFSET: u64 = 0x4F6C_DD1D_C2B2_AE3D;
 
 /// One feature biome's placement parameters (task 111) — bundled so
-/// `place_feature_rect`'s call sites don't need a 9-argument function
-/// signature per feature.
+/// `place_feature_organic`'s call sites don't need a growing-argument
+/// function signature per feature. `radius` is the mask's base radius
+/// (task 123: a deformed disk, not a rectangle) — see `FeatureMask`.
 struct FeaturePlacement {
     seed_offset: u64,
-    width: usize,
-    height: usize,
+    radius: f32,
     min_placeable_fraction: f32,
     max_attempts: u32,
     biome: Biome,
     temperature: f32,
     light: f32,
     toxicity: f32,
+}
+
+/// One term of the deformed-disk angular-distortion field used by
+/// `place_feature_organic` (task 123): a periodic wave over angle with an
+/// integer harmonic number (so the field is smooth and closes up cleanly
+/// at `2*PI`) and a random phase — same summed-sines technique as
+/// `TerrainWave`/`wave_band_sum`, in angle-space instead of position-space.
+struct AngleWave {
+    harmonic: f32,
+    phase: f32,
+}
+
+/// Draws one angular wave per harmonic `1..=count` (each harmonic used
+/// exactly once, so the sum can't degenerate into one dominant term) with a
+/// random phase, from `rng` — the sole source of randomness, so a given
+/// feature's seed stream always produces the same silhouette.
+fn angle_waves(rng: &mut StdRng, count: usize) -> Vec<AngleWave> {
+    (1..=count.max(1))
+        .map(|harmonic| AngleWave {
+            harmonic: harmonic as f32,
+            phase: rng.random_range(0.0..TAU),
+        })
+        .collect()
+}
+
+/// Sums `waves` at `angle` (radians), averaged over the wave count, into a
+/// value in `[-1, 1]` — the angle-space equivalent of `wave_band_sum`.
+fn angle_wave_sum(waves: &[AngleWave], angle: f32) -> f32 {
+    let sum: f32 = waves
+        .iter()
+        .map(|wave| (wave.harmonic * angle + wave.phase).sin())
+        .sum();
+    sum / waves.len() as f32
+}
+
+/// A feature's deformed-disk mask (task 123), bundled once per placement
+/// call so the mask-aware search/write helpers below share one small
+/// parameter instead of a growing list. The disk's radius at a given angle
+/// is `base_radius * (1 + distortion * angle_wave_sum(waves, angle))`.
+struct FeatureMask<'a> {
+    base_radius: f32,
+    distortion: f32,
+    waves: &'a [AngleWave],
+    /// Half-width (cells) of the mask's worst-case bounding box around its
+    /// center — `ceil(base_radius * (1 + distortion))`.
+    extent: usize,
+}
+
+impl FeatureMask<'_> {
+    fn new(base_radius: f32, distortion: f32, waves: &[AngleWave]) -> FeatureMask<'_> {
+        let extent = (base_radius * (1.0 + distortion)).max(0.0).ceil() as usize;
+        FeatureMask {
+            base_radius,
+            distortion,
+            waves,
+            extent,
+        }
+    }
+
+    /// Whether the cell at offset `(dx, dy)` from the mask's center falls
+    /// inside the deformed disk.
+    fn contains(&self, dx: f32, dy: f32) -> bool {
+        let dist = (dx * dx + dy * dy).sqrt();
+        let angle = dy.atan2(dx);
+        let local_radius =
+            self.base_radius * (1.0 + self.distortion * angle_wave_sum(self.waves, angle));
+        dist <= local_radius.max(0.0)
+    }
 }
 
 /// Dims `light` near `Mountain` peaks (task 085's "mountain shading"):
@@ -2118,33 +2239,34 @@ mod tests {
         // `place_feature_biomes` places Crater/CrystalField/Lake in that
         // order (Bocca vulcanica's vent footprint first), each requiring
         // zero overlap with every cell already claimed by an earlier one.
-        // `set_feature_biome` unconditionally paints its whole rectangle,
-        // so if two footprints *did* overlap, the earlier one's final cell
-        // count would come in under its full `width * height` (the later
-        // feature repainting the shared cells) — a `Cell.biome` scan alone
-        // can't see overlap directly (one field, last write wins), but it
-        // can see this undercount, which is exactly what a real overlap
-        // would produce.
+        // Task 123 replaced the rectangle footprint with a deformed disk,
+        // so an exact `width * height` cell count no longer applies: the
+        // radius wobbles with the angular-distortion waves, and grid-edge
+        // clipping can shrink it further, both by design. Instead, check
+        // each feature's footprint lands in a generous band around its
+        // ideal disk area `PI * radius^2` — still tight enough to catch the
+        // shrinkage a real cross-feature overlap would cause (an
+        // overlapping cell is repainted by whichever feature places
+        // second, so the earlier feature's count would come in well under
+        // this band).
         let config = test_config();
+        let checks = [
+            (Biome::Crater, config.biome.crater_radius),
+            (Biome::CrystalField, config.biome.crystal_field_radius),
+            (Biome::Lake, config.biome.lake_radius),
+        ];
         for seed in 0..40u64 {
             let world = SimWorld::new(seed, &config);
-            let count = |biome: Biome| world.cells.iter().filter(|c| c.biome == biome).count();
-
-            assert_eq!(
-                count(Biome::Crater),
-                (config.biome.crater_width * config.biome.crater_height) as usize,
-                "seed {seed}: Crater's footprint was shrunk by a later overlapping feature"
-            );
-            assert_eq!(
-                count(Biome::CrystalField),
-                (config.biome.crystal_field_width * config.biome.crystal_field_height) as usize,
-                "seed {seed}: CrystalField's footprint was shrunk by a later overlapping feature"
-            );
-            assert_eq!(
-                count(Biome::Lake),
-                (config.biome.lake_width * config.biome.lake_height) as usize,
-                "seed {seed}: Lake's footprint was shrunk by an overlapping feature"
-            );
+            for &(biome, radius) in &checks {
+                let count = world.cells.iter().filter(|c| c.biome == biome).count();
+                let ideal_area = std::f32::consts::PI * radius * radius;
+                assert!(count > 0, "seed {seed}: {biome:?} was never placed");
+                assert!(
+                    count as f32 >= ideal_area * 0.25,
+                    "seed {seed}: {biome:?} footprint ({count} cells) far below its ideal \
+                     disk area ({ideal_area}) — possible overlap shrinkage"
+                );
+            }
         }
     }
 

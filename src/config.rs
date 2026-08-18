@@ -788,11 +788,11 @@ pub struct BiomeConfig {
     /// 085's balance and not to be perturbed here), and much smaller: a
     /// biome-sized patch, not a whole thermal gradient.
     pub volcanic_vent_radius: f32,
-    /// Cratere profondo's placement rectangle width (task 111), same
-    /// bounded-retry pattern as `TerrainConfig`'s toxic-zone fields.
-    pub crater_width: u32,
-    /// Cratere profondo's placement rectangle height.
-    pub crater_height: u32,
+    /// Cratere profondo's placement disk base radius (task 111, organic
+    /// shape since task 123), same bounded-retry pattern as
+    /// `TerrainConfig`'s toxic-zone fields — now searching over candidate
+    /// centers instead of rectangle corners.
+    pub crater_radius: f32,
     /// Minimum placeable-land fraction a candidate Cratere profondo
     /// position must clear.
     pub crater_min_placeable_fraction: f32,
@@ -804,10 +804,9 @@ pub struct BiomeConfig {
     pub crater_light: f32,
     /// Cratere profondo's imposed `toxicity`.
     pub crater_toxicity: f32,
-    /// Distesa di cristalli's placement rectangle width (task 111).
-    pub crystal_field_width: u32,
-    /// Distesa di cristalli's placement rectangle height.
-    pub crystal_field_height: u32,
+    /// Distesa di cristalli's placement disk base radius (task 111, organic
+    /// shape since task 123).
+    pub crystal_field_radius: f32,
     /// Minimum placeable-land fraction a candidate Distesa di cristalli
     /// position must clear.
     pub crystal_field_min_placeable_fraction: f32,
@@ -820,10 +819,9 @@ pub struct BiomeConfig {
     pub crystal_field_light: f32,
     /// Distesa di cristalli's imposed `toxicity`.
     pub crystal_field_toxicity: f32,
-    /// Lago's placement rectangle width (task 111).
-    pub lake_width: u32,
-    /// Lago's placement rectangle height.
-    pub lake_height: u32,
+    /// Lago's placement disk base radius (task 111, organic shape since
+    /// task 123).
+    pub lake_radius: f32,
     /// Minimum placeable-land fraction a candidate Lago position must
     /// clear.
     pub lake_min_placeable_fraction: f32,
@@ -835,6 +833,18 @@ pub struct BiomeConfig {
     pub lake_light: f32,
     /// Lago's imposed `toxicity`.
     pub lake_toxicity: f32,
+    /// Task 123: shared angular-distortion amplitude for the deformed-disk
+    /// mask used by all three searched feature biomes (Crater/CrystalField/
+    /// Lake) — how far the disk's radius at a given angle can stray from
+    /// `base_radius`, as a fraction of it. One shared knob rather than three
+    /// copies, since there's no reason the three features should look
+    /// differently "organic" from each other.
+    pub feature_mask_distortion: f32,
+    /// Task 123: how many angular sine terms make up the distortion field
+    /// (same summed-plane-wave technique as `patch_wave_count`, in
+    /// angle-space instead of position-space) — more terms read as a
+    /// lumpier, less simply-oval silhouette.
+    pub feature_mask_wave_count: u32,
 }
 
 impl Default for BiomeConfig {
@@ -855,27 +865,26 @@ impl Default for BiomeConfig {
             forest_light_max: 0.45,
             swamp_toxicity_min: 0.3,
             volcanic_vent_radius: 4.0,
-            crater_width: 9,
-            crater_height: 9,
+            crater_radius: 4.5,
             crater_min_placeable_fraction: 0.5,
             crater_max_placement_attempts: 24,
             crater_temperature: 0.60,
             crater_light: 0.20,
             crater_toxicity: 0.60,
-            crystal_field_width: 7,
-            crystal_field_height: 7,
+            crystal_field_radius: 3.5,
             crystal_field_min_placeable_fraction: 0.5,
             crystal_field_max_placement_attempts: 24,
             crystal_field_temperature: 0.40,
             crystal_field_light: 0.60,
             crystal_field_toxicity: 0.20,
-            lake_width: 11,
-            lake_height: 9,
+            lake_radius: 5.0,
             lake_min_placeable_fraction: 0.5,
             lake_max_placement_attempts: 24,
             lake_temperature: 0.45,
             lake_light: 0.40,
             lake_toxicity: 0.05,
+            feature_mask_distortion: 0.35,
+            feature_mask_wave_count: 4,
         }
     }
 }

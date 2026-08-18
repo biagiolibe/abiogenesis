@@ -139,16 +139,20 @@ mod tests {
     #[test]
     fn splice_cost_stays_at_the_base_rate_below_the_energy_threshold() {
         let config = SimConfig::default();
-        let mut run = RunProgress::default();
-        run.energy = config.objectives.splice_upgrade_energy_threshold - 0.01;
+        let run = RunProgress {
+            energy: config.objectives.splice_upgrade_energy_threshold - 0.01,
+            ..Default::default()
+        };
         assert_eq!(run.splice_cost(&config), config.time.action_costs.splice);
     }
 
     #[test]
     fn splice_cost_drops_to_the_upgraded_rate_once_the_threshold_is_met() {
         let config = SimConfig::default();
-        let mut run = RunProgress::default();
-        run.energy = config.objectives.splice_upgrade_energy_threshold;
+        let run = RunProgress {
+            energy: config.objectives.splice_upgrade_energy_threshold,
+            ..Default::default()
+        };
         assert_eq!(
             run.splice_cost(&config),
             config.time.action_costs.splice_upgraded
