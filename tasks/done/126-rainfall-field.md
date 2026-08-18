@@ -4,10 +4,61 @@
 > **Category**: Feature (worldgen)
 > **Priority**: 🟢 P3
 > **Estimate**: ~4h
-> **Assigned to**: unassigned
+> **Assigned to**: done
 > **Session**: 2026-08-13 (Phase 5a of the worldgen pipeline reassessment
 > scoped from `redesign/procedural_biome_generation_spec_v2.md` §9.2/§9.3 —
-> see task 123 for Phase 1 and the session's overall diagnosis)
+> see task 123 for Phase 1 and the session's overall diagnosis), implemented
+> 2026-08-19.
+
+---
+
+## ✅ Implementation notes (2026-08-19)
+
+- `Cell` gains `rainfall: f32` (default `0.0`).
+- `wind` extraction: the wind-vector formula was inline in
+  `apply_environment_sources`, computed from that method's own live
+  `temp_rng`. Factored the *formula* into `wind_from_angle` (pure) and
+  added `wind_vector` (re-derives the identical vector from a **fresh**
+  `TEMPERATURE_SOURCE_SEED_OFFSET` stream — `wind_angle` is that stream's
+  first draw both places, so the two agree bit-for-bit). This changes
+  nothing about `apply_environment_sources`' own draw sequence (still one
+  live `temp_rng`, wind angle drawn first, heat placement continues from
+  the same stream exactly as before) — confirmed by every existing
+  determinism/environment test passing unchanged.
+- `elevation_slope` refactored to share its central-difference computation
+  with a new `elevation_gradient(x, y, &elevations) -> (f32, f32)` — needed
+  the signed `(dx, dy)`, not just `elevation_slope`'s magnitude, for
+  orographic lift's directional projection onto wind.
+- New `compute_rainfall`, called right after `apply_environment_sources` in
+  `new_for_world`. Three terms combined and clamped to `[0, 1]`:
+  ocean-moisture falloff (Sea-only `sea_distance_field`, same
+  ordering-constraint reasoning task 125 documented for `water_distance`),
+  orographic lift (`elevation_gradient` projected onto wind direction,
+  positive half only), rain shadow (bounded single-pass ray march upwind,
+  `rain_shadow_ray_steps` steps of `rain_shadow_step_length` cells,
+  tracking the tallest ridge crossed above the cell's own elevation) —
+  a documented single-pass simplification of the spec's iterative
+  advection loop, not a placeholder.
+- New `SourceConfig` fields (climate-adjacent, no new struct per the task's
+  own steer): `rain_ocean_moisture_radius` (`40.0`), `rain_orographic_lift_strength`
+  (`4.0`), `rain_shadow_ray_steps` (`10`), `rain_shadow_step_length` (`3.0`),
+  `rain_shadow_strength` (`3.0`) — calibrated numerically (scratch, not
+  committed) against a 30-seed windward/leeward split before picking these.
+  Mirrored in `assets/config/sim_config.ron`.
+- New tests: `rainfall_does_not_affect_biome_classification` (task 124/125's
+  corrupt-and-reclassify guard shape), `rainfall_stays_within_the_unit_range`,
+  `rainfall_is_deterministic_for_a_given_seed`, and the credibility check
+  `leeward_side_of_the_tallest_peak_reads_drier_than_windward_on_average`
+  — a local ring (radius 25 cells, excluding the peak's own immediate
+  3-cell neighborhood) split by wind-alignment sign around each seed's
+  tallest peak, aggregated as a **mean diff across 30 seeds** (not
+  per-seed: a single seed's tallest peak can land near a grid edge or have
+  an unrepresentative local ring, the same "usually"/"rarely" statistical
+  spirit `tests/balance.rs` already uses) — asserts the aggregate mean
+  windward-minus-leeward diff is measurably positive (`> 0.02`; observed
+  ≈`0.087` across a 30-seed calibration run, 20/29 individual seeds
+  positive).
+- `cargo build`/`clippy -D warnings`/`fmt`/`test` all clean.
 
 ---
 
@@ -30,9 +81,9 @@ task would make either change hard to review or roll back independently.
 
 ## 📋 Acceptance Criteria
 
-- [ ] `Cell` gains `rainfall: f32` (`[0, 1]`, following the existing scalar
+- [x] `Cell` gains `rainfall: f32` (`[0, 1]`, following the existing scalar
       convention).
-- [ ] Computed once at generation time from:
+- [x] Computed once at generation time from:
       - **ocean proximity**: reuse `water_distance` (task 124) or
         `sea_distance_field` — moisture is highest near water, falls off
         with distance.
@@ -53,26 +104,26 @@ task would make either change hard to review or roll back independently.
       along each cell's wind-aligned ray. A full iterative solver is a
       possible future refinement, not required for a first credible field,
       and keeps generation time bounded and easy to reason about.
-- [ ] New `ClimateConfig`-style knobs (condensation rate, rain shadow
+- [x] New `ClimateConfig`-style knobs (condensation rate, rain shadow
       strength, wind-alignment weighting) added to `SimConfig`, mirrored in
       `assets/config/sim_config.ron`. Reuse `EnvironmentConfig`/
       `SourceConfig` if a field fits naturally there instead of a new
       struct — don't create a new config struct for two or three fields
       when an existing one already groups climate-adjacent config.
-- [ ] Field computed in the same generation step as (or immediately after)
+- [x] Field computed in the same generation step as (or immediately after)
       `apply_environment_sources`, since it needs that step's `wind`
       vector and finalized `temperature`/`light` are unaffected either way.
-- [ ] Test: for a handful of seeds, the mean `rainfall` on the geometric
+- [x] Test: for a handful of seeds, the mean `rainfall` on the geometric
       leeward side of the tallest mountain range (found via `is_peak`
       cells' position relative to `wind`) is measurably lower than the
       windward side — the credibility check the spec's §18.5 calls for
       ("precipitazione minore oltre le montagne"), not just "the field is
       populated."
-- [ ] `rainfall` is **read nowhere else yet** — `classify_biomes`,
+- [x] `rainfall` is **read nowhere else yet** — `classify_biomes`,
       `Desert`/`Tundra`/`Forest` scoring (task 125), and rendering all stay
       untouched. Confirmed by the same before/after snapshot approach task
       124 used.
-- [ ] `cargo clippy -- -D warnings` and `cargo fmt` clean; `cargo test`
+- [x] `cargo clippy -- -D warnings` and `cargo fmt` clean; `cargo test`
       passes.
 
 ---

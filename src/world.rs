@@ -358,9 +358,15 @@ pub struct Cell {
     pub biome: Biome,
     /// Local elevation-gradient magnitude (task 124), normalized to
     /// `[0, 1]` via `TerrainConfig::slope_normalization` — a plain
-    /// "how steep is this cell" number for task 125's classification to
-    /// threshold against. Computed once at generation time
-    /// (`SimWorld::compute_geomorphology`), read nowhere yet.
+    /// "how steep is this cell" number. Computed once at generation time
+    /// (`SimWorld::compute_geomorphology`). **Still read nowhere** as this
+    /// persisted field: task 125's biome scoring needed the same
+    /// elevation-gradient magnitude *before* this field is populated (it's
+    /// set after `place_feature_biomes`, which itself runs after
+    /// `classify_biomes`), so it computes its own local copy via
+    /// `elevation_slope` instead — see `classify_biomes`'s doc comment for
+    /// why. This stored field remains available for a future consumer with
+    /// no such ordering constraint.
     pub slope: f32,
     /// Grid (Moore-neighbour-step) distance to the nearest water cell
     /// (`Biome::DeepWater`/`ShallowWater`/`Lake`) — task 124's
@@ -370,8 +376,19 @@ pub struct Cell {
     /// already feeds `apply_environment_sources`' coastal-cooling model,
     /// and widening its source set to lakes would be an unreviewed change
     /// to the temperature balance, out of scope here. Computed once at
-    /// generation time, read nowhere yet.
+    /// generation time. **Still read nowhere** as this persisted field —
+    /// same ordering constraint as `slope` above (task 125's Swamp score
+    /// and task 126's rainfall field both use a locally-computed Sea-only
+    /// proxy instead, since Lake cells don't exist yet when they run).
     pub water_distance: f32,
+    /// Task 126: `[0, 1]` precipitation proxy — ocean-proximity moisture,
+    /// orographic lift (terrain rising into the wind), and rain shadow
+    /// (moisture depleted by a ridge crossed upwind), combined into one
+    /// deterministic single-pass estimate (`SimWorld::compute_rainfall`).
+    /// Read nowhere yet — feeding it into biome classification (replacing
+    /// `light` as the aridity proxy) is an explicit future follow-up, not
+    /// this task's scope.
+    pub rainfall: f32,
 }
 
 /// The simulated world: a dense grid, the species registry, and the seeded
@@ -559,6 +576,7 @@ impl SimWorld {
         };
         world.generate_terrain(config);
         world.apply_environment_sources(config, &params);
+        world.compute_rainfall(config, &params);
         world.place_toxic_zone(config, &params);
         world.classify_biomes(config);
         world.place_feature_biomes(config);
@@ -1032,6 +1050,17 @@ impl SimWorld {
     /// and accurate enough for a coarse per-cell terrain-roughness proxy.
     /// Edge cells fall back to a one-sided difference (no wraparound).
     fn elevation_slope(&self, x: usize, y: usize, elevations: &[f32]) -> f32 {
+        let (dx, dy) = self.elevation_gradient(x, y, elevations);
+        (dx * dx + dy * dy).sqrt()
+    }
+
+    /// Signed elevation gradient `(dx, dy)` at `(x, y)`: a 4-neighbour
+    /// central difference (one-sided at grid edges, no wraparound) —
+    /// `elevation_slope`'s magnitude-only reading factored out so task
+    /// 126's rainfall step can also read the gradient's *direction*
+    /// (projected onto wind, for orographic lift), not just how steep the
+    /// terrain is.
+    fn elevation_gradient(&self, x: usize, y: usize, elevations: &[f32]) -> (f32, f32) {
         let e = |xx: usize, yy: usize| elevations[self.index(xx, yy)];
         let dx = if x == 0 {
             e(x + 1, y) - e(x, y)
@@ -1047,7 +1076,7 @@ impl SimWorld {
         } else {
             (e(x, y + 1) - e(x, y - 1)) / 2.0
         };
-        (dx * dx + dy * dy).sqrt()
+        (dx, dy)
     }
 
     /// One bounded-retry deformed-disk placement for `place_feature_biomes`
@@ -1213,10 +1242,7 @@ impl SimWorld {
 
         let mut temp_rng = StdRng::seed_from_u64(self.seed ^ TEMPERATURE_SOURCE_SEED_OFFSET);
         let wind_angle = temp_rng.random_range(0.0..TAU);
-        let wind = (
-            wind_angle.cos() * params.wind_strength,
-            wind_angle.sin() * params.wind_strength,
-        );
+        let wind = Self::wind_from_angle(wind_angle, params.wind_strength);
         let heat_sources = self.place_heat_sources(&mut temp_rng, source_cfg, params);
 
         let mut sun_rng = StdRng::seed_from_u64(self.seed ^ SUN_DIRECTION_SEED_OFFSET);
@@ -1262,6 +1288,100 @@ impl SimWorld {
         }
         self.heat_sources = heat_sources;
         self.sea_distance = sea_distance;
+    }
+
+    /// This world's wind vector from a drawn angle and `params.wind_strength`
+    /// — factored out of `apply_environment_sources` purely so the formula
+    /// has one definition; doesn't change that method's own draw sequence
+    /// at all (still draws `wind_angle` from its own live `temp_rng` before
+    /// heat source placement, exactly as before).
+    fn wind_from_angle(angle: f32, strength: f32) -> (f32, f32) {
+        (angle.cos() * strength, angle.sin() * strength)
+    }
+
+    /// Re-derives this world's wind vector (task 126) from a **fresh**
+    /// `TEMPERATURE_SOURCE_SEED_OFFSET` stream — `wind_angle` is that
+    /// stream's very first draw both here and in `apply_environment_sources`,
+    /// so the two always agree bit-for-bit without `compute_rainfall`
+    /// needing `apply_environment_sources`' own already-consumed `temp_rng`
+    /// (which no longer exists by the time this runs) or a new `SimWorld`
+    /// field to carry the vector across generation steps.
+    fn wind_vector(&self, params: &WorldParams) -> (f32, f32) {
+        let mut rng = StdRng::seed_from_u64(self.seed ^ TEMPERATURE_SOURCE_SEED_OFFSET);
+        let wind_angle = rng.random_range(0.0..TAU);
+        Self::wind_from_angle(wind_angle, params.wind_strength)
+    }
+
+    /// Computes and stores `Cell.rainfall` (task 126): a deterministic,
+    /// single-pass approximation of orographic-lift/rain-shadow
+    /// precipitation. Purely additive — read nowhere yet, same scope
+    /// discipline as task 124. Three `[0, ~1]` terms combined and clamped:
+    ///
+    /// - **ocean moisture**: falls off linearly with a Sea-only water
+    ///   distance (`sea_distance_field`, not the persisted `Cell.water_distance`
+    ///   — Lake cells don't exist yet at this point in the pipeline, same
+    ///   ordering constraint task 125's Swamp score hit).
+    /// - **orographic lift**: the elevation gradient (`elevation_gradient`)
+    ///   projected onto the wind direction, positive half only — terrain
+    ///   rising into the wind forces air upward, condensing more moisture.
+    /// - **rain shadow**: a bounded single-pass ray march *upwind* (the
+    ///   `-wind` direction — where the air now at this cell came from) for
+    ///   `rain_shadow_ray_steps` steps of `rain_shadow_step_length` cells
+    ///   each, tracking the highest elevation crossed above this cell's
+    ///   own. A ridge upwind depletes the moisture that would otherwise
+    ///   reach here. Deliberately **not** the spec's iterative
+    ///   per-tick-of-generation advection loop (§9.3) — a single bounded
+    ///   pass per cell keeps generation time trivial and the field easy to
+    ///   reason about; a documented simplification, not a placeholder.
+    fn compute_rainfall(&mut self, config: &SimConfig, params: &WorldParams) {
+        let source_cfg = &config.source;
+        let wind = self.wind_vector(params);
+        let wind_len = (wind.0 * wind.0 + wind.1 * wind.1).sqrt();
+        let wind_dir = if wind_len > f32::EPSILON {
+            (wind.0 / wind_len, wind.1 / wind_len)
+        } else {
+            (1.0, 0.0)
+        };
+
+        let elevations: Vec<f32> = self.cells.iter().map(|c| c.elevation).collect();
+        let ocean_distance = self.sea_distance_field();
+
+        let mut rainfall = vec![0.0f32; self.cells.len()];
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = self.index(x, y);
+                let ocean_moisture = 1.0
+                    - (ocean_distance[idx]
+                        / source_cfg.rain_ocean_moisture_radius.max(f32::EPSILON))
+                    .clamp(0.0, 1.0);
+
+                let (dx, dy) = self.elevation_gradient(x, y, &elevations);
+                let lift = (dx * wind_dir.0 + dy * wind_dir.1).max(0.0)
+                    * source_cfg.rain_orographic_lift_strength;
+
+                let mut ridge: f32 = 0.0;
+                for step in 1..=source_cfg.rain_shadow_ray_steps {
+                    let dist = step as f32 * source_cfg.rain_shadow_step_length;
+                    let sx = x as f32 - wind_dir.0 * dist;
+                    let sy = y as f32 - wind_dir.1 * dist;
+                    if sx < 0.0
+                        || sy < 0.0
+                        || sx > (self.width - 1) as f32
+                        || sy > (self.height - 1) as f32
+                    {
+                        break;
+                    }
+                    let sample = elevations[self.index(sx.round() as usize, sy.round() as usize)];
+                    ridge = ridge.max(sample - elevations[idx]);
+                }
+                let shadow = (ridge * source_cfg.rain_shadow_strength).clamp(0.0, 1.0);
+
+                rainfall[idx] = (ocean_moisture + lift - shadow).clamp(0.0, 1.0);
+            }
+        }
+        for (idx, cell) in self.cells.iter_mut().enumerate() {
+            cell.rainfall = rainfall[idx];
+        }
     }
 
     /// Grid distance from every cell to the nearest cell satisfying
@@ -3213,6 +3333,129 @@ mod tests {
         assert!(
             seeds_with_toxic_swamp >= n_seeds * 3 / 4,
             "only {seeds_with_toxic_swamp}/{n_seeds} seeds produced a toxic Swamp cell"
+        );
+    }
+
+    /// Task 126: `rainfall` is purely additive — corrupting it and
+    /// re-running `classify_biomes` (same guard shape task 124/125 already
+    /// use for `slope`/`water_distance`) confirms nothing downstream reads
+    /// it yet.
+    #[test]
+    fn rainfall_does_not_affect_biome_classification() {
+        let config = test_config();
+        for seed in 0..10u64 {
+            let mut world = SimWorld::new(seed, &config);
+            world.classify_biomes(&config);
+            let areal_before: Vec<Biome> = world.cells.iter().map(|c| c.biome).collect();
+            for cell in world.cells.iter_mut() {
+                cell.rainfall = 999.0;
+            }
+            world.classify_biomes(&config);
+            let areal_after: Vec<Biome> = world.cells.iter().map(|c| c.biome).collect();
+            assert_eq!(
+                areal_before, areal_after,
+                "seed {seed}: biome classification changed"
+            );
+        }
+    }
+
+    #[test]
+    fn rainfall_stays_within_the_unit_range() {
+        let config = test_config();
+        for seed in 0..10u64 {
+            let world = SimWorld::new(seed, &config);
+            for cell in &world.cells {
+                assert!(
+                    (0.0..=1.0).contains(&cell.rainfall),
+                    "seed {seed}: rainfall {} outside [0, 1]",
+                    cell.rainfall
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rainfall_is_deterministic_for_a_given_seed() {
+        let config = test_config();
+        let a = SimWorld::new(11, &config);
+        let b = SimWorld::new(11, &config);
+        let rainfall_a: Vec<f32> = a.cells.iter().map(|c| c.rainfall).collect();
+        let rainfall_b: Vec<f32> = b.cells.iter().map(|c| c.rainfall).collect();
+        assert_eq!(rainfall_a, rainfall_b);
+    }
+
+    /// Task 126 (§18.5's credibility check, "precipitazione minore oltre le
+    /// montagne"): rainfall in a local ring around the tallest peak should
+    /// read lower on the leeward side than the windward side. Checked as an
+    /// aggregate mean across a sample of seeds, not per-seed — an
+    /// individual seed's tallest peak can land near a grid edge or have an
+    /// unrepresentative local ring (e.g. mostly ocean on one side for
+    /// reasons unrelated to rain shadow), which is exactly the kind of
+    /// single-sample noise an aggregate mean is meant to average out; the
+    /// physical effect only needs to hold on balance, the same "usually"/
+    /// "rarely" statistical spirit `tests/balance.rs` already uses.
+    #[test]
+    fn leeward_side_of_the_tallest_peak_reads_drier_than_windward_on_average() {
+        let config = test_config();
+        let local_radius = 25.0f32;
+        let mut diffs: Vec<f32> = Vec::new();
+        for seed in 0..30u64 {
+            let world = SimWorld::new(seed, &config);
+            let params = world_params(0, &config);
+            let wind = world.wind_vector(&params);
+            let wind_len = (wind.0 * wind.0 + wind.1 * wind.1).sqrt();
+            if wind_len <= f32::EPSILON {
+                continue;
+            }
+            let wind_dir = (wind.0 / wind_len, wind.1 / wind_len);
+
+            let Some((px, py)) = world
+                .cells
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| c.is_peak)
+                .max_by(|a, b| a.1.elevation.total_cmp(&b.1.elevation))
+                .map(|(idx, _)| (idx % world.width, idx / world.width))
+            else {
+                continue;
+            };
+
+            let mut windward_sum = 0.0;
+            let mut windward_n = 0u32;
+            let mut leeward_sum = 0.0;
+            let mut leeward_n = 0u32;
+            for y in 0..world.height {
+                for x in 0..world.width {
+                    let rel = (x as f32 - px as f32, y as f32 - py as f32);
+                    let dist = (rel.0 * rel.0 + rel.1 * rel.1).sqrt();
+                    if dist > local_radius || dist < 3.0 {
+                        continue;
+                    }
+                    let along_wind = rel.0 * wind_dir.0 + rel.1 * wind_dir.1;
+                    let r = world.get(x, y).rainfall;
+                    if along_wind < 0.0 {
+                        windward_sum += r;
+                        windward_n += 1;
+                    } else {
+                        leeward_sum += r;
+                        leeward_n += 1;
+                    }
+                }
+            }
+            if windward_n == 0 || leeward_n == 0 {
+                continue;
+            }
+            diffs.push(windward_sum / windward_n as f32 - leeward_sum / leeward_n as f32);
+        }
+        assert!(
+            diffs.len() >= 20,
+            "too few seeds produced a usable tallest-peak sample: {}",
+            diffs.len()
+        );
+        let mean_diff: f32 = diffs.iter().sum::<f32>() / diffs.len() as f32;
+        assert!(
+            mean_diff > 0.02,
+            "windward rainfall isn't measurably higher than leeward on average: mean diff {mean_diff:.4}"
         );
     }
 }

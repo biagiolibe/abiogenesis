@@ -1001,6 +1001,28 @@ pub struct SourceConfig {
     /// Maximum light reduction at a peak's own cell, fading to `0` at
     /// `mountain_shade_radius`.
     pub mountain_shade_strength: f32,
+    /// Task 126: falloff radius (cells, Sea-only `sea_distance_field`
+    /// units) within which `Cell.rainfall`'s ocean-moisture term blends
+    /// from `1.0` at the coast down to `0.0` — the same falloff shape
+    /// `heat_source_radius_*`/`sea_coolant_radius` already use elsewhere.
+    pub rain_ocean_moisture_radius: f32,
+    /// Task 126: how strongly `Cell.rainfall`'s orographic-lift term
+    /// (the elevation gradient projected onto wind direction) boosts
+    /// moisture where terrain rises into the wind.
+    pub rain_orographic_lift_strength: f32,
+    /// Task 126: number of steps `compute_rainfall`'s upwind ray march
+    /// takes per cell when looking for a rain-shadowing ridge — bounds the
+    /// single-pass approximation's cost (`O(cells * this)`), not an
+    /// iterative solver.
+    pub rain_shadow_ray_steps: u32,
+    /// Task 126: grid-cell length of each upwind ray-march step.
+    /// `rain_shadow_ray_steps * this` is the furthest upwind distance a
+    /// ridge can be detected from.
+    pub rain_shadow_step_length: f32,
+    /// Task 126: how strongly the tallest ridge crossed by the upwind ray
+    /// march depletes `Cell.rainfall` — a taller ridge (relative to this
+    /// cell's own elevation) casts a stronger rain shadow.
+    pub rain_shadow_strength: f32,
 }
 
 impl Default for SourceConfig {
@@ -1020,6 +1042,11 @@ impl Default for SourceConfig {
             sea_coolant_radius: 12.0,
             mountain_shade_radius: 8.0,
             mountain_shade_strength: 0.3,
+            rain_ocean_moisture_radius: 40.0,
+            rain_orographic_lift_strength: 4.0,
+            rain_shadow_ray_steps: 10,
+            rain_shadow_step_length: 3.0,
+            rain_shadow_strength: 3.0,
         }
     }
 }

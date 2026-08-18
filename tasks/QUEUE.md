@@ -140,7 +140,7 @@ pre-scoped here.
 | `[x]` | 123 | Organic masks for placed feature biomes (Cratere, Distesa di cristalli, Lago) — `toxic_zone` explicitly out of scope | 111 | [123](done/123-organic-feature-biome-masks.md) |
 | `[x]` | 124 | Derived geomorphology fields (`slope`, `water_distance`) — additive only | 110, 111 | [124](done/124-geomorphology-fields.md) |
 | `[x]` | 125 | Score-based biome classification; Palude from drainage instead of toxicity | 110, 111, 124 | [125](done/125-biome-score-classification.md) |
-| `[ ]` | 126 | Rainfall field (orographic lift, rain shadow) — additive only | 124 | [126](126-rainfall-field.md) |
+| `[x]` | 126 | Rainfall field (orographic lift, rain shadow) — additive only | 124 | [126](done/126-rainfall-field.md) |
 | `[ ]` | 127 | Flow accumulation and rivers | 124, 126 | [127](127-hydrology-rivers.md) |
 
 **Worldgen pipeline reassessment — credibility follow-ups** (2026-08-13,
