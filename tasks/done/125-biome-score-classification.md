@@ -52,6 +52,24 @@
   `swamp_slope_max` (`0.3`), `swamp_water_distance_max` (`15.0` cells),
   `bare_rock_slope_light_bonus` (`0.2`); `swamp_toxicity_min`'s doc comment
   rewritten for its new role. Mirrored in `assets/config/sim_config.ron`.
+- **Post-launch fix (2026-08-19, found in review after this task shipped)**:
+  `swamp_score`'s water-proximity term reused `biome_score_transition_width`
+  (a `[0, 1]`-scaled width meant for normalized scalars like `slope`) on
+  `water_distance`, a raw integer BFS cell count — that collapsed the
+  "smooth" transition to an effectively binary step (a `0.05`-*cell* band
+  on integer distances), exactly the hard discontinuity this task existed
+  to remove. Fixed with a dedicated `swamp_water_distance_falloff` config
+  field (`6.0` cells, same units as `swamp_water_distance_max`). Also
+  corrected `classify_biomes`' doc comment, which had claimed arg-max ties
+  were "vanishingly rare" — `smoothstep`/`smooth_band` actually *plateau*
+  at exactly `1.0` past their transition (unlike a Gaussian), so multiple
+  candidates saturating to `1.0` simultaneously (e.g. a cold, flat,
+  water-adjacent cell scoring `1.0` on both Tundra and Swamp) is routine,
+  not rare — the fixed priority order (Swamp first) still does real
+  arbitration work at these overlaps. This is a known, now-honestly-documented
+  limitation, not a regression fixed here: a future refinement replacing
+  the plateaus with a slowly decaying tail would make ties genuinely rare,
+  but is out of scope for this correction.
 - `toxic_zone_matches_its_own_bounds` updated: Swamp cells now assert
   `toxicity ∈ {0.0, toxic_zone_value}` (their own independent mechanism)
   instead of the old blanket rectangle-or-zero expectation, which no

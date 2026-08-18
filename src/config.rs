@@ -812,6 +812,15 @@ pub struct BiomeConfig {
     /// water-proximity distance (grid cells, task 124's BFS units) rises
     /// past this — close to water scores well, far from it doesn't.
     pub swamp_water_distance_max: f32,
+    /// Task 125 (fixed post-launch, 2026-08-19): width, in the same cell
+    /// units as `swamp_water_distance_max`, of the smooth transition on
+    /// the water-proximity term of Palude's drainage score.
+    /// `biome_score_transition_width` is `[0, 1]`-scaled and wrong here —
+    /// `water_distance` is a raw integer BFS distance, not a normalized
+    /// scalar, so reusing that shared width collapsed the transition to a
+    /// near-binary step (a fraction-of-a-cell band on an integer input),
+    /// exactly the hard discontinuity task 125 set out to remove.
+    pub swamp_water_distance_falloff: f32,
     /// Task 125: repurposed from "toxicity level a cell must already have
     /// to read as Palude" (the old gate) to "`wave_band_sum` threshold
     /// selecting which fraction of the cells just classified as Palude get
@@ -911,6 +920,7 @@ impl Default for BiomeConfig {
             forest_light_max: 0.45,
             swamp_slope_max: 0.3,
             swamp_water_distance_max: 15.0,
+            swamp_water_distance_falloff: 6.0,
             swamp_toxicity_min: 0.3,
             volcanic_vent_radius: 4.0,
             crater_radius: 4.5,

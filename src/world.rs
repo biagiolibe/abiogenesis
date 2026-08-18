@@ -775,9 +775,23 @@ impl SimWorld {
     /// candidate (Swamp, Desert, Tundra, Forest, Plain) gets a `[0, 1]`
     /// fitness from smooth curves (`smoothstep`/`smooth_band`, the same
     /// idiom `sim.rs`'s `env_fit` Gaussian serves for organism fitness),
-    /// and the arg-max wins — ties (exact float equality, vanishingly
-    /// rare) break by this fixed priority order: Swamp, Desert, Tundra,
-    /// Forest, Plain. Forest/Palude's patch-noise masks
+    /// and the arg-max wins — ties break by this fixed priority order:
+    /// Swamp, Desert, Tundra, Forest, Plain. **Honest caveat, found
+    /// 2026-08-19**: unlike a Gaussian, `smoothstep`/`smooth_band`
+    /// *plateau* at exactly `1.0` past their transition (a cell far past
+    /// `tundra_temperature_max - width` scores `1.0`, not a fading value),
+    /// so exact ties are not the "vanishingly rare" edge case a purely
+    /// continuous score would produce — a cold, flat, water-adjacent cell
+    /// routinely saturates both Tundra's and Swamp's score to `1.0`
+    /// simultaneously, and the fixed order (Swamp first) decides every
+    /// such cell the same way regardless of *how* cold or *how* well-drained
+    /// it is. This still fixed the original bug (no more hard
+    /// discontinuity *within* a single candidate's own threshold), but the
+    /// priority order still does real work at multi-candidate saturation
+    /// overlaps — a known, documented limitation, not silently pretended
+    /// away. A future refinement could replace the plateaus with a slowly
+    /// decaying tail so ties stay genuinely rare. Forest/Palude's
+    /// patch-noise masks
     /// (`forest_waves`/`swamp_waves`) are a small additive term on the
     /// score now, not the primary gate — same dependent-noise-sum
     /// technique as `terrain_elevation`, on their own derived RNG stream
@@ -2072,13 +2086,25 @@ fn forest_score(temperature: f32, light: f32, cfg: &BiomeConfig, noise: f32) -> 
 /// toxicity is imposed as a separate post-classification modifier on a
 /// sub-region of the cells this score selects (see `classify_biomes`).
 fn swamp_score(slope: f32, water_distance: f32, cfg: &BiomeConfig, noise: f32) -> f32 {
-    let w = cfg.biome_score_transition_width;
-    let drainage = smoothstep(cfg.swamp_slope_max, cfg.swamp_slope_max - w, slope)
-        * smoothstep(
-            cfg.swamp_water_distance_max,
-            cfg.swamp_water_distance_max - w,
-            water_distance,
-        );
+    // `slope` is normalized to `[0, 1]`, so `biome_score_transition_width`
+    // (also `[0, 1]`-scaled) is the right transition width for it. But
+    // `water_distance` is a raw BFS cell count (0, 1, 2, … 40+), not a
+    // `[0, 1]` scalar — reusing the same shared width there would collapse
+    // to a near-binary step (a fraction-of-a-cell transition on an integer
+    // distance), exactly the hard discontinuity this whole task exists to
+    // remove. `swamp_water_distance_falloff` is its own knob, in the same
+    // cell units as `swamp_water_distance_max`.
+    let slope_term = smoothstep(
+        cfg.swamp_slope_max,
+        cfg.swamp_slope_max - cfg.biome_score_transition_width,
+        slope,
+    );
+    let water_term = smoothstep(
+        cfg.swamp_water_distance_max,
+        cfg.swamp_water_distance_max - cfg.swamp_water_distance_falloff,
+        water_distance,
+    );
+    let drainage = slope_term * water_term;
     (drainage + noise.max(0.0) * cfg.patch_noise_weight).min(1.0)
 }
 
