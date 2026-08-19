@@ -279,7 +279,7 @@ heat-source category.
 - `[x]` 110 — Biome enum + two-stage classification (areal biomes) → [110](tasks/done/110-biome-classification-two-stage.md)
 - `[x]` 111 — Explicit placement for feature biomes (depends on 110) → [111](tasks/done/111-biome-feature-placement.md)
 - `[x]` 112 — Biome rendering: flat color, dithering, borders, tree overlay (depends on 110, 111) → [112](tasks/done/112-biome-rendering.md)
-- `[ ]` 113 — Palude replaces `toxic_zone` (depends on 110) → [113](tasks/113-swamp-replaces-toxic-zone.md)
+- `[x]` 113 — Palude replaces `toxic_zone` (depends on 110) → [113](tasks/done/113-swamp-replaces-toxic-zone.md)
 - `[ ]` ⏸ 114 — BLOCKED — Geyser biome (needs a small/pulsing heat-source category, not yet scoped) → [114](tasks/114-geyser-pulsing-source-blocked.md)
 
 ### 🏗️ Phase 0 — Walking skeleton

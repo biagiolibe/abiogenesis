@@ -92,7 +92,7 @@ A few scalars per cell, in `[0,1]`:
 - `light`
 - `toxicity`
 
-**Current status:** `toxicity` is a live input. Toxic zones exist in worldgen, the Stress action's target scalar can raise it, and it now directly drives one metabolism's gain (`Chemolithotroph`, §5.4/§5.6) as well as one of the three stimuli the evolution system (§5.11) accumulates toward speciation. `temperature`, `light`, and `toxicity` are all read in the tick loop today.
+**Current status:** `toxicity` is a live input. Task 113 (v0.6) replaced the old standalone `toxic_zone` rectangle with a post-classification modifier on a sub-region of `Biome::Swamp` cells (§5.10) — worldgen's only remaining source of nonzero `toxicity`, alongside the fixed values `Crater`/`CrystalField`/`Lake` impose. The Stress action's target scalar can still raise `toxicity` locally, and it directly drives one metabolism's gain (`Chemolithotroph`, §5.4/§5.6) as well as one of the three stimuli the evolution system (§5.11) accumulates toward speciation. `temperature`, `light`, and `toxicity` are all read in the tick loop today.
 
 **Phase 0:** static gradients (e.g., high light at the top, temperature on a different axis) to create spatial heterogeneity → niches.
 **Phase 1+:** slow diffusion of scalars (averaging with neighbors at a low rate), so environmental interventions propagate over time.
@@ -183,7 +183,7 @@ Initial values that are mutually coherent (conceptually verified so that a photo
 | Environmental diffusion (Phase 1+) | `0.05` / tick | slow blend with neighbor average |
 | Light gradient (Phase 0) | `0.9` (high) → `0.2` (low) | creates a vertical niche |
 | Temperature gradient (Phase 0) | `0.2` (left) → `0.8` (right) | creates a horizontal niche |
-| Toxic zone | `toxicity = 0.7` | elsewhere `0.0` |
+| Swamp toxic sub-region (task 113) | `toxicity = 0.7` | imposed on part of `Biome::Swamp`; elsewhere `0.0` |
 
 **Time and actions**
 
@@ -250,9 +250,9 @@ Initial values that are mutually coherent (conceptually verified so that a photo
 | `toxicity_weight` | `1.0` | weight on a tick's `toxicity` exposure |
 | `max_species` | `40` | hard cap on `world.species.len()`, correctness bound (`SpeciesId` is a `u8`) |
 
-### 5.10 Biomes **[DECIDED, tasks 110-112]**
+### 5.10 Biomes **[DECIDED, tasks 110-113]**
 
-On top of the continuous scalar layer (§5.2), each cell also carries a discrete **biome** — an areal classification (water depth, elevation bands, and feature biomes like `Forest`, `Swamp`, `Crater`, `CrystalField`, `Lake`) assigned by a **two-stage** generation pass: a base classification derived from elevation/moisture-like scalars, then explicit feature placement (bounded-retry rectangles, the same pattern the toxic zone already used) for the biomes that read as discrete "spots" rather than smooth bands. Biomes are primarily a **legibility and worldbuilding layer** — dithered flat-color rendering with borders and a tree overlay for `Forest` (task 112) so the map reads as terrain, not a heatmap — but also the gating surface for terrain-conditional tags (§5.5) and the placement substrate wild species (§9) require. The separate, older `toxic_zone` (a fixed hostile rectangle, §5.9) is not yet folded into the biome enum — it currently coexists with it as its own mechanic.
+On top of the continuous scalar layer (§5.2), each cell also carries a discrete **biome** — an areal classification (water depth, elevation bands, and feature biomes like `Forest`, `Swamp`, `Crater`, `CrystalField`, `Lake`) assigned by a **two-stage** generation pass: a base classification derived from elevation/moisture-like scalars, then explicit feature placement (bounded-retry organic masks, task 123) for the biomes that read as discrete "spots" rather than smooth bands. Biomes are primarily a **legibility and worldbuilding layer** — dithered flat-color rendering with borders and a tree overlay for `Forest` (task 112) so the map reads as terrain, not a heatmap — but also the gating surface for terrain-conditional tags (§5.5), the placement substrate wild species (§9) require, and (task 113) the region `SurviveIn`'s hostile-zone objective checks: the old standalone `toxic_zone` rectangle is gone, folded into `Biome::Swamp`'s own post-classification toxicity modifier instead of coexisting alongside it.
 
 ### 5.11 Evolution by speciation **[DECIDED, tasks 106-109]**
 
@@ -297,7 +297,7 @@ This is the heart of progression (§ pillar 2) and turns observation into a *ded
 Each world poses a **sequence of explicit requirements**, resolved in order: **2** objectives in early worlds, ramping to **3** in late worlds (task 059), drawn from `Coexistence`/`SurviveIn`/`TriggerBloom` — plus, since task 109, a **long-term** `Speciation` objective (§5.11) always appended as the sequence's true final entry, on every world, regardless of the earlier draw. Clearing a non-final objective in the sequence advances to the next one and resets its progress — it does not clear the world by itself. No two consecutive short-term objectives in a world share the same kind. Examples of the kind of objective:
 
 - "Achieve a biosphere with **≥3 coexisting species** for **4 eras**." *(2026-08-06 playtest: the requirement is tuned and displayed in eras, the player's own unit of interaction — not raw pulses, which the player never consciously operates in.)*
-- "Grow a species that **survives in the toxic zone**."
+- "Grow a species that **survives in the toxic zone**" (task 113: `Biome::Swamp`'s toxic sub-region — only offered when the generated world actually has one).
 - "**Trigger a bloom** of a specific type."
 - (always last) "**Force a speciation event** through sustained pressure."
 
@@ -326,7 +326,7 @@ Each world is generated procedurally:
 
 **First-world softening [DECIDED, task 079]:** world 0's opening objective is always forced to the gentlest possible requirement — `Coexistence` with `min_species = 2` — rather than the normal random draw, which could otherwise open a run with a demanding `SurviveIn` (a hostile zone the player hasn't even seen yet) or a `Coexistence` requiring every generated species including a harder-to-keep-alive Decomposer.
 
-**Curve [DECIDED direction]:** the first worlds with **5 active tags** and a mild environment; gradually up to **~8 active tags**, matrices with more "nasty" relationships, more extreme environments (large toxic zones, harsh thermal gradients), stricter objectives, and shorter era budgets.
+**Curve [DECIDED direction]:** the first worlds with **5 active tags** and a mild environment; gradually up to **~8 active tags**, matrices with more "nasty" relationships, more extreme environments (harsh thermal gradients; **the "large toxic zones" axis no longer has an implementation to scale, since task 113 replaced the old sized `toxic_zone` rectangle with Swamp's score-based footprint — flagged as an open follow-up, not yet re-solved**), stricter objectives, and shorter era budgets.
 
 **Biochemistry is fresh every run**: replayability comes from here, not from hand-written content.
 

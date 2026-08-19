@@ -140,13 +140,12 @@ pub struct EnvironmentConfig {
     /// far end of the per-source falloff, replacing the old fixed-gradient
     /// endpoints).
     pub ambient_temperature: f32,
-    /// Toxicity value inside the toxic zone, [0,1] (GDD §5.9). Elsewhere it's 0.0.
-    pub toxic_zone_value: f32,
-    /// Width in cells of the Phase 0 toxic zone (bottom-right corner). Not in
-    /// the GDD baseline table; kept here rather than hand-written in `world.rs`.
-    pub toxic_zone_width: u32,
-    /// Height in cells of the Phase 0 toxic zone.
-    pub toxic_zone_height: u32,
+    /// Toxicity value task 113 imposes on the noise-gated toxic sub-region
+    /// of `Biome::Swamp` cells (GDD §5.9; renamed from `toxic_zone_value`
+    /// when task 113 removed the old standalone placed-rectangle toxic
+    /// zone — this is now the only generation-time source of nonzero
+    /// `Cell::toxicity`). Elsewhere it's 0.0.
+    pub swamp_toxicity_value: f32,
     /// How much the `Stress` action (GDD §6) shifts a clicked cell's
     /// temperature, before clamping to `[0,1]`. Temperature, not toxicity:
     /// `sim::step`'s `env_fit` reads temperature every tick, so a stressed
@@ -171,11 +170,7 @@ impl Default for EnvironmentConfig {
             light_low: 0.2,
             source_temperature: 0.85,
             ambient_temperature: 0.25,
-            toxic_zone_value: 0.7,
-            // Scaled with grid size (task 074, 48x32 -> 128x80): kept the
-            // same relative footprint as the original 8x6 (~3.1% of cells).
-            toxic_zone_width: 21,
-            toxic_zone_height: 15,
+            swamp_toxicity_value: 0.7,
             stress_delta: 0.3,
         }
     }
@@ -323,7 +318,7 @@ impl Default for EnergyConfig {
             decomposer_extract_rate: 1.5,
             decomposer_upkeep: 0.5,
             // First-pass, tunable (task 108): mirrors `photolithic_metabolism_gain`/
-            // `base_upkeep` exactly. `EnvironmentConfig::toxic_zone_value`
+            // `base_upkeep` exactly. `EnvironmentConfig::swamp_toxicity_value`
             // defaults to 0.7 — the same order of magnitude as the ~0.7
             // `light` a photolithic organism sees in a bright cell — so
             // starting from Photolithic's own numbers is the natural
@@ -477,10 +472,10 @@ impl Default for NotebookConfig {
 /// is world N" ramps linearly from its early endpoint (read off the
 /// existing per-domain config: `TagConfig::active_tags_early`,
 /// `TimeConfig::era_budget_early`, `TagConfig::matrix_density`,
-/// `EnvironmentConfig`'s toxic-zone size and temperature gradient) to a late
-/// endpoint declared here, over `ramp_worlds` worlds, then holds steady —
-/// the run is endless-until-failure (GDD §8), so there is no "final" world
-/// to hit an exact late value at.
+/// `SourceConfig`'s temperature gradient) to a late endpoint declared here,
+/// over `ramp_worlds` worlds, then holds steady — the run is
+/// endless-until-failure (GDD §8), so there is no "final" world to hit an
+/// exact late value at.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DifficultyConfig {
     /// Number of worlds over which every axis ramps from its early to its
@@ -489,12 +484,6 @@ pub struct DifficultyConfig {
     /// tags, i.e. `active_tags_early(5) + (active_tags_late(8) -
     /// active_tags_early(5)) * 1/3 = 6`.
     pub ramp_worlds: u32,
-    /// Toxic zone width at the late endpoint (early end is
-    /// `EnvironmentConfig::toxic_zone_width`).
-    pub toxic_zone_width_late: u32,
-    /// Toxic zone height at the late endpoint (early end is
-    /// `EnvironmentConfig::toxic_zone_height`).
-    pub toxic_zone_height_late: u32,
     /// Matrix density at the late endpoint (early end is
     /// `TagConfig::matrix_density`).
     pub matrix_density_late: f32,
@@ -515,10 +504,6 @@ impl Default for DifficultyConfig {
     fn default() -> Self {
         Self {
             ramp_worlds: 3,
-            // Scaled with grid size (task 074, 48x32 -> 128x80), same
-            // relative footprint as the original 16x12 (~12.5% of cells).
-            toxic_zone_width_late: 43,
-            toxic_zone_height_late: 30,
             matrix_density_late: 0.6,
             objective_severity_early: 1.0,
             objective_severity_late: 2.0,
@@ -561,9 +546,8 @@ pub struct WorldgenConfig {
     /// position to measure against. Tunable, not derived.
     pub wild_species_min_distance_from_center: f32,
     /// Bounded-resample attempts (task 098, same defensive-generation
-    /// pattern as `TerrainConfig::max_generation_attempts`/
-    /// `max_toxic_zone_placement_attempts`) for finding a placeable cell
-    /// that also clears `wild_species_min_distance_from_center`; falls back
+    /// pattern as `TerrainConfig::max_generation_attempts`) for finding a
+    /// placeable cell that also clears `wild_species_min_distance_from_center`; falls back
     /// to the best (farthest) placeable candidate seen if none clears it
     /// within this many draws, so wild placement can never fail outright.
     pub wild_species_placement_attempts: u32,
@@ -707,15 +691,6 @@ pub struct TerrainConfig {
     /// draw seen is kept if none clears the floor within this many
     /// attempts, same defensive-generation spirit as tasks 047/048.
     pub max_generation_attempts: u32,
-    /// Minimum fraction of the toxic zone's own footprint that must be
-    /// placeable land, once a candidate position is tried — keeps the
-    /// `SurviveIn` objective satisfiable regardless of where terrain
-    /// generation put the sea/mountains.
-    pub min_toxic_zone_placeable_fraction: f32,
-    /// Bounded resample attempts when searching for a toxic zone position
-    /// meeting `min_toxic_zone_placeable_fraction`. The best position seen
-    /// is kept if none clears the floor within this many attempts.
-    pub max_toxic_zone_placement_attempts: u32,
     /// Task 124: divides the raw elevation-gradient magnitude
     /// (`SimWorld::elevation_slope`, a central difference over one grid
     /// step) before clamping to `[0, 1]`, so `Cell.slope` reads as a plain
@@ -741,8 +716,6 @@ impl Default for TerrainConfig {
             peak_elevation_threshold: 0.88,
             min_placeable_fraction: 0.4,
             max_generation_attempts: 8,
-            min_toxic_zone_placeable_fraction: 0.5,
-            max_toxic_zone_placement_attempts: 24,
             slope_normalization: 0.05,
         }
     }
@@ -856,7 +829,7 @@ pub struct BiomeConfig {
     /// `swamp_water_distance_max` above are the real drainage-based gate);
     /// this only decides which sub-region of an already-classified Palude
     /// reads as toxic, same organic-sub-region idiom the design doc's
-    /// §12.4 describes. `EnvironmentConfig::toxic_zone_value` (0.7 by
+    /// §12.4 describes. `EnvironmentConfig::swamp_toxicity_value` (0.7 by
     /// default) is still the only *value* imposed — this field only
     /// selects *where*.
     pub swamp_toxicity_min: f32,
@@ -1003,9 +976,9 @@ pub struct SourceConfig {
     /// Minimum cell distance enforced between placed heat sources, so `N`
     /// sources don't cluster into one big hotspot.
     pub heat_source_min_distance: f32,
-    /// Bounded-retry attempts per source (mirrors `place_toxic_zone`'s
-    /// attempt-loop/keep-best-seen pattern, `world.rs:359-387`) before
-    /// falling back to the best candidate seen.
+    /// Bounded-retry attempts per source (the same attempt-loop/
+    /// keep-best-seen pattern `generate_terrain` uses) before falling back
+    /// to the best candidate seen.
     pub max_heat_source_placement_attempts: u32,
     /// Per-tick pull-back strength toward `EnvironmentConfig::
     /// source_temperature` for heat source cells, and (weighted by

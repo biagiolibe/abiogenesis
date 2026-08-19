@@ -228,8 +228,8 @@ fn bloom_usually_grows_then_stabilises_across_seeds() {
 }
 
 /// Deliberately much shorter than `RUN_TICKS` (unlike the other tests in
-/// this file): unlike heat sources (`reinject_environment_sources`), the
-/// toxic zone has no reinjection — `toxicity` just diffuses toward ambient
+/// this file): unlike heat sources (`reinject_environment_sources`), a
+/// toxic cell has no reinjection — `toxicity` just diffuses toward ambient
 /// like any unreinforced scalar, so over `RUN_TICKS`' 500-tick horizon it
 /// erodes and a chemolithotroph's local advantage fades with it,
 /// regardless of how well the metabolism itself works. That's a real
@@ -237,36 +237,67 @@ fn bloom_usually_grows_then_stabilises_across_seeds() {
 /// metabolism correctly gain energy from toxicity" — task 108's own scope
 /// — so this measures short-horizon viability only, well past the ~7-tick
 /// "obviously starving" baseline other tests in this file use, without
-/// being confounded by toxic-zone decay this task isn't scoped to address.
+/// being confounded by toxic-cell decay this task isn't scoped to address.
 const CHEMOLITHOTROPH_SURVIVAL_TICKS: usize = 100;
 
 /// Task 108: `generate_starting_palette`/`place_starting_organisms` never
 /// place a `Chemolithotroph` (bonus species from `add_bonus_species` are
 /// available for `Seed`, not pre-placed), so the nominal scenario above
 /// doesn't naturally exercise it. This is the minimum bar the task's own
-/// acceptance criteria set instead: seed one directly into each seed's
-/// toxic zone (guaranteed to exist and overlap enough placeable land, per
-/// `world.rs`'s `toxic_zone_always_overlaps_enough_placeable_land`), at a
-/// `temp_optimum` matched to that cell so `env_fit` isn't confounding the
-/// measurement, and confirm it doesn't crash and usually doesn't
-/// immediately collapse — not a full bloom/stability sweep like the tests
-/// above, just "this metabolism is actually viable where it's supposed to
-/// be," the same bar `decomposer`/`predator` cleared informally by already
-/// existing in the codebase before any balance test targeted them directly.
+/// acceptance criteria set instead: seed one directly onto a toxic,
+/// placeable cell, at a `temp_optimum` matched to that cell so `env_fit`
+/// isn't confounding the measurement, and confirm it doesn't crash and
+/// usually doesn't immediately collapse — not a full bloom/stability sweep
+/// like the tests above, just "this metabolism is actually viable where
+/// it's supposed to be," the same bar `decomposer`/`predator` cleared
+/// informally by already existing in the codebase before any balance test
+/// targeted them directly.
+///
+/// Task 113 removed the old standalone `toxic_zone` rectangle (guaranteed
+/// nonempty every world); toxicity now only comes from `Biome::Swamp`'s
+/// post-classification modifier and the placed Crater/CrystalField/Lake
+/// biomes, none of which is guaranteed to exist for every seed (task 125's
+/// score-based classification, unlike the old rectangle search, has no
+/// keep-best-seen fallback forcing a nonzero footprint). Seeds with no
+/// placeable toxic cell at all are skipped rather than failing the test —
+/// tracked separately so an implausibly high skip rate (the search itself
+/// silently broken) would still be caught.
 #[test]
 fn chemolithotroph_survives_reasonably_in_its_toxic_zone_across_seeds() {
     let mut collapses = 0;
+    let mut skipped = 0;
+    let mut tested = 0;
     for seed in SURVEY_SEEDS {
         let config = SimConfig::default();
         let mut world = SimWorld::new(seed, &config);
         generate_starting_palette(&mut world, &config);
 
-        let idx = (0..world.cells.len())
-            .find(|&idx| {
+        // Prefer the most toxic placeable cell, breaking ties by how
+        // embedded it is in its toxic patch (most toxic Moore neighbours):
+        // `Lake`'s own imposed toxicity (`lake_toxicity`, 0.05 by default)
+        // is a flavor value, not meant to feed a Chemolithotroph, but Lake
+        // is often the single largest *contiguous* toxic blob on the grid
+        // — an embeddedness-only heuristic picks it almost every seed and
+        // starves the organism by construction, not because the metabolism
+        // is broken. Sorting on toxicity value first avoids that trap.
+        let best_idx = (0..world.cells.len())
+            .filter(|&idx| world.cells[idx].toxicity > 0.0 && world.is_placeable_index(idx))
+            .map(|idx| {
                 let (x, y) = (idx % world.width, idx / world.width);
-                world.toxic_zone.contains(x, y) && world.is_placeable_index(idx)
+                let toxic_neighbours = world
+                    .moore_neighbours(x, y)
+                    .filter(|&n| world.cells[n].toxicity > 0.0)
+                    .count();
+                (idx, world.cells[idx].toxicity.to_bits(), toxic_neighbours)
             })
-            .expect("every world guarantees a placeable cell within its toxic zone");
+            .max_by_key(|&(idx, toxicity_bits, toxic_neighbours)| {
+                (toxicity_bits, toxic_neighbours, std::cmp::Reverse(idx))
+            });
+        let Some((idx, ..)) = best_idx else {
+            skipped += 1;
+            continue;
+        };
+        tested += 1;
         let temp_optimum = world.cells[idx].temperature;
 
         let species_id = world.push_species(Species {
@@ -295,7 +326,14 @@ fn chemolithotroph_survives_reasonably_in_its_toxic_zone_across_seeds() {
             collapses += 1;
         }
     }
-    let rate = collapses as f32 / SURVEY_SEED_COUNT as f32;
+
+    assert!(
+        skipped * 4 < SURVEY_SEED_COUNT,
+        "expected fewer than 25% of seeds to have no placeable toxic cell at all \
+         (Swamp/Crater/CrystalField/Lake), got {skipped}/{SURVEY_SEED_COUNT} — \
+         the toxic-cell search may be broken, not just unlucky"
+    );
+    let rate = collapses as f32 / tested as f32;
 
     assert!(
         rate <= MAX_EXTINCTION_RATE,
@@ -303,7 +341,7 @@ fn chemolithotroph_survives_reasonably_in_its_toxic_zone_across_seeds() {
          chemolithotroph entirely, got {}/{} ({:.0}%)",
         MAX_EXTINCTION_RATE * 100.0,
         collapses,
-        SURVEY_SEED_COUNT,
+        tested,
         rate * 100.0
     );
 }

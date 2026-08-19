@@ -10,7 +10,7 @@ use rand::RngExt;
 use crate::config::SimConfig;
 use crate::objectives::{Objective, ZoneKind};
 use crate::world::{
-    draw_species_name, draw_species_tags, Metabolism, Organism, SimWorld, Species, SpeciesId,
+    draw_species_name, draw_species_tags, Biome, Metabolism, Organism, SimWorld, Species, SpeciesId,
 };
 
 /// Concrete generation parameters for one world, derived from its position
@@ -28,10 +28,6 @@ pub struct WorldParams {
     /// 45 across the curve — raised from the original 40 -> 25 by task 059 to
     /// compensate for `objective_count` growing from 1 to 2-3 per world).
     pub era_budget: u32,
-    /// Toxic zone width in cells (GDD §9: "larger toxic zones").
-    pub toxic_zone_width: u32,
-    /// Toxic zone height in cells.
-    pub toxic_zone_height: u32,
     /// Heat sources placed at world generation (task 085, GDD §9: "harsher
     /// thermal gradients" — more, sharper hotspots at later worlds).
     pub heat_source_count: u32,
@@ -59,7 +55,6 @@ pub struct WorldParams {
 /// can call it before a world even exists.
 pub fn world_params(world_index: u32, config: &SimConfig) -> WorldParams {
     let t = ramp_fraction(world_index, config.difficulty.ramp_worlds);
-    let env = &config.environment;
     let tags = &config.tags;
     let time = &config.time;
     let difficulty = &config.difficulty;
@@ -68,8 +63,6 @@ pub fn world_params(world_index: u32, config: &SimConfig) -> WorldParams {
     WorldParams {
         active_tag_count: lerp_u32(tags.active_tags_early, tags.active_tags_late, t),
         era_budget: lerp_u32(time.era_budget_early, time.era_budget_late, t),
-        toxic_zone_width: lerp_u32(env.toxic_zone_width, difficulty.toxic_zone_width_late, t),
-        toxic_zone_height: lerp_u32(env.toxic_zone_height, difficulty.toxic_zone_height_late, t),
         heat_source_count: lerp_u32(
             source.heat_source_count_early,
             source.heat_source_count_late,
@@ -367,9 +360,10 @@ fn place_wild_species(world: &mut SimWorld, config: &SimConfig) {
 }
 
 /// Finds a placeable, unoccupied cell for one wild population (task 098):
-/// bounded-resamples random cells (same defensive-generation pattern as
-/// `SimWorld::place_toxic_zone`), preferring one at least `min_distance`
-/// from `center`, falling back to the farthest placeable candidate seen if
+/// bounded-resamples random cells (same defensive-generation
+/// attempt-loop/keep-best-seen pattern used throughout world generation),
+/// preferring one at least `min_distance` from `center`, falling back to
+/// the farthest placeable candidate seen if
 /// none clears that floor within `attempts` draws — placement itself can
 /// never fail outright as long as the world has at least one placeable
 /// cell, which terrain generation already guarantees.
@@ -416,7 +410,7 @@ fn find_wild_placement(
 /// excludes the previous slot's pick from its own candidates, so a run of
 /// e.g. `TriggerBloom, TriggerBloom, TriggerBloom` can't happen even though
 /// the RNG alone would occasionally produce it. When only one kind is
-/// actually available (e.g. fewer than 2 species and no toxic zone, so only
+/// actually available (e.g. fewer than 2 species and no Swamp cell, so only
 /// `TriggerBloom` is coherent at all), the exclusion is skipped rather than
 /// leaving an empty candidate list.
 ///
@@ -472,11 +466,15 @@ fn opening_world_objective(params: &WorldParams, config: &SimConfig) -> (Objecti
 }
 
 /// Coherence (task 042's acceptance criteria) is enforced by construction,
-/// not by rejecting a bad draw after the fact: `SurviveIn`'s toxic zone is
-/// only ever a candidate when `params` says this world actually has one,
-/// and `Coexistence`'s `min_species` is only ever a candidate — then
-/// clamped — against the species pool this exact world generated, so it can
-/// never ask for more coexisting species than exist to place.
+/// not by rejecting a bad draw after the fact: `SurviveIn`'s zone is only
+/// ever a candidate when this world's generated terrain actually produced
+/// a `Biome::Swamp` cell (task 113: Swamp is a score-based classification,
+/// task 125, not a placement search with a guaranteed nonzero footprint
+/// the way the old rectangle-based toxic zone was — a given seed can
+/// legitimately end up with none), and `Coexistence`'s `min_species` is
+/// only ever a candidate — then clamped — against the species pool this
+/// exact world generated, so it can never ask for more coexisting species
+/// than exist to place.
 fn generate_one_objective(
     world: &mut SimWorld,
     params: &WorldParams,
@@ -485,13 +483,13 @@ fn generate_one_objective(
 ) -> (Objective, ObjectiveKind) {
     let severity = params.objective_severity;
     let species_count = world.species.len() as u32;
-    let has_toxic_zone = params.toxic_zone_width > 0 && params.toxic_zone_height > 0;
+    let has_swamp = world.cells.iter().any(|cell| cell.biome == Biome::Swamp);
 
     let mut candidates = vec![ObjectiveKind::TriggerBloom];
     if species_count >= 2 {
         candidates.push(ObjectiveKind::Coexistence);
     }
-    if has_toxic_zone {
+    if has_swamp {
         candidates.push(ObjectiveKind::SurviveIn);
     }
     if candidates.len() > 1 {
@@ -567,11 +565,6 @@ mod tests {
 
         assert_eq!(params.active_tag_count, config.tags.active_tags_early);
         assert_eq!(params.era_budget, config.time.era_budget_early);
-        assert_eq!(params.toxic_zone_width, config.environment.toxic_zone_width);
-        assert_eq!(
-            params.toxic_zone_height,
-            config.environment.toxic_zone_height
-        );
         assert_eq!(
             params.heat_source_count,
             config.source.heat_source_count_early
@@ -608,14 +601,6 @@ mod tests {
         assert_eq!(at_ramp_end, well_past_ramp_end);
         assert_eq!(at_ramp_end.active_tag_count, config.tags.active_tags_late);
         assert_eq!(at_ramp_end.era_budget, config.time.era_budget_late);
-        assert_eq!(
-            at_ramp_end.toxic_zone_width,
-            config.difficulty.toxic_zone_width_late
-        );
-        assert_eq!(
-            at_ramp_end.toxic_zone_height,
-            config.difficulty.toxic_zone_height_late
-        );
         assert_eq!(
             at_ramp_end.heat_source_count,
             config.source.heat_source_count_late
@@ -927,10 +912,11 @@ mod tests {
         for seed in 0..50u64 {
             let mut world = SimWorld::new(seed, &config);
             generate_starting_palette(&mut world, &config);
-            // A late-endpoint world both has a toxic zone and enough species
-            // for every `ObjectiveKind` to be a live candidate every slot —
-            // otherwise a run of repeats could be the *only* coherent
-            // sequence rather than evidence of a missing exclusion.
+            // A late-endpoint world has enough species for `Coexistence`/
+            // `TriggerBloom` to both be live candidates every slot (`Swamp`,
+            // and so `SurviveIn`, isn't guaranteed for a given seed since
+            // task 113 — the anti-repeat exclusion below still holds with
+            // just two candidates, so this doesn't weaken the assertion).
             let params = world_params(config.difficulty.ramp_worlds, &config);
             let objectives =
                 generate_objectives(&mut world, &params, &config, config.difficulty.ramp_worlds);
@@ -970,11 +956,16 @@ mod tests {
     fn objective_thresholds_grow_with_world_severity() {
         let config = SimConfig::default();
 
-        // A single species and no toxic zone leaves `TriggerBloom` as the
+        // A single species and no Swamp cell leaves `TriggerBloom` as the
         // only possible candidate, so the comparison below isn't confounded
         // by which variant the RNG happened to draw.
         let build = |severity: f32| {
             let mut world = SimWorld::new(42, &config);
+            for cell in world.cells.iter_mut() {
+                if cell.biome == Biome::Swamp {
+                    cell.biome = Biome::Plain;
+                }
+            }
             world.push_species(Species {
                 name: "Test".to_string(),
                 metabolism: Metabolism::Photolithic,
@@ -984,8 +975,6 @@ mod tests {
                 tags: Vec::new(),
             });
             let mut params = world_params(0, &config);
-            params.toxic_zone_width = 0;
-            params.toxic_zone_height = 0;
             params.objective_severity = severity;
             generate_one_objective(&mut world, &params, &config, None).0
         };
@@ -1034,22 +1023,56 @@ mod tests {
     }
 
     #[test]
-    fn survive_in_toxic_zone_is_never_chosen_without_a_toxic_zone() {
+    fn survive_in_toxic_zone_is_never_chosen_without_swamp() {
         let config = SimConfig::default();
         for seed in 0..30u64 {
             let mut world = SimWorld::new(seed, &config);
+            for cell in world.cells.iter_mut() {
+                if cell.biome == Biome::Swamp {
+                    cell.biome = Biome::Plain;
+                }
+            }
             generate_starting_palette(&mut world, &config);
-            let mut params = world_params(0, &config);
-            params.toxic_zone_width = 0;
-            params.toxic_zone_height = 0;
+            let params = world_params(0, &config);
 
             for objective in generate_objectives(&mut world, &params, &config, 0) {
                 assert!(
                     !matches!(objective, Objective::SurviveIn { .. }),
-                    "seed {seed}: SurviveIn picked despite no toxic zone: {objective:?}"
+                    "seed {seed}: SurviveIn picked despite no Swamp cell: {objective:?}"
                 );
             }
         }
+    }
+
+    /// Task 113's flip side of the test above: `SurviveIn` must actually be
+    /// reachable for a real fraction of unmodified seeds, not just
+    /// correctly *excluded* when Swamp is absent. The old `toxic_zone`
+    /// rectangle guaranteed a nonempty zone every world, so this never
+    /// needed a positive check; Swamp's score-based classification (task
+    /// 125) gives no such guarantee per seed. A 30-seed sample measured
+    /// ~34% (17/50) at `world_index == 0` — asserting a much lower floor
+    /// here so this stays a regression guard against the search or the
+    /// exclusion logic silently breaking, not a tight balance assertion.
+    #[test]
+    fn survive_in_toxic_zone_is_offered_across_a_real_fraction_of_seeds() {
+        let config = SimConfig::default();
+        let n_seeds = 50u64;
+        let mut offered = 0;
+        for seed in 0..n_seeds {
+            let mut world = SimWorld::new(seed, &config);
+            generate_starting_palette(&mut world, &config);
+            let params = world_params(0, &config);
+            if generate_objectives(&mut world, &params, &config, 0)
+                .iter()
+                .any(|o| matches!(o, Objective::SurviveIn { .. }))
+            {
+                offered += 1;
+            }
+        }
+        assert!(
+            offered * 5 >= n_seeds,
+            "expected SurviveIn to be offered in at least 20% of {n_seeds} seeds, got {offered}"
+        );
     }
 
     #[test]

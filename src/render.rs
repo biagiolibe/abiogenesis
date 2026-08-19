@@ -460,16 +460,6 @@ mod terrain_overlay {
     const PEAK_GLYPH_FONT_SIZE: f32 = 9.0;
     const PEAK_GLYPH_COLOR: egui::Color32 = egui::Color32::from_gray(225);
 
-    /// Matches the reference mockup's `#7F77DD` — a deliberate new color for
-    /// "toxic/hazardous," not yet used elsewhere in the codebase (the
-    /// notebook's zero-evidence dashed ring is gray, not purple, despite the
-    /// design doc's claim of cross-screen reuse — the dash *technique* is
-    /// what's actually shared, per `draw_dashed_line` below).
-    const TOXIC_ZONE_OUTLINE_COLOR: egui::Color32 = egui::Color32::from_rgb(127, 119, 221);
-    const TOXIC_ZONE_OUTLINE_WIDTH: f32 = 1.4;
-    const TOXIC_ZONE_DASH_LENGTH: f32 = 4.0;
-    const TOXIC_ZONE_GAP_LENGTH: f32 = 3.0;
-
     pub fn draw_terrain_overlay(
         world: Res<SimWorld>,
         cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
@@ -523,7 +513,6 @@ mod terrain_overlay {
         draw_boundaries(&world, &project, &painter);
         draw_peaks(&world, &project, &painter);
         draw_trees(&world, &project, &painter);
-        draw_toxic_zone(&world, &project, &painter);
         Ok(())
     }
 
@@ -718,57 +707,6 @@ mod terrain_overlay {
                     egui::Stroke::NONE,
                 ));
             }
-        }
-    }
-
-    fn draw_toxic_zone(
-        world: &SimWorld,
-        project: &impl Fn(Vec3) -> Option<egui::Pos2>,
-        painter: &egui::Painter,
-    ) {
-        let zone = world.toxic_zone;
-        if zone.width == 0 || zone.height == 0 {
-            return;
-        }
-        let (top_left, _, _, _) = cell_corners(zone.x0, zone.y0, world.width, world.height);
-        let (_, _, bottom_right, _) = cell_corners(
-            zone.x0 + zone.width - 1,
-            zone.y0 + zone.height - 1,
-            world.width,
-            world.height,
-        );
-        let (Some(p0), Some(p1)) = (project(top_left), project(bottom_right)) else {
-            return;
-        };
-        let top_right = egui::pos2(p1.x, p0.y);
-        let bottom_left = egui::pos2(p0.x, p1.y);
-        draw_dashed_line(painter, p0, top_right);
-        draw_dashed_line(painter, top_right, p1);
-        draw_dashed_line(painter, p1, bottom_left);
-        draw_dashed_line(painter, bottom_left, p0);
-    }
-
-    /// Approximates a dashed line the same way `notebook.rs`'s
-    /// `draw_dashed_ring` approximates a dashed circle — alternating short
-    /// straight segments — adapted from a ring to a rectangle's four edges.
-    fn draw_dashed_line(painter: &egui::Painter, from: egui::Pos2, to: egui::Pos2) {
-        let delta = to - from;
-        let length = delta.length();
-        if length < f32::EPSILON {
-            return;
-        }
-        let dir = delta / length;
-        let step = TOXIC_ZONE_DASH_LENGTH + TOXIC_ZONE_GAP_LENGTH;
-        let mut travelled = 0.0;
-        while travelled < length {
-            let dash_end = (travelled + TOXIC_ZONE_DASH_LENGTH).min(length);
-            let p0 = from + dir * travelled;
-            let p1 = from + dir * dash_end;
-            painter.line_segment(
-                [p0, p1],
-                egui::Stroke::new(TOXIC_ZONE_OUTLINE_WIDTH, TOXIC_ZONE_OUTLINE_COLOR),
-            );
-            travelled += step;
         }
     }
 

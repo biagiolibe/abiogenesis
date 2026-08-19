@@ -135,30 +135,6 @@ pub struct Organism {
     pub born_era: u32,
 }
 
-/// The toxic zone's geometry (GDD §5.2): every cell within the rectangle
-/// `[x0, x0+width) x [y0, y0+height)` is in the zone. Set once at world
-/// construction (task 066: position and size now vary per world, chosen to
-/// overlap enough placeable terrain — no longer always anchored to the
-/// grid's bottom-right corner) and never touched again — unlike the
-/// per-cell `toxicity` scalar, which `diffuse_environment` blends toward
-/// neighbours every tick and so drifts away from the zone's actual shape
-/// over time (task 047: `objectives.rs`'s `SurviveIn` zone check reads
-/// this, not `toxicity`, precisely because the scalar isn't a reliable
-/// proxy for "in the zone" once diffusion has run for a while).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct ToxicZoneBounds {
-    pub x0: usize,
-    pub y0: usize,
-    pub width: usize,
-    pub height: usize,
-}
-
-impl ToxicZoneBounds {
-    pub fn contains(&self, x: usize, y: usize) -> bool {
-        x >= self.x0 && x < self.x0 + self.width && y >= self.y0 && y < self.y0 + self.height
-    }
-}
-
 /// A cell's elevation band (task 066, `redesign/abiogenesis-terrain-map.md`):
 /// real per-cell simulation data, not a decorative visual value — a
 /// possible future factor in evolution alongside others TBD. Deliberately
@@ -214,11 +190,11 @@ impl TerrainKind {
 /// overriding whatever the areal pass produced there. Geyser (task 114)
 /// stays blocked. Decided once at generation time and stored here, never
 /// recomputed from live `Cell` scalars — the same reasoning
-/// `objectives.rs:318-320` gives for why `SurviveIn` reads
-/// `ToxicZoneBounds` instead of live `toxicity`: `diffuse_environment`
-/// blends scalars toward neighbours every tick, so a threshold read at
-/// query time would drift away from the biome's actual shape over a
-/// long-running world.
+/// `objectives.rs`'s `SurviveIn` gives for why it checks `Cell::biome`
+/// instead of live `toxicity` (task 113): `diffuse_environment` blends
+/// scalars toward neighbours every tick, so a threshold read at query time
+/// would drift away from the biome's actual shape over a long-running
+/// world.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Biome {
     DeepWater,
@@ -438,16 +414,13 @@ pub struct SimWorld {
     /// `TagConfig::conditional_tag_count`), so a linear scan
     /// (`conditional_gate`) is used instead of a `HashMap`.
     pub conditional_tags: Vec<ConditionalTag>,
-    /// The toxic zone's fixed bounds (task 047) — see `ToxicZoneBounds`'s
-    /// own docs for why this exists separately from the diffusing
-    /// `Cell::toxicity` scalar.
-    pub toxic_zone: ToxicZoneBounds,
     /// Cell indices of this world's heat sources (task 085), placed once at
     /// generation time. `reinject_environment_sources` reads this every
     /// tick to pull those cells' temperature back toward
     /// `EnvironmentConfig::source_temperature`, countering
-    /// `diffuse_environment`'s erosion — the same reason `toxic_zone` is
-    /// kept as a stable reference alongside the diffusing scalar it seeded.
+    /// `diffuse_environment`'s erosion — the same reason `objectives.rs`'s
+    /// `SurviveIn` reads the stable `Cell::biome` classification (task 113)
+    /// rather than the diffusing scalar it seeded.
     pub heat_sources: Vec<usize>,
     /// Grid (Chebyshev) distance from each cell to its nearest `Sea` cell
     /// (task 086 playtest follow-up), computed once at generation time via
@@ -579,7 +552,6 @@ impl SimWorld {
             active_tags,
             matrix,
             conditional_tags,
-            toxic_zone: ToxicZoneBounds::default(),
             heat_sources: Vec::new(),
             sea_distance: Vec::new(),
             ever_populated: false,
@@ -596,7 +568,6 @@ impl SimWorld {
         world.compute_slope(config);
         world.apply_environment_sources(config, &params);
         world.compute_rainfall(config, &params);
-        world.place_toxic_zone(config, &params);
         world.classify_biomes(config);
         world.place_feature_biomes(config);
         world.compute_water_distance();
@@ -621,7 +592,7 @@ impl SimWorld {
     /// keeping the best draw seen if none clears the floor — same
     /// defensive-generation spirit as tasks 047/048 (an unplayable world
     /// must be caught here, not left as a rare-seed bug). Must run before
-    /// `place_toxic_zone`, which needs real terrain to search against.
+    /// `place_feature_biomes`, which needs real terrain to search against.
     fn generate_terrain(&mut self, config: &SimConfig) {
         let terrain_cfg = &config.terrain;
         let mut rng = StdRng::seed_from_u64(self.seed ^ TERRAIN_SEED_OFFSET);
@@ -709,82 +680,13 @@ impl SimWorld {
         }
     }
 
-    /// Places the toxic zone (task 066): searches random rectangle
-    /// positions of `params`'s size (its own derived RNG stream, via
-    /// `TOXIC_ZONE_SEED_OFFSET`, never `self.rng`) for one overlapping
-    /// enough placeable terrain (`TerrainConfig::min_toxic_zone_placeable_fraction`),
-    /// bounded by `max_toxic_zone_placement_attempts` and keeping the best
-    /// position seen otherwise — the same guarantee `generate_terrain` makes
-    /// for the grid as a whole, applied to the zone's own footprint, so
-    /// `objectives.rs`'s `SurviveIn` can never land on an unwinnable
-    /// all-sea/all-peak zone. Must run after `generate_terrain`.
-    fn place_toxic_zone(&mut self, config: &SimConfig, params: &WorldParams) {
-        let env = &config.environment;
-        let width = (params.toxic_zone_width as usize).min(self.width);
-        let height = (params.toxic_zone_height as usize).min(self.height);
-        if width == 0 || height == 0 {
-            self.toxic_zone = ToxicZoneBounds::default();
-            return;
-        }
-        let terrain_cfg = &config.terrain;
-        let mut rng = StdRng::seed_from_u64(self.seed ^ TOXIC_ZONE_SEED_OFFSET);
-        let max_x0 = self.width - width;
-        let max_y0 = self.height - height;
-
-        let mut best: Option<(usize, usize, f32)> = None;
-        for _ in 0..terrain_cfg.max_toxic_zone_placement_attempts.max(1) {
-            let x0 = rng.random_range(0..=max_x0);
-            let y0 = rng.random_range(0..=max_y0);
-            let fraction = self.placeable_fraction_in(x0, y0, width, height);
-            if fraction >= terrain_cfg.min_toxic_zone_placeable_fraction {
-                self.set_toxic_zone(x0, y0, width, height, env.toxic_zone_value);
-                return;
-            }
-            if best.is_none_or(|(_, _, best_fraction)| fraction > best_fraction) {
-                best = Some((x0, y0, fraction));
-            }
-        }
-        let (x0, y0, _) = best.expect("the loop above runs at least once");
-        self.set_toxic_zone(x0, y0, width, height, env.toxic_zone_value);
-    }
-
-    /// Fraction of `[x0, x0+width) x [y0, y0+height)` that's placeable
-    /// terrain — the metric `place_toxic_zone` searches against.
-    fn placeable_fraction_in(&self, x0: usize, y0: usize, width: usize, height: usize) -> f32 {
-        let mut placeable = 0usize;
-        for y in y0..y0 + height {
-            for x in x0..x0 + width {
-                let cell = self.get(x, y);
-                if is_placeable_kind(cell.terrain, cell.is_peak) {
-                    placeable += 1;
-                }
-            }
-        }
-        placeable as f32 / (width * height) as f32
-    }
-
-    fn set_toxic_zone(&mut self, x0: usize, y0: usize, width: usize, height: usize, value: f32) {
-        self.toxic_zone = ToxicZoneBounds {
-            x0,
-            y0,
-            width,
-            height,
-        };
-        for y in y0..y0 + height {
-            for x in x0..x0 + width {
-                let idx = self.index(x, y);
-                self.cells[idx].toxicity = value;
-            }
-        }
-    }
-
     /// Classifies every cell's `Biome` (task 110,
     /// `redesign/abiogenesis-biomes.md`) — the two-stage architecture the
     /// design doc calls for: Stage A (`TerrainKind` + `is_peak` + the raw
     /// `elevation` this task adds) gives the base landform, Stage B refines
     /// it with the ambient scalars and geomorphology that
-    /// `apply_environment_sources`/`place_toxic_zone`/`generate_terrain`
-    /// have already written. Runs before `place_feature_biomes`, which
+    /// `apply_environment_sources`/`generate_terrain` have already written.
+    /// Runs before `place_feature_biomes`, which
     /// overrides whatever this produces for its own footprints (task 111) —
     /// so this method must never assume it's writing the *final* biome for
     /// every cell.
@@ -943,9 +845,10 @@ impl SimWorld {
         // Swamp in the first place — `swamp_toxicity_min` is repurposed
         // from "toxicity level a cell must already have" to "patch-noise
         // threshold selecting which fraction of Swamp reads as toxic."
-        // `place_toxic_zone`'s separate rectangle-based toxicity is
-        // untouched by this pass (still the `SurviveIn`/`ZoneKind::Toxic`
-        // objective's own geometry, task 113's concern, not this one's).
+        // This is now the *only* generation-time source of nonzero
+        // `Cell::toxicity` (task 113 removed the old standalone
+        // `place_toxic_zone` rectangle): `objectives.rs`'s `SurviveIn`
+        // reads `Cell::biome == Swamp` directly, not this scalar.
         for y in 0..self.height {
             for x in 0..self.width {
                 let idx = self.index(x, y);
@@ -955,7 +858,7 @@ impl SimWorld {
                 let nx = x as f32 / (self.width - 1).max(1) as f32;
                 let ny = y as f32 / (self.height - 1).max(1) as f32;
                 if wave_band_sum(&toxic_patch_waves, nx, ny) > biome_cfg.swamp_toxicity_min {
-                    self.cells[idx].toxicity = config.environment.toxic_zone_value;
+                    self.cells[idx].toxicity = config.environment.swamp_toxicity_value;
                 }
             }
         }
@@ -964,7 +867,8 @@ impl SimWorld {
     /// Places the four "feature" biomes task 111 covers
     /// (`redesign/abiogenesis-biomes.md`): Cratere profondo, Distesa di
     /// cristalli, and Lago via bounded-retry rectangle search (same
-    /// pattern as `place_toxic_zone`), and Bocca vulcanica by hooking
+    /// attempt-loop/keep-best-seen pattern as `generate_terrain`), and
+    /// Bocca vulcanica by hooking
     /// directly into the point heat sources `apply_environment_sources`
     /// already placed — no search needed there. Must run after
     /// `classify_biomes`: every cell touched here overrides whatever
@@ -987,9 +891,16 @@ impl SimWorld {
         // deliberately independent from `SourceConfig::heat_source_radius`
         // (that's the temperature falloff footprint, not a biome-sized
         // patch — task 111's own acceptance criteria calls out not
-        // perturbing it). Biome only, no scalar override:
+        // perturbing it). No *temperature* override:
         // `apply_environment_sources`/`reinject_environment_sources`
-        // already keep these cells hot.
+        // already keep these cells hot. `toxicity` *is* reset to ambient
+        // here (task 113 fix, found by broadening
+        // `cell_toxicity_matches_its_biome_across_seeds` past a single
+        // seed): a cell `classify_biomes` scored as toxic Swamp can sit
+        // within a heat source's radius and get overridden to
+        // VolcanicVent here, and without this reset it would silently keep
+        // its stale Swamp toxicity — a real cell whose biome says "not
+        // toxic" but whose scalar disagrees.
         for &source_idx in &self.heat_sources.clone() {
             let (sx, sy) = (source_idx % self.width, source_idx / self.width);
             for y in 0..self.height {
@@ -999,6 +910,7 @@ impl SimWorld {
                     if (dx * dx + dy * dy).sqrt() <= biome_cfg.volcanic_vent_radius {
                         let idx = self.index(x, y);
                         self.cells[idx].biome = Biome::VolcanicVent;
+                        self.cells[idx].toxicity = 0.0;
                         reserved[idx] = true;
                     }
                 }
@@ -1412,12 +1324,11 @@ impl SimWorld {
     /// `Mountain` peaks. Draws two independent RNG streams
     /// (`TEMPERATURE_SOURCE_SEED_OFFSET`, `SUN_DIRECTION_SEED_OFFSET`) —
     /// never `self.rng` — so this generation step doesn't shift any other
-    /// draw for a given seed, same discipline as `generate_terrain`/
-    /// `place_toxic_zone`. Must run after `generate_terrain` (heat source
-    /// placement, and the sea-distance field, both need real terrain to
-    /// search against) and before `place_toxic_zone` (unchanged ordering
-    /// requirement). Toxicity is not set here (task 066: `place_toxic_zone`
-    /// owns it).
+    /// draw for a given seed, same discipline as `generate_terrain`. Must
+    /// run after `generate_terrain` (heat source placement, and the
+    /// sea-distance field, both need real terrain to search against).
+    /// Toxicity is not set here (task 113: `classify_biomes` owns it, as a
+    /// post-classification modifier on Swamp cells).
     fn apply_environment_sources(&mut self, config: &SimConfig, params: &WorldParams) {
         let env = &config.environment;
         let source_cfg = &config.source;
@@ -1625,8 +1536,8 @@ impl SimWorld {
 
     /// Places `params.heat_source_count` point sources via bounded-retry
     /// generation against `is_placeable` (no sources on `Sea`/peaks),
-    /// mirroring `place_toxic_zone`'s attempt-loop/keep-best-seen pattern
-    /// (`world.rs:359-387`): each source retries up to
+    /// the same attempt-loop/keep-best-seen pattern `generate_terrain`
+    /// uses for the grid as a whole: each source retries up to
     /// `max_heat_source_placement_attempts` random cells, accepting the
     /// first that's both placeable and at least `heat_source_min_distance`
     /// from every already-placed source, else keeping the best-scoring
@@ -1931,15 +1842,9 @@ impl SimWorld {
 }
 
 /// XOR salt decorrelating terrain generation's RNG stream (task 066) from
-/// `SimWorld::rng` (tag/species/reproduction draws) and from
-/// `TOXIC_ZONE_SEED_OFFSET` below — an arbitrary constant, chosen only to
-/// not collide with the other salt.
+/// `SimWorld::rng` (tag/species/reproduction draws) — an arbitrary
+/// constant, chosen only to not collide with the other salts below.
 const TERRAIN_SEED_OFFSET: u64 = 0x9E37_79B9_7F4A_7C15;
-
-/// Same purpose as `TERRAIN_SEED_OFFSET`, for the toxic zone's placement
-/// search (task 066) — a different constant so the two derived streams
-/// don't start in lockstep.
-const TOXIC_ZONE_SEED_OFFSET: u64 = 0xC2B2_AE3D_27D4_EB4F;
 
 /// Same purpose as `TERRAIN_SEED_OFFSET`, for heat source placement and the
 /// per-world wind direction draw (task 085) — a different constant so this
@@ -2673,84 +2578,69 @@ mod tests {
         }
     }
 
-    /// Task 066: the zone's position is no longer fixed to the grid's
-    /// bottom-right corner, so this checks the general invariant instead —
-    /// every cell's toxicity matches `toxic_zone_value` exactly where
-    /// `ToxicZoneBounds::contains` says it should, and `0.0` everywhere else
-    /// — **except** a cell task 111's feature-biome placement (which runs
-    /// after `place_toxic_zone`) has overridden with its own imposed
-    /// toxicity, whether or not that cell sits inside the zone's bounds.
+    /// Task 113: since `place_toxic_zone`'s standalone rectangle is gone,
+    /// every cell's toxicity now comes from exactly one of the placed
+    /// feature biomes' fixed imposed value or Swamp's post-classification
+    /// modifier (task 125 §12.4) — `0.0` everywhere else.
     #[test]
-    fn toxic_zone_matches_its_own_bounds() {
+    fn cell_toxicity_matches_its_biome_across_seeds() {
         let config = test_config();
-        let world = SimWorld::new(42, &config);
-        let env = &config.environment;
-
-        assert!(
-            world.toxic_zone.width > 0 && world.toxic_zone.height > 0,
-            "world_index 0's default config always has a non-empty toxic zone"
-        );
-        for y in 0..world.height {
-            for x in 0..world.width {
-                let cell = world.get(x, y);
-                match cell.biome {
-                    Biome::Crater => {
-                        assert_eq!(
+        for seed in 0..10u64 {
+            let world = SimWorld::new(seed, &config);
+            for y in 0..world.height {
+                for x in 0..world.width {
+                    let cell = world.get(x, y);
+                    match cell.biome {
+                        Biome::Crater => assert_eq!(
                             cell.toxicity, config.biome.crater_toxicity,
-                            "cell ({x}, {y})"
-                        )
+                            "seed {seed}, cell ({x}, {y})"
+                        ),
+                        Biome::CrystalField => assert_eq!(
+                            cell.toxicity, config.biome.crystal_field_toxicity,
+                            "seed {seed}, cell ({x}, {y})"
+                        ),
+                        Biome::Lake => assert_eq!(
+                            cell.toxicity, config.biome.lake_toxicity,
+                            "seed {seed}, cell ({x}, {y})"
+                        ),
+                        // Swamp's toxicity is a post-classification modifier
+                        // on a noise-gated sub-region (task 125): either
+                        // ambient 0.0 or the imposed `swamp_toxicity_value`.
+                        Biome::Swamp => assert!(
+                            cell.toxicity == 0.0
+                                || cell.toxicity == config.environment.swamp_toxicity_value,
+                            "seed {seed}, cell ({x}, {y}): unexpected Swamp toxicity {}",
+                            cell.toxicity
+                        ),
+                        _ => assert_eq!(cell.toxicity, 0.0, "seed {seed}, cell ({x}, {y})"),
                     }
-                    Biome::CrystalField => assert_eq!(
-                        cell.toxicity, config.biome.crystal_field_toxicity,
-                        "cell ({x}, {y})"
-                    ),
-                    Biome::Lake => {
-                        assert_eq!(cell.toxicity, config.biome.lake_toxicity, "cell ({x}, {y})")
-                    }
-                    // Task 125: Swamp's toxicity is a post-classification
-                    // modifier on a noise-gated sub-region, independent of
-                    // `toxic_zone` — either ambient 0.0 or the imposed
-                    // `toxic_zone_value` (both mechanisms write the same
-                    // constant, so there's nothing else it could be).
-                    Biome::Swamp => assert!(
-                        cell.toxicity == 0.0 || cell.toxicity == env.toxic_zone_value,
-                        "cell ({x}, {y}): unexpected Swamp toxicity {}",
-                        cell.toxicity
-                    ),
-                    _ if world.toxic_zone.contains(x, y) => {
-                        assert_eq!(cell.toxicity, env.toxic_zone_value, "cell ({x}, {y})")
-                    }
-                    _ => assert_eq!(cell.toxicity, 0.0, "cell ({x}, {y})"),
                 }
             }
         }
     }
 
-    /// Task 066: the toxic zone's position now depends on generated
-    /// terrain, but its footprint must still always contain enough
-    /// placeable land for `SurviveIn` to remain satisfiable — checked
-    /// across a sample of seeds, not just one.
+    /// Task 113: `SurviveIn`'s zone check (`objectives.rs::cell_in_zone`)
+    /// now reads `Cell::biome == Swamp` directly rather than a placement
+    /// search bounded against placeable terrain — this is only sound if
+    /// Swamp can never land on `Sea` or a peak. `classify_biomes` only ever
+    /// assigns `Biome::Swamp` from its `TerrainKind::Plain` branch, so this
+    /// holds by construction; this test guards that invariant against a
+    /// future change to the classification match arms.
     #[test]
-    fn toxic_zone_always_overlaps_enough_placeable_land() {
+    fn swamp_cells_are_always_placeable_land_across_seeds() {
         let config = test_config();
         for seed in 0..30u64 {
             let world = SimWorld::new(seed, &config);
-            let zone = world.toxic_zone;
-            if zone.width == 0 || zone.height == 0 {
-                continue;
+            for (idx, cell) in world.cells.iter().enumerate() {
+                if cell.biome != Biome::Swamp {
+                    continue;
+                }
+                let (x, y) = (idx % world.width, idx / world.width);
+                assert!(
+                    cell.terrain != TerrainKind::Sea && !cell.is_peak,
+                    "seed {seed}, cell ({x}, {y}): Swamp on unplaceable terrain"
+                );
             }
-            let placeable = (zone.y0..zone.y0 + zone.height)
-                .flat_map(|y| (zone.x0..zone.x0 + zone.width).map(move |x| (x, y)))
-                .filter(|&(x, y)| {
-                    let cell = world.get(x, y);
-                    cell.terrain != TerrainKind::Sea && !cell.is_peak
-                })
-                .count();
-            let fraction = placeable as f32 / (zone.width * zone.height) as f32;
-            assert!(
-                fraction >= config.terrain.min_toxic_zone_placeable_fraction,
-                "seed {seed}: toxic zone placeable fraction {fraction} below the configured floor"
-            );
         }
     }
 
@@ -3528,10 +3418,11 @@ mod tests {
     }
 
     /// Task 125 (§12.4): the toxicity-imposition pass is load-bearing, not
-    /// optional flavor — `place_toxic_zone` won't be the only toxicity
-    /// source forever (task 113 removes it), so Swamp's own toxic
-    /// sub-region must actually produce nonzero toxicity somewhere across
-    /// a run of seeds. A single seed's Swamp region could in principle be
+    /// optional flavor — it's the *only* generation-time toxicity source
+    /// for Swamp cells (task 113 removed the old standalone
+    /// `place_toxic_zone` rectangle), so Swamp's own toxic sub-region must
+    /// actually produce nonzero toxicity somewhere across a run of seeds.
+    /// A single seed's Swamp region could in principle be
     /// too small/oddly-shaped for the noise mask to select any of it (same
     /// keep-best-seen spirit as other placement code, not a hard
     /// per-seed guarantee) — checked as a comfortable majority across a

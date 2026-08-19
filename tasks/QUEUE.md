@@ -61,18 +61,27 @@ discrete biomes. Dependency order: 110 (data layer, areal biomes) unblocks 111
 (Geyser) is scoped for reference but blocked — no small/pulsing heat-source category
 exists yet to back it. **113's dependency on 125 resolved 2026-08-13** (dependency
 review, see the "credibility follow-ups" section below and 113/122/125's own files):
-`place_toxic_zone` is currently the only generation-time source of nonzero
-`Cell.toxicity`; removing it (113) before 125 ships a replacement (Swamp-cell
-toxicity) would silently break task 108's chemolithotroph and make 122 moot for the
-wrong reason. Resolved order: **125 → 113 → 122**.
+`place_toxic_zone` was, at the time, the only generation-time source of nonzero
+`Cell.toxicity`; removing it (113) before 125 shipped a replacement (Swamp-cell
+toxicity) would have silently broken task 108's chemolithotroph and made 122 moot for
+the wrong reason. Resolved order: **125 → 113 → 122**. **113 landed 2026-08-19**;
+only 114 remains blocked in this section.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
 | `[x]` | 110 | Biome enum + two-stage classification (areal biomes) | — | [110](done/110-biome-classification-two-stage.md) |
 | `[x]` | 111 | Explicit placement for feature biomes (Cratere, Distesa di cristalli, Lago, Bocca vulcanica) | 110 | [111](done/111-biome-feature-placement.md) |
 | `[x]` | 112 | Biome rendering (flat color, dithering, borders, tree overlay) | 110, 111 | [112](done/112-biome-rendering.md) |
-| `[ ]` | 113 | Palude replaces `toxic_zone` | 110, **125 (hard blocker)** | [113](113-swamp-replaces-toxic-zone.md) |
+| `[x]` | 113 | Palude replaces `toxic_zone` | 110, 125 | [113](done/113-swamp-replaces-toxic-zone.md) |
 | `[ ]` ⏸ | 114 | BLOCKED — Geyser biome (needs a small/pulsing heat-source category, not yet scoped) | 110, 111, unscoped source-model extension | [114](114-geyser-pulsing-source-blocked.md) |
+
+**Task 113 follow-ups** (2026-08-19, found in advisor review after 113
+shipped): two open decisions, neither blocking 113's own acceptance
+criteria — see 133's own file for the full options list on each.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[?]` | 133 | [DECISION] `SurviveIn`'s Swamp target has no visual/textual affordance; the "larger toxic zones" difficulty axis lost its implementation | 113 | [133](133-swamp-survivein-legibility-and-difficulty-scaling.md) |
 
 **HUD & Notebook redesign follow-up** (2026-08-12, scoped from
 `redesign/abiogenesis-hud-notebook.md` after a discrepancy-check pass against
@@ -108,13 +117,13 @@ pass).
 
 **Balance/persistence** (found while balance-testing task 108). **Rescoped
 2026-08-13**: originally targeted `ToxicZoneBounds`; now targets
-`Biome::Swamp` membership instead, since task 113 removes `ToxicZoneBounds`
-and task 125 moves the toxicity source onto Swamp cells. See 122's own file
-for the full rescope note.
+`Biome::Swamp` membership instead, since task 113 removed `ToxicZoneBounds`
+and task 125 moved the toxicity source onto Swamp cells. See 122's own file
+for the full rescope note. **Unblocked 2026-08-19** (113 landed).
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 122 | Swamp toxicity reinjection (toxicity erodes with no source to counter it) | 085, 108, **113, 125 (hard blockers)** | [122](122-toxic-zone-reinjection.md) |
+| `[ ]` | 122 | Swamp toxicity reinjection (toxicity erodes with no source to counter it) | 085, 108, 113, 125 | [122](122-toxic-zone-reinjection.md) |
 
 **Worldgen pipeline reassessment — credibility follow-ups** (2026-08-13,
 same session: after scoping 123-127, an explicit pass over what the spec
@@ -155,7 +164,28 @@ Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN
 
 ---
 
-*Last updated: 2026-08-12 (112, biome rendering — flat dithered colors via
+*Last updated: 2026-08-19 (113, Palude replaces `toxic_zone` — removed the
+standalone `ToxicZoneBounds`/`place_toxic_zone` rectangle and
+`draw_toxic_zone`'s dashed outline; `SurviveIn`'s zone check now reads
+`Cell::biome == Swamp` directly, and Swamp's own post-classification
+toxicity modifier (task 125) is the sole remaining generation-time
+toxicity source — completed and archived to `tasks/done/`. Found and fixed
+in the same pass: `place_feature_biomes`'s VolcanicVent override didn't
+reset `toxicity`, silently inheriting stale Swamp values on overlap; the
+`chemolithotroph_survives_reasonably_in_its_toxic_zone_across_seeds`
+balance test's toxic-cell search picked the largest contiguous toxic blob
+regardless of toxicity value, which is usually `Lake` (0.05, a flavor
+value) rather than a genuinely hostile cell — fixed to sort on toxicity
+value first. Only 114 remains open in the Biomi phase now. GDD/player_guide
+synced; two open follow-ups filed as task 133 (SurviveIn's Swamp region
+has no visual/textual affordance now that the dashed-outline rectangle is
+gone, and the "larger toxic zones" difficulty axis lost its
+implementation). 127, flow accumulation and rivers, and its follow-on
+decision task 132 (`Cell.slope`/`Cell.water_distance` ordering) — completed
+and archived to `tasks/done/`, closing the 123-127 worldgen pipeline
+reassessment phase (archived to `QUEUE_ARCHIVE.md`) in a prior pass this
+session that this note previously failed to log here.
+112, biome rendering — flat dithered colors via
 `biome_color`/`dithered_biome_color`, biome-based boundaries/coastline, a
 new deterministic tree overlay (`♣` glyph, no RNG) — completed and
 archived to `tasks/done/`. `draw_toxic_zone` deliberately left untouched,

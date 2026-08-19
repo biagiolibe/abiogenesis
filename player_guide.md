@@ -96,7 +96,7 @@ Once the accumulated evidence for a tag pair crosses a threshold, that relations
 Every world sets a **sequence of goals** — 2 in the early worlds, 3 once the difficulty ramps up, plus one more that's always there — shown in the HUD one at a time ("Objective i / N"). Each is one of:
 
 - **Coexistence** — sustain N species at once for a number of eras.
-- **Survive in a hostile zone** — get a species to survive in the world's toxic zone.
+- **Survive in a hostile zone** — get a species to survive on a Swamp cell, the world's toxic biome (not every world has one — this objective only comes up when it does).
 - **Trigger a bloom** — grow a specific species past a population threshold.
 - **Force a speciation event** (always the sequence's last objective, on every world) — push a species under enough sustained pressure (harmful adjacency, a bad temperature fit, or toxicity exposure) that the simulation itself spins off a new species from it. This one isn't something you build directly like a splice — it's a consequence of how hard you push a species, and it can happen without you asking for it.
 

@@ -12,12 +12,14 @@ use crate::config::SimConfig;
 use crate::run::{MetaProgress, RunProgress};
 use crate::sim::SimSet;
 use crate::state::{EraState, GameState};
-use crate::world::{SimWorld, SpeciesId};
+use crate::world::{Biome, SimWorld, SpeciesId};
 use crate::worldgen::world_params;
 
-/// A region of the grid an objective can reference. Currently only the
-/// toxic zone (GDD §8's "survives in the toxic zone" example) — extend here
-/// if a future objective needs another named region.
+/// A region of the grid an objective can reference. Currently only
+/// `Biome::Swamp` (task 113; GDD §8's "survives in the toxic zone" example
+/// — `Toxic` is the objective-facing name, not a claim about the
+/// underlying region's implementation) — extend here if a future objective
+/// needs another named region.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZoneKind {
     Toxic,
@@ -357,10 +359,12 @@ fn count_coexisting_species(world: &SimWorld) -> u32 {
 }
 
 /// Whether any living organism of `species` currently occupies a cell in
-/// `zone`. Checked against the zone's fixed geometry (`SimWorld::toxic_zone`,
-/// task 047), not `Cell::toxicity` — that scalar diffuses toward neighbours
-/// every tick (`SimWorld::diffuse_environment`) and, given enough ticks,
-/// stops meaning "is in the zone" at all.
+/// `zone`. Checked against `Cell::biome` (task 113: `Biome::Swamp`, decided
+/// once at generation time and stored per cell), not `Cell::toxicity` —
+/// that scalar diffuses toward neighbours every tick
+/// (`SimWorld::diffuse_environment`) and, given enough ticks, stops meaning
+/// "is in the zone" at all. `Cell::biome` doesn't have that erosion problem
+/// since nothing recomputes it from live scalars after generation.
 fn species_present_in_zone(world: &SimWorld, species: SpeciesId, zone: ZoneKind) -> bool {
     world.cells.iter().enumerate().any(|(idx, cell)| {
         let x = idx % world.width;
@@ -373,7 +377,7 @@ fn species_present_in_zone(world: &SimWorld, species: SpeciesId, zone: ZoneKind)
 
 fn cell_in_zone(world: &SimWorld, x: usize, y: usize, zone: ZoneKind) -> bool {
     match zone {
-        ZoneKind::Toxic => world.toxic_zone.contains(x, y),
+        ZoneKind::Toxic => world.get(x, y).biome == Biome::Swamp,
     }
 }
 
@@ -530,7 +534,7 @@ fn evaluate_current_objective(
 mod tests {
     use super::*;
     use crate::config::SimConfig;
-    use crate::world::{Cell, Metabolism, Organism, Species, ToxicZoneBounds};
+    use crate::world::{Cell, Metabolism, Organism, Species};
     use bevy::ecs::system::SystemState;
 
     /// Builds a scratch ECS `World` with every resource `ObjectiveOutcomeParams`
@@ -659,12 +663,8 @@ mod tests {
     #[test]
     fn survive_in_toxic_zone_requires_sustained_presence() {
         let mut world = world_with_species(1);
-        world.toxic_zone = ToxicZoneBounds {
-            x0: 0,
-            y0: 0,
-            width: 1,
-            height: 1,
-        };
+        let idx = world.index(0, 0);
+        world.cells[idx].biome = Biome::Swamp;
         place(&mut world, 0, 0, SpeciesId(0));
 
         let objective = Objective::SurviveIn {
@@ -691,14 +691,12 @@ mod tests {
     #[test]
     fn survive_in_toxic_zone_is_not_satisfied_by_a_clean_cell() {
         let mut world = world_with_species(1);
-        // The zone is a single cell in the bottom-right corner; the organism
-        // sits at (0, 0), outside it.
-        world.toxic_zone = ToxicZoneBounds {
-            x0: world.width - 1,
-            y0: world.height - 1,
-            width: 1,
-            height: 1,
-        };
+        // The zone is a single Swamp cell in the bottom-right corner; the
+        // organism sits at (0, 0), forced to a non-Swamp biome, outside it.
+        let origin = world.index(0, 0);
+        world.cells[origin].biome = Biome::Plain;
+        let corner = world.index(world.width - 1, world.height - 1);
+        world.cells[corner].biome = Biome::Swamp;
         place(&mut world, 0, 0, SpeciesId(0));
 
         let objective = Objective::SurviveIn {
@@ -714,12 +712,15 @@ mod tests {
         );
     }
 
-    /// Task 047's regression: `diffuse_environment` blends `toxicity`
-    /// toward neighbours every tick with no floor pinning cells outside the
-    /// zone back to `0.0` — given enough ticks it leaks well past the
-    /// zone's actual bounds. `SurviveIn` must still not be satisfiable by an
-    /// organism that only ever sat in the (now slightly toxic) clean corner,
-    /// far from where the zone actually is.
+    /// Task 047's regression, re-targeted at `Cell::biome` by task 113:
+    /// `diffuse_environment` blends `toxicity` toward neighbours every tick
+    /// with no floor pinning cells outside the zone back to `0.0` — given
+    /// enough ticks it leaks well past the zone's actual bounds.
+    /// `SurviveIn` must still not be satisfiable by an organism that only
+    /// ever sat in the (now slightly toxic) clean corner, far from where
+    /// the zone actually is — the fixed-at-generation `Cell::biome` check
+    /// simply can't be fooled by this the way a live-`toxicity` check
+    /// could, but this test keeps the regression guard explicit.
     #[test]
     fn diffused_toxicity_outside_the_zone_does_not_satisfy_survive_in() {
         let config = SimConfig::default();
@@ -734,22 +735,19 @@ mod tests {
         });
         place(&mut world, 0, 0, SpeciesId(0));
 
-        // Task 066: world construction now generates terrain and places the
-        // toxic zone somewhere derived from it, which could in principle put
-        // real toxicity near (0, 0). This test isolates diffusion leakage
-        // specifically, so it resets to a known, fixed 1x1 zone far from
-        // (0, 0) rather than relying on incidental placement.
+        // Task 066/113: world construction generates terrain and biomes
+        // derived from it, which could in principle put real Swamp/toxicity
+        // near (0, 0). This test isolates diffusion leakage specifically,
+        // so it resets to a known, fixed Swamp cell far from (0, 0) rather
+        // than relying on incidental placement.
         for cell in world.cells.iter_mut() {
             cell.toxicity = 0.0;
         }
-        world.toxic_zone = ToxicZoneBounds {
-            x0: world.width - 1,
-            y0: world.height - 1,
-            width: 1,
-            height: 1,
-        };
+        let origin = world.index(0, 0);
+        world.cells[origin].biome = Biome::Plain;
         let corner = world.index(world.width - 1, world.height - 1);
-        world.cells[corner].toxicity = config.environment.toxic_zone_value;
+        world.cells[corner].biome = Biome::Swamp;
+        world.cells[corner].toxicity = config.environment.swamp_toxicity_value;
 
         // Diffusion only, not a full `sim::step` — this isolates the effect
         // under test (toxicity leaking via diffusion) from organism
@@ -775,9 +773,10 @@ mod tests {
             "diffusion should have leaked some toxicity to (0, 0) within {max_ticks} ticks — \
              otherwise this test isn't actually exercising the bug it's meant to catch"
         );
-        assert!(
-            !world.toxic_zone.contains(0, 0),
-            "(0, 0) must still be outside the zone's real geometry"
+        assert_ne!(
+            world.cells[idx].biome,
+            Biome::Swamp,
+            "(0, 0) must still be outside the zone's real biome"
         );
 
         let objective = Objective::SurviveIn {
