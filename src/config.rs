@@ -30,6 +30,7 @@ pub struct SimConfig {
     pub source: SourceConfig,
     pub biome: BiomeConfig,
     pub evolution: EvolutionConfig,
+    pub hydrology: HydrologyConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -425,6 +426,32 @@ impl Default for EvolutionConfig {
             terrain_mismatch_weight: 1.0,
             toxicity_weight: 1.0,
             max_species: 40,
+        }
+    }
+}
+
+/// Flow accumulation and rivers (task 127,
+/// `redesign/procedural_biome_generation_spec_v2.md` §10): computed once at
+/// generation time from `Cell.elevation` + `Cell.rainfall` (task 126).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HydrologyConfig {
+    /// Fraction of non-`Sea` cells marked `Cell.is_river`, by
+    /// `flow_accumulation` rank — an **adaptive per-world percentile**, not
+    /// a fixed absolute accumulation value: worlds vary a lot in total
+    /// rainfall/accumulation scale (a wetter world's median cell can carry
+    /// more flow than a drier world's principal river), so a fixed
+    /// threshold would either flood a wet world with "rivers" or leave a
+    /// dry world with none. Calibrated so a 128x80 grid typically lands in
+    /// the spec's own credibility bounds (§10.3: roughly 1-3 principal
+    /// rivers of 20-40 cells of path length), checked statistically across
+    /// a sample of seeds (`tests`), not guaranteed exactly per seed.
+    pub river_top_fraction: f32,
+}
+
+impl Default for HydrologyConfig {
+    fn default() -> Self {
+        Self {
+            river_top_fraction: 0.004,
         }
     }
 }

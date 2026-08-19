@@ -257,3 +257,50 @@ Tasks that took < 15 min and didn't need a detailed briefing.
 | `[x]` | 044 | Main menu | Claude | [044](done/044-main-menu.md) |
 | `[x]` | 045 | World-cleared/defeat screens + world transition | Claude | [045](done/045-world-transition-defeat-screens.md) |
 | `[x]` | 046 | Minimal meta-progression | Claude | [046](done/046-minimal-meta-progression.md) |
+
+---
+
+**Worldgen pipeline reassessment** (2026-08-13, scoped from
+`redesign/procedural_biome_generation_spec_v2.md` after a design-discussion
+pass comparing its diagnosis against the current 128×80 pipeline; GDD §5.1
+corrected in the same session — the doc's `48×32` grid was stale, task 074
+already raised it to `128×80`). Five phases, ordered lowest- to
+highest-risk: 123 (organic feature masks) is size-independent and purely
+local; 124 (geomorphology fields) is additive-only; 125 (score-based
+classification + drainage-based Palude) is the first to change existing
+biome output — and, per the 2026-08-13 dependency review, had to land
+before 113 (125 is what gives Swamp a `toxicity` source that doesn't
+depend on `place_toxic_zone`, which 113 removes); 126/127 (rainfall, then
+flow accumulation/rivers) were the highest-value, highest-complexity
+phases — 127 in particular carried a real determinism risk (elevation-sort
+tie-breaking), resolved via a strict-total-order sort key, see its task
+file. 126/127 add fields only; wiring rainfall/rivers into biome
+classification or rendering is left as future follow-up in both files'
+Non-Goals. Closed 2026-08-19 once 127 landed (task 132, a decision/
+correction task on `Cell.slope`/`Cell.water_distance` ordering found
+mid-phase, is filed separately below).
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[x]` | 123 | Organic masks for placed feature biomes (Cratere, Distesa di cristalli, Lago) — `toxic_zone` explicitly out of scope | 111 | [123](done/123-organic-feature-biome-masks.md) |
+| `[x]` | 124 | Derived geomorphology fields (`slope`, `water_distance`) — additive only | 110, 111 | [124](done/124-geomorphology-fields.md) |
+| `[x]` | 125 | Score-based biome classification; Palude from drainage instead of toxicity | 110, 111, 124 | [125](done/125-biome-score-classification.md) |
+| `[x]` | 126 | Rainfall field (orographic lift, rain shadow) — additive only | 124 | [126](done/126-rainfall-field.md) |
+| `[x]` | 127 | Flow accumulation and rivers | 124, 126 | [127](done/127-hydrology-rivers.md) |
+
+**Resolved 2026-08-19** (task 132, found in advisor review after 123-126
+shipped): `Cell.slope`/`Cell.water_distance` (task 124) were computed every
+world generation and read by nothing — both task 125's Swamp score and
+task 126's rainfall needed the same kind of data earlier in the pipeline
+than these persisted fields were populated. Fixed by splitting
+`compute_geomorphology` into `compute_slope` (moved to run right after
+`generate_terrain`, no Lake dependency) and `compute_water_distance`
+(unchanged, after `place_feature_biomes`) — `classify_biomes` now reads
+`Cell.slope` directly; `Cell.water_distance` still can't move earlier
+(genuine `Biome::Lake` dependency) and stays local-proxy-only in
+`classify_biomes`/`compute_rainfall`. 127/128/130/131 re-checked: all read
+these fields from steps that run after both are populated, no conflict.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[x]` | 132 | [DECISION] Resolve `Cell.slope`/`Cell.water_distance` ordering before later hydrology/biome tasks read them | 124, 125, 126 | [132](done/132-persisted-slope-water-distance-unused.md) |

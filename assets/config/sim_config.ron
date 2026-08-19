@@ -196,4 +196,7 @@
         toxicity_weight: 1.0,
         max_species: 40,
     ),
+    hydrology: (
+        river_top_fraction: 0.004,
+    ),
 )

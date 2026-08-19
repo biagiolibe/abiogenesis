@@ -116,33 +116,6 @@ for the full rescope note.
 |-------|----|--------|------------|------|
 | `[ ]` | 122 | Swamp toxicity reinjection (toxicity erodes with no source to counter it) | 085, 108, **113, 125 (hard blockers)** | [122](122-toxic-zone-reinjection.md) |
 
-**Worldgen pipeline reassessment** (2026-08-13, scoped from
-`redesign/procedural_biome_generation_spec_v2.md` after a design-discussion
-pass comparing its diagnosis against the current 128×80 pipeline; GDD §5.1
-corrected in the same session — the doc's `48×32` grid was stale, task 074
-already raised it to `128×80`). Five phases, ordered lowest- to
-highest-risk: 123 (organic feature masks) is size-independent and purely
-local; 124 (geomorphology fields) is additive-only; 125 (score-based
-classification + drainage-based Palude) is the first to change existing
-biome output — **and, per the 2026-08-13 dependency review, must land
-before 113** (see the "Biomi" section above): 125 is what gives Swamp a
-`toxicity` source that doesn't depend on `place_toxic_zone`, which 113
-removes; 126/127 (rainfall, then flow accumulation/rivers) are the
-highest-value, highest-complexity phases —
-127 in particular carries a real determinism risk (elevation-sort
-tie-breaking) flagged in its own task file. 126/127 add fields only;
-wiring rainfall/rivers into biome classification or rendering is
-explicitly left as future follow-up in both files' Non-Goals, not
-pre-scoped here.
-
-| Status | ID | Title | Depends on | File |
-|-------|----|--------|------------|------|
-| `[x]` | 123 | Organic masks for placed feature biomes (Cratere, Distesa di cristalli, Lago) — `toxic_zone` explicitly out of scope | 111 | [123](done/123-organic-feature-biome-masks.md) |
-| `[x]` | 124 | Derived geomorphology fields (`slope`, `water_distance`) — additive only | 110, 111 | [124](done/124-geomorphology-fields.md) |
-| `[x]` | 125 | Score-based biome classification; Palude from drainage instead of toxicity | 110, 111, 124 | [125](done/125-biome-score-classification.md) |
-| `[x]` | 126 | Rainfall field (orographic lift, rain shadow) — additive only | 124 | [126](done/126-rainfall-field.md) |
-| `[ ]` | 127 | Flow accumulation and rivers | 124, 126 | [127](127-hydrology-rivers.md) |
-
 **Worldgen pipeline reassessment — credibility follow-ups** (2026-08-13,
 same session: after scoping 123-127, an explicit pass over what the spec
 still covers that those five don't. Ranked by impact on a *single* world's
@@ -160,22 +133,9 @@ coherent regions without a macro-region layer above it.).
 | `[ ]` | 130 | Mountain sub-banding (Glacier, AlpineMeadow, MountainForest) | 124, 125 | [130](130-mountain-sub-banding.md) |
 | `[ ]` | 131 | Soil moisture (refines Swamp/Forest beyond the slope/water-distance proxy) | 124, 125, 126 | [131](131-soil-moisture.md) |
 
-**Resolved 2026-08-19** (task 132, found in advisor review after 123-126
-shipped): `Cell.slope`/`Cell.water_distance` (task 124) were computed every
-world generation and read by nothing — both task 125's Swamp score and
-task 126's rainfall needed the same kind of data earlier in the pipeline
-than these persisted fields were populated. Fixed by splitting
-`compute_geomorphology` into `compute_slope` (moved to run right after
-`generate_terrain`, no Lake dependency) and `compute_water_distance`
-(unchanged, after `place_feature_biomes`) — `classify_biomes` now reads
-`Cell.slope` directly; `Cell.water_distance` still can't move earlier
-(genuine `Biome::Lake` dependency) and stays local-proxy-only in
-`classify_biomes`/`compute_rainfall`. 127/128/130/131 re-checked: all read
-these fields from steps that run after both are populated, no conflict.
-
-| Status | ID | Title | Depends on | File |
-|-------|----|--------|------------|------|
-| `[x]` | 132 | [DECISION] Resolve `Cell.slope`/`Cell.water_distance` ordering before later hydrology/biome tasks read them | 124, 125, 126 | [132](done/132-persisted-slope-water-distance-unused.md) |
+Task 132 (`[DECISION]` on `Cell.slope`/`Cell.water_distance` ordering,
+found in advisor review after 123-126 shipped) and the phase it belongs to
+are archived in `tasks/QUEUE_ARCHIVE.md`, both closed 2026-08-19.
 
 **Onboarding & engagement rollout** (2026-08-09, from `redesign/abiogenesis-engagement-design.md`, full rationale in `PROJECT_PLAN.md`'s "Onboarding & engagement rollout"): 5 onboarding-foundation proposals scoped after a multi-round discussion. 080 first (diagnostic value for playtesting the rest); 082/083 are numerically coupled — tuned together (2026-08-10), both now done. Live playtest of the combined pacing still pending (082/083 verification steps skipped this session, see below).
 
