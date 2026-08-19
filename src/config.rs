@@ -894,12 +894,17 @@ pub struct BiomeConfig {
     /// Distesa di cristalli's imposed `toxicity`.
     pub crystal_field_toxicity: f32,
     /// Lago's placement disk base radius (task 111, organic shape since
-    /// task 123).
+    /// task 123). Task 129: this whole organic-search mechanism is now a
+    /// **fallback**, used only when depression-derived lakes
+    /// (`lake_depression_*` below) don't reach `lake_min_depression_count`
+    /// — kept unchanged otherwise, since a low-relief world with too few
+    /// real depressions still needs somewhere for Lago to come from.
     pub lake_radius: f32,
     /// Minimum placeable-land fraction a candidate Lago position must
-    /// clear.
+    /// clear (fallback search only, see `lake_radius`).
     pub lake_min_placeable_fraction: f32,
-    /// Bounded resample attempts for Lago's placement search.
+    /// Bounded resample attempts for Lago's placement search (fallback
+    /// search only, see `lake_radius`).
     pub lake_max_placement_attempts: u32,
     /// Lago's imposed `temperature` (design doc table).
     pub lake_temperature: f32,
@@ -907,6 +912,32 @@ pub struct BiomeConfig {
     pub lake_light: f32,
     /// Lago's imposed `toxicity`.
     pub lake_toxicity: f32,
+    /// Task 129: minimum size (cells) a `fill_depressions` connected
+    /// component must reach to qualify for promotion to `Biome::Lake`.
+    /// Filters out single-cell/tiny noise — a real depression floor
+    /// component, not a rounding artifact of the priority-flood fill.
+    pub lake_depression_min_size: u32,
+    /// Task 129: maximum size (cells) a depression component may have and
+    /// still qualify as a *Lago-sized* feature, not a whole drainage
+    /// basin. A 25-seed measurement found `fill_depressions` components
+    /// span from single-digit noise up to 600+ cells (entire valleys
+    /// resolved toward the sea) — without this ceiling, the biggest
+    /// component on a seed would routinely dwarf `Crater`/`CrystalField`'s
+    /// own scale (radius `~3.5-5`, `~40-80` cells) by an order of
+    /// magnitude, reading as a flood, not a lake.
+    pub lake_depression_max_size: u32,
+    /// Task 129: minimum fill depth (`filled_elevation - elevation` at the
+    /// component's deepest cell) a depression must reach to qualify —
+    /// filters out near-flat "depressions" that are really just
+    /// floating-point noise in the priority-flood fill, not a real basin.
+    pub lake_depression_min_depth: f32,
+    /// Task 129: how many depression-derived lakes a world needs before
+    /// the organic-mask fallback search (`lake_radius` etc. above) is
+    /// skipped entirely. `1`: any world with at least one qualifying
+    /// depression gets its lakes from terrain alone; a low-relief world
+    /// with none falls back to the old random search so Lago never goes
+    /// missing outright.
+    pub lake_min_depression_count: u32,
     /// Task 123: shared angular-distortion amplitude for the deformed-disk
     /// mask used by all three searched feature biomes (Crater/CrystalField/
     /// Lake) — how far the disk's radius at a given angle can stray from
@@ -982,6 +1013,10 @@ impl Default for BiomeConfig {
             lake_temperature: 0.45,
             lake_light: 0.40,
             lake_toxicity: 0.05,
+            lake_depression_min_size: 10,
+            lake_depression_max_size: 100,
+            lake_depression_min_depth: 0.01,
+            lake_min_depression_count: 1,
             feature_mask_distortion: 0.35,
             feature_mask_wave_count: 4,
             macro_region_count: 6,

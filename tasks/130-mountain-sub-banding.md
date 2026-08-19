@@ -107,6 +107,14 @@ and `AlpineMeadow`. `MountainForest` is a judgment call — see below.
   if landed first but aren't a hard blocker — a slope-only proxy is an
   acceptable first pass if picked up before those exist.
 - **Blocks**: none.
+- **Note (task 129, resolved 2026-08-19)**: the worldgen pipeline was
+  reordered so `compute_hydrology` (and depression/Lake data) now runs
+  *before* `classify_biomes`, instead of after. `Cell.is_river` and
+  `flow_accumulation` are therefore available to `classify_biomes` for the
+  first time — worth considering as an extra input for MountainForest (a
+  mountain cell near a headwater stream reads as plausibly wetter than
+  slope/rainfall alone would suggest), though not a requirement if
+  rainfall/soil_moisture already cover it adequately.
 
 ---
 

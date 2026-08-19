@@ -579,10 +579,20 @@ impl SimWorld {
         world.compute_slope(config);
         world.apply_environment_sources(config, &params);
         world.compute_rainfall(config, &params);
+        // Task 129: `fill_depressions` computed once, shared by
+        // `record_significant_depressions` (which `place_feature_biomes`
+        // needs Lake candidates from) and `compute_hydrology` (flow
+        // routing) — moved ahead of `classify_biomes`/`place_feature_biomes`
+        // so depression-derived Lake footprints exist before the feature
+        // pass needs them. Neither `fill_depressions` nor
+        // `compute_hydrology` ever depended on biome data, so this
+        // reordering doesn't disturb anything downstream.
+        let filled = world.fill_depressions();
+        let lake_depressions = world.record_significant_depressions(&filled, config);
+        world.compute_hydrology(config, &filled);
         world.classify_biomes(config, &params);
-        world.place_feature_biomes(config);
+        world.place_feature_biomes(config, &lake_depressions);
         world.compute_water_distance();
-        world.compute_hydrology(config);
         world
     }
 
@@ -1025,24 +1035,29 @@ impl SimWorld {
     }
 
     /// Places the four "feature" biomes task 111 covers
-    /// (`redesign/abiogenesis-biomes.md`): Cratere profondo, Distesa di
-    /// cristalli, and Lago via bounded-retry rectangle search (same
-    /// attempt-loop/keep-best-seen pattern as `generate_terrain`), and
-    /// Bocca vulcanica by hooking
-    /// directly into the point heat sources `apply_environment_sources`
-    /// already placed — no search needed there. Must run after
-    /// `classify_biomes`: every cell touched here overrides whatever
+    /// (`redesign/abiogenesis-biomes.md`): Cratere profondo and Distesa di
+    /// cristalli via bounded-retry rectangle search (same attempt-loop/
+    /// keep-best-seen pattern as `generate_terrain`), Bocca vulcanica by
+    /// hooking directly into the point heat sources
+    /// `apply_environment_sources` already placed (no search needed
+    /// there), and Lago from `lake_depressions` (task 129: terrain-grounded
+    /// depressions `record_significant_depressions` already qualified),
+    /// falling back to the same organic-mask search Crater/CrystalField
+    /// use only if too few depressions qualified this world. Must run
+    /// after `classify_biomes`: every cell touched here overrides whatever
     /// Stage A/B produced, not the other way round (the design doc's
     /// explicit "placed, not derived" distinction for these four biomes).
     ///
     /// `reserved` tracks every cell already claimed by an earlier feature
-    /// in this same call so the three searched rectangles (and the vent
+    /// in this same call so the searched/promoted footprints (and the vent
     /// footprint placed first) never overlap each other — each search
     /// requires zero overlap with `reserved` before accepting a candidate,
     /// falling back to the lowest-overlap candidate seen if none reaches
     /// zero within its attempt budget (vanishingly unlikely given these
-    /// footprints are tiny relative to the grid).
-    fn place_feature_biomes(&mut self, config: &SimConfig) {
+    /// footprints are tiny relative to the grid); depression promotion
+    /// uses the same zero-overlap rule, skipping (not partially promoting)
+    /// any depression that overlaps an already-reserved cell.
+    fn place_feature_biomes(&mut self, config: &SimConfig, lake_depressions: &[Vec<usize>]) {
         let biome_cfg = &config.biome;
         let cell_count = self.cells.len();
         let mut reserved = vec![false; cell_count];
@@ -1105,31 +1120,54 @@ impl SimWorld {
             },
             biome_cfg,
         );
-        self.place_feature_organic(
-            &mut reserved,
-            &FeaturePlacement {
-                seed_offset: LAKE_SEED_OFFSET,
-                radius: biome_cfg.lake_radius,
-                min_placeable_fraction: biome_cfg.lake_min_placeable_fraction,
-                max_attempts: biome_cfg.lake_max_placement_attempts,
-                biome: Biome::Lake,
-                temperature: biome_cfg.lake_temperature,
-                light: biome_cfg.lake_light,
-                toxicity: biome_cfg.lake_toxicity,
-            },
-            biome_cfg,
-        );
+        // Task 129: promote qualifying terrain depressions to Lago first —
+        // real basins, not a synthetic organic-disk mask, so their
+        // footprint is used exactly as `record_significant_depressions`
+        // found it. A depression overlapping an already-reserved cell
+        // (Bocca vulcanica/Crater/CrystalField) is skipped whole, never
+        // partially promoted.
+        let mut promoted = 0u32;
+        for footprint in lake_depressions {
+            if footprint.iter().any(|&idx| reserved[idx]) {
+                continue;
+            }
+            for &idx in footprint {
+                self.cells[idx].biome = Biome::Lake;
+                self.cells[idx].temperature = biome_cfg.lake_temperature;
+                self.cells[idx].light = biome_cfg.lake_light;
+                self.cells[idx].toxicity = biome_cfg.lake_toxicity;
+                reserved[idx] = true;
+            }
+            promoted += 1;
+        }
+        // Fallback: only if this world didn't produce enough real
+        // depressions (e.g. low-relief terrain) does the old organic-mask
+        // random search run at all — a world with enough depression-derived
+        // lakes never touches `LAKE_SEED_OFFSET`.
+        if promoted < biome_cfg.lake_min_depression_count {
+            self.place_feature_organic(
+                &mut reserved,
+                &FeaturePlacement {
+                    seed_offset: LAKE_SEED_OFFSET,
+                    radius: biome_cfg.lake_radius,
+                    min_placeable_fraction: biome_cfg.lake_min_placeable_fraction,
+                    max_attempts: biome_cfg.lake_max_placement_attempts,
+                    biome: Biome::Lake,
+                    temperature: biome_cfg.lake_temperature,
+                    light: biome_cfg.lake_light,
+                    toxicity: biome_cfg.lake_toxicity,
+                },
+                biome_cfg,
+            );
+        }
     }
 
-    /// Computes and stores two purely-derived per-cell fields (task 124):
-    /// `Cell.slope` (local elevation-gradient magnitude, normalized) and
-    /// `Cell.water_distance` (grid distance to the nearest water cell).
-    /// Both are pure functions of already-deterministic generation-time
-    /// data (`elevation`, `Biome`), so no new RNG stream is needed. Must
-    /// run after `place_feature_biomes`: `water_distance` needs
-    /// `Biome::Lake` cells to already exist as a BFS source. Purely
-    /// additive — read nowhere yet; task 125 is what actually uses these
-    /// for reclassification.
+    /// Computes and stores `Cell.slope` (local elevation-gradient
+    /// magnitude, normalized), a pure function of `elevation` alone
+    /// (task 124). No new RNG stream is needed, and unlike
+    /// `compute_water_distance` (see its own doc comment, task 132) this
+    /// has no dependency on `Biome::Lake` existing yet, so it runs right
+    /// after `generate_terrain`. Read by `classify_biomes` (task 125).
     fn compute_slope(&mut self, config: &SimConfig) {
         let terrain_cfg = &config.terrain;
         let elevations: Vec<f32> = self.cells.iter().map(|c| c.elevation).collect();
@@ -1209,14 +1247,78 @@ impl SimWorld {
         filled
     }
 
+    /// Task 129 (spec §10.4): groups `fill_depressions`' output into
+    /// connected components (Moore-adjacency flood fill) of cells that
+    /// actually needed filling (`filled > elevation`, i.e. a real local
+    /// basin, not already at its own resolved level) and returns the
+    /// footprints of the ones that qualify as *Lago-sized* — big enough to
+    /// read as a lake (`lake_depression_min_size`), not so big they're
+    /// really a whole drainage basin (`lake_depression_max_size` — a
+    /// 25-seed scratch measurement found raw components span from
+    /// single-digit noise to 600+ cells), and deep enough
+    /// (`lake_depression_min_depth`) to not just be float noise in the
+    /// priority-flood fill. Deterministic and RNG-free: purely a function
+    /// of already-seed-derived `elevation`/`filled`, so component
+    /// discovery order (cell index ascending) doesn't affect the result,
+    /// only which cell each component happens to be *found from* — the
+    /// footprint itself is the same regardless.
+    fn record_significant_depressions(
+        &self,
+        filled: &[f32],
+        config: &SimConfig,
+    ) -> Vec<Vec<usize>> {
+        let biome_cfg = &config.biome;
+        // `1e-4`, not `f32::EPSILON`: a much smaller threshold picks up
+        // floating-point noise from the priority-flood fill's repeated
+        // `max()` chaining as spurious single-cell "basins," inflating the
+        // component count without representing a real dip in the terrain.
+        const BASIN_EPSILON: f32 = 1e-4;
+        let is_basin_cell = |idx: usize| filled[idx] - self.cells[idx].elevation > BASIN_EPSILON;
+
+        let mut visited = vec![false; self.cells.len()];
+        let mut qualifying = Vec::new();
+        for start in 0..self.cells.len() {
+            if visited[start] || !is_basin_cell(start) {
+                visited[start] = true;
+                continue;
+            }
+            let mut stack = vec![start];
+            visited[start] = true;
+            let mut footprint = Vec::new();
+            let mut max_depth = 0.0f32;
+            while let Some(idx) = stack.pop() {
+                footprint.push(idx);
+                max_depth = max_depth.max(filled[idx] - self.cells[idx].elevation);
+                let (x, y) = (idx % self.width, idx / self.width);
+                for n in self.moore_neighbours(x, y) {
+                    if !visited[n] && is_basin_cell(n) {
+                        visited[n] = true;
+                        stack.push(n);
+                    }
+                }
+            }
+            let size = footprint.len() as u32;
+            if (biome_cfg.lake_depression_min_size..=biome_cfg.lake_depression_max_size)
+                .contains(&size)
+                && max_depth >= biome_cfg.lake_depression_min_depth
+            {
+                qualifying.push(footprint);
+            }
+        }
+        qualifying
+    }
+
     /// Computes deterministic flow accumulation (task 127,
     /// `redesign/procedural_biome_generation_spec_v2.md` §10): `rainfall`
     /// (task 126) routed downhill along a single steepest-descent Moore
     /// neighbour per cell, then marks the top `river_top_fraction` of
     /// non-`Sea` cells by accumulation as `is_river`. Must run after
-    /// `compute_rainfall` (the flow source) and `compute_water_distance`
-    /// (used as this method's own flat-routing tie-break, see below) —
-    /// order relative to everything else is otherwise free.
+    /// `compute_rainfall`, the flow source — order relative to everything
+    /// else is otherwise free (task 129: takes `filled` as a parameter,
+    /// shared with `record_significant_depressions`, rather than
+    /// recomputing `fill_depressions` a second time; the stale claim that
+    /// this must also run after `compute_water_distance` is corrected
+    /// below — it never actually depended on that).
     ///
     /// **Determinism is the primary risk in this task, not the hydrology
     /// model's fidelity** — every cell's downhill target is chosen by a
@@ -1237,9 +1339,8 @@ impl SimWorld {
     /// correctness elsewhere. Accepted per this task's own scope note: "a
     /// simple priority-flood fill is sufficient, a full breaching algorithm
     /// is not required for a first version."
-    fn compute_hydrology(&mut self, config: &SimConfig) {
+    fn compute_hydrology(&mut self, config: &SimConfig, filled: &[f32]) {
         let hydro_cfg = &config.hydrology;
-        let filled = self.fill_depressions();
         let sea_proximity = self.sea_distance_field();
         let key = |idx: usize| (filled[idx].to_bits(), sea_proximity[idx].to_bits(), idx);
 
@@ -2962,12 +3063,13 @@ mod tests {
 
     #[test]
     fn feature_biomes_never_overlap_each_other() {
-        // `place_feature_biomes` places Crater/CrystalField/Lake in that
-        // order (Bocca vulcanica's vent footprint first), each requiring
-        // zero overlap with every cell already claimed by an earlier one.
-        // Task 123 replaced the rectangle footprint with a deformed disk,
-        // so an exact `width * height` cell count no longer applies: the
-        // radius wobbles with the angular-distortion waves, and grid-edge
+        // `place_feature_biomes` places Crater/CrystalField (then Lake,
+        // checked separately below since task 129) in that order (Bocca
+        // vulcanica's vent footprint first), each requiring zero overlap
+        // with every cell already claimed by an earlier one. Task 123
+        // replaced the rectangle footprint with a deformed disk, so an
+        // exact `width * height` cell count no longer applies: the radius
+        // wobbles with the angular-distortion waves, and grid-edge
         // clipping can shrink it further, both by design. Instead, check
         // each feature's footprint lands in a generous band around its
         // ideal disk area `PI * radius^2` — still tight enough to catch the
@@ -2979,7 +3081,6 @@ mod tests {
         let checks = [
             (Biome::Crater, config.biome.crater_radius),
             (Biome::CrystalField, config.biome.crystal_field_radius),
-            (Biome::Lake, config.biome.lake_radius),
         ];
         for seed in 0..40u64 {
             let world = SimWorld::new(seed, &config);
@@ -2994,6 +3095,72 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Task 129: Lake no longer has one fixed-shape source, so it can't
+    /// share the disk-area check above — a depression-derived footprint
+    /// (10-100 cells per component, `BiomeConfig::lake_depression_*`, and
+    /// possibly several components summed) has a completely different
+    /// shape budget than the organic-mask fallback's `PI * lake_radius^2`
+    /// disk. This checks the property that actually matters regardless of
+    /// source: Lake exists, and its total footprint isn't a corrupted
+    /// sliver (a real cross-feature overlap would still shrink it toward
+    /// zero the same way it would for Crater/CrystalField).
+    #[test]
+    fn lake_footprint_is_never_absurdly_small() {
+        let config = test_config();
+        for seed in 0..40u64 {
+            let world = SimWorld::new(seed, &config);
+            let count = world
+                .cells
+                .iter()
+                .filter(|c| c.biome == Biome::Lake)
+                .count();
+            assert!(count > 0, "seed {seed}: Lake was never placed");
+            assert!(
+                count as u32 >= config.biome.lake_depression_min_size / 2,
+                "seed {seed}: Lake footprint ({count} cells) implausibly small — possible \
+                 overlap shrinkage"
+            );
+        }
+    }
+
+    /// Task 129's own acceptance criterion: depression-derived lakes
+    /// should be terrain-grounded, not coincidentally similar to the old
+    /// context-blind random search — a lake cell should not, e.g., sit on
+    /// a local elevation maximum. Aggregate across seeds and cells, not a
+    /// hard per-cell assert: the organic-mask *fallback* (still elevation-
+    /// blind, unchanged from task 123) can occasionally place a Lake cell
+    /// that violates this on a low-relief world, which is exactly when the
+    /// fallback triggers — this test would be flaky, not meaningfully
+    /// stricter, if it demanded zero violations.
+    #[test]
+    fn lake_cells_are_usually_not_local_elevation_maxima() {
+        let config = test_config();
+        let mut lake_cells = 0u32;
+        let mut local_maxima = 0u32;
+        for seed in 0..40u64 {
+            let world = SimWorld::new(seed, &config);
+            for (idx, cell) in world.cells.iter().enumerate() {
+                if cell.biome != Biome::Lake {
+                    continue;
+                }
+                lake_cells += 1;
+                let (x, y) = (idx % world.width, idx / world.width);
+                let is_local_max = world
+                    .moore_neighbours(x, y)
+                    .all(|n| world.cells[n].elevation <= cell.elevation);
+                if is_local_max {
+                    local_maxima += 1;
+                }
+            }
+        }
+        assert!(lake_cells > 0, "no Lake cells found across 40 seeds");
+        assert!(
+            local_maxima * 20 < lake_cells,
+            "expected well under 5% of Lake cells to be local elevation maxima, got \
+             {local_maxima}/{lake_cells}"
+        );
     }
 
     #[test]
@@ -4085,8 +4252,10 @@ mod tests {
         };
         build(&mut world_a);
         build(&mut world_b);
-        world_a.compute_hydrology(&config);
-        world_b.compute_hydrology(&config);
+        let filled_a = world_a.fill_depressions();
+        let filled_b = world_b.fill_depressions();
+        world_a.compute_hydrology(&config, &filled_a);
+        world_b.compute_hydrology(&config, &filled_b);
 
         let dir_a: Vec<Option<usize>> = world_a.cells.iter().map(|c| c.flow_direction).collect();
         let dir_b: Vec<Option<usize>> = world_b.cells.iter().map(|c| c.flow_direction).collect();

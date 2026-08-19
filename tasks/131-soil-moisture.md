@@ -89,6 +89,15 @@ itself allows by listing slope-only alternatives elsewhere.)
 - Don't reintroduce a second, parallel "is this cell wet" concept — this
   field should be the single source of truth Swamp's score reads, replacing
   (not sitting alongside) the cruder proxy from task 125.
+- **`swamp_score` has two call sites since task 128**: the per-cell pass in
+  `classify_biomes`, and `compute_macro_regions`'s region-aggregate pass
+  (which evaluates the same score once per macro-region using
+  `mean_slope`/`mean_water_distance`, noise fixed at `0.0`). If this task
+  swaps `slope`/`water_distance` for `soil_moisture` as `swamp_score`'s
+  input, `compute_macro_regions`'s aggregate must accumulate a matching
+  `mean_soil_moisture` (not keep passing `mean_slope`/`mean_water_distance`
+  into a signature that no longer wants them) — otherwise the region-bias
+  pass silently drifts from the per-cell pass it's supposed to reinforce.
 
 ---
 

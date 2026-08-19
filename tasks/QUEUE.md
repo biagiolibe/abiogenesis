@@ -120,7 +120,7 @@ coherent regions without a macro-region layer above it.).
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
 | `[x]` | 128 | Macro-regions before per-cell biome classification | 125 | [128](done/128-macro-region-biomes.md) |
-| `[ ]` | 129 | Lakes derived from terrain depressions (123's search becomes fallback) | 123, 127 | [129](129-lakes-from-depressions.md) |
+| `[x]` | 129 | Lakes derived from terrain depressions (123's search becomes fallback) | 123, 127 | [129](done/129-lakes-from-depressions.md) |
 | `[ ]` | 130 | Mountain sub-banding (Glacier, AlpineMeadow, MountainForest) | 124, 125 | [130](130-mountain-sub-banding.md) |
 | `[ ]` | 131 | Soil moisture (refines Swamp/Forest beyond the slope/water-distance proxy) | 124, 125, 126 | [131](131-soil-moisture.md) |
 
@@ -146,7 +146,25 @@ Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN
 
 ---
 
-*Last updated: 2026-08-19 (128, macro-regions before per-cell biome
+*Last updated: 2026-08-19 (129, Lakes derived from terrain depressions —
+`record_significant_depressions` (Moore-adjacency connected components of
+`fill_depressions()`'s basin cells) records qualifying depressions
+(`lake_depression_min_size`/`_max_size`/`_min_depth`, calibrated via a
+temporary scratch histogram across 25 seeds); `place_feature_biomes`
+promotes them directly to `Biome::Lake` using the depression's real
+footprint, falling back to task 123's organic-mask search only if fewer
+than `lake_min_depression_count` were promoted. Pipeline reordered:
+`fill_depressions`/`compute_hydrology` now run before `classify_biomes`/
+`place_feature_biomes` (previously after), since Lake placement needs
+depression data up front — confirmed via doc-comment audit that neither
+step ever depended on biome data. Empirically checked river/Lake-interior
+overlap post-reorder (only 0.3% of Lake cells carry `is_river`, not a
+problem). GDD §5.10 updated to note Lake is now derived, not placed like
+Crater/CrystalField. Notes added to tasks 130/131 flagging forward
+couplings (`Cell.is_river`/`flow_accumulation` now available to
+`classify_biomes`; `compute_macro_regions`'s second `swamp_score` call
+site would need updating if 131 swaps in `soil_moisture`) — completed and
+archived to `tasks/done/`. 128, macro-regions before per-cell biome
 classification — a coarse 6-point Voronoi partition
 (`SimWorld::compute_macro_regions`, its own `MACRO_REGION_SEED_OFFSET`
 stream) with one dominant biome per region, applied as a multiplicative
