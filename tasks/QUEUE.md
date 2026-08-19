@@ -36,22 +36,10 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 ## 🏃 Active Queue
 
-**Two-tier map view** (2026-08-09, design discussion held right after task
-074's visual check surfaced an organism-legibility gap at 128×80 — full
-decision record in `redesign/abiogenesis-two-tier-view.md`): a
-continuous-zoom camera with a hard-threshold switch between the current
-per-cell rendering (Detail) and an aggregated per-species cluster heatmap
-(Overview), plus gating Stress/Cull to Detail while Seed/Splice stay
-available in both. 075 and 076 are done (archive); 078 is a same-day
-playtest correction to 076 (blobs currently trace the real occupied-cell
-footprint 1:1, including gaps — should render smaller and uniformly filled).
-**078 is on hold as of 2026-08-10 (⏸ do not pick up until unheld)** — no
-blocking dependency, just a deliberate pause; still `[ ]` since it's not
-cancelled and not blocked by another task.
-
-| Status | ID | Title | Depends on | File |
-|-------|----|--------|------------|------|
-| `[ ]` ⏸ | 078 | ON HOLD — Overview heatmap blob shape correction (playtest correction to 076: blobs must render smaller/abstracted and uniformly filled, not a 1:1 trace of the real occupied-cell footprint with its gaps) | 076 | [078](078-overview-heatmap-blob-shape-correction.md) |
+The "Two-tier map view" phase (075-078) is fully closed and archived in
+`tasks/QUEUE_ARCHIVE.md` — 078, the last open item (a same-day playtest
+correction to 076's blob rendering, on hold since 2026-08-10), landed
+2026-08-19.
 
 **Biomi** (2026-08-11, scoped from `redesign/abiogenesis-biomes.md` after a
 design-discussion pass that reconciled the doc with the current codebase — full
@@ -130,7 +118,28 @@ Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN
 
 ---
 
-*Last updated: 2026-08-19 (131, Soil moisture — `Cell.soil_moisture`
+*Last updated: 2026-08-19 (078, Overview heatmap blob shape correction —
+on hold since 2026-08-10, unheld and picked up directly by user request.
+`cluster::compute_cluster_render` replaces `compute_cluster_density`:
+each cluster's blob now fills interior holes (flood-fill the bounding
+box's border-connected exterior; any non-member cell never reached is an
+enclosed hole) and then erodes smaller (`ClusterConfig::
+blob_erosion_iterations`, skipped below `blob_erosion_min_size` filled
+cells, aborted if a pass would erode a blob to nothing) — so a blob reads
+as a smaller, solid, abstracted shape instead of a 1:1 trace of the real
+occupied-cell footprint with its gaps. Density formula unchanged (task
+076's own population-mass reading). `render.rs`'s `cell_color` Overview
+branch now keys off blob membership (`ClusterRender::species`) instead of
+literal `Cell::organism`, so a filled-hole cell can render without a real
+organism and an eroded-away edge cell can fall back to plain terrain —
+the intended abstraction, not a regression. Verified via a headless
+ASCII-diagram diagnostic against hand-built realistic cluster shapes (a
+79-cell circular blob eroded to a clean 45-cell filled circle; a 91-cell
+elongated oval eroded to 43 cells while staying clearly elongated) —
+live `cargo run` screenshot check explicitly skipped this session by
+direct user instruction — completed and archived to `tasks/done/`,
+closing the "Two-tier map view" phase (075-078), moved to
+`QUEUE_ARCHIVE.md`. 131, Soil moisture — `Cell.soil_moisture`
 (`SimWorld::compute_soil_moisture`, run right after `compute_hydrology`
 and before `classify_biomes`) replaces task 125's `slope`/`water_distance`
 drainage proxy for Palude's fitness score: `rainfall` retained against

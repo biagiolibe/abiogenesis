@@ -98,7 +98,8 @@ impl Default for CameraConfig {
 }
 
 /// Overview mode's per-species cluster heatmap (task 076,
-/// `redesign/abiogenesis-two-tier-view.md`, `cluster::compute_cluster_density`).
+/// `redesign/abiogenesis-two-tier-view.md`, `cluster::compute_cluster_render`;
+/// blob shape corrected by task 078).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClusterConfig {
     /// Cluster cell count at which a blob's density (and therefore
@@ -110,12 +111,28 @@ pub struct ClusterConfig {
     /// a compactness-only formula (occupied cells / bounding-box area)
     /// would.
     pub density_saturation: f32,
+    /// Task 078: a cluster's filled (holes-included) footprint must reach
+    /// at least this many cells before erosion touches it at all — below
+    /// this, a cluster is already small enough to read as "abstracted"
+    /// without shrinking further, and eroding it risks making a lone or
+    /// near-lone organism (task 076's own "stays visibly distinct"
+    /// acceptance criterion) disappear or read as fainter than it should.
+    pub blob_erosion_min_size: u32,
+    /// Task 078: how many morphological-erosion passes shrink a large
+    /// cluster's filled blob — each pass removes every cell touching the
+    /// shape's edge (or the grid's edge). More passes read as more
+    /// abstracted/smaller; an iteration that would erode a blob away to
+    /// nothing is skipped rather than applied (`compute_blob`'s own guard),
+    /// so this can be tuned generously without risking a cluster vanishing.
+    pub blob_erosion_iterations: u32,
 }
 
 impl Default for ClusterConfig {
     fn default() -> Self {
         Self {
             density_saturation: 20.0,
+            blob_erosion_min_size: 8,
+            blob_erosion_iterations: 1,
         }
     }
 }

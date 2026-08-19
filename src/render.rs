@@ -9,7 +9,7 @@ use bevy_egui::egui;
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::EguiPrimaryContextPass;
 
-use abiogenesis::cluster::compute_cluster_density;
+use abiogenesis::cluster::compute_cluster_render;
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::AdjacencyObserved;
 use abiogenesis::state::GameState;
@@ -970,7 +970,7 @@ mod placement_indicator {
 /// tick, unlike a Seed placement which only ever happens one at a time.
 /// Renders at the exact cell in both `MapViewMode::Detail` and `Overview` —
 /// Overview reuses the same per-cell sprites as Detail, just recolored by
-/// cluster density (`cluster::compute_cluster_density`), so there is no
+/// cluster density (`cluster::compute_cluster_render`), so there is no
 /// separate blob/centroid geometry to aggregate onto; the cell position
 /// alone is correct in either mode.
 pub use spark_indicator::SparkIndicators;
@@ -1341,12 +1341,18 @@ fn update_map_view_mode(
     }
 }
 
-/// Per-cell cluster density (task 076, `cluster::compute_cluster_density`),
-/// consumed by `cell_color` when `MapViewMode::Overview` is active. Indexed
-/// like `SimWorld::cells` (`world.index(x, y)`); `0.0` for any cell with no
-/// organism.
+/// Per-cell Overview blob data (task 076, extended by task 078's blob-shape
+/// correction: `cluster::compute_cluster_render`), consumed by `cell_color`
+/// when `MapViewMode::Overview` is active. Indexed like `SimWorld::cells`
+/// (`world.index(x, y)`); `density` is `0.0` and `species` is `None` for any
+/// cell no blob claims — task 078 means that's no longer exactly "any cell
+/// with no organism": a filled-hole cell can be claimed with no `Organism`,
+/// and an eroded-away edge cell can hold one without being claimed.
 #[derive(Resource, Default)]
-struct ClusterDensity(Vec<f32>);
+struct ClusterDensity {
+    density: Vec<f32>,
+    species: Vec<Option<SpeciesId>>,
+}
 
 /// Recomputes `ClusterDensity` only when there's something new to show: a
 /// population-changing event (tick advance, action resolution) mutates
@@ -1371,7 +1377,9 @@ fn update_cluster_density(
     if !world.is_changed() && !mode.is_changed() {
         return;
     }
-    density.0 = compute_cluster_density(&world, &config);
+    let render = compute_cluster_render(&world, &config);
+    density.density = render.density;
+    density.species = render.species;
 }
 
 /// Side length, in texels, of a generated shape mask (task 032). Independent
@@ -1559,10 +1567,11 @@ pub fn world_to_cell(world_pos: Vec2, width: usize, height: usize) -> Option<(us
 }
 
 /// The single place that decides a cell's color (GDD §11): occupied cells by
-/// species hue and energy (`Detail`) or cluster density (`Overview`, task
-/// 076), cells with leftover residue by a neutral hue scaled by how much is
-/// left, empty cells by their biome (task 112, `redesign/abiogenesis-biomes.md`
-/// — flat color, dithered — superseding task 066/068's `TerrainKind`-only
+/// species hue and energy (`Detail`) or a cell's Overview blob (task 076,
+/// blob shape corrected by task 078) by species hue and cluster density,
+/// cells with leftover residue by a neutral hue scaled by how much is left,
+/// empty cells by their biome (task 112, `redesign/abiogenesis-biomes.md` —
+/// flat color, dithered — superseding task 066/068's `TerrainKind`-only
 /// bands), then a toxicity tint (task 033) composited on top of whichever
 /// of the three applies.
 fn cell_color(
@@ -1574,30 +1583,37 @@ fn cell_color(
     density: &ClusterDensity,
 ) -> Color {
     let cell = world.get(x, y);
+    let idx = world.index(x, y);
 
-    let base = if let Some(organism) = cell.organism {
-        let hue = species_hue(organism.species);
-        let lightness = match mode {
+    // `Detail` colors the literal `Cell::organism`; `Overview` colors
+    // whichever species' blob (task 078: real cells, interior holes filled,
+    // then eroded smaller — no longer 1:1 with literal occupancy) claims
+    // this cell, via `cluster::compute_cluster_render`'s `density.species`.
+    let occupant = match mode {
+        MapViewMode::Detail => cell.organism.map(|organism| {
             // Energy can exceed repro_threshold right before reproduction;
             // clamp.
-            MapViewMode::Detail => {
-                let fill = (organism.energy / config.energy.repro_threshold).clamp(0.0, 1.0);
-                0.15 + fill * 0.35
-            }
-            // `compute_cluster_density` is a population-mass reading (large,
-            // established colonies saturate toward `1.0`; a one-cell cluster
-            // sits near the bottom), not Detail's per-organism energy fill,
-            // so it gets its own lightness range rather than reusing
-            // Detail's: a higher floor (`0.20`, above every `terrain_color`
-            // band's lightness so a lone organism never blends into the
-            // ground beneath it) keeps even a barely-above-zero density
-            // "clearly visible" per the task's acceptance criteria, while
-            // still reading strictly dimmer than a saturated colony's `0.50`
-            // ceiling. Same hue formula as Detail either way, so the sidebar/
-            // notebook swatches (`species_color`) still agree with the grid.
-            MapViewMode::Overview => 0.20 + density.0[world.index(x, y)] * 0.30,
-        };
-        Color::hsl(hue, 0.75, lightness)
+            let fill = (organism.energy / config.energy.repro_threshold).clamp(0.0, 1.0);
+            (organism.species, 0.15 + fill * 0.35)
+        }),
+        // `compute_cluster_render`'s density is a population-mass reading
+        // (large, established colonies saturate toward `1.0`; a one-cell
+        // cluster sits near the bottom), not Detail's per-organism energy
+        // fill, so it gets its own lightness range rather than reusing
+        // Detail's: a higher floor (`0.20`, above every `terrain_color`
+        // band's lightness so a lone organism never blends into the ground
+        // beneath it) keeps even a barely-above-zero density "clearly
+        // visible" per task 076's acceptance criteria, while still reading
+        // strictly dimmer than a saturated colony's `0.50` ceiling. Same hue
+        // formula as Detail either way, so the sidebar/notebook swatches
+        // (`species_color`) still agree with the grid.
+        MapViewMode::Overview => {
+            density.species[idx].map(|species| (species, 0.20 + density.density[idx] * 0.30))
+        }
+    };
+
+    let base = if let Some((species, lightness)) = occupant {
+        Color::hsl(species_hue(species), 0.75, lightness)
     } else if cell.residue > config.energy.residue_ambient_trickle {
         // `sim::step` settles every cell's residue at exactly
         // `residue_ambient_trickle` once no death has happened nearby (task

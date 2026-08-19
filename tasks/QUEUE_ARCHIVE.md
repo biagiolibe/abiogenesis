@@ -181,6 +181,7 @@ blocked until then.
 | `[x]` | 075 | Zoom camera and Overview/Detail render-mode switch | 074 | [075](done/075-zoom-camera-overview-detail-switch.md) |
 | `[x]` | 076 | Overview mode: per-species cluster heatmap rendering | 075 | [076](done/076-overview-cluster-heatmap-rendering.md) |
 | `[x]` | 077 | Gate Stress/Cull to Detail mode; Overview placement indicator for Seed/Splice | 075 | [077](done/077-action-gating-by-view-mode.md) |
+| `[x]` | 078 | Overview heatmap blob shape correction (playtest correction to 076, on hold 2026-08-10 to 2026-08-19: blobs must render smaller/abstracted and uniformly filled, not a 1:1 trace of the real occupied-cell footprint with its gaps) | 076 | [078](done/078-overview-heatmap-blob-shape-correction.md) |
 
 **Onboarding grace period** (2026-08-09, design session held right after task 077 closed — full decision record in `/Users/biagioliberto/.claude/plans/rosy-snuggling-lighthouse.md`): a run gave no room to acclimate before real stakes (extinction, era budget, objective failure) kicked in. Two changes: an adaptive grace period that suspends total-extinction failure until the player has watched a living population for a full era (extending past a fixed window rather than cutting off with a cliff), and forcing World 0's opening objective to a gentle 2-species `Coexistence` instead of whatever the random draw picks. Verified live by the user on their own `cargo run`.
 

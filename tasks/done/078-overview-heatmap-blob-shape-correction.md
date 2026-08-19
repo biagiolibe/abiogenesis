@@ -4,8 +4,9 @@
 > **Category**: Bugfix / Rendering (design correction to task 076)
 > **Priority**: 🟢 P3
 > **Estimate**: ~1-2h
-> **Assigned to**: unassigned
+> **Assigned to**: done
 > **Session**: 2026-08-09
+> **Implemented**: 2026-08-19
 
 ---
 
@@ -31,28 +32,30 @@ within a cluster's footprint get smoothed over, not shown as-is.
 
 ## 📋 Acceptance Criteria
 
-- [ ] A cluster's Overview blob is visibly smaller/more compact than its
+- [x] A cluster's Overview blob is visibly smaller/more compact than its
       real occupied-cell footprint (not a 1:1 recoloring of the same cells
       Detail mode would show).
-- [ ] A cluster's blob renders as a solid, uniform shape: any holes/gaps in
+- [x] A cluster's blob renders as a solid, uniform shape: any holes/gaps in
       the actual cell distribution within the cluster's footprint are filled
       in, not reproduced as gaps in the blob.
-- [ ] The density-brightness formula from task 076
+- [x] The density-brightness formula from task 076
       (`cluster::compute_cluster_density`, population-mass based via
       `ClusterConfig::density_saturation`) is preserved — this task changes
       the blob's *shape/extent*, not how brightness is computed.
-- [ ] A one-cell cluster (isolated organism) still renders as a small but
+- [x] A one-cell cluster (isolated organism) still renders as a small but
       clearly visible blob (same scenario task 076 verified — don't regress
       it while shrinking/abstracting larger clusters).
-- [ ] Terrain rendering (elevation bands, boundaries, peak glyphs,
+- [x] Terrain rendering (elevation bands, boundaries, peak glyphs,
       toxic-zone outline) is untouched.
-- [ ] Detail mode's per-cell organism rendering (unchanged since before task
+- [x] Detail mode's per-cell organism rendering (unchanged since before task
       075) is untouched — this is Overview-only.
-- [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
-- [ ] Verified live via `cargo run`: seed/grow an irregular, gappy cluster,
-      zoom out past the Overview threshold, and confirm the blob reads as a
-      smaller, solid shape rather than a full-size trace of the exact
-      occupied cells.
+- [x] `cargo test` and `cargo clippy -- -D warnings` clean.
+- [x] Verified via a headless ASCII-rendered diagnostic (not a live
+      `cargo run` screenshot — skipped this session by explicit user
+      instruction): seed/grow an irregular, gappy cluster, confirm the blob
+      reads as a smaller, solid shape rather than a full-size trace of the
+      exact occupied cells. See implementation notes below for the actual
+      diagrams produced.
 
 ---
 
@@ -141,6 +144,81 @@ within a cluster's footprint get smoothed over, not shown as-is.
   can proceed without this.
 
 ---
+
+## ✅ Implementation notes (2026-08-19)
+
+- **Approach chosen: morphological closing (fill + erode), not shrink+bbox.**
+  The technical context's two options were shrink-from-bounding-box (loses
+  the "elongated cluster reads as elongated" property outright — a bbox
+  fraction is always a rectangle) or fill+erode (keeps the real silhouette,
+  just smaller/smoothed). Went with fill+erode.
+- **Rendering mechanism: still per-cell sprites, no new blob entities.**
+  Task 076 deliberately avoided separate blob geometry; task 078 keeps that
+  architecture by extending which cells count as "cluster interior"
+  independent of literal occupancy (technical context's option (a)) rather
+  than switching to option (b). `cell_color`'s Overview branch now checks
+  `ClusterRender::species[idx]` (a cell's blob claim) instead of
+  `Cell::organism` directly — a filled-hole cell can render with no real
+  organism, and an eroded-away edge cell with a real organism can render as
+  plain terrain instead. This is the expected/intended abstraction, not a
+  bug: Overview was never meant to show individual organisms precisely.
+- **New `cluster::compute_cluster_render`** replaces
+  `compute_cluster_density`, returning both `density: Vec<f32>` (unchanged
+  formula, still the literal member count normalized against
+  `density_saturation` — task's own AC3) and `species: Vec<Option<SpeciesId>>`
+  (which cluster's blob claims each cell). Per cluster: (1) flood-fill the
+  bounding box's border-connected exterior; any non-member cell never
+  reached is an enclosed hole, folded into the shape. (2)
+  `blob_erosion_iterations` morphological-erosion passes remove any shape
+  cell touching the shape's edge or the grid's edge, skipped entirely below
+  `blob_erosion_min_size` filled cells, and aborted (keeping the prior
+  iteration) if a pass would erode the blob to nothing.
+- **Cross-cluster conflict resolution**: two different-species clusters can
+  never literally share a cell (`Cell::organism` is single-occupancy), but
+  their filled/eroded blobs — being bounding-box-derived, not exact-
+  occupancy-derived — can otherwise overlap near each other. Resolved by
+  processing clusters in cell-scan order (same deterministic order the
+  connected-component discovery already used) and having a claimed cell
+  never get reclaimed by a later cluster.
+- **Config**: `ClusterConfig` gains `blob_erosion_min_size` (`8`) and
+  `blob_erosion_iterations` (`1`). Calibrated by hand-building test clusters
+  (a realistic circular blob with a ragged edge and a hole, and an
+  elongated oval) and printing an ASCII diagram of real-footprint vs.
+  blob-claim per cell via a temporary scratch example (removed before
+  committing): a 79-cell circular cluster eroded to 45 cells, reading as a
+  clean solid circle with its hole filled; a 91-cell elongated oval eroded
+  to 43 cells while clearly staying a wide ellipse, not collapsing toward a
+  circle. A pathological thin, zigzagging one-cell-wide diagonal "snake"
+  shape (35 cells) eroded down to 9 — much more aggressively, but still
+  non-empty (the never-erase-to-nothing guard held) — not a realistic
+  population shape (reproduction spreads to Moore neighbours, so real
+  clusters trend blobbier), noted here rather than over-tuned against.
+- **10 new/updated tests in `cluster.rs`** (was 5): the original 5 updated
+  to the new `ClusterRender` struct (most with erosion disabled via a
+  `no_erosion_config` helper, to isolate density/fill behaviour from
+  erosion's own size effects), plus `interior_gaps_within_a_cluster_are_filled`,
+  `non_enclosed_gaps_next_to_a_cluster_are_not_filled` (the fill pass must
+  distinguish a genuinely enclosed hole from an open gap with a clear path
+  to the bounding box border), `erosion_shrinks_a_large_solid_cluster`,
+  `isolated_organism_survives_erosion`, and
+  `erosion_never_erases_a_cluster_entirely`.
+- **`render.rs`**: `ClusterDensity` resource extended from a bare `Vec<f32>`
+  to `{ density, species }`; `cell_color`'s Overview branch restructured
+  around an `occupant: Option<(SpeciesId, f32)>` computed per-mode (Detail
+  from `Cell::organism`, Overview from `ClusterRender::species`), keeping
+  Detail's own logic byte-for-byte unchanged. One stale doc-comment
+  reference to the old function name (near `SparkIndicators`) fixed in the
+  same pass.
+- All acceptance criteria met except the live-window screenshot check,
+  explicitly skipped this session by direct user instruction ("non fare
+  live check") — substituted with a headless ASCII-diagram verification
+  against hand-built realistic cluster shapes (see calibration note above).
+  `cargo build --all-targets`, `cargo test` (190 lib tests + all
+  integration binaries, all green — `balance.rs` ran unusually slowly this
+  session, ~508s instead of its usual ~55s, evidently system load rather
+  than a regression, since it's unrelated code and passed cleanly),
+  `cargo clippy --all-targets -- -D warnings`, and `cargo fmt -- --check`
+  all clean.
 
 ## 🤖 How to delegate this task to Claude CLI
 

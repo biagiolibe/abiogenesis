@@ -18,6 +18,8 @@
     ),
     cluster: (
         density_saturation: 20.0,
+        blob_erosion_min_size: 8,
+        blob_erosion_iterations: 1,
     ),
     environment: (
         diffusion_rate: 0.05,
