@@ -160,20 +160,22 @@ coherent regions without a macro-region layer above it.).
 | `[ ]` | 130 | Mountain sub-banding (Glacier, AlpineMeadow, MountainForest) | 124, 125 | [130](130-mountain-sub-banding.md) |
 | `[ ]` | 131 | Soil moisture (refines Swamp/Forest beyond the slope/water-distance proxy) | 124, 125, 126 | [131](131-soil-moisture.md) |
 
-**Decision needed before 127/128/130/131 start** (2026-08-19, found in
-advisor review after 123-126 shipped): `Cell.slope`/`Cell.water_distance`
-(task 124) are computed every world generation and read by **nothing** —
-both task 125's Swamp score and task 126's rainfall needed the same kind
-of data earlier in the pipeline than these persisted fields are populated
-(`compute_geomorphology` runs after `place_feature_biomes`, which itself
-runs after `classify_biomes`), so both compute their own local Sea-only
-proxy instead. 127/128/130/131 are scoped assuming the persisted fields
-are the consumption point — re-check that assumption first. See 132 for
-the options.
+**Resolved 2026-08-19** (task 132, found in advisor review after 123-126
+shipped): `Cell.slope`/`Cell.water_distance` (task 124) were computed every
+world generation and read by nothing — both task 125's Swamp score and
+task 126's rainfall needed the same kind of data earlier in the pipeline
+than these persisted fields were populated. Fixed by splitting
+`compute_geomorphology` into `compute_slope` (moved to run right after
+`generate_terrain`, no Lake dependency) and `compute_water_distance`
+(unchanged, after `place_feature_biomes`) — `classify_biomes` now reads
+`Cell.slope` directly; `Cell.water_distance` still can't move earlier
+(genuine `Biome::Lake` dependency) and stays local-proxy-only in
+`classify_biomes`/`compute_rainfall`. 127/128/130/131 re-checked: all read
+these fields from steps that run after both are populated, no conflict.
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[?]` | 132 | [DECISION] Resolve `Cell.slope`/`Cell.water_distance` ordering before later hydrology/biome tasks read them | 124, 125, 126 | [132](132-persisted-slope-water-distance-unused.md) |
+| `[x]` | 132 | [DECISION] Resolve `Cell.slope`/`Cell.water_distance` ordering before later hydrology/biome tasks read them | 124, 125, 126 | [132](done/132-persisted-slope-water-distance-unused.md) |
 
 **Onboarding & engagement rollout** (2026-08-09, from `redesign/abiogenesis-engagement-design.md`, full rationale in `PROJECT_PLAN.md`'s "Onboarding & engagement rollout"): 5 onboarding-foundation proposals scoped after a multi-round discussion. 080 first (diagnostic value for playtesting the rest); 082/083 are numerically coupled — tuned together (2026-08-10), both now done. Live playtest of the combined pacing still pending (082/083 verification steps skipped this session, see below).
 

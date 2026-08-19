@@ -4,8 +4,59 @@
 > **Category**: Decision / correction (worldgen)
 > **Priority**: 🟢 P3
 > **Estimate**: ~30min to decide, 0-3h to act depending on the choice
-> **Assigned to**: unassigned
-> **Session**: 2026-08-19 (found during advisor review after tasks 123-126 shipped)
+> **Assigned to**: done
+> **Session**: 2026-08-19 (found during advisor review after tasks 123-126 shipped, resolved same session)
+
+---
+
+## ✅ Decision and implementation notes (2026-08-19)
+
+**Decision: Option 2** (split `compute_geomorphology` into `compute_slope`
+and `compute_water_distance`, run `compute_slope` right after
+`generate_terrain`). Chosen over 3/4 because `slope` has no Lake
+dependency at all — it's a pure function of `elevation`, which is final
+right after `generate_terrain` — so there was no reason to keep it tied to
+`water_distance`'s timing. Options 3/4 (drop Lake from `water_distance`,
+or reorder feature placement) would have removed the *other* local-proxy
+workaround (Swamp/rainfall's Sea-only water proximity) too, but at a real
+cost (losing the "swamps form near lakes" signal, or touching
+`place_feature_biomes`'s "runs after `classify_biomes`" invariant) not
+justified by this session's scope.
+
+- `SimWorld::compute_geomorphology` split: `compute_slope` (elevation-only,
+  moved to run immediately after `generate_terrain`, before
+  `apply_environment_sources`/`place_toxic_zone`/`classify_biomes`) and
+  `compute_water_distance` (unchanged position, after `place_feature_biomes`).
+- `classify_biomes` now reads `cell.slope` directly (both the `Hill`/
+  BareRock branch and the `Plain`/Swamp score) instead of recomputing a
+  local copy via `elevation_slope` — removes that half of task 125's
+  original workaround. The now-unused `terrain_cfg`/`elevations` locals in
+  `classify_biomes` were removed.
+  `water_distance` **still** uses a local Sea-only `sea_distance_field`
+  proxy inside `classify_biomes` and `compute_rainfall` — its Lake
+  dependency wasn't touched by this decision, so that half of the
+  workaround remains exactly as task 125/126 left it.
+- Updated `Cell::slope`/`Cell::water_distance`'s doc comments and
+  `classify_biomes`'s own doc comment to describe the new, split
+  ordering accurately.
+- `slope_and_water_distance_do_not_affect_biome_classification` split into
+  `water_distance_does_not_affect_biome_classification` (unchanged guard,
+  water_distance still isn't read) and a new positive test,
+  `classify_biomes_reads_the_persisted_slope_field` (forces `slope` to a
+  saturated value and confirms Swamp becomes unreachable — slope now
+  genuinely drives classification, so the old "neither field affects
+  classification" premise no longer held for `slope`).
+- **127/128/130/131 re-checked against this resolution** (their own
+  Dependencies sections): all read `slope` and/or `water_distance` as
+  inputs to worldgen steps that run *after* biome classification/feature
+  placement in every case, i.e. after both fields are legitimately
+  populated — no conflict found, no task file edits needed. `slope` being
+  available even earlier (right after `generate_terrain`) than any of them
+  need is strictly more permissive, not a constraint.
+- `cargo build`/`clippy -D warnings`/`fmt`/`test` all clean. No RNG stream
+  is touched by `compute_slope`, so moving it earlier in the pipeline
+  doesn't shift any other generation step's draws — confirmed by every
+  existing determinism/environment test passing unchanged.
 
 ---
 
@@ -81,14 +132,14 @@ run *before* `compute_geomorphology` without realizing it.
 
 ## 📋 Acceptance Criteria (once a direction is picked)
 
-- [ ] Decision recorded here (which option, and why).
-- [ ] If option 2/3/4: implemented, with `classify_biomes`'s local-proxy
+- [x] Decision recorded here (which option, and why).
+- [x] If option 2/3/4: implemented, with `classify_biomes`'s local-proxy
       workaround removed in favor of reading the now-earlier-available
       persisted field(s).
-- [ ] Tasks 127/128/130/131 re-checked against whatever ordering this
+- [x] Tasks 127/128/130/131 re-checked against whatever ordering this
       lands on, before any of them start — update their own files if the
       ordering assumption they were scoped under has changed.
-- [ ] `cargo clippy -- -D warnings` / `cargo fmt` / `cargo test` clean if
+- [x] `cargo clippy -- -D warnings` / `cargo fmt` / `cargo test` clean if
       code changes.
 
 ---

@@ -359,14 +359,11 @@ pub struct Cell {
     /// Local elevation-gradient magnitude (task 124), normalized to
     /// `[0, 1]` via `TerrainConfig::slope_normalization` — a plain
     /// "how steep is this cell" number. Computed once at generation time
-    /// (`SimWorld::compute_geomorphology`). **Still read nowhere** as this
-    /// persisted field: task 125's biome scoring needed the same
-    /// elevation-gradient magnitude *before* this field is populated (it's
-    /// set after `place_feature_biomes`, which itself runs after
-    /// `classify_biomes`), so it computes its own local copy via
-    /// `elevation_slope` instead — see `classify_biomes`'s doc comment for
-    /// why. This stored field remains available for a future consumer with
-    /// no such ordering constraint.
+    /// by `SimWorld::compute_slope`, right after `generate_terrain` (pure
+    /// function of `elevation`, no further dependency) — early enough that
+    /// `classify_biomes` reads this field directly (task 132, resolved
+    /// 2026-08-19; originally it computed its own local copy, since task
+    /// 124 first placed this computation after `place_feature_biomes`).
     pub slope: f32,
     /// Grid (Moore-neighbour-step) distance to the nearest water cell
     /// (`Biome::DeepWater`/`ShallowWater`/`Lake`) — task 124's
@@ -376,10 +373,14 @@ pub struct Cell {
     /// already feeds `apply_environment_sources`' coastal-cooling model,
     /// and widening its source set to lakes would be an unreviewed change
     /// to the temperature balance, out of scope here. Computed once at
-    /// generation time. **Still read nowhere** as this persisted field —
-    /// same ordering constraint as `slope` above (task 125's Swamp score
-    /// and task 126's rainfall field both use a locally-computed Sea-only
-    /// proxy instead, since Lake cells don't exist yet when they run).
+    /// generation time by `SimWorld::compute_water_distance`, after
+    /// `place_feature_biomes` (its BFS needs `Biome::Lake` cells to exist
+    /// as a source). **Still read nowhere** as this persisted field:
+    /// `classify_biomes` and `compute_rainfall` both run *before* Lake
+    /// exists, so they each use a locally-computed Sea-only proxy instead
+    /// (task 132's resolved decision — unlike `slope`, this field's
+    /// dependency on Lake genuinely can't move earlier without a bigger
+    /// restructure, see `tasks/done/132-*.md`).
     pub water_distance: f32,
     /// Task 126: `[0, 1]` precipitation proxy — ocean-proximity moisture,
     /// orographic lift (terrain rising into the wind), and rain shadow
@@ -575,12 +576,13 @@ impl SimWorld {
             rng,
         };
         world.generate_terrain(config);
+        world.compute_slope(config);
         world.apply_environment_sources(config, &params);
         world.compute_rainfall(config, &params);
         world.place_toxic_zone(config, &params);
         world.classify_biomes(config);
         world.place_feature_biomes(config);
-        world.compute_geomorphology(config);
+        world.compute_water_distance();
         world
     }
 
@@ -800,21 +802,22 @@ impl SimWorld {
     /// the draw depend on how many resample attempts that loop happened to
     /// take).
     ///
-    /// Palude's drainage inputs (`slope`, a Sea-only water-proximity proxy)
-    /// are computed **locally** here via `elevation_slope`/
-    /// `sea_distance_field`, not read from `Cell.slope`/`Cell.water_distance`
-    /// (task 124): those persisted fields aren't populated until
-    /// `compute_geomorphology`, which runs *after* `place_feature_biomes`
-    /// (its `water_distance` needs `Biome::Lake` cells to exist as a BFS
-    /// source) — a genuine pipeline ordering constraint, not an oversight.
-    /// One consequence: Swamp's water-proximity score only "sees" the sea
-    /// coastline here, not a newly-placed inland lake (lakes don't exist
-    /// yet at this point) — acceptable, since the sea coastline is the
-    /// dominant "near water" signal for a whole world and lakes are a
+    /// Palude's drainage inputs (task 124's `slope`/`water_distance`,
+    /// resolved as task 132 2026-08-19): `Cell.slope` is read directly —
+    /// `compute_slope` now runs right after `generate_terrain`, before this
+    /// method, since slope is a pure function of `elevation` with no
+    /// further dependency. `water_distance` is still computed **locally**
+    /// here via `sea_distance_field` (Sea-only), not read from the
+    /// persisted `Cell.water_distance`: that field's BFS needs `Biome::Lake`
+    /// cells, which `place_feature_biomes` only creates *after* this method
+    /// runs (a genuine pipeline ordering constraint, not an oversight — see
+    /// `compute_water_distance`'s doc comment). One consequence: Swamp's
+    /// water-proximity score only "sees" the sea coastline here, not a
+    /// newly-placed inland lake — acceptable, since the sea coastline is
+    /// the dominant "near water" signal for a whole world and lakes are a
     /// small, rare feature.
     fn classify_biomes(&mut self, config: &SimConfig) {
         let biome_cfg = &config.biome;
-        let terrain_cfg = &config.terrain;
         let mut rng = StdRng::seed_from_u64(self.seed ^ BIOME_SEED_OFFSET);
         let forest_waves = terrain_waves(
             &mut rng,
@@ -835,7 +838,6 @@ impl SimWorld {
             biome_cfg.patch_freq_max,
         );
 
-        let elevations: Vec<f32> = self.cells.iter().map(|c| c.elevation).collect();
         let sea_proximity = self.sea_distance_field();
 
         let mut biomes = vec![Biome::default(); self.cells.len()];
@@ -867,11 +869,8 @@ impl SimWorld {
                         // second independent gate (kept small/contained
                         // per the task's own scope; full mountain
                         // sub-banding is a separate future pass).
-                        let raw_slope = self.elevation_slope(x, y, &elevations);
-                        let slope = (raw_slope / terrain_cfg.slope_normalization.max(f32::EPSILON))
-                            .clamp(0.0, 1.0);
                         let effective_light_max = biome_cfg.bare_rock_light_max
-                            + biome_cfg.bare_rock_slope_light_bonus * slope;
+                            + biome_cfg.bare_rock_slope_light_bonus * cell.slope;
                         if cell.light <= effective_light_max {
                             Biome::BareRock
                         } else {
@@ -879,15 +878,12 @@ impl SimWorld {
                         }
                     }
                     TerrainKind::Plain => {
-                        let raw_slope = self.elevation_slope(x, y, &elevations);
-                        let slope = (raw_slope / terrain_cfg.slope_normalization.max(f32::EPSILON))
-                            .clamp(0.0, 1.0);
                         let water_distance = sea_proximity[idx];
                         let scores = [
                             (
                                 Biome::Swamp,
                                 swamp_score(
-                                    slope,
+                                    cell.slope,
                                     water_distance,
                                     biome_cfg,
                                     wave_band_sum(&swamp_waves, nx, ny),
@@ -1044,18 +1040,37 @@ impl SimWorld {
     /// `Biome::Lake` cells to already exist as a BFS source. Purely
     /// additive — read nowhere yet; task 125 is what actually uses these
     /// for reclassification.
-    fn compute_geomorphology(&mut self, config: &SimConfig) {
+    fn compute_slope(&mut self, config: &SimConfig) {
         let terrain_cfg = &config.terrain;
         let elevations: Vec<f32> = self.cells.iter().map(|c| c.elevation).collect();
-        let water_distance = self.water_distance_field();
+        let mut slope = vec![0.0f32; self.cells.len()];
         for y in 0..self.height {
             for x in 0..self.width {
                 let idx = self.index(x, y);
                 let raw_slope = self.elevation_slope(x, y, &elevations);
-                self.cells[idx].slope =
+                slope[idx] =
                     (raw_slope / terrain_cfg.slope_normalization.max(f32::EPSILON)).clamp(0.0, 1.0);
-                self.cells[idx].water_distance = water_distance[idx];
             }
+        }
+        for (idx, cell) in self.cells.iter_mut().enumerate() {
+            cell.slope = slope[idx];
+        }
+    }
+
+    /// Task 132 (resolved 2026-08-19): `water_distance` stays a separate
+    /// step from `compute_slope`, run after `place_feature_biomes` — its
+    /// BFS needs `Biome::Lake` cells to exist as a source, and Lake is only
+    /// placed there. `slope` has no such dependency (pure function of
+    /// `elevation`, final right after `generate_terrain`), so splitting the
+    /// two lets `classify_biomes` read the real, persisted `Cell.slope`
+    /// instead of recomputing its own local copy (task 125's original
+    /// workaround) — `water_distance` still can't be read that early, so
+    /// Swamp's water-proximity term keeps its own local Sea-only proxy;
+    /// see `classify_biomes`'s doc comment.
+    fn compute_water_distance(&mut self) {
+        let water_distance = self.water_distance_field();
+        for (idx, cell) in self.cells.iter_mut().enumerate() {
+            cell.water_distance = water_distance[idx];
         }
     }
 
@@ -3265,14 +3280,21 @@ mod tests {
     /// pre-existing property of re-running Stage A/B alone, unrelated to
     /// this task, and not what this test is checking).
     #[test]
-    fn slope_and_water_distance_do_not_affect_biome_classification() {
+    fn water_distance_does_not_affect_biome_classification() {
+        // Task 132 (resolved 2026-08-19): `Cell.slope` is now read directly
+        // by `classify_biomes` (it moved earlier in the pipeline), so it's
+        // no longer part of this guard — see
+        // `classify_biomes_reads_the_persisted_slope_field` below for the
+        // positive confirmation of that change. `water_distance` still
+        // can't move earlier (its BFS needs `Biome::Lake`, task 132's
+        // Option 3/4, not taken), so it stays local-proxy-only and this
+        // guard still applies to it.
         let config = test_config();
         for seed in 0..10u64 {
             let mut world = SimWorld::new(seed, &config);
             world.classify_biomes(&config);
             let areal_before: Vec<Biome> = world.cells.iter().map(|c| c.biome).collect();
             for cell in world.cells.iter_mut() {
-                cell.slope = 999.0;
                 cell.water_distance = 999.0;
             }
             world.classify_biomes(&config);
@@ -3282,6 +3304,26 @@ mod tests {
                 "seed {seed}: biome classification changed"
             );
         }
+    }
+
+    /// Task 132: the positive counterpart of the guard above — confirms
+    /// `classify_biomes` actually reads the persisted `Cell.slope` now
+    /// (not a silently-never-exercised code path). A cell forced to
+    /// maximum slope should read as BareRock (if `Hill`) or lose Swamp
+    /// eligibility (if `Plain`, since `swamp_score`'s slope term collapses
+    /// to `0` far past `swamp_slope_max`).
+    #[test]
+    fn classify_biomes_reads_the_persisted_slope_field() {
+        let config = test_config();
+        let mut world = SimWorld::new(7, &config);
+        for cell in world.cells.iter_mut() {
+            cell.slope = 999.0;
+        }
+        world.classify_biomes(&config);
+        assert!(
+            !world.cells.iter().any(|c| c.biome == Biome::Swamp),
+            "a saturated slope should make Swamp unreachable everywhere"
+        );
     }
 
     #[test]
