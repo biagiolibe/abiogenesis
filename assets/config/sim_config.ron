@@ -140,6 +140,7 @@
         rain_shadow_ray_steps: 10,
         rain_shadow_step_length: 3.0,
         rain_shadow_strength: 3.0,
+        toxic_reinjection_strength: 0.15,
     ),
     biome: (
         deep_water_elevation_max: 0.15,

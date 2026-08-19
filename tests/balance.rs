@@ -227,19 +227,6 @@ fn bloom_usually_grows_then_stabilises_across_seeds() {
     );
 }
 
-/// Deliberately much shorter than `RUN_TICKS` (unlike the other tests in
-/// this file): unlike heat sources (`reinject_environment_sources`), a
-/// toxic cell has no reinjection — `toxicity` just diffuses toward ambient
-/// like any unreinforced scalar, so over `RUN_TICKS`' 500-tick horizon it
-/// erodes and a chemolithotroph's local advantage fades with it,
-/// regardless of how well the metabolism itself works. That's a real
-/// environment-persistence question, but a separate one from "does this
-/// metabolism correctly gain energy from toxicity" — task 108's own scope
-/// — so this measures short-horizon viability only, well past the ~7-tick
-/// "obviously starving" baseline other tests in this file use, without
-/// being confounded by toxic-cell decay this task isn't scoped to address.
-const CHEMOLITHOTROPH_SURVIVAL_TICKS: usize = 100;
-
 /// Task 108: `generate_starting_palette`/`place_starting_organisms` never
 /// place a `Chemolithotroph` (bonus species from `add_bonus_species` are
 /// available for `Seed`, not pre-placed), so the nominal scenario above
@@ -262,6 +249,17 @@ const CHEMOLITHOTROPH_SURVIVAL_TICKS: usize = 100;
 /// placeable toxic cell at all are skipped rather than failing the test —
 /// tracked separately so an implausibly high skip rate (the search itself
 /// silently broken) would still be caught.
+///
+/// Runs the full `RUN_TICKS` horizon like every other test in this file
+/// (task 122 restored this from a 100-tick short-horizon workaround, see
+/// `git log` for that version if the history's needed): before task 122,
+/// `toxicity` had no reinjection countering `diffuse_environment`'s
+/// erosion the way heat sources already had, so a toxic cell's advantage
+/// faded over a long run regardless of how well the metabolism itself
+/// worked — `reinject_environment_sources` now holds
+/// `SimWorld::toxic_swamp_cells` near `swamp_toxicity_value` the same way
+/// it already did for heat sources, so this no longer needs a shortened
+/// window to avoid being confounded by that separate problem.
 #[test]
 fn chemolithotroph_survives_reasonably_in_its_toxic_zone_across_seeds() {
     let mut collapses = 0;
@@ -314,7 +312,7 @@ fn chemolithotroph_survives_reasonably_in_its_toxic_zone_across_seeds() {
             born_era: 0,
         });
 
-        for _ in 0..CHEMOLITHOTROPH_SURVIVAL_TICKS {
+        for _ in 0..RUN_TICKS {
             step(&mut world, &config);
         }
 

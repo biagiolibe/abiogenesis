@@ -1049,6 +1049,17 @@ pub struct SourceConfig {
     /// march depletes `Cell.rainfall` — a taller ridge (relative to this
     /// cell's own elevation) casts a stronger rain shadow.
     pub rain_shadow_strength: f32,
+    /// Task 122: per-tick pull-back strength toward `EnvironmentConfig::
+    /// swamp_toxicity_value` for `SimWorld::toxic_swamp_cells` (the Swamp
+    /// cells `classify_biomes` marked toxic at generation time, task 125)
+    /// — the same "counteracts `diffuse_environment`'s erosion" role
+    /// `reinjection_strength` plays for heat sources, but a **separate**
+    /// field: toxicity and temperature diffuse at the same
+    /// `EnvironmentConfig::diffusion_rate` today, but there's no reason
+    /// their reinjection strengths need to move together, so they stay
+    /// independently tunable even though they start equal. Must exceed
+    /// `diffusion_rate` for the same reason `reinjection_strength` must.
+    pub toxic_reinjection_strength: f32,
 }
 
 impl Default for SourceConfig {
@@ -1073,6 +1084,7 @@ impl Default for SourceConfig {
             rain_shadow_ray_steps: 10,
             rain_shadow_step_length: 3.0,
             rain_shadow_strength: 3.0,
+            toxic_reinjection_strength: 0.15,
         }
     }
 }

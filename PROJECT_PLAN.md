@@ -570,7 +570,7 @@ restored green (`0/50` across all four balance properties).
   `ui.horizontal_wrapped` (`ui.rs`).
 - `[x]` 115 — Grid input (clicks and scroll-zoom) leaks through the HUD panel → [115](tasks/done/115-egui-panel-click-through-when-zoomed.md)
 - `[ ]` 121 — Conditional-tag catalog badge never renders in a live playtest (reported 2026-08-12, static review inconclusive — needs live repro) → [121](tasks/121-terrain-badge-missing-in-catalog.md)
-- `[ ]` 122 — Toxic zone reinjection: toxicity erodes over long runs with no source to counter diffusion, unlike heat sources (found balance-testing task 108's chemolithotroph) → [122](tasks/122-toxic-zone-reinjection.md)
+- `[x]` 122 — Toxic zone reinjection: toxicity erodes over long runs with no source to counter diffusion, unlike heat sources (found balance-testing task 108's chemolithotroph) → [122](tasks/done/122-toxic-zone-reinjection.md)
 
 ### 🎚️ Final tuning — *the real art*
 

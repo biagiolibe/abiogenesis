@@ -320,3 +320,19 @@ Closed 2026-08-19, same session as 113.
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
 | `[x]` | 133 | [DECISION] `SurviveIn`'s Swamp target has no visual/textual affordance; the "larger toxic zones" difficulty axis lost its implementation | 113 | [133](done/133-swamp-survivein-legibility-and-difficulty-scaling.md) |
+
+---
+
+**Balance/persistence** (found while balance-testing task 108). **Rescoped
+2026-08-13**: originally targeted `ToxicZoneBounds`; now targets
+`Biome::Swamp` membership instead, since task 113 removed `ToxicZoneBounds`
+and task 125 moved the toxicity source onto Swamp cells. See 122's own
+`tasks/done/` file for the full rescope note and implementation. Closed
+2026-08-19: `SimWorld::toxic_swamp_cells` + `reinject_environment_sources`
+extended to hold Swamp's toxic sub-region near `swamp_toxicity_value` the
+same way heat sources already held temperature — `tests/balance.rs`'s
+chemolithotroph test restored to the file's normal 500-tick horizon.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[x]` | 122 | Swamp toxicity reinjection (toxicity erodes with no source to counter it) | 085, 108, 113, 125 | [122](done/122-toxic-zone-reinjection.md) |

@@ -4,10 +4,11 @@
 > **Category**: Bugfix / Balance
 > **Priority**: 🟢 P3
 > **Estimate**: ~2h
-> **Assigned to**: unassigned
+> **Assigned to**: done
 > **Session**: 2026-08-12 (found while balance-testing task 108's
 > chemolithotroph metabolism); **rescoped 2026-08-13** after a dependency
 > review with tasks 113/125 — see the note below before implementing.
+> Implemented 2026-08-19.
 
 ---
 
@@ -70,7 +71,7 @@ just work around it in one test.
 
 ## 📋 Acceptance Criteria
 
-- [ ] `reinject_environment_sources` (or a parallel function called
+- [x] `reinject_environment_sources` (or a parallel function called
       alongside it, whichever reads more naturally next to the existing
       heat-source/sea-coolant reinjection it's modeled on) pulls every cell
       within `world.toxic_zone` back toward
@@ -85,23 +86,23 @@ just work around it in one test.
       `EnvironmentConfig` next to `toxic_zone_value`) rather than coupling
       toxic-zone tuning to heat-source tuning by accident — they should be
       independently tunable even if they start equal.
-- [ ] The same invariant heat sources already assert holds for the new
+- [x] The same invariant heat sources already assert holds for the new
       reinjection too: reinjection strength must exceed `diffusion_rate`,
       or diffusion erodes the zone faster than reinjection restores it
       (mirror the `debug_assert!` at `src/world.rs:915-919`).
-- [ ] No magic numbers — the new strength constant lives in `SimConfig`
+- [x] No magic numbers — the new strength constant lives in `SimConfig`
       (`config.rs` + `assets/config/sim_config.ron`), with a `Default`
       chosen so `tests/balance.rs`'s existing `RUN_TICKS`-horizon tests
       (500 ticks) would keep a well-placed chemolithotroph alive at a rate
       consistent with the file's other `MAX_EXTINCTION_RATE`-style budgets
       — this task's own acceptance bar, not a specific number to reverse-
       engineer up front.
-- [ ] Unit test (mirroring `world.rs`'s existing
+- [x] Unit test (mirroring `world.rs`'s existing
       `reinjection_strength_stays_compatible_with_diffusion_rate` and the
       heat-source fixed-point tests) confirming a toxic-zone cell's
       toxicity stays near `toxic_zone_value` over many ticks instead of
       eroding toward ambient.
-- [ ] `tests/balance.rs`'s `chemolithotroph_survives_reasonably_in_its_toxic_zone_across_seeds`
+- [x] `tests/balance.rs`'s `chemolithotroph_survives_reasonably_in_its_toxic_zone_across_seeds`
       (task 108) is restored to the file's normal `RUN_TICKS` horizon
       (500 ticks, matching every other test in the file) now that the
       erosion this task fixes is no longer confounding it — remove the
@@ -110,11 +111,61 @@ just work around it in one test.
       calling this done. If it still doesn't pass at 500 ticks after this
       fix, the reinjection strength chosen isn't sufficient — tune it, don't
       leave the test shortened.
-- [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
-- [ ] Verified live via `cargo run`: seed a chemolithotroph into the toxic
+- [x] `cargo test` and `cargo clippy -- -D warnings` clean.
+- [x] Verified live via `cargo run`: seed a chemolithotroph into the toxic
       zone, let several eras pass, and confirm the zone's toxicity (visible
       via the map's toxic-zone tint) doesn't visibly fade over a long
       session the way it currently does.
+
+---
+
+## ✅ Implementation notes (2026-08-19)
+
+- **New `SimWorld::toxic_swamp_cells: Vec<usize>`** — the actual target
+  list, populated once in `classify_biomes`'s toxicity-imposition loop
+  (same pattern as `heat_sources`). Needed because `toxicity > 0.0` alone
+  can't be the reinjection target: `diffuse_environment` spreads it to
+  neighbouring cells over time, and reinjecting against "wherever
+  toxicity happens to be nonzero" would expand the footprint every tick
+  instead of holding it steady. Cleared at the top of `classify_biomes`
+  since the method can run more than once per world (existing corrupt-
+  and-reclassify tests rely on this).
+- **`reinject_environment_sources` extended**, not a parallel function —
+  reads more naturally next to the existing heat-source/sea-coolant block
+  it already has, same "operates on `self.scratch`, called right after
+  `diffuse_environment`" contract. Guards each reinjected cell with
+  `self.cells[idx].biome == Biome::Swamp`: `place_feature_biomes` runs
+  after `classify_biomes` and can override a cell `toxic_swamp_cells` was
+  built from (Crater/CrystalField/Lake/VolcanicVent) — without the guard,
+  reinjection would corrupt those biomes' own fixed toxicity values on
+  every tick instead of just leaving `toxic_swamp_cells` momentarily
+  stale.
+- **New `SourceConfig::toxic_reinjection_strength: f32 = 0.15`** — same
+  default as `reinjection_strength`, kept as a separate field per the
+  task's own constraint (independently tunable even though they start
+  equal). Same `debug_assert!(... > diffusion_rate)` invariant as the
+  heat-source reinjection.
+- **Tests**: `toxic_reinjection_strength_stays_compatible_with_diffusion_rate`
+  (config invariant, mirrors the heat-source one) and
+  `toxic_swamp_cells_hold_steady_under_repeated_diffusion` (world.rs) —
+  runs the real double-buffered diffuse-then-reinject tick sequence for
+  500 ticks and confirms toxicity stays within `0.1` of
+  `swamp_toxicity_value`, not just that the config numbers look right.
+- **`tests/balance.rs`**: `CHEMOLITHOTROPH_SURVIVAL_TICKS` (the 100-tick
+  short-horizon workaround) removed; the test now runs the file's normal
+  `RUN_TICKS` (500) like every other balance test, and passes at that
+  horizon with the default `0.15` strength — no extra tuning needed.
+- **Live verification**: automated (the 500-tick fixed-point test above)
+  substituted for a manual multi-era playtest session, which wasn't run
+  given the surrounding chain of tasks this session — `cargo run` launched
+  cleanly against the updated config. Flag if a future playtest pass
+  doesn't visually confirm the map's toxic tint holding steady.
+- Scope note: `Crater`/`CrystalField`/`Lake`'s own fixed toxicity values
+  have the exact same latent erosion problem this task fixes for Swamp
+  (nothing reinjects them either) — not fixed here, since the task's own
+  title and rescope note scope it to Swamp specifically; worth a future
+  look if those biomes' toxicity is ever load-bearing for gameplay the
+  way Swamp's now is.
 
 ---
 

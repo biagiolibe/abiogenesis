@@ -107,16 +107,6 @@ pass).
 | `[x]` | 115 | Grid input (clicks and scroll-zoom) leaks through the HUD panel | — | [115](done/115-egui-panel-click-through-when-zoomed.md) |
 | `[ ]` | 121 | Conditional-tag catalog badge never renders in a live playtest | 096, 097 | [121](121-terrain-badge-missing-in-catalog.md) |
 
-**Balance/persistence** (found while balance-testing task 108). **Rescoped
-2026-08-13**: originally targeted `ToxicZoneBounds`; now targets
-`Biome::Swamp` membership instead, since task 113 removed `ToxicZoneBounds`
-and task 125 moved the toxicity source onto Swamp cells. See 122's own file
-for the full rescope note. **Unblocked 2026-08-19** (113 landed).
-
-| Status | ID | Title | Depends on | File |
-|-------|----|--------|------------|------|
-| `[ ]` | 122 | Swamp toxicity reinjection (toxicity erodes with no source to counter it) | 085, 108, 113, 125 | [122](122-toxic-zone-reinjection.md) |
-
 **Worldgen pipeline reassessment — credibility follow-ups** (2026-08-13,
 same session: after scoping 123-127, an explicit pass over what the spec
 still covers that those five don't. Ranked by impact on a *single* world's
@@ -156,7 +146,14 @@ Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN
 
 ---
 
-*Last updated: 2026-08-19 (133, the two Task 113 follow-ups — SurviveIn's
+*Last updated: 2026-08-19 (122, Swamp toxicity reinjection —
+`reinject_environment_sources` extended with a new `toxic_swamp_cells`
+list and `SourceConfig::toxic_reinjection_strength`, mirroring the
+heat-source pattern task 085 established, so `diffuse_environment` no
+longer erodes Swamp's toxic sub-region toward ambient over a long run;
+`tests/balance.rs`'s chemolithotroph test restored to the file's normal
+500-tick horizon — completed and archived to `tasks/done/`, phase archived
+to `QUEUE_ARCHIVE.md`. 133, the two Task 113 follow-ups — SurviveIn's
 Swamp target now gets a dashed purple highlight while that objective is
 active, reviving the visual language `draw_toxic_zone` used to provide
 (`render.rs::draw_survive_in_target`, gated on `CurrentObjective`); the

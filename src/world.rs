@@ -422,6 +422,16 @@ pub struct SimWorld {
     /// `SurviveIn` reads the stable `Cell::biome` classification (task 113)
     /// rather than the diffusing scalar it seeded.
     pub heat_sources: Vec<usize>,
+    /// Cell indices of the Swamp cells `classify_biomes`'s toxicity-
+    /// imposition pass (task 125 §12.4) marked toxic, set once at
+    /// generation time (task 122). Same role as `heat_sources`:
+    /// `reinject_environment_sources` reads this every tick to pull those
+    /// cells' `toxicity` back toward `EnvironmentConfig::
+    /// swamp_toxicity_value`, countering `diffuse_environment`'s erosion —
+    /// without this, a chemolithotroph (or a `SurviveIn` objective) left
+    /// alone for a few hundred ticks would find the "toxic" ground it was
+    /// counting on had quietly faded toward ambient.
+    pub toxic_swamp_cells: Vec<usize>,
     /// Grid (Chebyshev) distance from each cell to its nearest `Sea` cell
     /// (task 086 playtest follow-up), computed once at generation time via
     /// multi-source BFS and reused both to bake the initial coastal-cooling
@@ -553,6 +563,7 @@ impl SimWorld {
             matrix,
             conditional_tags,
             heat_sources: Vec::new(),
+            toxic_swamp_cells: Vec::new(),
             sea_distance: Vec::new(),
             ever_populated: false,
             wild_species: Vec::new(),
@@ -857,7 +868,16 @@ impl SimWorld {
         // scaled value), not `biome_cfg.swamp_toxicity_min` directly, so
         // the toxic fraction of Swamp grows across the run the way the old
         // `toxic_zone` rectangle's size used to (GDD §9's "larger toxic
-        // zones").
+        // zones"). Task 122: also records which cells got marked, in
+        // `toxic_swamp_cells`, so `reinject_environment_sources` has a
+        // stable list to counter `diffuse_environment`'s erosion against —
+        // `toxicity > 0.0` alone can't be that list, since diffusion
+        // spreads it to neighbouring cells over time and reinjecting
+        // against *that* would expand the toxic footprint every tick
+        // instead of holding it steady. Cleared first since this method
+        // can run more than once per world (tests re-run it after
+        // corrupting a field).
+        self.toxic_swamp_cells.clear();
         for y in 0..self.height {
             for x in 0..self.width {
                 let idx = self.index(x, y);
@@ -868,6 +888,7 @@ impl SimWorld {
                 let ny = y as f32 / (self.height - 1).max(1) as f32;
                 if wave_band_sum(&toxic_patch_waves, nx, ny) > params.swamp_toxicity_min {
                     self.cells[idx].toxicity = config.environment.swamp_toxicity_value;
+                    self.toxic_swamp_cells.push(idx);
                 }
             }
         }
@@ -1683,26 +1704,37 @@ impl SimWorld {
         }
     }
 
-    /// Counters `diffuse_environment`'s erosion of the two standing
-    /// temperature features it doesn't otherwise preserve (task 085):
-    /// `heat_sources` are pulled back toward `source_temperature`, and every
-    /// cell within `sea_coolant_radius` of the sea gets a pull toward
-    /// `sea_coolant_value` weighted by `self.sea_distance` (task 086: widened
-    /// from a single Moore-ring nudge to the same radius-based falloff
-    /// `apply_environment_sources` bakes in at generation, so the coastal
-    /// band both starts and stays visible instead of only the literal
-    /// coastline). Deliberately a separate method from `diffuse_environment`,
-    /// called right after it from `sim::step` and operating on
-    /// `self.scratch` (the write side diffusion just populated) — folding
-    /// this into the blend loop would perturb `diffuse_environment`'s own
-    /// fixed-point tests, which build a hand-crafted uniform field and
-    /// expect diffusion alone to leave it untouched.
+    /// Counters `diffuse_environment`'s erosion of the standing
+    /// temperature/toxicity features it doesn't otherwise preserve (task
+    /// 085, extended by task 122): `heat_sources` are pulled back toward
+    /// `source_temperature`, every cell within `sea_coolant_radius` of the
+    /// sea gets a pull toward `sea_coolant_value` weighted by
+    /// `self.sea_distance` (task 086: widened from a single Moore-ring
+    /// nudge to the same radius-based falloff `apply_environment_sources`
+    /// bakes in at generation, so the coastal band both starts and stays
+    /// visible instead of only the literal coastline), and
+    /// `toxic_swamp_cells` are pulled back toward `swamp_toxicity_value`
+    /// (task 122 — without this, a chemolithotroph or `SurviveIn` objective
+    /// relying on toxic ground would find it fading toward ambient over a
+    /// long-running world, the same problem heat sources solved for
+    /// temperature in task 085). Deliberately a separate method from
+    /// `diffuse_environment`, called right after it from `sim::step` and
+    /// operating on `self.scratch` (the write side diffusion just
+    /// populated) — folding this into the blend loop would perturb
+    /// `diffuse_environment`'s own fixed-point tests, which build a
+    /// hand-crafted uniform field and expect diffusion alone to leave it
+    /// untouched.
     pub fn reinject_environment_sources(&mut self, config: &SimConfig) {
         let source_cfg = &config.source;
         debug_assert!(
             source_cfg.reinjection_strength > config.environment.diffusion_rate,
             "reinjection_strength must exceed diffusion_rate, or diffusion erodes the source \
              faster than reinjection restores it"
+        );
+        debug_assert!(
+            source_cfg.toxic_reinjection_strength > config.environment.diffusion_rate,
+            "toxic_reinjection_strength must exceed diffusion_rate, or diffusion erodes toxic \
+             Swamp cells faster than reinjection restores them"
         );
         for &idx in &self.heat_sources {
             let current = self.scratch[idx].temperature;
@@ -1719,6 +1751,20 @@ impl SimWorld {
             let current = self.scratch[idx].temperature;
             self.scratch[idx].temperature +=
                 source_cfg.sea_coolant_strength * weight * (source_cfg.sea_coolant_value - current);
+        }
+
+        // `place_feature_biomes` (Crater/CrystalField/Lake/VolcanicVent)
+        // runs after `classify_biomes` and can override a cell this list
+        // was built from — the `biome == Swamp` guard keeps this self-
+        // healing against that instead of ever reinjecting toxicity into a
+        // feature biome that no longer wants it.
+        for &idx in &self.toxic_swamp_cells {
+            if self.cells[idx].biome != Biome::Swamp {
+                continue;
+            }
+            let current = self.scratch[idx].toxicity;
+            self.scratch[idx].toxicity += source_cfg.toxic_reinjection_strength
+                * (config.environment.swamp_toxicity_value - current);
         }
     }
 
@@ -3010,6 +3056,53 @@ mod tests {
             config.source.reinjection_strength,
             config.environment.diffusion_rate
         );
+    }
+
+    /// Task 122: same invariant as the heat-source one above, for the new
+    /// Swamp-toxicity reinjection.
+    #[test]
+    fn toxic_reinjection_strength_stays_compatible_with_diffusion_rate() {
+        let config = test_config();
+        assert!(
+            config.source.toxic_reinjection_strength > config.environment.diffusion_rate,
+            "toxic_reinjection_strength ({}) must exceed diffusion_rate ({}), or toxic Swamp \
+             cells erode to the field mean over a long run",
+            config.source.toxic_reinjection_strength,
+            config.environment.diffusion_rate
+        );
+    }
+
+    /// Task 122: unlike `heat_sources`, `toxic_swamp_cells` had no ongoing
+    /// reinjection before this task — `toxicity` was set once at
+    /// generation (task 125) and only ever diffused afterward, exactly the
+    /// erosion `reinject_environment_sources` already prevented for
+    /// temperature (task 085). Runs the real double-buffered
+    /// diffuse-then-reinject tick sequence `sim::step` uses (not just
+    /// `diffuse_environment` alone) for many ticks and confirms a toxic
+    /// Swamp cell's toxicity stays close to `swamp_toxicity_value` instead
+    /// of eroding toward the grid's ambient mean.
+    #[test]
+    fn toxic_swamp_cells_hold_steady_under_repeated_diffusion() {
+        let config = test_config();
+        let mut world = SimWorld::new(42, &config);
+        assert!(
+            !world.toxic_swamp_cells.is_empty(),
+            "seed 42 under test_config should produce at least one toxic Swamp cell"
+        );
+        for _ in 0..500 {
+            world.scratch.copy_from_slice(&world.cells);
+            world.diffuse_environment(&config);
+            world.reinject_environment_sources(&config);
+            std::mem::swap(&mut world.cells, &mut world.scratch);
+        }
+        let target = config.environment.swamp_toxicity_value;
+        for &idx in &world.toxic_swamp_cells {
+            let toxicity = world.cells[idx].toxicity;
+            assert!(
+                (toxicity - target).abs() < 0.1,
+                "toxic Swamp cell {idx} eroded to {toxicity}, expected to stay near {target}"
+            );
+        }
     }
 
     #[test]
