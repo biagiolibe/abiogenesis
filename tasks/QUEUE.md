@@ -119,7 +119,7 @@ coherent regions without a macro-region layer above it.).
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 128 | Macro-regions before per-cell biome classification | 125 | [128](128-macro-region-biomes.md) |
+| `[x]` | 128 | Macro-regions before per-cell biome classification | 125 | [128](done/128-macro-region-biomes.md) |
 | `[ ]` | 129 | Lakes derived from terrain depressions (123's search becomes fallback) | 123, 127 | [129](129-lakes-from-depressions.md) |
 | `[ ]` | 130 | Mountain sub-banding (Glacier, AlpineMeadow, MountainForest) | 124, 125 | [130](130-mountain-sub-banding.md) |
 | `[ ]` | 131 | Soil moisture (refines Swamp/Forest beyond the slope/water-distance proxy) | 124, 125, 126 | [131](131-soil-moisture.md) |
@@ -146,7 +146,21 @@ Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN
 
 ---
 
-*Last updated: 2026-08-19 (122, Swamp toxicity reinjection —
+*Last updated: 2026-08-19 (128, macro-regions before per-cell biome
+classification — a coarse 6-point Voronoi partition
+(`SimWorld::compute_macro_regions`, its own `MACRO_REGION_SEED_OFFSET`
+stream) with one dominant biome per region, applied as a multiplicative
+bias on each Plain cell's own score before arg-max; deliberately
+multiplicative rather than additive since task 125's own score functions
+can plateau at `1.0`, where an additive bias would be a no-op. Confirmed
+via live `cargo run` screenshots across 3 seeds: biomes now read as a
+handful of large contiguous regions with feature-biome patches as local
+texture inside them, not the fine speckled mosaic before this task —
+completed and archived to `tasks/done/`. Also added
+`tests/config_ron_sync.rs` (deserializes `sim_config.ron` against
+`SimConfig::default()`), which immediately caught two more pre-existing
+drifts from task 106 (`conditional_tag_count`, `confirmation_threshold`),
+now fixed. 122, Swamp toxicity reinjection —
 `reinject_environment_sources` extended with a new `toxic_swamp_cells`
 list and `SourceConfig::toxic_reinjection_strength`, mirroring the
 heat-source pattern task 085 established, so `diffuse_environment` no

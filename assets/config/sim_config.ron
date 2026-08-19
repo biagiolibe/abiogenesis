@@ -184,6 +184,8 @@
         lake_toxicity: 0.05,
         feature_mask_distortion: 0.35,
         feature_mask_wave_count: 4,
+        macro_region_count: 6,
+        macro_region_bias_weight: 0.5,
     ),
     evolution: (
         selection_pressure_threshold: 20.0,

@@ -691,6 +691,112 @@ impl SimWorld {
         }
     }
 
+    /// Task 128 (`redesign/procedural_biome_generation_spec_v2.md` §11.1):
+    /// a coarse `BiomeConfig::macro_region_count`-point Voronoi partition
+    /// of the grid, on its own dedicated RNG stream
+    /// (`MACRO_REGION_SEED_OFFSET`, never `self.rng`/`BIOME_SEED_OFFSET`).
+    /// Each region's dominant biome is decided once from its aggregate
+    /// climate — mean `temperature`/`light`/`slope`/`water_distance` over
+    /// only its `TerrainKind::Plain` cells, since those are the only
+    /// candidates the per-cell `Plain` branch ever picks among — using the
+    /// same `*_score` functions the per-cell pass uses, with `noise = 0.0`
+    /// (patch-noise is per-cell texture, meaningless as a region average).
+    /// A region with no `Plain` cells at all (e.g. entirely `Sea`/
+    /// `Mountain`) defaults to `Biome::Plain`; no cell ever looks it up,
+    /// since a cell only queries its *own* region and a `Plain`-kind cell
+    /// can't belong to an all-non-Plain region under a Voronoi partition
+    /// only if literally zero `Plain` cells fell in it — a real but
+    /// harmless edge case, not one worth a panic over.
+    ///
+    /// Returns `(region_id_per_cell, dominant_biome_per_region)` — kept
+    /// local to the `classify_biomes` call that consumes it, not stored on
+    /// `SimWorld`, since nothing else needs it once the per-cell bias pass
+    /// is done.
+    fn compute_macro_regions(
+        &self,
+        config: &SimConfig,
+        sea_proximity: &[f32],
+    ) -> (Vec<usize>, Vec<Biome>) {
+        let biome_cfg = &config.biome;
+        let region_count = (biome_cfg.macro_region_count as usize).max(1);
+        let mut rng = StdRng::seed_from_u64(self.seed ^ MACRO_REGION_SEED_OFFSET);
+        let seed_points: Vec<(f32, f32)> = (0..region_count)
+            .map(|_| (rng.random_range(0.0..1.0), rng.random_range(0.0..1.0)))
+            .collect();
+
+        let mut region_id = vec![0usize; self.cells.len()];
+        // (sum_temperature, sum_light, sum_slope, sum_water_distance, count).
+        let mut aggregate = vec![(0.0f32, 0.0f32, 0.0f32, 0.0f32, 0u32); region_count];
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = self.index(x, y);
+                let nx = x as f32 / (self.width - 1).max(1) as f32;
+                let ny = y as f32 / (self.height - 1).max(1) as f32;
+                let nearest = seed_points
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &(sx, sy))| (i, (nx - sx).powi(2) + (ny - sy).powi(2)))
+                    .min_by(|a, b| a.1.total_cmp(&b.1))
+                    .map(|(i, _)| i)
+                    .expect("region_count is at least 1, so seed_points is non-empty");
+                region_id[idx] = nearest;
+
+                let cell = self.cells[idx];
+                if cell.terrain == TerrainKind::Plain {
+                    let entry = &mut aggregate[nearest];
+                    entry.0 += cell.temperature;
+                    entry.1 += cell.light;
+                    entry.2 += cell.slope;
+                    entry.3 += sea_proximity[idx];
+                    entry.4 += 1;
+                }
+            }
+        }
+
+        let dominant_biome: Vec<Biome> = aggregate
+            .into_iter()
+            .map(
+                |(sum_temperature, sum_light, sum_slope, sum_water_distance, count)| {
+                    if count == 0 {
+                        return Biome::Plain;
+                    }
+                    let n = count as f32;
+                    let (mean_temperature, mean_light, mean_slope, mean_water_distance) = (
+                        sum_temperature / n,
+                        sum_light / n,
+                        sum_slope / n,
+                        sum_water_distance / n,
+                    );
+                    let scores = [
+                        (
+                            Biome::Swamp,
+                            swamp_score(mean_slope, mean_water_distance, biome_cfg, 0.0),
+                        ),
+                        (
+                            Biome::Desert,
+                            desert_score(mean_temperature, mean_light, biome_cfg),
+                        ),
+                        (Biome::Tundra, tundra_score(mean_temperature, biome_cfg)),
+                        (
+                            Biome::Forest,
+                            forest_score(mean_temperature, mean_light, biome_cfg, 0.0),
+                        ),
+                        (Biome::Plain, biome_cfg.plain_baseline_score),
+                    ];
+                    let mut best = scores[0];
+                    for &candidate in &scores[1..] {
+                        if candidate.1 > best.1 {
+                            best = candidate;
+                        }
+                    }
+                    best.0
+                },
+            )
+            .collect();
+
+        (region_id, dominant_biome)
+    }
+
     /// Classifies every cell's `Biome` (task 110,
     /// `redesign/abiogenesis-biomes.md`) — the two-stage architecture the
     /// design doc calls for: Stage A (`TerrainKind` + `is_peak` + the raw
@@ -751,6 +857,18 @@ impl SimWorld {
     /// `params` (task 133) supplies `swamp_toxicity_min`'s per-world scaled
     /// value for the toxicity-imposition pass at the end of this method —
     /// everything else here still reads from `config` alone.
+    ///
+    /// Task 128: before the per-cell pass, `compute_macro_regions` derives
+    /// a coarse Voronoi partition with one dominant biome per region and
+    /// applies it as a **multiplicative** bias on each `Plain`-kind cell's
+    /// own score for its region's dominant biome — deliberately
+    /// multiplicative, not additive, because of the plateau caveat two
+    /// paragraphs up: an additive bias does nothing to two scores already
+    /// saturated at `1.0`, exactly the terrain where incoherent noise is
+    /// worst, but a multiplicative one still separates them. The bias is a
+    /// nudge, not an override: a cell whose own unboosted score for a
+    /// *different* biome is high enough still wins (spec §11.4's "Swamp
+    /// nei bacini" inside a Forest-dominant region).
     fn classify_biomes(&mut self, config: &SimConfig, params: &WorldParams) {
         let biome_cfg = &config.biome;
         let mut rng = StdRng::seed_from_u64(self.seed ^ BIOME_SEED_OFFSET);
@@ -774,6 +892,7 @@ impl SimWorld {
         );
 
         let sea_proximity = self.sea_distance_field();
+        let (region_id, region_dominant_biome) = self.compute_macro_regions(config, &sea_proximity);
 
         let mut biomes = vec![Biome::default(); self.cells.len()];
         for y in 0..self.height {
@@ -840,10 +959,21 @@ impl SimWorld {
                             ),
                             (Biome::Plain, biome_cfg.plain_baseline_score),
                         ];
+                        let region_dominant = region_dominant_biome[region_id[idx]];
+                        let biased = |candidate: (Biome, f32)| -> f32 {
+                            if candidate.0 == region_dominant {
+                                candidate.1 * (1.0 + biome_cfg.macro_region_bias_weight)
+                            } else {
+                                candidate.1
+                            }
+                        };
                         let mut best = scores[0];
+                        let mut best_biased = biased(scores[0]);
                         for &candidate in &scores[1..] {
-                            if candidate.1 > best.1 {
+                            let candidate_biased = biased(candidate);
+                            if candidate_biased > best_biased {
                                 best = candidate;
+                                best_biased = candidate_biased;
                             }
                         }
                         best.0
@@ -1930,6 +2060,12 @@ const CRYSTAL_FIELD_SEED_OFFSET: u64 = 0x9E37_79B1_2545_F491;
 /// (task 111).
 const LAKE_SEED_OFFSET: u64 = 0x4F6C_DD1D_C2B2_AE3D;
 
+/// Same purpose as `TERRAIN_SEED_OFFSET`, for the macro-region Voronoi seed
+/// points (task 128) — a different constant so this stream doesn't start
+/// in lockstep with `BIOME_SEED_OFFSET`'s own forest/swamp/toxic-patch
+/// draws, even though both feed the same `classify_biomes` call.
+const MACRO_REGION_SEED_OFFSET: u64 = 0x7F4A_7C15_9E37_79B9;
+
 /// One feature biome's placement parameters (task 111) — bundled so
 /// `place_feature_organic`'s call sites don't need a growing-argument
 /// function signature per feature. `radius` is the mask's base radius
@@ -2732,6 +2868,66 @@ mod tests {
         let biomes_a: Vec<Biome> = a.cells.iter().map(|c| c.biome).collect();
         let biomes_b: Vec<Biome> = b.cells.iter().map(|c| c.biome).collect();
         assert_eq!(biomes_a, biomes_b);
+    }
+
+    /// Counts adjacent `TerrainKind::Plain` cell pairs (right/below only,
+    /// same "each shared edge exactly once" trick `render.rs::draw_boundaries`
+    /// uses) whose `Biome` differs — restricted to `Plain`-kind pairs since
+    /// that's the only terrain the macro-region bias (task 128) touches;
+    /// including Sea/Mountain/Hill boundaries would dilute the signal with
+    /// terrain-driven transitions the bias was never meant to affect.
+    fn plain_biome_transition_count(world: &SimWorld) -> usize {
+        let mut transitions = 0;
+        for y in 0..world.height {
+            for x in 0..world.width {
+                let here = world.get(x, y);
+                if here.terrain != TerrainKind::Plain {
+                    continue;
+                }
+                if x + 1 < world.width {
+                    let right = world.get(x + 1, y);
+                    if right.terrain == TerrainKind::Plain && right.biome != here.biome {
+                        transitions += 1;
+                    }
+                }
+                if y + 1 < world.height {
+                    let below = world.get(x, y + 1);
+                    if below.terrain == TerrainKind::Plain && below.biome != here.biome {
+                        transitions += 1;
+                    }
+                }
+            }
+        }
+        transitions
+    }
+
+    /// Task 128 (spec §18.6's continuity metric): the macro-region bias
+    /// should measurably reduce noise-driven speckle between adjacent
+    /// `Plain`-kind cells, not just redistribute which biome wins where.
+    /// Compares the shipped default (`macro_region_bias_weight` from
+    /// config) against the same seeds with the bias switched off
+    /// (`macro_region_bias_weight: 0.0`, which makes `classify_biomes`'s
+    /// multiplicative bias a no-op — `score * (1.0 + 0.0) == score`).
+    /// Aggregate across seeds, not a hard per-seed assert: the bias nudges
+    /// probabilities, it doesn't guarantee a monotonic drop on every draw.
+    #[test]
+    fn macro_region_bias_reduces_plain_biome_transitions_on_average() {
+        let biased_config = test_config();
+        let mut unbiased_config = test_config();
+        unbiased_config.biome.macro_region_bias_weight = 0.0;
+
+        let n_seeds = 20u64;
+        let mut total_biased = 0usize;
+        let mut total_unbiased = 0usize;
+        for seed in 0..n_seeds {
+            total_biased += plain_biome_transition_count(&SimWorld::new(seed, &biased_config));
+            total_unbiased += plain_biome_transition_count(&SimWorld::new(seed, &unbiased_config));
+        }
+        assert!(
+            total_biased < total_unbiased,
+            "expected the macro-region bias to reduce Plain-biome transitions on average \
+             across {n_seeds} seeds: biased {total_biased}, unbiased {total_unbiased}"
+        );
     }
 
     #[test]

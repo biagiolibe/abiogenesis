@@ -10,6 +10,13 @@ bevy_egui = "0.41"
 rand = "0.10.2"
 serde = { version = "1.0.229", features = ["derive"] }
 
+[dev-dependencies]
+# Pinned to match bevy_common_assets' own `ron` version exactly (checked via
+# `cargo tree -i ron`) — this is what actually parses `sim_config.ron` at
+# runtime, so a config_rs_matches_sim_config_ron-style test needs the same
+# parser, not just any RON-compatible crate.
+ron = "0.11"
+
 [profile.dev]
 opt-level = 1
 

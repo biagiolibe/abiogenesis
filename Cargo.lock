@@ -26,6 +26,7 @@ dependencies = [
  "bevy_common_assets",
  "bevy_egui",
  "rand",
+ "ron 0.11.0",
  "serde",
 ]
 

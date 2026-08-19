@@ -1702,13 +1702,19 @@ mod tests {
         let world = SimWorld::new(42, &config);
         let mut app = app_for_accumulate_evidence(config, world);
 
+        // Task 106 tuned `confirmation_threshold` down to `1.0` (fixed
+        // 2026-08-19: `config.rs`'s hand-written default had drifted from
+        // this, caught by `config_ron_sync.rs`) — a single confounder-free
+        // observation (weight `1.0`) now confirms immediately on its own,
+        // so this test needs a real confounder to stay genuinely
+        // unconfirmed (weight `1.0 / (1 + 1) = 0.5`, under the threshold).
         app.world_mut()
             .resource_mut::<Messages<AdjacencyObserved>>()
             .write(AdjacencyObserved {
                 receiver_species: SpeciesId(0),
                 exerter_tag: TagSlot(0),
                 receiver_tag: TagSlot(1),
-                n_confounders: 0,
+                n_confounders: 1,
                 cell: 0,
             });
         app.update();

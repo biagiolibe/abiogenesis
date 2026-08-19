@@ -381,7 +381,10 @@ impl Default for TagConfig {
             effect_intensity_min: -2,
             effect_intensity_max: 2,
             matrix_density: 0.4,
-            conditional_tag_count: 1,
+            // Tuned to 4 in task 106 (2026-08-12) — `sim_config.ron` was
+            // updated at the time, this hand-written default wasn't; found
+            // and fixed 2026-08-19 by `config_ron_sync.rs`'s new drift test.
+            conditional_tag_count: 4,
         }
     }
 }
@@ -462,7 +465,10 @@ pub struct NotebookConfig {
 impl Default for NotebookConfig {
     fn default() -> Self {
         Self {
-            confirmation_threshold: 3.0,
+            // Tuned to 1.0 in task 106 (2026-08-12) — `sim_config.ron` was
+            // updated at the time, this hand-written default wasn't; found
+            // and fixed 2026-08-19 by `config_ron_sync.rs`'s new drift test.
+            confirmation_threshold: 1.0,
             observation_weight_numerator: 1.0,
         }
     }
@@ -913,6 +919,25 @@ pub struct BiomeConfig {
     /// angle-space instead of position-space) — more terms read as a
     /// lumpier, less simply-oval silhouette.
     pub feature_mask_wave_count: u32,
+    /// Task 128 (`k` in a `k`-point Voronoi partition of the grid, spec
+    /// §11.1): how many macro-regions `classify_biomes` derives before its
+    /// per-cell pass, each with one dominant `TerrainKind::Plain`-kind
+    /// biome. Small on purpose — this is a coarse bias layer, not a second
+    /// classification pass; 4-8 regions read as "a handful of large
+    /// climate zones," the spec's own framing.
+    pub macro_region_count: u32,
+    /// Task 128: multiplicative boost applied to a cell's score for its
+    /// own macro-region's dominant biome before arg-max — `score * (1.0 +
+    /// this)`. Multiplicative, not additive: task 125's own honest caveat
+    /// (`classify_biomes`'s doc comment) is that `smoothstep`/`smooth_band`
+    /// *plateau* at exactly `1.0`, so an additive bias would do nothing
+    /// wherever a saturated tie is exactly the failure mode this task
+    /// exists to fix — multiplying still separates two plateaued `1.0`
+    /// scores from each other. Tuned so the region bias wins plausible
+    /// ties without becoming an override: a cell whose *local* score for a
+    /// different biome is strong enough (spec §11.4's "Swamp nei bacini"
+    /// inside a Forest region) still wins on its own unboosted score.
+    pub macro_region_bias_weight: f32,
 }
 
 impl Default for BiomeConfig {
@@ -959,6 +984,8 @@ impl Default for BiomeConfig {
             lake_toxicity: 0.05,
             feature_mask_distortion: 0.35,
             feature_mask_wave_count: 4,
+            macro_region_count: 6,
+            macro_region_bias_weight: 0.5,
         }
     }
 }
