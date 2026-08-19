@@ -121,7 +121,7 @@ coherent regions without a macro-region layer above it.).
 |-------|----|--------|------------|------|
 | `[x]` | 128 | Macro-regions before per-cell biome classification | 125 | [128](done/128-macro-region-biomes.md) |
 | `[x]` | 129 | Lakes derived from terrain depressions (123's search becomes fallback) | 123, 127 | [129](done/129-lakes-from-depressions.md) |
-| `[ ]` | 130 | Mountain sub-banding (Glacier, AlpineMeadow, MountainForest) | 124, 125 | [130](130-mountain-sub-banding.md) |
+| `[x]` | 130 | Mountain sub-banding (Glacier, AlpineMeadow, MountainForest) | 124, 125 | [130](done/130-mountain-sub-banding.md) |
 | `[ ]` | 131 | Soil moisture (refines Swamp/Forest beyond the slope/water-distance proxy) | 124, 125, 126 | [131](131-soil-moisture.md) |
 
 Task 132 (`[DECISION]` on `Cell.slope`/`Cell.water_distance` ordering,
@@ -146,7 +146,28 @@ Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN
 
 ---
 
-*Last updated: 2026-08-19 (129, Lakes derived from terrain depressions —
+*Last updated: 2026-08-19 (130, Mountain sub-banding — non-`Peak`
+`TerrainKind::Mountain` cells now sub-band into `Glacier`/`AlpineMeadow`/
+`BareRock`/reused-`Forest` (no new `MountainForest` variant — `Forest`'s
+existing temperature/light score has no `TerrainKind` dependency, so it
+already applies) via the same score-based `argmax_biome` idiom task 125
+introduced; `Peak` stays a hard special case outside the competition.
+`BareRock`'s score is now shared between `Hill` and `Mountain` (a new
+`bare_rock_score`, replacing the old Hill-only hard light cutoff) per the
+task's own "one implementation, not two" criterion. Thresholds calibrated
+from a temporary scratch sample of ~20k Mountain cells across 20 seeds
+(temperature has no elevation coupling in this codebase, so its spread
+across Mountain terrain comes entirely from heat-source/sea-coolant
+proximity). New relational test
+`mountain_sub_bands_correlate_with_temperature_and_slope_as_designed`
+(30-seed aggregate means). Visual verification was partial: the
+background agent's sandbox had no working display for a live `cargo run`
+screenshot, so it rendered the production color functions offscreen
+instead (pixel-exact, not a real window check) — a genuine live check is
+still outstanding. That agent's own `git checkout -- src/render.rs`
+cleanup accidentally reverted two of the three `render.rs` edits, caught
+via `git diff` and reapplied before closing — completed and archived to
+`tasks/done/`. 129, Lakes derived from terrain depressions —
 `record_significant_depressions` (Moore-adjacency connected components of
 `fill_depressions()`'s basin cells) records qualifying depressions
 (`lake_depression_min_size`/`_max_size`/`_min_depth`, calibrated via a

@@ -969,6 +969,32 @@ pub struct BiomeConfig {
     /// different biome is strong enough (spec §11.4's "Swamp nei bacini"
     /// inside a Forest region) still wins on its own unboosted score.
     pub macro_region_bias_weight: f32,
+    /// Task 130: `TerrainKind::Hill`'s baseline score before `bare_rock_score`
+    /// is compared against it — mirrors `plain_baseline_score`'s role, now
+    /// that Hill's BareRock gate is a smooth arg-max instead of a hard
+    /// `light <= effective_max` cutoff.
+    pub hill_baseline_score: f32,
+    /// Task 130: `TerrainKind::Mountain`'s (non-`Peak`) baseline score
+    /// before `Glacier`/`AlpineMeadow`/`BareRock`/reused-`Forest` candidate
+    /// scores are compared against it — the "plain old Montagna" fallback,
+    /// same role as `plain_baseline_score`/`hill_baseline_score`.
+    pub mountain_baseline_score: f32,
+    /// Task 130: within `TerrainKind::Mountain`, `temperature` at/below this
+    /// gives `Glacier` a high score — a smooth fall, mirroring
+    /// `tundra_score`'s shape. Elevation itself isn't a separate term here:
+    /// every `Mountain` cell already clears `terrain.mountain_threshold`, so
+    /// "alta quota" (spec §12.5) is already guaranteed by the terrain kind;
+    /// temperature is what actually differentiates Glacier from the other
+    /// three candidates within it.
+    pub glacier_temperature_max: f32,
+    /// Task 130: within `TerrainKind::Mountain`, `temperature` in
+    /// `[alpine_meadow_temperature_min, alpine_meadow_temperature_max]`
+    /// gives `AlpineMeadow` a high score — the "moderate" band between
+    /// Glacier's cold end and Foresta/BareRock's warmer range, using
+    /// `smooth_band` the same way Foresta's climate term does.
+    pub alpine_meadow_temperature_min: f32,
+    /// See `alpine_meadow_temperature_min`.
+    pub alpine_meadow_temperature_max: f32,
 }
 
 impl Default for BiomeConfig {
@@ -1021,6 +1047,11 @@ impl Default for BiomeConfig {
             feature_mask_wave_count: 4,
             macro_region_count: 6,
             macro_region_bias_weight: 0.5,
+            hill_baseline_score: 0.3,
+            mountain_baseline_score: 0.3,
+            glacier_temperature_max: 0.28,
+            alpine_meadow_temperature_min: 0.28,
+            alpine_meadow_temperature_max: 0.45,
         }
     }
 }

@@ -190,6 +190,11 @@
         feature_mask_wave_count: 4,
         macro_region_count: 6,
         macro_region_bias_weight: 0.5,
+        hill_baseline_score: 0.3,
+        mountain_baseline_score: 0.3,
+        glacier_temperature_max: 0.28,
+        alpine_meadow_temperature_min: 0.28,
+        alpine_meadow_temperature_max: 0.45,
     ),
     evolution: (
         selection_pressure_threshold: 20.0,

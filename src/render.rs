@@ -731,7 +731,9 @@ mod terrain_overlay {
     /// Per-cell tree probability for `biome`, or `None` where the design
     /// doc places no trees at all (every biome not listed: water in any
     /// form, Vetta, Roccia nuda, Cratere, Deserto, Bocca vulcanica, Tundra,
-    /// Distesa di cristalli).
+    /// Distesa di cristalli). Task 130: `Glacier`/`AlpineMeadow` fall into
+    /// the same `None` catch-all — a glacier or an open alpine meadow
+    /// reading as treeless matches the design intent, not an oversight.
     fn tree_density(biome: Biome) -> Option<f32> {
         match biome {
             Biome::Plain | Biome::Hill | Biome::Mountain | Biome::Swamp => {
@@ -1635,6 +1637,13 @@ fn cell_color(
 /// `DeepWater`/`ShallowWater` continue task 093's "Sea reads as a dark
 /// blue, not a void" fix (that finding predates the areal/feature biome
 /// split but still applies to both).
+///
+/// `Glacier`/`AlpineMeadow` (task 130) aren't on the reference sheet — it
+/// predates them — so their hues are original picks here instead of
+/// swatch-averages: `Glacier` a pale icy blue distinct from `Tundra`'s
+/// duller one, `AlpineMeadow` a teal-green distinct from `Forest`/`Hill`/
+/// `Swamp`'s nearby hues, both kept within the same lightness band the
+/// rest of the table uses.
 fn biome_color(biome: Biome) -> Color {
     match biome {
         Biome::DeepWater => Color::hsl(215.2, 0.56, 0.13),
@@ -1646,6 +1655,8 @@ fn biome_color(biome: Biome) -> Color {
         Biome::Desert => Color::hsl(42.7, 0.35, 0.22),
         Biome::Tundra => Color::hsl(199.3, 0.10, 0.27),
         Biome::BareRock => Color::hsl(285.0, 0.03, 0.27),
+        Biome::Glacier => Color::hsl(195.0, 0.30, 0.40),
+        Biome::AlpineMeadow => Color::hsl(150.0, 0.28, 0.28),
         Biome::Forest => Color::hsl(127.7, 0.24, 0.16),
         Biome::Swamp => Color::hsl(87.1, 0.24, 0.17),
         Biome::Crater => Color::hsl(10.5, 0.44, 0.13),
@@ -1923,6 +1934,8 @@ mod tests {
             Biome::Desert,
             Biome::Tundra,
             Biome::BareRock,
+            Biome::Glacier,
+            Biome::AlpineMeadow,
             Biome::Forest,
             Biome::Swamp,
             Biome::Crater,

@@ -207,6 +207,14 @@ pub enum Biome {
     Desert,
     Tundra,
     BareRock,
+    /// Ghiacciaio (task 130): `TerrainKind::Mountain`'s cold-temperature
+    /// sub-band — reachable only within Mountain terrain, alongside
+    /// `AlpineMeadow`/`BareRock`/reused-`Forest`.
+    Glacier,
+    /// Prateria alpina (task 130): `TerrainKind::Mountain`'s
+    /// moderate-temperature sub-band, between `Glacier`'s cold end and the
+    /// warmer range `Forest`/`BareRock` compete in.
+    AlpineMeadow,
     Forest,
     Swamp,
     /// Cratere profondo (task 111): bounded-retry rectangle placement,
@@ -923,23 +931,62 @@ impl SimWorld {
                         if cell.is_peak {
                             Biome::Peak
                         } else {
-                            Biome::Mountain
+                            // Task 130 (spec §12.5): sub-bands a non-Peak
+                            // Mountain cell into Ghiacciaio/Prateria
+                            // alpina/Roccia nuda/reused-Foresta via the
+                            // same score-based arg-max idiom task 125
+                            // introduced for Plain. "Alta quota" is already
+                            // guaranteed by `TerrainKind::Mountain` itself,
+                            // so temperature (Glacier/AlpineMeadow) and
+                            // slope+light (BareRock) are what actually
+                            // differentiate the candidates. Forest is
+                            // deliberately reused rather than a new
+                            // MountainForest variant (task 130's own
+                            // acceptance criterion): its score is already
+                            // temperature/light based, with no dependency
+                            // on `TerrainKind`, so a Mountain cell that
+                            // clears Foresta's climate band reads as
+                            // Foresta the same way a Plain one would.
+                            let scores = [
+                                (Biome::Mountain, biome_cfg.mountain_baseline_score),
+                                (
+                                    Biome::BareRock,
+                                    bare_rock_score(cell.light, cell.slope, biome_cfg),
+                                ),
+                                (Biome::Glacier, glacier_score(cell.temperature, biome_cfg)),
+                                (
+                                    Biome::AlpineMeadow,
+                                    alpine_meadow_score(cell.temperature, biome_cfg),
+                                ),
+                                (
+                                    Biome::Forest,
+                                    forest_score(
+                                        cell.temperature,
+                                        cell.light,
+                                        biome_cfg,
+                                        wave_band_sum(&forest_waves, nx, ny),
+                                    ),
+                                ),
+                            ];
+                            argmax_biome(&scores)
                         }
                     }
                     TerrainKind::Hill => {
-                        // Task 125 §12.5: steep + low light reads as
-                        // BareRock more readily than shallow + low light —
-                        // a slope-raised effective light ceiling, not a
-                        // second independent gate (kept small/contained
-                        // per the task's own scope; full mountain
-                        // sub-banding is a separate future pass).
-                        let effective_light_max = biome_cfg.bare_rock_light_max
-                            + biome_cfg.bare_rock_slope_light_bonus * cell.slope;
-                        if cell.light <= effective_light_max {
-                            Biome::BareRock
-                        } else {
-                            Biome::Hill
-                        }
+                        // Task 125 §12.5, made score-based in task 130:
+                        // steep + low light reads as BareRock more readily
+                        // than shallow + low light — a slope-raised
+                        // effective light ceiling, now a smooth arg-max
+                        // (`bare_rock_score`) instead of a hard cutoff, and
+                        // shared with `TerrainKind::Mountain`'s own BareRock
+                        // candidate above rather than reimplemented here.
+                        let scores = [
+                            (Biome::Hill, biome_cfg.hill_baseline_score),
+                            (
+                                Biome::BareRock,
+                                bare_rock_score(cell.light, cell.slope, biome_cfg),
+                            ),
+                        ];
+                        argmax_biome(&scores)
                     }
                     TerrainKind::Plain => {
                         let water_distance = sea_proximity[idx];
@@ -2473,6 +2520,62 @@ fn swamp_score(slope: f32, water_distance: f32, cfg: &BiomeConfig, noise: f32) -
     (drainage + noise.max(0.0) * cfg.patch_noise_weight).min(1.0)
 }
 
+/// Unbiased arg-max over a candidate `(Biome, score)` list (task 130) —
+/// the same tie-breaking shape `classify_biomes`' Plain branch uses for
+/// its macro-region-biased version, extracted here for the Hill/Mountain
+/// branches that have no macro-region bias term to apply. `scores` must be
+/// non-empty.
+fn argmax_biome(scores: &[(Biome, f32)]) -> Biome {
+    let mut best = scores[0];
+    for &candidate in &scores[1..] {
+        if candidate.1 > best.1 {
+            best = candidate;
+        }
+    }
+    best.0
+}
+
+/// Roccia nuda's `[0, 1]` fitness score (task 130, extends task 125's
+/// `bare_rock_light_max`/`bare_rock_slope_light_bonus` gate to a smooth
+/// score): a smooth *fall* as `light` rises past the same
+/// slope-raised effective ceiling the original `TerrainKind::Hill` branch
+/// used as a hard cutoff. Shared by both `TerrainKind::Hill` and
+/// `TerrainKind::Mountain`'s arg-max — "what makes a cell Roccia nuda" has
+/// one implementation, not two (this task's own acceptance criterion).
+fn bare_rock_score(light: f32, slope: f32, cfg: &BiomeConfig) -> f32 {
+    let w = cfg.biome_score_transition_width;
+    let effective_light_max = cfg.bare_rock_light_max + cfg.bare_rock_slope_light_bonus * slope;
+    smoothstep(effective_light_max + w, effective_light_max - w, light)
+}
+
+/// Ghiacciaio's `[0, 1]` fitness score (task 130): a smooth fall as
+/// `temperature` rises past `glacier_temperature_max` — the same shape as
+/// `tundra_score`, one sub-band down. Only ever compared within
+/// `TerrainKind::Mountain`'s arg-max, where "alta quota" (spec §12.5) is
+/// already guaranteed by the terrain kind itself, so no separate elevation
+/// term is needed here.
+fn glacier_score(temperature: f32, cfg: &BiomeConfig) -> f32 {
+    let w = cfg.biome_score_transition_width;
+    smoothstep(
+        cfg.glacier_temperature_max,
+        cfg.glacier_temperature_max - w,
+        temperature,
+    )
+}
+
+/// Prateria alpina's `[0, 1]` fitness score (task 130): a smooth "is
+/// `temperature` within the moderate band above Glacier's cold end"
+/// check, the same `smooth_band` shape Foresta's climate term uses. Only
+/// ever compared within `TerrainKind::Mountain`'s arg-max.
+fn alpine_meadow_score(temperature: f32, cfg: &BiomeConfig) -> f32 {
+    smooth_band(
+        cfg.alpine_meadow_temperature_min,
+        cfg.alpine_meadow_temperature_max,
+        cfg.biome_score_transition_width,
+        temperature,
+    )
+}
+
 /// No longer spawns a `SimWorld` at `Startup` (task 044): the first world
 /// now comes into being when the player presses "New run" at the main menu
 /// (`menu.rs::start_run`), so `Res<SimWorld>` genuinely doesn't exist until
@@ -3160,6 +3263,81 @@ mod tests {
             local_maxima * 20 < lake_cells,
             "expected well under 5% of Lake cells to be local elevation maxima, got \
              {local_maxima}/{lake_cells}"
+        );
+    }
+
+    /// Task 130's own acceptance criterion (spec §18.5-style relational
+    /// check, same shape as task 126's windward/leeward test): within
+    /// `TerrainKind::Mountain`, Glacier should only occur at low
+    /// temperature, and BareRock/AlpineMeadow should show the
+    /// slope/temperature correlation their scores are built on. Checked as
+    /// aggregate means across a sample of seeds, not per-cell hard asserts
+    /// — individual cells can land on a close arg-max tie against a
+    /// neighbouring candidate, which is expected noise, not a bug.
+    #[test]
+    fn mountain_sub_bands_correlate_with_temperature_and_slope_as_designed() {
+        let config = test_config();
+        let mut glacier_temp = Vec::new();
+        let mut alpine_meadow_temp = Vec::new();
+        let mut bare_rock_temp = Vec::new();
+        let mut mountain_temp = Vec::new();
+        let mut glacier_slope = Vec::new();
+        let mut bare_rock_slope = Vec::new();
+        for seed in 0..30u64 {
+            let world = SimWorld::new(seed, &config);
+            for cell in world.cells.iter() {
+                match cell.biome {
+                    Biome::Glacier => {
+                        glacier_temp.push(cell.temperature);
+                        glacier_slope.push(cell.slope);
+                    }
+                    Biome::AlpineMeadow => alpine_meadow_temp.push(cell.temperature),
+                    Biome::BareRock if cell.terrain == TerrainKind::Mountain => {
+                        bare_rock_temp.push(cell.temperature);
+                        bare_rock_slope.push(cell.slope);
+                    }
+                    Biome::Mountain => mountain_temp.push(cell.temperature),
+                    _ => {}
+                }
+            }
+        }
+        let mean = |v: &[f32]| v.iter().sum::<f32>() / v.len().max(1) as f32;
+
+        assert!(
+            !glacier_temp.is_empty(),
+            "no Glacier cells found across 30 seeds"
+        );
+        assert!(
+            !alpine_meadow_temp.is_empty(),
+            "no AlpineMeadow cells found across 30 seeds"
+        );
+        assert!(
+            !bare_rock_temp.is_empty(),
+            "no Mountain-terrain BareRock cells found across 30 seeds"
+        );
+
+        // Glacier reads as the coldest of the four Mountain candidates.
+        assert!(
+            mean(&glacier_temp) < mean(&alpine_meadow_temp),
+            "Glacier mean temperature ({:.3}) should be colder than AlpineMeadow's ({:.3})",
+            mean(&glacier_temp),
+            mean(&alpine_meadow_temp)
+        );
+        if !mountain_temp.is_empty() {
+            assert!(
+                mean(&glacier_temp) < mean(&mountain_temp),
+                "Glacier mean temperature ({:.3}) should be colder than plain Mountain's ({:.3})",
+                mean(&glacier_temp),
+                mean(&mountain_temp)
+            );
+        }
+
+        // BareRock reads as steeper, on average, than Glacier within Mountain terrain.
+        assert!(
+            mean(&bare_rock_slope) > mean(&glacier_slope),
+            "Mountain BareRock mean slope ({:.3}) should exceed Glacier's ({:.3})",
+            mean(&bare_rock_slope),
+            mean(&glacier_slope)
         );
     }
 
