@@ -822,29 +822,61 @@ pub struct BiomeConfig {
     pub forest_light_min: f32,
     /// See `forest_light_min`.
     pub forest_light_max: f32,
-    /// Task 125: Palude's drainage score falls smoothly to `0` as
-    /// normalized `slope` (task 124) rises past this — flat ground drains
-    /// poorly and pools, steep ground doesn't.
-    pub swamp_slope_max: f32,
-    /// Task 125: Palude's drainage score falls smoothly to `0` as
-    /// water-proximity distance (grid cells, task 124's BFS units) rises
-    /// past this — close to water scores well, far from it doesn't.
-    pub swamp_water_distance_max: f32,
-    /// Task 125 (fixed post-launch, 2026-08-19): width, in the same cell
-    /// units as `swamp_water_distance_max`, of the smooth transition on
-    /// the water-proximity term of Palude's drainage score.
-    /// `biome_score_transition_width` is `[0, 1]`-scaled and wrong here —
-    /// `water_distance` is a raw integer BFS distance, not a normalized
-    /// scalar, so reusing that shared width collapsed the transition to a
-    /// near-binary step (a fraction-of-a-cell band on an integer input),
-    /// exactly the hard discontinuity task 125 set out to remove.
-    pub swamp_water_distance_falloff: f32,
+    /// Task 125, refined by task 131: Palude's fitness score is a smooth
+    /// rise past this threshold on `Cell.soil_moisture` (task 131's
+    /// climate-grounded wetness estimate) — replaces the original
+    /// `swamp_slope_max`/`swamp_water_distance_max`/
+    /// `swamp_water_distance_falloff` triple, which `soil_moisture`
+    /// subsumes rather than sits alongside (both slope and water proximity
+    /// are already inputs to it, see `SimWorld::compute_soil_moisture`).
+    pub swamp_soil_moisture_min: f32,
+    /// Task 131: how much `soil_moisture`'s rainfall-retention term falls
+    /// per unit of normalized `slope` — `retention = (1 - this * slope)`,
+    /// clamped to `[0, 1]`. Steep terrain sheds rainfall instead of
+    /// retaining it.
+    pub soil_moisture_retention_slope_weight: f32,
+    /// Task 131: a second, independent slope penalty on `soil_moisture` —
+    /// the formula's own `drainage(slope, curvature)` term (spec §9.4,
+    /// `curvature` out of scope, same simplification task 124 already
+    /// made). Distinct from `soil_moisture_retention_slope_weight`: that
+    /// one scales how much of the *incoming* rainfall is kept, this one is
+    /// a flat subtraction representing ongoing runoff loss — the spec
+    /// keeps them as two separate terms, not one.
+    pub soil_moisture_drainage_slope_weight: f32,
+    /// Task 131: how much `soil_moisture` falls per unit of `temperature`
+    /// — the formula's `evaporation(temperature)` term, linear for
+    /// simplicity (no evaporation curve data to justify a nonlinear one).
+    pub soil_moisture_evaporation_weight: f32,
+    /// Task 131: `soil_moisture` bonus at zero distance from the nearest
+    /// `Cell.is_river` cell (task 127), scaled by `soil_moisture_river_proximity_max`/
+    /// `_falloff` the same way `swamp_water_distance_max`/`_falloff` used
+    /// to scale the old drainage proxy's water term.
+    pub soil_moisture_river_bonus: f32,
+    /// Distance (grid cells) past which `soil_moisture_river_bonus` has
+    /// fully fallen to `0`.
+    pub soil_moisture_river_proximity_max: f32,
+    /// Width, in the same cell units as `soil_moisture_river_proximity_max`,
+    /// of the smooth transition on the river-proximity term.
+    pub soil_moisture_river_proximity_falloff: f32,
+    /// Task 131: `soil_moisture` bonus at zero distance from the nearest
+    /// depression `record_significant_depressions` already qualified as a
+    /// future `Biome::Lake` (task 129) — read *before* Lake is actually
+    /// painted onto any cell, unlike the persisted `Cell.water_distance`
+    /// field (see `SimWorld::compute_soil_moisture`'s doc comment for why
+    /// that's safe here).
+    pub soil_moisture_lake_bonus: f32,
+    /// Distance (grid cells) past which `soil_moisture_lake_bonus` has
+    /// fully fallen to `0`.
+    pub soil_moisture_lake_proximity_max: f32,
+    /// Width, in the same cell units as `soil_moisture_lake_proximity_max`,
+    /// of the smooth transition on the lake-proximity term.
+    pub soil_moisture_lake_proximity_falloff: f32,
     /// Task 125: repurposed from "toxicity level a cell must already have
     /// to read as Palude" (the old gate) to "`wave_band_sum` threshold
     /// selecting which fraction of the cells just classified as Palude get
     /// `toxicity` imposed as a post-classification modifier." Palude's
-    /// *identity* no longer depends on toxicity at all (`swamp_slope_max`/
-    /// `swamp_water_distance_max` above are the real drainage-based gate);
+    /// *identity* no longer depends on toxicity at all
+    /// (`swamp_soil_moisture_min` above is the real wetness-based gate);
     /// this only decides which sub-region of an already-classified Palude
     /// reads as toxic, same organic-sub-region idiom the design doc's
     /// §12.4 describes. `EnvironmentConfig::swamp_toxicity_value` (0.7 by
@@ -1016,9 +1048,16 @@ impl Default for BiomeConfig {
             forest_temperature_max: 0.65,
             forest_light_min: 0.25,
             forest_light_max: 0.45,
-            swamp_slope_max: 0.3,
-            swamp_water_distance_max: 15.0,
-            swamp_water_distance_falloff: 6.0,
+            swamp_soil_moisture_min: 0.5,
+            soil_moisture_retention_slope_weight: 0.6,
+            soil_moisture_drainage_slope_weight: 0.2,
+            soil_moisture_evaporation_weight: 0.3,
+            soil_moisture_river_bonus: 0.3,
+            soil_moisture_river_proximity_max: 8.0,
+            soil_moisture_river_proximity_falloff: 4.0,
+            soil_moisture_lake_bonus: 0.3,
+            soil_moisture_lake_proximity_max: 10.0,
+            soil_moisture_lake_proximity_falloff: 5.0,
             swamp_toxicity_min: 0.3,
             volcanic_vent_radius: 4.0,
             crater_radius: 4.5,

@@ -107,26 +107,10 @@ pass).
 | `[x]` | 115 | Grid input (clicks and scroll-zoom) leaks through the HUD panel | — | [115](done/115-egui-panel-click-through-when-zoomed.md) |
 | `[ ]` | 121 | Conditional-tag catalog badge never renders in a live playtest | 096, 097 | [121](121-terrain-badge-missing-in-catalog.md) |
 
-**Worldgen pipeline reassessment — credibility follow-ups** (2026-08-13,
-same session: after scoping 123-127, an explicit pass over what the spec
-still covers that those five don't. Ranked by impact on a *single* world's
-credibility, not variety across worlds — the lower-priority items from that
-ranking (world profiles + biome budget/validation, biome transition/blend,
-erosion, debug metrics tooling) are intentionally not scoped as tasks;
-noted in `VISION.md` instead. 128 is the single highest-value item found in
-that pass — per-cell scoring (125) alone still doesn't produce large
-coherent regions without a macro-region layer above it.).
-
-| Status | ID | Title | Depends on | File |
-|-------|----|--------|------------|------|
-| `[x]` | 128 | Macro-regions before per-cell biome classification | 125 | [128](done/128-macro-region-biomes.md) |
-| `[x]` | 129 | Lakes derived from terrain depressions (123's search becomes fallback) | 123, 127 | [129](done/129-lakes-from-depressions.md) |
-| `[x]` | 130 | Mountain sub-banding (Glacier, AlpineMeadow, MountainForest) | 124, 125 | [130](done/130-mountain-sub-banding.md) |
-| `[ ]` | 131 | Soil moisture (refines Swamp/Forest beyond the slope/water-distance proxy) | 124, 125, 126 | [131](131-soil-moisture.md) |
-
-Task 132 (`[DECISION]` on `Cell.slope`/`Cell.water_distance` ordering,
-found in advisor review after 123-126 shipped) and the phase it belongs to
-are archived in `tasks/QUEUE_ARCHIVE.md`, both closed 2026-08-19.
+The "Worldgen pipeline reassessment — credibility follow-ups" phase
+(128-131) closed 2026-08-19 once 131 landed and is archived in
+`tasks/QUEUE_ARCHIVE.md`, alongside task 132 (`[DECISION]` on
+`Cell.slope`/`Cell.water_distance` ordering, found mid-phase).
 
 **Onboarding & engagement rollout** (2026-08-09, from `redesign/abiogenesis-engagement-design.md`, full rationale in `PROJECT_PLAN.md`'s "Onboarding & engagement rollout"): 5 onboarding-foundation proposals scoped after a multi-round discussion. 080 first (diagnostic value for playtesting the rest); 082/083 are numerically coupled — tuned together (2026-08-10), both now done. Live playtest of the combined pacing still pending (082/083 verification steps skipped this session, see below).
 
@@ -146,7 +130,31 @@ Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN
 
 ---
 
-*Last updated: 2026-08-19 (130, Mountain sub-banding — non-`Peak`
+*Last updated: 2026-08-19 (131, Soil moisture — `Cell.soil_moisture`
+(`SimWorld::compute_soil_moisture`, run right after `compute_hydrology`
+and before `classify_biomes`) replaces task 125's `slope`/`water_distance`
+drainage proxy for Palude's fitness score: `rainfall` retained against
+`slope` runoff, real proximity bonuses toward `is_river` cells (task 127)
+and toward `record_significant_depressions`' future-Lake footprints (task
+129, known before `Biome::Lake` is painted — a new `bfs_distance_from_indices`
+sibling of the existing predicate-based BFS makes this possible), minus
+evaporation (`temperature`) and drainage (`slope` again, a separate
+term). `swamp_score` now takes `soil_moisture` directly; task 128's
+`compute_macro_regions` region-aggregate call updated to match (flagged as
+a forward coupling in 131's own file before 130 landed). Threshold
+calibration went through three values before settling: `0.35` (naive
+median guess) let Swamp dominate at 41% of Plain cells; `0.65` fixed the
+aggregate fraction (8.2%) but broke the existing
+`some_swamp_cells_are_toxic_across_seeds` balance test (36/60 seeds,
+below its 75% floor) — Swamp got too rare per-seed even though the
+aggregate looked right; `0.5` lands both (19% coverage, 47/60 seeds
+passing). New relational test asserts soil_moisture's correlation sign
+against rainfall/temperature/slope across 20 seeds. No dedicated
+biome-distribution histogram test existed to re-run for task 125 (that
+acceptance criterion was satisfied via the calibration measurements
+instead) — completed and archived to `tasks/done/`, closing the whole
+"128 onward" chain; the phase itself (128-131) moved to
+`tasks/QUEUE_ARCHIVE.md`. 130, Mountain sub-banding — non-`Peak`
 `TerrainKind::Mountain` cells now sub-band into `Glacier`/`AlpineMeadow`/
 `BareRock`/reused-`Forest` (no new `MountainForest` variant — `Forest`'s
 existing temperature/light score has no `TerrainKind` dependency, so it

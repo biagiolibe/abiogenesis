@@ -307,6 +307,30 @@ these fields from steps that run after both are populated, no conflict.
 
 ---
 
+**Worldgen pipeline reassessment — credibility follow-ups** (2026-08-13,
+same session: after scoping 123-127, an explicit pass over what the spec
+still covers that those five don't. Ranked by impact on a *single* world's
+credibility, not variety across worlds — the lower-priority items from that
+ranking (world profiles + biome budget/validation, biome transition/blend,
+erosion, debug metrics tooling) are intentionally not scoped as tasks;
+noted in `VISION.md` instead. Closed 2026-08-19 once 131 landed, completing
+the "chain from 128 onward" — 129 reordered the pipeline so
+`fill_depressions`/`compute_hydrology` run before `classify_biomes`/
+`place_feature_biomes`; 130 reused that reorder to give `classify_biomes`
+its first access to `Cell.slope` directly for Mountain sub-banding; 131
+built on both, computing `Cell.soil_moisture` from `rainfall`/`is_river`/
+`lake_depressions` (all available thanks to 129's reorder) before
+`classify_biomes` needs it.)
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[x]` | 128 | Macro-regions before per-cell biome classification | 125 | [128](done/128-macro-region-biomes.md) |
+| `[x]` | 129 | Lakes derived from terrain depressions (123's search becomes fallback) | 123, 127 | [129](done/129-lakes-from-depressions.md) |
+| `[x]` | 130 | Mountain sub-banding (Glacier, AlpineMeadow, MountainForest) | 124, 125 | [130](done/130-mountain-sub-banding.md) |
+| `[x]` | 131 | Soil moisture (refines Swamp/Forest beyond the slope/water-distance proxy) | 124, 125, 126 | [131](done/131-soil-moisture.md) |
+
+---
+
 **Task 113 follow-ups** (2026-08-19, found in advisor review after 113
 shipped): two open decisions, neither blocking 113's own acceptance
 criteria — see 133's own file for the full options list and the decisions

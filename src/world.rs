@@ -391,6 +391,19 @@ pub struct Cell {
     /// classification are explicit future follow-ups, not this task's
     /// scope (see its own Non-Goals).
     pub is_river: bool,
+    /// Task 131: `[0, 1]` climate-grounded wetness estimate, refining task
+    /// 125's `slope`/`water_distance` drainage proxy with a real formula
+    /// (spec §9.4): `rainfall` retained against `slope` runoff, a proximity
+    /// bonus toward rivers (`is_river`, task 127) and toward
+    /// depression-derived Lake footprints (task 129's `lake_depressions`,
+    /// known *before* `Biome::Lake` is actually painted — see
+    /// `SimWorld::compute_soil_moisture`'s doc comment for why that's safe
+    /// to use here unlike `water_distance`), minus evaporation
+    /// (`temperature`) and drainage (`slope` again, a separate term from
+    /// retention — see the formula in `compute_soil_moisture`). Computed
+    /// once at generation time, read by `swamp_score` in place of the old
+    /// `slope`/`water_distance` pair, which this field now subsumes.
+    pub soil_moisture: f32,
 }
 
 /// The simulated world: a dense grid, the species registry, and the seeded
@@ -598,6 +611,10 @@ impl SimWorld {
         let filled = world.fill_depressions();
         let lake_depressions = world.record_significant_depressions(&filled, config);
         world.compute_hydrology(config, &filled);
+        // Task 131: needs `rainfall`/`is_river`/`lake_depressions`, all
+        // already available here, and must itself finish before
+        // `classify_biomes` reads `Cell.soil_moisture`.
+        world.compute_soil_moisture(config, &lake_depressions);
         world.classify_biomes(config, &params);
         world.place_feature_biomes(config, &lake_depressions);
         world.compute_water_distance();
@@ -714,10 +731,12 @@ impl SimWorld {
     /// of the grid, on its own dedicated RNG stream
     /// (`MACRO_REGION_SEED_OFFSET`, never `self.rng`/`BIOME_SEED_OFFSET`).
     /// Each region's dominant biome is decided once from its aggregate
-    /// climate — mean `temperature`/`light`/`slope`/`water_distance` over
-    /// only its `TerrainKind::Plain` cells, since those are the only
-    /// candidates the per-cell `Plain` branch ever picks among — using the
-    /// same `*_score` functions the per-cell pass uses, with `noise = 0.0`
+    /// climate — mean `temperature`/`light`/`soil_moisture` (task 131:
+    /// subsumes the original `slope`/`water_distance` pair, matching
+    /// `swamp_score`'s own per-cell switch) over only its
+    /// `TerrainKind::Plain` cells, since those are the only candidates the
+    /// per-cell `Plain` branch ever picks among — using the same
+    /// `*_score` functions the per-cell pass uses, with `noise = 0.0`
     /// (patch-noise is per-cell texture, meaningless as a region average).
     /// A region with no `Plain` cells at all (e.g. entirely `Sea`/
     /// `Mountain`) defaults to `Biome::Plain`; no cell ever looks it up,
@@ -730,11 +749,7 @@ impl SimWorld {
     /// local to the `classify_biomes` call that consumes it, not stored on
     /// `SimWorld`, since nothing else needs it once the per-cell bias pass
     /// is done.
-    fn compute_macro_regions(
-        &self,
-        config: &SimConfig,
-        sea_proximity: &[f32],
-    ) -> (Vec<usize>, Vec<Biome>) {
+    fn compute_macro_regions(&self, config: &SimConfig) -> (Vec<usize>, Vec<Biome>) {
         let biome_cfg = &config.biome;
         let region_count = (biome_cfg.macro_region_count as usize).max(1);
         let mut rng = StdRng::seed_from_u64(self.seed ^ MACRO_REGION_SEED_OFFSET);
@@ -743,8 +758,8 @@ impl SimWorld {
             .collect();
 
         let mut region_id = vec![0usize; self.cells.len()];
-        // (sum_temperature, sum_light, sum_slope, sum_water_distance, count).
-        let mut aggregate = vec![(0.0f32, 0.0f32, 0.0f32, 0.0f32, 0u32); region_count];
+        // (sum_temperature, sum_light, sum_soil_moisture, count).
+        let mut aggregate = vec![(0.0f32, 0.0f32, 0.0f32, 0u32); region_count];
         for y in 0..self.height {
             for x in 0..self.width {
                 let idx = self.index(x, y);
@@ -764,52 +779,39 @@ impl SimWorld {
                     let entry = &mut aggregate[nearest];
                     entry.0 += cell.temperature;
                     entry.1 += cell.light;
-                    entry.2 += cell.slope;
-                    entry.3 += sea_proximity[idx];
-                    entry.4 += 1;
+                    entry.2 += cell.soil_moisture;
+                    entry.3 += 1;
                 }
             }
         }
 
         let dominant_biome: Vec<Biome> = aggregate
             .into_iter()
-            .map(
-                |(sum_temperature, sum_light, sum_slope, sum_water_distance, count)| {
-                    if count == 0 {
-                        return Biome::Plain;
-                    }
-                    let n = count as f32;
-                    let (mean_temperature, mean_light, mean_slope, mean_water_distance) = (
-                        sum_temperature / n,
-                        sum_light / n,
-                        sum_slope / n,
-                        sum_water_distance / n,
-                    );
-                    let scores = [
-                        (
-                            Biome::Swamp,
-                            swamp_score(mean_slope, mean_water_distance, biome_cfg, 0.0),
-                        ),
-                        (
-                            Biome::Desert,
-                            desert_score(mean_temperature, mean_light, biome_cfg),
-                        ),
-                        (Biome::Tundra, tundra_score(mean_temperature, biome_cfg)),
-                        (
-                            Biome::Forest,
-                            forest_score(mean_temperature, mean_light, biome_cfg, 0.0),
-                        ),
-                        (Biome::Plain, biome_cfg.plain_baseline_score),
-                    ];
-                    let mut best = scores[0];
-                    for &candidate in &scores[1..] {
-                        if candidate.1 > best.1 {
-                            best = candidate;
-                        }
-                    }
-                    best.0
-                },
-            )
+            .map(|(sum_temperature, sum_light, sum_soil_moisture, count)| {
+                if count == 0 {
+                    return Biome::Plain;
+                }
+                let n = count as f32;
+                let (mean_temperature, mean_light, mean_soil_moisture) =
+                    (sum_temperature / n, sum_light / n, sum_soil_moisture / n);
+                let scores = [
+                    (
+                        Biome::Swamp,
+                        swamp_score(mean_soil_moisture, biome_cfg, 0.0),
+                    ),
+                    (
+                        Biome::Desert,
+                        desert_score(mean_temperature, mean_light, biome_cfg),
+                    ),
+                    (Biome::Tundra, tundra_score(mean_temperature, biome_cfg)),
+                    (
+                        Biome::Forest,
+                        forest_score(mean_temperature, mean_light, biome_cfg, 0.0),
+                    ),
+                    (Biome::Plain, biome_cfg.plain_baseline_score),
+                ];
+                argmax_biome(&scores)
+            })
             .collect();
 
         (region_id, dominant_biome)
@@ -909,8 +911,7 @@ impl SimWorld {
             biome_cfg.patch_freq_max,
         );
 
-        let sea_proximity = self.sea_distance_field();
-        let (region_id, region_dominant_biome) = self.compute_macro_regions(config, &sea_proximity);
+        let (region_id, region_dominant_biome) = self.compute_macro_regions(config);
 
         let mut biomes = vec![Biome::default(); self.cells.len()];
         for y in 0..self.height {
@@ -989,13 +990,11 @@ impl SimWorld {
                         argmax_biome(&scores)
                     }
                     TerrainKind::Plain => {
-                        let water_distance = sea_proximity[idx];
                         let scores = [
                             (
                                 Biome::Swamp,
                                 swamp_score(
-                                    cell.slope,
-                                    water_distance,
+                                    cell.soil_moisture,
                                     biome_cfg,
                                     wave_band_sum(&swamp_waves, nx, ny),
                                 ),
@@ -1794,13 +1793,26 @@ impl SimWorld {
     /// `water_distance_field` (task 124), which differ only in which cells
     /// count as a source.
     fn bfs_distance_from(&self, is_source: impl Fn(&Cell) -> bool) -> Vec<f32> {
+        self.bfs_distance_from_indices(
+            self.cells
+                .iter()
+                .enumerate()
+                .filter(|(_, cell)| is_source(cell))
+                .map(|(idx, _)| idx),
+        )
+    }
+
+    /// The same multi-source BFS as `bfs_distance_from`, seeded from
+    /// explicit cell indices instead of a per-`Cell` predicate (task 131)
+    /// — needed for sources that aren't yet a queryable `Cell` field, like
+    /// `record_significant_depressions`' `lake_depressions` footprints,
+    /// known before `Biome::Lake` is actually painted onto any cell.
+    fn bfs_distance_from_indices(&self, sources: impl Iterator<Item = usize>) -> Vec<f32> {
         let mut distance = vec![f32::INFINITY; self.cells.len()];
         let mut queue: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
-        for (idx, cell) in self.cells.iter().enumerate() {
-            if is_source(cell) {
-                distance[idx] = 0.0;
-                queue.push_back(idx);
-            }
+        for idx in sources {
+            distance[idx] = 0.0;
+            queue.push_back(idx);
         }
         while let Some(idx) = queue.pop_front() {
             let (x, y) = (idx % self.width, idx / self.width);
@@ -1813,6 +1825,71 @@ impl SimWorld {
             }
         }
         distance
+    }
+
+    /// Task 131 (spec §9.4): `Cell.soil_moisture`, a climate-grounded
+    /// refinement of task 125's `slope`/`water_distance` drainage proxy —
+    ///
+    /// ```text
+    /// soil_moisture =
+    ///     rainfall * retention(slope)
+    ///     + river_bonus(river_distance)
+    ///     + lake_bonus(lake_distance)
+    ///     - evaporation(temperature)
+    ///     - drainage(slope)
+    /// ```
+    ///
+    /// (`curvature` is out of scope, same simplification task 124 already
+    /// made — `slope` alone stands in for the drainage term, one of the
+    /// spec's own listed alternatives.)
+    ///
+    /// `river_distance` and `lake_distance` are both real, not stubbed: task
+    /// 127's rivers had already landed by the time this task was picked up,
+    /// so `river_bonus` reads `Cell.is_river` directly via a fresh BFS
+    /// (`bfs_distance_from`) instead of folding into `water_distance` as
+    /// the task file's own fallback plan allowed. `lake_bonus` goes further
+    /// still: task 129's `record_significant_depressions` already knows
+    /// *where* Lake will be placed before `place_feature_biomes` actually
+    /// paints `Biome::Lake` onto any cell, so `lake_depressions`' raw
+    /// footprints (flattened into one seed set) can BFS a real distance
+    /// field here — unlike the persisted `Cell.water_distance` field
+    /// (task 132's finding), this doesn't need to wait for Lake to exist as
+    /// a queryable `Biome`.
+    ///
+    /// Must run after `compute_rainfall` (`rainfall`), `compute_hydrology`
+    /// (`is_river`), and `record_significant_depressions` (`lake_depressions`)
+    /// — but before `classify_biomes`, which reads this field via
+    /// `swamp_score` in place of the old proxy.
+    fn compute_soil_moisture(&mut self, config: &SimConfig, lake_depressions: &[Vec<usize>]) {
+        let cfg = &config.biome;
+        let river_distance = self.bfs_distance_from(|cell| cell.is_river);
+        let lake_distance =
+            self.bfs_distance_from_indices(lake_depressions.iter().flatten().copied());
+
+        let proximity = |distance: f32, max: f32, falloff: f32| -> f32 {
+            smoothstep(max, max - falloff, distance)
+        };
+
+        for (idx, cell) in self.cells.iter_mut().enumerate() {
+            let retention = (1.0 - cfg.soil_moisture_retention_slope_weight * cell.slope).max(0.0);
+            let river_bonus = cfg.soil_moisture_river_bonus
+                * proximity(
+                    river_distance[idx],
+                    cfg.soil_moisture_river_proximity_max,
+                    cfg.soil_moisture_river_proximity_falloff,
+                );
+            let lake_bonus = cfg.soil_moisture_lake_bonus
+                * proximity(
+                    lake_distance[idx],
+                    cfg.soil_moisture_lake_proximity_max,
+                    cfg.soil_moisture_lake_proximity_falloff,
+                );
+            let evaporation = cfg.soil_moisture_evaporation_weight * cell.temperature;
+            let drainage = cfg.soil_moisture_drainage_slope_weight * cell.slope;
+            cell.soil_moisture =
+                (cell.rainfall * retention + river_bonus + lake_bonus - evaporation - drainage)
+                    .clamp(0.0, 1.0);
+        }
     }
 
     /// Grid distance from every cell to its nearest `TerrainKind::Sea` cell
@@ -2491,33 +2568,25 @@ fn forest_score(temperature: f32, light: f32, cfg: &BiomeConfig, noise: f32) -> 
     (climate + noise.max(0.0) * cfg.patch_noise_weight).min(1.0)
 }
 
-/// Swamp's `[0, 1]` fitness score (task 125): a drainage term — low
-/// `slope`, close `water_distance` (both task 124) — instead of the old
-/// `toxicity` gate, plus the same small additive patch-noise term Forest
-/// uses. Palude is a wetland/drainage fact now, not a toxicity readout;
-/// toxicity is imposed as a separate post-classification modifier on a
-/// sub-region of the cells this score selects (see `classify_biomes`).
-fn swamp_score(slope: f32, water_distance: f32, cfg: &BiomeConfig, noise: f32) -> f32 {
-    // `slope` is normalized to `[0, 1]`, so `biome_score_transition_width`
-    // (also `[0, 1]`-scaled) is the right transition width for it. But
-    // `water_distance` is a raw BFS cell count (0, 1, 2, … 40+), not a
-    // `[0, 1]` scalar — reusing the same shared width there would collapse
-    // to a near-binary step (a fraction-of-a-cell transition on an integer
-    // distance), exactly the hard discontinuity this whole task exists to
-    // remove. `swamp_water_distance_falloff` is its own knob, in the same
-    // cell units as `swamp_water_distance_max`.
-    let slope_term = smoothstep(
-        cfg.swamp_slope_max,
-        cfg.swamp_slope_max - cfg.biome_score_transition_width,
-        slope,
+/// Swamp's `[0, 1]` fitness score (task 125, refined by task 131): a
+/// smooth rise past `swamp_soil_moisture_min` on `Cell.soil_moisture`
+/// (task 131's climate-grounded wetness estimate), plus the same small
+/// additive patch-noise term Forest uses — instead of the old
+/// `toxicity` gate task 125 already replaced. Palude is a wetland/drainage
+/// fact now, not a toxicity readout; toxicity is imposed as a separate
+/// post-classification modifier on a sub-region of the cells this score
+/// selects (see `classify_biomes`). `soil_moisture` subsumes task 125's
+/// original `slope`/`water_distance` drainage proxy (it's already one of
+/// `soil_moisture`'s own inputs) rather than sitting alongside it — see
+/// `compute_soil_moisture`'s doc comment for the full formula.
+fn swamp_score(soil_moisture: f32, cfg: &BiomeConfig, noise: f32) -> f32 {
+    let w = cfg.biome_score_transition_width;
+    let moisture_term = smoothstep(
+        cfg.swamp_soil_moisture_min,
+        cfg.swamp_soil_moisture_min + w,
+        soil_moisture,
     );
-    let water_term = smoothstep(
-        cfg.swamp_water_distance_max,
-        cfg.swamp_water_distance_max - cfg.swamp_water_distance_falloff,
-        water_distance,
-    );
-    let drainage = slope_term * water_term;
-    (drainage + noise.max(0.0) * cfg.patch_noise_weight).min(1.0)
+    (moisture_term + noise.max(0.0) * cfg.patch_noise_weight).min(1.0)
 }
 
 /// Unbiased arg-max over a candidate `(Biome, score)` list (task 130) —
@@ -3266,6 +3335,75 @@ mod tests {
         );
     }
 
+    /// Task 131's own acceptance criterion (spec §18.5-style relational
+    /// check): `Cell.soil_moisture` should correlate positively with
+    /// `rainfall` and negatively with `temperature`/`slope`, matching the
+    /// formula's own sign on each term (`compute_soil_moisture`'s doc
+    /// comment). Checked by splitting all cells from 20 seeds into
+    /// above-median/below-median buckets per driver and comparing mean
+    /// `soil_moisture` between them — a simple, robust correlation-sign
+    /// check (no assumption of linearity), same aggregate-over-seeds
+    /// spirit as `leeward_side_of_the_tallest_peak_reads_drier_than_windward_on_average`.
+    #[test]
+    fn soil_moisture_correlates_with_rainfall_temperature_and_slope_as_designed() {
+        let config = test_config();
+        let mut rainfall = Vec::new();
+        let mut temperature = Vec::new();
+        let mut slope = Vec::new();
+        let mut soil_moisture = Vec::new();
+        for seed in 0..20u64 {
+            let world = SimWorld::new(seed, &config);
+            for cell in world.cells.iter() {
+                rainfall.push(cell.rainfall);
+                temperature.push(cell.temperature);
+                slope.push(cell.slope);
+                soil_moisture.push(cell.soil_moisture);
+            }
+        }
+
+        let mean_soil_moisture_split = |driver: &[f32]| -> (f32, f32) {
+            let mut sorted = driver.to_vec();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let median = sorted[sorted.len() / 2];
+            let (mut below_sum, mut below_n, mut above_sum, mut above_n) =
+                (0.0f32, 0u32, 0.0f32, 0u32);
+            for (d, m) in driver.iter().zip(soil_moisture.iter()) {
+                if *d < median {
+                    below_sum += m;
+                    below_n += 1;
+                } else {
+                    above_sum += m;
+                    above_n += 1;
+                }
+            }
+            (
+                below_sum / below_n.max(1) as f32,
+                above_sum / above_n.max(1) as f32,
+            )
+        };
+
+        let (rain_low, rain_high) = mean_soil_moisture_split(&rainfall);
+        assert!(
+            rain_high > rain_low,
+            "soil_moisture should be higher with more rainfall: below-median mean {rain_low:.3}, \
+             above-median mean {rain_high:.3}"
+        );
+
+        let (temp_low, temp_high) = mean_soil_moisture_split(&temperature);
+        assert!(
+            temp_high < temp_low,
+            "soil_moisture should be lower with more temperature (evaporation): below-median \
+             mean {temp_low:.3}, above-median mean {temp_high:.3}"
+        );
+
+        let (slope_low, slope_high) = mean_soil_moisture_split(&slope);
+        assert!(
+            slope_high < slope_low,
+            "soil_moisture should be lower with more slope (drainage/lower retention): \
+             below-median mean {slope_low:.3}, above-median mean {slope_high:.3}"
+        );
+    }
+
     /// Task 130's own acceptance criterion (spec §18.5-style relational
     /// check, same shape as task 126's windward/leeward test): within
     /// `TerrainKind::Mountain`, Glacier should only occur at low
@@ -3995,22 +4133,64 @@ mod tests {
 
     /// Task 132: the positive counterpart of the guard above — confirms
     /// `classify_biomes` actually reads the persisted `Cell.slope` now
-    /// (not a silently-never-exercised code path). A cell forced to
-    /// maximum slope should read as BareRock (if `Hill`) or lose Swamp
-    /// eligibility (if `Plain`, since `swamp_score`'s slope term collapses
-    /// to `0` far past `swamp_slope_max`).
+    /// (not a silently-never-exercised code path). A `Hill` cell forced to
+    /// maximum slope should read as BareRock (`bare_rock_score`'s
+    /// slope-raised effective light ceiling makes even moderate light read
+    /// as BareRock at a saturated slope).
     #[test]
     fn classify_biomes_reads_the_persisted_slope_field() {
         let config = test_config();
         let params = world_params(0, &config);
         let mut world = SimWorld::new(7, &config);
         for cell in world.cells.iter_mut() {
-            cell.slope = 999.0;
+            if cell.terrain == TerrainKind::Hill {
+                cell.slope = 999.0;
+            }
         }
         world.classify_biomes(&config, &params);
         assert!(
-            !world.cells.iter().any(|c| c.biome == Biome::Swamp),
-            "a saturated slope should make Swamp unreachable everywhere"
+            world
+                .cells
+                .iter()
+                .filter(|c| c.terrain == TerrainKind::Hill)
+                .all(|c| c.biome == Biome::BareRock),
+            "every Hill cell forced to maximum slope should read as BareRock"
+        );
+    }
+
+    /// Task 131: the equivalent positive confirmation for
+    /// `Cell.soil_moisture` — `classify_biomes` reads it directly via
+    /// `swamp_score`, not a locally re-derived proxy. A cell forced to
+    /// `0.0` soil moisture should lose Swamp eligibility everywhere; one
+    /// forced to `1.0` should make Swamp win the arg-max wherever nothing
+    /// else scores even higher (`TerrainKind::Plain` only, matching
+    /// `swamp_score`'s own scope).
+    #[test]
+    fn classify_biomes_reads_the_persisted_soil_moisture_field() {
+        let config = test_config();
+        let params = world_params(0, &config);
+
+        let mut dry_world = SimWorld::new(11, &config);
+        for cell in dry_world.cells.iter_mut() {
+            cell.soil_moisture = 0.0;
+        }
+        dry_world.classify_biomes(&config, &params);
+        assert!(
+            !dry_world.cells.iter().any(|c| c.biome == Biome::Swamp),
+            "zero soil moisture everywhere should make Swamp unreachable"
+        );
+
+        let mut wet_world = SimWorld::new(11, &config);
+        for cell in wet_world.cells.iter_mut() {
+            cell.soil_moisture = 1.0;
+        }
+        wet_world.classify_biomes(&config, &params);
+        assert!(
+            wet_world
+                .cells
+                .iter()
+                .any(|c| c.terrain == TerrainKind::Plain && c.biome == Biome::Swamp),
+            "saturated soil moisture everywhere should make Swamp reachable somewhere on Plain"
         );
     }
 
