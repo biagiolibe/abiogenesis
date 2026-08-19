@@ -47,6 +47,15 @@ pub struct WorldParams {
     /// order — the lever that makes a world last longer without needing an
     /// even harsher single objective.
     pub objective_count: u32,
+    /// `BiomeConfig::swamp_toxicity_min`'s per-world scaled value (task
+    /// 133, GDD §9 "larger toxic zones" — revived after task 113 removed
+    /// the old sized `toxic_zone` rectangle this axis used to drive). Lower
+    /// is more toxic: `SimWorld::classify_biomes` reads this, not
+    /// `BiomeConfig::swamp_toxicity_min` directly, once generation is
+    /// running, so the fraction of any given world's Swamp that reads
+    /// toxic scales with `world_index` the same way the old rectangle's
+    /// size used to.
+    pub swamp_toxicity_min: f32,
 }
 
 /// Computes `WorldParams` for `world_index` (the run's `RunProgress::world_index`,
@@ -59,6 +68,7 @@ pub fn world_params(world_index: u32, config: &SimConfig) -> WorldParams {
     let time = &config.time;
     let difficulty = &config.difficulty;
     let source = &config.source;
+    let biome = &config.biome;
 
     WorldParams {
         active_tag_count: lerp_u32(tags.active_tags_early, tags.active_tags_late, t),
@@ -83,6 +93,11 @@ pub fn world_params(world_index: u32, config: &SimConfig) -> WorldParams {
         objective_count: lerp_u32(
             difficulty.objective_count_early,
             difficulty.objective_count_late,
+            t,
+        ),
+        swamp_toxicity_min: lerp_f32(
+            biome.swamp_toxicity_min,
+            difficulty.swamp_toxicity_min_late,
             t,
         ),
     }
@@ -579,6 +594,7 @@ mod tests {
             params.objective_severity,
             config.difficulty.objective_severity_early
         );
+        assert_eq!(params.swamp_toxicity_min, config.biome.swamp_toxicity_min);
     }
 
     /// GDD §16's worked example: World 2 (`world_index = 1`, the second
@@ -617,6 +633,13 @@ mod tests {
         assert_eq!(
             at_ramp_end.objective_severity,
             config.difficulty.objective_severity_late
+        );
+        assert!(
+            (at_ramp_end.swamp_toxicity_min - config.difficulty.swamp_toxicity_min_late).abs()
+                < f32::EPSILON * 10.0,
+            "expected swamp_toxicity_min to saturate at the late endpoint: got {}, want {}",
+            at_ramp_end.swamp_toxicity_min,
+            config.difficulty.swamp_toxicity_min_late
         );
     }
 

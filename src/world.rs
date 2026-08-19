@@ -568,7 +568,7 @@ impl SimWorld {
         world.compute_slope(config);
         world.apply_environment_sources(config, &params);
         world.compute_rainfall(config, &params);
-        world.classify_biomes(config);
+        world.classify_biomes(config, &params);
         world.place_feature_biomes(config);
         world.compute_water_distance();
         world.compute_hydrology(config);
@@ -736,7 +736,11 @@ impl SimWorld {
     /// newly-placed inland lake — acceptable, since the sea coastline is
     /// the dominant "near water" signal for a whole world and lakes are a
     /// small, rare feature.
-    fn classify_biomes(&mut self, config: &SimConfig) {
+    ///
+    /// `params` (task 133) supplies `swamp_toxicity_min`'s per-world scaled
+    /// value for the toxicity-imposition pass at the end of this method —
+    /// everything else here still reads from `config` alone.
+    fn classify_biomes(&mut self, config: &SimConfig, params: &WorldParams) {
         let biome_cfg = &config.biome;
         let mut rng = StdRng::seed_from_u64(self.seed ^ BIOME_SEED_OFFSET);
         let forest_waves = terrain_waves(
@@ -848,7 +852,12 @@ impl SimWorld {
         // This is now the *only* generation-time source of nonzero
         // `Cell::toxicity` (task 113 removed the old standalone
         // `place_toxic_zone` rectangle): `objectives.rs`'s `SurviveIn`
-        // reads `Cell::biome == Swamp` directly, not this scalar.
+        // reads `Cell::biome == Swamp` directly, not this scalar. Task 133:
+        // reads `params.swamp_toxicity_min` (the per-world difficulty-curve
+        // scaled value), not `biome_cfg.swamp_toxicity_min` directly, so
+        // the toxic fraction of Swamp grows across the run the way the old
+        // `toxic_zone` rectangle's size used to (GDD §9's "larger toxic
+        // zones").
         for y in 0..self.height {
             for x in 0..self.width {
                 let idx = self.index(x, y);
@@ -857,7 +866,7 @@ impl SimWorld {
                 }
                 let nx = x as f32 / (self.width - 1).max(1) as f32;
                 let ny = y as f32 / (self.height - 1).max(1) as f32;
-                if wave_band_sum(&toxic_patch_waves, nx, ny) > biome_cfg.swamp_toxicity_min {
+                if wave_band_sum(&toxic_patch_waves, nx, ny) > params.swamp_toxicity_min {
                     self.cells[idx].toxicity = config.environment.swamp_toxicity_value;
                 }
             }
@@ -3333,14 +3342,15 @@ mod tests {
         // Option 3/4, not taken), so it stays local-proxy-only and this
         // guard still applies to it.
         let config = test_config();
+        let params = world_params(0, &config);
         for seed in 0..10u64 {
             let mut world = SimWorld::new(seed, &config);
-            world.classify_biomes(&config);
+            world.classify_biomes(&config, &params);
             let areal_before: Vec<Biome> = world.cells.iter().map(|c| c.biome).collect();
             for cell in world.cells.iter_mut() {
                 cell.water_distance = 999.0;
             }
-            world.classify_biomes(&config);
+            world.classify_biomes(&config, &params);
             let areal_after: Vec<Biome> = world.cells.iter().map(|c| c.biome).collect();
             assert_eq!(
                 areal_before, areal_after,
@@ -3358,11 +3368,12 @@ mod tests {
     #[test]
     fn classify_biomes_reads_the_persisted_slope_field() {
         let config = test_config();
+        let params = world_params(0, &config);
         let mut world = SimWorld::new(7, &config);
         for cell in world.cells.iter_mut() {
             cell.slope = 999.0;
         }
-        world.classify_biomes(&config);
+        world.classify_biomes(&config, &params);
         assert!(
             !world.cells.iter().any(|c| c.biome == Biome::Swamp),
             "a saturated slope should make Swamp unreachable everywhere"
@@ -3448,6 +3459,41 @@ mod tests {
         );
     }
 
+    /// Task 133: GDD §9's "larger toxic zones" difficulty axis, revived
+    /// after task 113 removed the old sized `toxic_zone` rectangle it used
+    /// to drive — `WorldParams::swamp_toxicity_min` should make later
+    /// worlds' Swamp read as toxic more often, not just have a
+    /// differently-scaled `WorldParams` field nobody reads end to end.
+    /// Aggregate fraction across seeds, not a per-seed hard assert, same
+    /// idiom as `some_swamp_cells_are_toxic_across_seeds`.
+    #[test]
+    fn later_worlds_have_a_larger_toxic_fraction_of_swamp() {
+        let config = test_config();
+        let n_seeds = 20u64;
+        let toxic_fraction = |world_index: u32| -> f32 {
+            let mut swamp = 0u64;
+            let mut toxic = 0u64;
+            for seed in 0..n_seeds {
+                let world = SimWorld::new_for_world(seed, world_index, &config);
+                for cell in &world.cells {
+                    if cell.biome == Biome::Swamp {
+                        swamp += 1;
+                        if cell.toxicity > 0.0 {
+                            toxic += 1;
+                        }
+                    }
+                }
+            }
+            toxic as f32 / swamp.max(1) as f32
+        };
+        let early = toxic_fraction(0);
+        let late = toxic_fraction(config.difficulty.ramp_worlds);
+        assert!(
+            late > early,
+            "expected a later world's Swamp to read toxic more often: early {early}, late {late}"
+        );
+    }
+
     /// Task 126: `rainfall` is purely additive — corrupting it and
     /// re-running `classify_biomes` (same guard shape task 124/125 already
     /// use for `slope`/`water_distance`) confirms nothing downstream reads
@@ -3455,14 +3501,15 @@ mod tests {
     #[test]
     fn rainfall_does_not_affect_biome_classification() {
         let config = test_config();
+        let params = world_params(0, &config);
         for seed in 0..10u64 {
             let mut world = SimWorld::new(seed, &config);
-            world.classify_biomes(&config);
+            world.classify_biomes(&config, &params);
             let areal_before: Vec<Biome> = world.cells.iter().map(|c| c.biome).collect();
             for cell in world.cells.iter_mut() {
                 cell.rainfall = 999.0;
             }
-            world.classify_biomes(&config);
+            world.classify_biomes(&config, &params);
             let areal_after: Vec<Biome> = world.cells.iter().map(|c| c.biome).collect();
             assert_eq!(
                 areal_before, areal_after,

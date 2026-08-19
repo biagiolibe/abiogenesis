@@ -87,6 +87,7 @@
         objective_severity_late: 2.0,
         objective_count_early: 2,
         objective_count_late: 3,
+        swamp_toxicity_min_late: -0.2,
     ),
     worldgen: (
         starting_species_count: 2,

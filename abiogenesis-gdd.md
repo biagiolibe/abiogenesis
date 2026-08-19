@@ -326,7 +326,7 @@ Each world is generated procedurally:
 
 **First-world softening [DECIDED, task 079]:** world 0's opening objective is always forced to the gentlest possible requirement — `Coexistence` with `min_species = 2` — rather than the normal random draw, which could otherwise open a run with a demanding `SurviveIn` (a hostile zone the player hasn't even seen yet) or a `Coexistence` requiring every generated species including a harder-to-keep-alive Decomposer.
 
-**Curve [DECIDED direction]:** the first worlds with **5 active tags** and a mild environment; gradually up to **~8 active tags**, matrices with more "nasty" relationships, more extreme environments (harsh thermal gradients; **the "large toxic zones" axis no longer has an implementation to scale, since task 113 replaced the old sized `toxic_zone` rectangle with Swamp's score-based footprint — flagged as an open follow-up, not yet re-solved**), stricter objectives, and shorter era budgets.
+**Curve [DECIDED direction]:** the first worlds with **5 active tags** and a mild environment; gradually up to **~8 active tags**, matrices with more "nasty" relationships, more extreme environments (harsh thermal gradients; **"larger toxic zones" (task 133, re-implemented after task 113 removed the old sized `toxic_zone` rectangle) now means a larger *fraction* of `Biome::Swamp` reading as toxic, via `DifficultyConfig::swamp_toxicity_min_late`, rather than a larger placed rectangle**), stricter objectives, and shorter era budgets.
 
 **Biochemistry is fresh every run**: replayability comes from here, not from hand-written content.
 

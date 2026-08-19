@@ -75,14 +75,6 @@ only 114 remains blocked in this section.
 | `[x]` | 113 | Palude replaces `toxic_zone` | 110, 125 | [113](done/113-swamp-replaces-toxic-zone.md) |
 | `[ ]` ⏸ | 114 | BLOCKED — Geyser biome (needs a small/pulsing heat-source category, not yet scoped) | 110, 111, unscoped source-model extension | [114](114-geyser-pulsing-source-blocked.md) |
 
-**Task 113 follow-ups** (2026-08-19, found in advisor review after 113
-shipped): two open decisions, neither blocking 113's own acceptance
-criteria — see 133's own file for the full options list on each.
-
-| Status | ID | Title | Depends on | File |
-|-------|----|--------|------------|------|
-| `[?]` | 133 | [DECISION] `SurviveIn`'s Swamp target has no visual/textual affordance; the "larger toxic zones" difficulty axis lost its implementation | 113 | [133](133-swamp-survivein-legibility-and-difficulty-scaling.md) |
-
 **HUD & Notebook redesign follow-up** (2026-08-12, scoped from
 `redesign/abiogenesis-hud-notebook.md` after a discrepancy-check pass against
 the already-scoped notebook tasks 100-103/097 — see `PROJECT_PLAN.md` for
@@ -164,7 +156,15 @@ Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN
 
 ---
 
-*Last updated: 2026-08-19 (113, Palude replaces `toxic_zone` — removed the
+*Last updated: 2026-08-19 (133, the two Task 113 follow-ups — SurviveIn's
+Swamp target now gets a dashed purple highlight while that objective is
+active, reviving the visual language `draw_toxic_zone` used to provide
+(`render.rs::draw_survive_in_target`, gated on `CurrentObjective`); the
+"larger toxic zones" difficulty axis is revived as a scaled
+`swamp_toxicity_min` (new `DifficultyConfig::swamp_toxicity_min_late`,
+`WorldParams::swamp_toxicity_min`, threaded into `classify_biomes`) rather
+than a resized rectangle — completed and archived to `tasks/done/`, phase
+archived to `QUEUE_ARCHIVE.md`. 113, Palude replaces `toxic_zone` — removed the
 standalone `ToxicZoneBounds`/`place_toxic_zone` rectangle and
 `draw_toxic_zone`'s dashed outline; `SurviveIn`'s zone check now reads
 `Cell::biome == Swamp` directly, and Swamp's own post-classification

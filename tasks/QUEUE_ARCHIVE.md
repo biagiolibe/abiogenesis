@@ -304,3 +304,19 @@ these fields from steps that run after both are populated, no conflict.
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
 | `[x]` | 132 | [DECISION] Resolve `Cell.slope`/`Cell.water_distance` ordering before later hydrology/biome tasks read them | 124, 125, 126 | [132](done/132-persisted-slope-water-distance-unused.md) |
+
+---
+
+**Task 113 follow-ups** (2026-08-19, found in advisor review after 113
+shipped): two open decisions, neither blocking 113's own acceptance
+criteria — see 133's own file for the full options list and the decisions
+made. Gap 1 (SurviveIn's Swamp target has no visual/textual affordance):
+resolved by highlighting the active target region with a dashed outline,
+reviving the visual language task 113 removed. Gap 2 (the "larger toxic
+zones" difficulty axis lost its implementation): resolved by scaling
+`swamp_toxicity_min` per-world instead of the removed rectangle's size.
+Closed 2026-08-19, same session as 113.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[x]` | 133 | [DECISION] `SurviveIn`'s Swamp target has no visual/textual affordance; the "larger toxic zones" difficulty axis lost its implementation | 113 | [133](done/133-swamp-survivein-legibility-and-difficulty-scaling.md) |

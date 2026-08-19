@@ -498,6 +498,17 @@ pub struct DifficultyConfig {
     pub objective_count_early: u32,
     /// How many objectives a world poses in sequence at the late endpoint.
     pub objective_count_late: u32,
+    /// `BiomeConfig::swamp_toxicity_min` at the late endpoint (early end is
+    /// `BiomeConfig::swamp_toxicity_min` itself) — task 133: revives GDD
+    /// §9's "larger toxic zones" difficulty axis, lost when task 113
+    /// removed the old sized `toxic_zone` rectangle. Lower is more toxic:
+    /// this is a threshold `wave_band_sum` must exceed, not a size. A
+    /// 20-seed measurement found the early default `0.3` yields ~21% of
+    /// Swamp cells toxic; `-0.2` (chosen here) yields ~78% — a real
+    /// "later worlds are more hostile" step without going fully uniform
+    /// (which `-0.4`'s ~92% starts to look like, losing the sub-region
+    /// visual variety toxicity imposition was designed to have).
+    pub swamp_toxicity_min_late: f32,
 }
 
 impl Default for DifficultyConfig {
@@ -509,6 +520,7 @@ impl Default for DifficultyConfig {
             objective_severity_late: 2.0,
             objective_count_early: 2,
             objective_count_late: 3,
+            swamp_toxicity_min_late: -0.2,
         }
     }
 }
@@ -831,7 +843,11 @@ pub struct BiomeConfig {
     /// reads as toxic, same organic-sub-region idiom the design doc's
     /// §12.4 describes. `EnvironmentConfig::swamp_toxicity_value` (0.7 by
     /// default) is still the only *value* imposed — this field only
-    /// selects *where*.
+    /// selects *where*. Task 133: this is also `WorldParams::
+    /// swamp_toxicity_min`'s difficulty-curve early endpoint (late end is
+    /// `DifficultyConfig::swamp_toxicity_min_late`) — `classify_biomes`
+    /// reads the per-world scaled value from `WorldParams`, not this field
+    /// directly, once generation is running.
     pub swamp_toxicity_min: f32,
     /// Radius (cells, Euclidean) around each `SimWorld::heat_sources` cell
     /// that reads as Bocca vulcanica (task 111) — deliberately independent

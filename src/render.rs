@@ -436,6 +436,7 @@ mod energy_overlay {
 mod terrain_overlay {
     use super::{cell_position, GridCamera, CELL_SIZE};
     use crate::notebook::{NotebookWindowOpen, NOTEBOOK_WIDTH};
+    use abiogenesis::objectives::{CurrentObjective, Objective, ZoneKind};
     use abiogenesis::world::{Biome, SimWorld};
     use bevy::prelude::*;
     use bevy_egui::{egui, EguiContexts};
@@ -460,8 +461,22 @@ mod terrain_overlay {
     const PEAK_GLYPH_FONT_SIZE: f32 = 9.0;
     const PEAK_GLYPH_COLOR: egui::Color32 = egui::Color32::from_gray(225);
 
+    /// Task 133: highlights the active `SurviveIn` objective's target
+    /// Swamp region — the only visual pointer a player has to it now that
+    /// task 113 removed the old fixed-rectangle `draw_toxic_zone` outline.
+    /// Matches the reference mockup's `#7F77DD`, same "toxic/hazardous"
+    /// purple the deleted outline used, dashed rather than a plain
+    /// biome-boundary line so it reads as a goal marker, not just another
+    /// border — drawn only while `SurviveIn` is the current objective, not
+    /// permanently, so it doesn't compete with biome borders otherwise.
+    const SURVIVE_IN_TARGET_COLOR: egui::Color32 = egui::Color32::from_rgb(127, 119, 221);
+    const SURVIVE_IN_TARGET_WIDTH: f32 = 1.6;
+    const SURVIVE_IN_TARGET_DASH_LENGTH: f32 = 4.0;
+    const SURVIVE_IN_TARGET_GAP_LENGTH: f32 = 3.0;
+
     pub fn draw_terrain_overlay(
         world: Res<SimWorld>,
+        objective: Res<CurrentObjective>,
         cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
         notebook_open: Res<NotebookWindowOpen>,
         mut contexts: EguiContexts,
@@ -513,6 +528,7 @@ mod terrain_overlay {
         draw_boundaries(&world, &project, &painter);
         draw_peaks(&world, &project, &painter);
         draw_trees(&world, &project, &painter);
+        draw_survive_in_target(&world, &objective, &project, &painter);
         Ok(())
     }
 
@@ -593,6 +609,82 @@ mod terrain_overlay {
             (boundary_internal_color(), BOUNDARY_INTERNAL_WIDTH)
         };
         painter.line_segment([p0, p1], egui::Stroke::new(width, color));
+    }
+
+    /// Task 133: dashed highlight around every Swamp cell's boundary with a
+    /// non-Swamp neighbour, drawn only while `SurviveIn`'s zone is
+    /// `ZoneKind::Toxic` (Swamp, task 113) is the active objective. Same
+    /// "check right and below neighbours only" trick as `draw_boundaries`
+    /// — every internal edge still gets visited exactly once, just gated
+    /// on a Swamp/non-Swamp comparison instead of any biome change.
+    fn draw_survive_in_target(
+        world: &SimWorld,
+        objective: &CurrentObjective,
+        project: &impl Fn(Vec3) -> Option<egui::Pos2>,
+        painter: &egui::Painter,
+    ) {
+        if !matches!(
+            objective.current(),
+            Some(Objective::SurviveIn {
+                zone: ZoneKind::Toxic,
+                ..
+            })
+        ) {
+            return;
+        }
+        for y in 0..world.height {
+            for x in 0..world.width {
+                let here = world.get(x, y).biome == Biome::Swamp;
+                if x + 1 < world.width {
+                    let right = world.get(x + 1, y).biome == Biome::Swamp;
+                    if right != here {
+                        let (_, top_right, bottom_right, _) =
+                            cell_corners(x, y, world.width, world.height);
+                        draw_dashed_line(project, painter, top_right, bottom_right);
+                    }
+                }
+                if y + 1 < world.height {
+                    let below = world.get(x, y + 1).biome == Biome::Swamp;
+                    if below != here {
+                        let (_, _, bottom_right, bottom_left) =
+                            cell_corners(x, y, world.width, world.height);
+                        draw_dashed_line(project, painter, bottom_left, bottom_right);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Approximates a dashed line the same way `notebook.rs`'s
+    /// `draw_dashed_ring` approximates a dashed circle — alternating short
+    /// straight segments.
+    fn draw_dashed_line(
+        project: &impl Fn(Vec3) -> Option<egui::Pos2>,
+        painter: &egui::Painter,
+        from: Vec3,
+        to: Vec3,
+    ) {
+        let (Some(from), Some(to)) = (project(from), project(to)) else {
+            return;
+        };
+        let delta = to - from;
+        let length = delta.length();
+        if length < f32::EPSILON {
+            return;
+        }
+        let dir = delta / length;
+        let step = SURVIVE_IN_TARGET_DASH_LENGTH + SURVIVE_IN_TARGET_GAP_LENGTH;
+        let mut travelled = 0.0;
+        while travelled < length {
+            let dash_end = (travelled + SURVIVE_IN_TARGET_DASH_LENGTH).min(length);
+            let p0 = from + dir * travelled;
+            let p1 = from + dir * dash_end;
+            painter.line_segment(
+                [p0, p1],
+                egui::Stroke::new(SURVIVE_IN_TARGET_WIDTH, SURVIVE_IN_TARGET_COLOR),
+            );
+            travelled += step;
+        }
     }
 
     /// One glyph per stored peak cell (task 066 decides peaks at generation
