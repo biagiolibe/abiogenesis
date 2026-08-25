@@ -1513,10 +1513,12 @@ fn sync_grid_colors(
     shapes: Res<MetabolismShapes>,
     mode: Res<MapViewMode>,
     density: Res<ClusterDensity>,
+    time: Res<Time>,
     mut cells: Query<(&GridCell, &mut Sprite)>,
 ) {
+    let elapsed = time.elapsed_secs();
     for (cell, mut sprite) in &mut cells {
-        sprite.color = cell_color(&world, &config, cell.x, cell.y, *mode, &density);
+        sprite.color = cell_color(&world, &config, cell.x, cell.y, *mode, &density, elapsed);
         sprite.image = match *mode {
             MapViewMode::Detail => cell_shape(&world, &shapes, cell.x, cell.y),
             // Metabolism shapes are a Detail-only precision affordance
@@ -1581,6 +1583,7 @@ fn cell_color(
     y: usize,
     mode: MapViewMode,
     density: &ClusterDensity,
+    elapsed: f32,
 ) -> Color {
     let cell = world.get(x, y);
     let idx = world.index(x, y);
@@ -1630,7 +1633,7 @@ fn cell_color(
         dithered_biome_color(cell.biome, x, y)
     };
 
-    toxicity_tint(base, cell.toxicity)
+    toxicity_tint(base, cell.toxicity, elapsed)
 }
 
 /// Flat per-biome color (task 112, `redesign/abiogenesis-biomes.md`,
@@ -1717,9 +1720,19 @@ fn dithered_biome_color(biome: Biome, x: usize, y: usize) -> Color {
 /// `sim::step`'s tick arithmetic today (task 023's finding), and whether it
 /// ever should is a separate balance decision this doesn't make. The visual
 /// and the (currently absent) mechanical effect are not the same thing.
-fn toxicity_tint(base: Color, toxicity: f32) -> Color {
+///
+/// Task 081: the blend strength oscillates slowly around its `0.45` ceiling
+/// (±15%, at `PULSE_FREQUENCY`) instead of sitting fixed, so the toxic zone
+/// visibly "breathes" — source proposal 1.E's "una zona tossica che pulsa
+/// piano". `elapsed` is real time in seconds (`Time::elapsed_secs`), so the
+/// pulse period doesn't drift with tick rate or pause state the way
+/// tick-count-driven timing would.
+fn toxicity_tint(base: Color, toxicity: f32, elapsed: f32) -> Color {
+    const PULSE_FREQUENCY: f32 = 0.4; // rad/s — a ~16s period, calm enough to read as breathing, not flicker.
     let warning = Color::hsl(320.0, 0.9, 0.35);
-    base.mix(&warning, toxicity.clamp(0.0, 1.0) * 0.45)
+    let strength =
+        toxicity.clamp(0.0, 1.0) * 0.45 * (0.85 + 0.15 * (elapsed * PULSE_FREQUENCY).sin());
+    base.mix(&warning, strength)
 }
 
 #[cfg(test)]
@@ -1847,6 +1860,7 @@ mod tests {
             y,
             MapViewMode::Detail,
             &ClusterDensity::default(),
+            0.0,
         )
     }
 

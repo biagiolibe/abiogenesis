@@ -42,24 +42,37 @@ smaller, literal pieces:
 
 ## 📋 Acceptance Criteria
 
-- [ ] `toxicity_tint` (`src/render.rs:1150-1153`) takes a time input (e.g. a
-      new parameter, or reads `Res<Time>` at its call site in `cell_color`'s
-      caller) and oscillates its blend strength slowly around the current
-      `0.45` (e.g. `0.45 * (0.85 + 0.15 * (elapsed * FREQUENCY).sin())`) —
-      exact amplitude/frequency are a first-pass guess, tune visually.
-      `FREQUENCY` is slow enough to read as "pulsing," not flickering.
-- [ ] The pulse is visible only on cells with `toxicity > 0` — no change to
-      cells outside the toxic zone's influence.
-- [ ] No changes to `terrain_color`, the empty-cell branch, or any other
-      part of `cell_color` — this task does not touch the earlier tint idea.
-- [ ] A short live-verification note (in this file or the commit) on
-      whether the base map's temperature/light gradient erosion is
-      perceptible over a normal-length run without the `T`/`L` overlay. If
-      it's not, say so explicitly rather than silently adding scope to
-      compensate.
-- [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
-- [ ] Verified live via `cargo run`: the toxic zone visibly pulses at a slow,
-      calm rate; nothing else on the map changed.
+- [x] `toxicity_tint` (`src/render.rs`) takes a time input (`Res<Time>` read
+      in `sync_grid_colors`, threaded through `cell_color` as `elapsed:
+      f32`) and oscillates its blend strength slowly around the current
+      `0.45` (`0.45 * (0.85 + 0.15 * (elapsed * PULSE_FREQUENCY).sin())`,
+      `PULSE_FREQUENCY = 0.4` rad/s, a ~16s period) — exact amplitude/
+      frequency are a first-pass guess, tune visually.
+- [x] The pulse is visible only on cells with `toxicity > 0` — `strength`
+      is `toxicity.clamp(0.0, 1.0) * 0.45 * (...)`, so at `toxicity == 0`
+      the blend stays exactly `0` regardless of the oscillation term.
+- [x] No changes to `terrain_color`, the empty-cell branch, or any other
+      part of `cell_color` — only `toxicity_tint`'s call and body changed.
+- [x] Diffusion drift-perceptibility check (code inspection, not a live
+      run — see note below): **not perceptible, and structurally so, not
+      just small in magnitude.** `diffuse_environment` only ever writes
+      `Cell::temperature`/`Cell::light`/`Cell::toxicity`; the base map's
+      empty-cell color comes from `Cell::biome` via `dithered_biome_color`
+      (`cell_color`'s empty branch), and `Cell::biome` is assigned once by
+      `classify_biomes` during world generation — nothing re-runs it, or
+      otherwise reads `temperature`/`light` into any non-overlay render
+      path, per tick. So the eroding gradient has zero effect on what the
+      base map shows: this isn't "erosion too slow to notice," it's
+      "nothing currently displays it." Confirmed by grepping every
+      `cell.temperature`/`cell.light` read in `render.rs`: the only hit is
+      the dev-only `EnvironmentOverlay::Temperature` (`F1`-style overlay),
+      not the base map. Making this visible would require new rendering
+      (the "environment feel alive-by-design" idea already carved out to
+      `redesign/abiogenesis-environment-sources.md`), so out of scope here
+      per this task's own framing.
+- [x] `cargo test` and `cargo clippy -- -D warnings` clean.
+- [ ] Live verification skipped for this pass at the user's explicit
+      request — not run via `cargo run`.
 
 ---
 

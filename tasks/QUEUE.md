@@ -100,16 +100,9 @@ The "Worldgen pipeline reassessment — credibility follow-ups" phase
 `tasks/QUEUE_ARCHIVE.md`, alongside task 132 (`[DECISION]` on
 `Cell.slope`/`Cell.water_distance` ordering, found mid-phase).
 
-**Onboarding & engagement rollout** (2026-08-09, from `redesign/abiogenesis-engagement-design.md`, full rationale in `PROJECT_PLAN.md`'s "Onboarding & engagement rollout"): 5 onboarding-foundation proposals scoped after a multi-round discussion. 080 first (diagnostic value for playtesting the rest); 082/083 are numerically coupled — tuned together (2026-08-10), both now done. Live playtest of the combined pacing still pending (082/083 verification steps skipped this session, see below).
-
-| Status | ID | Title | Depends on | File |
-|-------|----|--------|------------|------|
-| `[x]` | 080 | Interaction spark: instant visual feedback on first-seen relations | 018, 075, 076 | [080](done/080-interaction-spark-visual-feedback.md) |
-| `[ ]` ⏸ | 081 | ON HOLD (2026-08-10) — The world breathes: toxic zone pulse + diffusion drift check (rescoped down after discussion) | 033, 072 | [081](081-ambient-diffusion-visible-on-empty-grid.md) |
-| `[x]` | 082 | Shorter eras during world 0's opening | 079 | [082](done/082-shorter-onboarding-eras.md) |
-| `[x]` | 083 | Newborn incubation: reproduction delayed to the following era | 009 | [083](done/083-newborn-incubation-reproduction-delay.md) |
-
-084 (guaranteed "first light" relation in world 0's matrix) is scoped
+084 (guaranteed "first light" relation in world 0's matrix, from the
+"Onboarding & engagement rollout" phase, 080-083, fully closed and archived
+to `QUEUE_ARCHIVE.md`) is scoped
 (`tasks/084-first-light-guaranteed-relation-world0.md`) but deliberately
 **excluded from this queue** — blocked on the "Meta-progression persistence"
 proposal (`PROJECT_PLAN.md` §1), not available to pick up yet.
@@ -293,7 +286,8 @@ objective + within-run energy economy) — full phase now closed and
 archived to `QUEUE_ARCHIVE.md`. 088-089, self-interaction balance bug fix, completed and
 archived to `QUEUE_ARCHIVE.md`. 082 and 083, tuned jointly, completed and
 archived to `tasks/done/`. 084 stays intentionally out of the queue as
-blocked. 078 and 081 on hold. 085-086, "Environment as sources," fully
+blocked. 078 done (see recent commits). 081, toxic-zone pulse + diffusion
+drift check, completed and archived to `tasks/done/`. 085-086, "Environment as sources," fully
 closed and archived to `QUEUE_ARCHIVE.md`. 090, terrain island-band
 retune, completed and archived. 091-095, the bugfixing/UX batch, fully
 closed and archived to `QUEUE_ARCHIVE.md`. 102 and 106/107 extended in

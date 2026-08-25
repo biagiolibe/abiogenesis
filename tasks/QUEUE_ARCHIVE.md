@@ -361,3 +361,19 @@ chemolithotroph test restored to the file's normal 500-tick horizon.
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
 | `[x]` | 122 | Swamp toxicity reinjection (toxicity erodes with no source to counter it) | 085, 108, 113, 125 | [122](done/122-toxic-zone-reinjection.md) |
+
+---
+
+**Onboarding & engagement rollout** (2026-08-09, from `redesign/abiogenesis-engagement-design.md`, full rationale in `PROJECT_PLAN.md`'s "Onboarding & engagement rollout"): 5 onboarding-foundation proposals scoped after a multi-round discussion. 080 first (diagnostic value for playtesting the rest); 082/083 are numerically coupled — tuned together (2026-08-10). Closed 2026-08-25 once 081 (previously on hold) landed. Live playtest of the combined pacing still pending (082/083 verification steps skipped their session; 081's live verification skipped this session too, at user request).
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[x]` | 080 | Interaction spark: instant visual feedback on first-seen relations | 018, 075, 076 | [080](done/080-interaction-spark-visual-feedback.md) |
+| `[x]` | 081 | The world breathes: toxic zone pulse + diffusion drift check | 033, 072 | [081](done/081-ambient-diffusion-visible-on-empty-grid.md) |
+| `[x]` | 082 | Shorter eras during world 0's opening | 079 | [082](done/082-shorter-onboarding-eras.md) |
+| `[x]` | 083 | Newborn incubation: reproduction delayed to the following era | 009 | [083](done/083-newborn-incubation-reproduction-delay.md) |
+
+084 (guaranteed "first light" relation in world 0's matrix) is scoped
+(`tasks/084-first-light-guaranteed-relation-world0.md`) but deliberately
+excluded from this phase's closure — blocked on the "Meta-progression
+persistence" proposal (`PROJECT_PLAN.md` §1), not available to pick up yet.
