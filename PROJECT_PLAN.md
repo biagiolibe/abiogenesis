@@ -569,7 +569,7 @@ restored green (`0/50` across all four balance properties).
   `HUD_WIDTH` instead of wrapping. Switched the row's `ui.horizontal` to
   `ui.horizontal_wrapped` (`ui.rs`).
 - `[x]` 115 — Grid input (clicks and scroll-zoom) leaks through the HUD panel → [115](tasks/done/115-egui-panel-click-through-when-zoomed.md)
-- `[ ]` 121 — Conditional-tag catalog badge never renders in a live playtest (reported 2026-08-12, static review inconclusive — needs live repro) → [121](tasks/121-terrain-badge-missing-in-catalog.md)
+- `[x]` 121 — Conditional-tag catalog badge never renders in a live playtest: root cause was `accumulate_terrain_evidence` (`notebook.rs`) keying confirmation evidence on `event.terrain` (whichever terrain the organism was standing on when the gate happened to be evaluated) instead of `conditional.terrain` (the tag's one fixed trigger terrain, the only one `conditional_tag_badge` ever queries) — evidence fragmented across every visited `TerrainKind` instead of concentrating on the one slot the badge reads. Fixed by keying both the evidence record and the confirmation log message off `conditional.terrain`. New regression test (`accumulate_terrain_evidence_confirms_the_trigger_terrain_even_when_observed_elsewhere`) reproduces the bug without egui. Live verification skipped this pass at user request → [121](tasks/done/121-terrain-badge-missing-in-catalog.md)
 - `[x]` 122 — Toxic zone reinjection: toxicity erodes over long runs with no source to counter diffusion, unlike heat sources (found balance-testing task 108's chemolithotroph) → [122](tasks/done/122-toxic-zone-reinjection.md)
 
 ### 🎚️ Final tuning — *the real art*

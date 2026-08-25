@@ -324,30 +324,48 @@ fn accumulate_terrain_evidence(
     mut unseen: ResMut<NotebookHasUnseenConfirmation>,
 ) {
     for event in observed.read() {
+        let tag_id = world.active_tags[event.tag.0 as usize];
+        // `event.tag` only ever carries a `TerrainGateObserved` when
+        // `SimWorld::conditional_gate` returned `Some` at emission time
+        // (`sim.rs::tag_gate_satisfied`) — always present here.
+        let Some(conditional) = world.conditional_gate(tag_id) else {
+            continue;
+        };
+        // Task 121 fix: evidence is about the tag's one designated trigger
+        // terrain (`conditional.terrain`), never `event.terrain` (the
+        // terrain the organism actually stood on when the gate was
+        // evaluated — for `Repressible` a *pass* happens off the trigger
+        // terrain, and for `Inducible` a *fail* does too). Keying `record`
+        // on `event.terrain` fragmented evidence across every `TerrainKind`
+        // the species ever visited instead of concentrating it on the one
+        // slot `conditional_tag_badge` actually queries
+        // (`is_confirmed(slot, conditional.terrain)`), so the badge's
+        // threshold was reachable only by the narrow subset of evaluations
+        // that happened to land on `conditional.terrain` itself — exactly
+        // the "confirmed in the log, badge never appears" bug this task
+        // fixes. The doc comment above `TerrainKnowledge` already describes
+        // the intended behaviour ("a species that never enters the trigger
+        // terrain can still... have its badge confirmed purely from
+        // evaluations on other terrain"), which only holds if every
+        // observation — wherever it happened — counts toward that same
+        // single terrain slot.
         let newly_confirmed = knowledge.record(
             event.tag,
-            event.terrain,
+            conditional.terrain,
             config.notebook.observation_weight_numerator,
         );
         if newly_confirmed {
-            let glyph = tag_glyph(world.active_tags[event.tag.0 as usize]);
-            let tag_id = world.active_tags[event.tag.0 as usize];
-            // `event.tag` only ever carries a `TerrainGateObserved` when
-            // `SimWorld::conditional_gate` returned `Some` at emission time
-            // (`sim.rs::tag_gate_satisfied`) — the mode is always available
-            // here.
-            if let Some(conditional) = world.conditional_gate(tag_id) {
-                log.entries.push(LogEntry {
-                    era: world.era,
-                    species: None,
-                    text: text::terrain_gate_confirmed_message(
-                        glyph,
-                        event.terrain,
-                        conditional.mode,
-                    ),
-                });
-                unseen.0 = true;
-            }
+            let glyph = tag_glyph(tag_id);
+            log.entries.push(LogEntry {
+                era: world.era,
+                species: None,
+                text: text::terrain_gate_confirmed_message(
+                    glyph,
+                    conditional.terrain,
+                    conditional.mode,
+                ),
+            });
+            unseen.0 = true;
         }
     }
 }
@@ -1643,6 +1661,65 @@ mod tests {
             log.entries.len(),
             1,
             "exactly one log entry for the confirmation transition, not one per observation"
+        );
+    }
+
+    /// Task 121 regression: a `TerrainGateObserved`'s `terrain` field is the
+    /// terrain the organism actually stood on when the gate was evaluated
+    /// (`event.terrain`), which for a `Repressible` *pass* is any terrain
+    /// other than the tag's trigger terrain (`conditional.terrain`) —
+    /// exactly what happens here, every event reports `Plain` while the
+    /// tag's own gate is on `Mountain`. Before the fix, `accumulate_terrain_
+    /// evidence` recorded evidence at `event.terrain` (`Plain`), so
+    /// `conditional_tag_badge`'s `is_confirmed(slot, conditional.terrain)`
+    /// check — always against `Mountain` — never saw it: the Observation log
+    /// would announce the confirmation while the catalog badge stayed
+    /// permanently absent, the live-reported bug this task exists to fix.
+    #[test]
+    fn accumulate_terrain_evidence_confirms_the_trigger_terrain_even_when_observed_elsewhere() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.active_tags = vec![TagId(0)];
+        world.conditional_tags = vec![abiogenesis::world::ConditionalTag {
+            tag: TagId(0),
+            terrain: TerrainKind::Mountain,
+            mode: Mode::Repressible,
+        }];
+        let mut app = App::new();
+        app.insert_resource(config.clone());
+        app.insert_resource(TerrainKnowledge::new(
+            world.active_tags.len(),
+            config.notebook.confirmation_threshold,
+        ));
+        app.insert_resource(world);
+        app.init_resource::<ObservationLog>();
+        app.init_resource::<NotebookHasUnseenConfirmation>();
+        app.add_message::<TerrainGateObserved>();
+        app.add_systems(Update, accumulate_terrain_evidence);
+
+        for _ in 0..(config.notebook.confirmation_threshold
+            / config.notebook.observation_weight_numerator)
+            .ceil() as u32
+        {
+            app.world_mut()
+                .resource_mut::<Messages<TerrainGateObserved>>()
+                .write(TerrainGateObserved {
+                    tag: TagSlot(0),
+                    terrain: TerrainKind::Plain,
+                    passed: true,
+                });
+            app.update();
+        }
+
+        let knowledge = app.world().resource::<TerrainKnowledge>();
+        assert!(
+            knowledge.is_confirmed(TagSlot(0), TerrainKind::Mountain),
+            "evidence from an off-terrain observation must still confirm the tag's own \
+             trigger terrain, which is what conditional_tag_badge actually queries"
+        );
+        assert!(
+            !knowledge.is_confirmed(TagSlot(0), TerrainKind::Plain),
+            "the incidental terrain the organism stood on must not itself accrue evidence"
         );
     }
 

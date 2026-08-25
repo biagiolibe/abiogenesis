@@ -377,3 +377,18 @@ chemolithotroph test restored to the file's normal 500-tick horizon.
 (`tasks/084-first-light-guaranteed-relation-world0.md`) but deliberately
 excluded from this phase's closure — blocked on the "Meta-progression
 persistence" proposal (`PROJECT_PLAN.md` §1), not available to pick up yet.
+
+---
+
+**UI bugfixes** (2026-08-11, reported live during the 098/099 manual playtest
+pass). Closed 2026-08-25 once 121 landed — root cause was `accumulate_
+terrain_evidence` (`notebook.rs`) recording confirmation evidence keyed on
+the terrain the organism happened to be standing on (`event.terrain`)
+instead of the tag's own fixed trigger terrain (`conditional.terrain`),
+which is the only terrain `conditional_tag_badge` ever queries; see 121's
+own `tasks/done/` file for the full trace.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[x]` | 115 | Grid input (clicks and scroll-zoom) leaks through the HUD panel | — | [115](done/115-egui-panel-click-through-when-zoomed.md) |
+| `[x]` | 121 | Conditional-tag catalog badge never renders in a live playtest | 096, 097 | [121](done/121-terrain-badge-missing-in-catalog.md) |

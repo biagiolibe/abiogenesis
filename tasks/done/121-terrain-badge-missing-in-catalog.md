@@ -31,24 +31,67 @@ success (see Technical Context).
 
 ## 📋 Acceptance Criteria
 
-- [ ] Root cause identified through live reproduction or a targeted
-      test/instrumentation — not just re-reading the existing code, which
-      this session's static review already did and came up empty (see
-      Technical Context for exactly what was checked and ruled out).
-- [ ] A regression test added that would have caught the actual bug, if
-      the root cause is reproducible outside of egui's rendering itself
-      (e.g. a resource-identity/staleness bug, a `TagSlot`/`TagId`
-      mismatch, a stale species snapshot). If the root cause turns out to
-      be egui-rendering-specific (glyph/font/contrast), document that
-      explicitly instead of forcing a unit test that can't exercise it.
-- [ ] Fix applied so the badge actually renders for a confirmed
-      `(TagSlot, TerrainKind)` pair on every species row carrying that tag.
-- [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
-- [ ] Verified live via `cargo run`: reproduce the original scenario (or an
-      equivalent one — seed a species with a conditional tag, expose it to
-      its trigger terrain enough times to confirm the gate) and confirm the
-      `↑`/`↓` marker now actually appears next to the tag in the Catalog
-      panel.
+- [x] Root cause identified — via targeted code tracing of the exact event
+      payload/consumer path, not the earlier session's shallower static
+      pass (see "Root cause" below).
+- [x] A regression test added that reproduces the bug outside of egui's
+      rendering (`notebook.rs::
+      accumulate_terrain_evidence_confirms_the_trigger_terrain_even_when_observed_elsewhere`).
+      It failed against the pre-fix code (evidence landing on the
+      incidental observed terrain, never on the tag's own trigger terrain)
+      and passes against the fix.
+- [x] Fix applied: `accumulate_terrain_evidence` (`notebook.rs`) now
+      records evidence at `conditional.terrain` (the tag's one designated
+      trigger terrain) instead of `event.terrain` (whatever terrain the
+      organism happened to be standing on when the gate was evaluated).
+      `conditional_tag_badge` was already querying `conditional.terrain`
+      exclusively, so this makes the write side agree with the read side —
+      the badge now renders for a confirmed `(TagSlot, TerrainKind)` pair
+      on every species row carrying that tag. The confirmation log message
+      was also switched to `conditional.terrain` for the same reason (it
+      previously could name whichever terrain the organism was standing on
+      at the exact tick evidence crossed the threshold, not necessarily the
+      terrain the tag is actually gated on).
+- [x] `cargo test` and `cargo clippy -- -D warnings` clean.
+- [ ] Live verification skipped for this pass at the user's explicit
+      request — not run via `cargo run`. See "Root cause" below for why
+      static tracing was sufficient this time despite the task's original
+      framing assuming it wouldn't be.
+
+### Root cause
+
+`sim.rs::tag_gate_satisfied` pushes a `TerrainGateObserved { tag, terrain,
+passed }` on **every** gate evaluation (pass or fail), where `terrain` is
+`carrier_terrain` — the terrain the organism is standing on *right now*,
+not the tag's own trigger terrain. For `Mode::Repressible`, the gate
+*passes* precisely when `carrier_terrain != conditional.terrain` — i.e.
+most passing evaluations happen on terrains other than the trigger one.
+Symmetrically, `Mode::Inducible` *fails* off the trigger terrain just as
+often. `accumulate_terrain_evidence` was recording evidence at
+`(event.tag, event.terrain)` — the incidental terrain from the event —
+while `conditional_tag_badge` only ever queries
+`is_confirmed(slot, conditional.terrain)`, the tag's single fixed trigger
+terrain. Evidence for a given tag was fragmenting across every
+`TerrainKind` the species' organisms actually stood on instead of
+concentrating on the one cell the badge reads, so the badge's threshold
+was reachable only via the narrow subset of evaluations that happened to
+occur exactly on `conditional.terrain` — for `Repressible` tags (and
+`Inducible` failures) that subset is small or can go a long time without
+being hit, matching the live report's "confirmed in the log, badge never
+appears" symptom exactly (the log used `event.terrain` too, so it could
+print a terrain name unrelated to the tag's actual gate).
+
+This diverges from the earlier session's static pass because that pass
+checked confirmation *transitions* (`record`'s return value, `is_confirmed`
+staying true) and *resource identity* (single `TerrainKnowledge` instance,
+matching `TagSlot`/`TagId` resolution) — all correct in isolation — without
+comparing the *terrain argument* the write side (`accumulate_terrain_
+evidence`) uses against the one the read side (`conditional_tag_badge`)
+uses. The existing regression test for the confirm+log path
+(`accumulate_terrain_evidence_confirms_and_logs_once`) only ever exercised
+an `Inducible` tag with `passed: true` and `event.terrain == conditional.
+terrain` — the one case where `event.terrain` and `conditional.terrain`
+coincide by construction, so it could not have caught this.
 
 ---
 

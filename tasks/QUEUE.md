@@ -87,13 +87,8 @@ real-time pacing mechanic lands; the doc's mutation-tier badge — descoped
 to icon-restyle-only (119) since no tiered-unlock mechanic exists to back a
 badge yet.
 
-**UI bugfixes** (2026-08-11, reported live during the 098/099 manual playtest
-pass).
-
-| Status | ID | Title | Depends on | File |
-|-------|----|--------|------------|------|
-| `[x]` | 115 | Grid input (clicks and scroll-zoom) leaks through the HUD panel | — | [115](done/115-egui-panel-click-through-when-zoomed.md) |
-| `[ ]` | 121 | Conditional-tag catalog badge never renders in a live playtest | 096, 097 | [121](121-terrain-badge-missing-in-catalog.md) |
+The "UI bugfixes" phase (115, 121) closed 2026-08-25 once 121 landed and is
+archived in `tasks/QUEUE_ARCHIVE.md`.
 
 The "Worldgen pipeline reassessment — credibility follow-ups" phase
 (128-131) closed 2026-08-19 once 131 landed and is archived in
