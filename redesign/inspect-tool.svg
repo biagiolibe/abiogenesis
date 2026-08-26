@@ -1,0 +1,63 @@
+<svg width="700" height="360" viewBox="0 0 700 360" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace,Menlo,monospace">
+<rect width="700" height="360" fill="#08090c"/>
+<text x="20" y="18" font-size="8" fill="#4a4c54">PASSAGGIO MOUSE — leggero, sempre attivo</text>
+<rect x="20" y="28" width="300" height="240" fill="#0d0f14"/>
+<rect x="20" y="28" width="140" height="240" fill="#223a24"/>
+<path d="M90,84 L92.1,87.9 L96,90 L92.1,92.1 L90,96 L87.9,92.1 L84,90 L87.9,87.9 Z" fill="#d9c9a3"/>
+<path d="M90,114 L92.1,117.9 L96,120 L92.1,122.1 L90,126 L87.9,122.1 L84,120 L87.9,117.9 Z" fill="#d9c9a3"/>
+<path d="M60,144 L62.1,147.9 L66,150 L62.1,152.1 L60,156 L57.9,152.1 L54,150 L57.9,147.9 Z" fill="#d9c9a3"/>
+<path d="M120,144 L122.1,147.9 L126,150 L122.1,152.1 L120,156 L117.9,152.1 L114,150 L117.9,147.9 Z" fill="#d9c9a3"/>
+<circle cx="90" cy="90" r="14" fill="none" stroke="#5a5c64" stroke-width="1" stroke-dasharray="2 2"/>
+<g transform="translate(108,68)">
+<rect width="150" height="30" rx="4" fill="#1c2229" stroke="#2e3841" stroke-width="0.6"/>
+<text x="8" y="13" font-size="7.5" fill="#c3c9cf">Halo &#183; pop 6</text>
+<polygon points="14,20 18,25 22,20" fill="#5fae86"/>
+<text x="26" y="24" font-size="7" fill="#5fae86">crescita</text>
+</g>
+<text x="380" y="18" font-size="8" fill="#4a4c54">CLICK — card completa, resta finch&#233; non cambi cella</text>
+<rect x="380" y="28" width="300" height="240" fill="#0d0f14"/>
+<rect x="380" y="28" width="140" height="240" fill="#223a24"/>
+<path d="M450,84 L452.1,87.9 L456,90 L452.1,92.1 L450,96 L447.9,92.1 L444,90 L447.9,87.9 Z" fill="#d9c9a3"/>
+<path d="M450,114 L452.1,117.9 L456,120 L452.1,122.1 L450,126 L447.9,122.1 L444,120 L447.9,117.9 Z" fill="#d9c9a3"/>
+<path d="M420,144 L422.1,147.9 L426,150 L422.1,152.1 L420,156 L417.9,152.1 L414,150 L417.9,147.9 Z" fill="#d9c9a3"/>
+<path d="M480,144 L482.1,147.9 L486,150 L482.1,152.1 L480,156 L477.9,152.1 L474,150 L477.9,147.9 Z" fill="#d9c9a3"/>
+<rect x="436" y="76" width="28" height="28" fill="none" stroke="#e0a23c" stroke-width="1.2"/>
+<g transform="translate(470,50)">
+<rect width="220" height="240" fill="#1c2229" stroke="#2e3841" stroke-width="0.8"/>
+<path d="M20,15 L22.45,19.55 L27,22 L22.45,24.45 L20,29 L17.55,24.45 L13,22 L17.55,19.55 Z" fill="#d9c9a3"/>
+<text x="34" y="20" font-size="9" fill="#c3c9cf">Halo</text>
+<text x="34" y="31" font-size="7" fill="#6b757e">fotolitico &#183; seminata</text>
+<line x1="14" y1="42" x2="206" y2="42" stroke="#2e3841" stroke-width="0.5"/>
+<text x="14" y="58" font-size="7" letter-spacing="1" fill="#6b757e">POPOLAZIONE</text>
+<text x="14" y="72" font-size="8.5" fill="#c3c9cf">6 individui &#183; energia media 7.4</text>
+<rect x="14" y="78" width="7" height="4" fill="#5fae86"/>
+<rect x="24" y="78" width="7" height="4" fill="#5fae86"/>
+<rect x="34" y="78" width="7" height="4" fill="#5fae86"/>
+<rect x="44" y="78" width="7" height="4" fill="#5fae86"/>
+<rect x="54" y="78" width="7" height="4" fill="#5fae86"/>
+<rect x="64" y="78" width="7" height="4" fill="#5fae86"/>
+<rect x="74" y="78" width="7" height="4" fill="#5fae86"/>
+<rect x="84" y="78" width="7" height="4" fill="#2e3841"/>
+<rect x="94" y="78" width="7" height="4" fill="#2e3841"/>
+<rect x="104" y="78" width="7" height="4" fill="#2e3841"/>
+<text x="14" y="98" font-size="7" fill="#6b757e">tratti: QRM &#183; LIP</text>
+<line x1="14" y1="110" x2="206" y2="110" stroke="#2e3841" stroke-width="0.5"/>
+<text x="14" y="126" font-size="7" letter-spacing="1" fill="#6b757e">BILANCIO ULTIMO PULSE</text>
+<text x="14" y="140" font-size="7.5" fill="#c3c9cf">guadagno (luce)</text>
+<text x="192" y="140" font-size="7.5" fill="#5fae86" text-anchor="end">+0.56</text>
+<text x="14" y="155" font-size="7.5" fill="#c3c9cf">QRM vicino</text>
+<text x="192" y="155" font-size="7.5" fill="#5fae86" text-anchor="end">+0.30</text>
+<text x="14" y="170" font-size="7.5" fill="#c3c9cf">LIP vicino</text>
+<text x="192" y="170" font-size="7.5" fill="#d05a4e" text-anchor="end">&#8722;0.15</text>
+<text x="14" y="185" font-size="7.5" fill="#c3c9cf">mantenimento</text>
+<text x="192" y="185" font-size="7.5" fill="#d05a4e" text-anchor="end">&#8722;0.50</text>
+<text x="14" y="200" font-size="7.5" fill="#c3c9cf">affollamento</text>
+<text x="192" y="200" font-size="7.5" fill="#d05a4e" text-anchor="end">&#8722;0.15</text>
+<line x1="14" y1="217" x2="206" y2="217" stroke="#2e3841" stroke-width="0.5"/>
+<text x="14" y="231" font-size="8" fill="#c3c9cf">netto</text>
+<text x="192" y="231" font-size="8" fill="#5fae86" text-anchor="end">+0.06</text>
+<text x="14" y="249" font-size="6.5" fill="#e0a23c">cella satura &#183; nessuno sfondamento &#8594; pressione</text>
+</g>
+<text x="20" y="316" font-size="7.5" fill="#5a5c64">ispeziona &#232; gratuita, fuori dal budget azioni &#8212; hover leggero sempre attivo, click ancora la card completa</text>
+<text x="20" y="332" font-size="7.5" fill="#5a5c64">stessi valori gi&#224; calcolati dalla pipeline del tick, solo esposti — nessun nuovo calcolo</text>
+</svg>

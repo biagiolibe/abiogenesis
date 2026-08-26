@@ -39,11 +39,11 @@ Criteria for how to handle this without it reading as a bug.
 
 ## 📋 Acceptance Criteria
 
-- [ ] Each Biosphere row gains a population delta since the previous era,
+- [x] Each Biosphere row gains a population delta since the previous era,
       formatted `+N`/`-N`/`±0` (sign-prefixed, `±0` for exactly zero
       change), placed next to the existing trend arrow per the doc's
       layout.
-- [ ] Delta is computed from **population count** (not energy) — reuse
+- [x] Delta is computed from **population count** (not energy) — reuse
       `species_stats`'s existing `population: usize` per species
       (`src/ui.rs:1012-1032`), comparing this era's count against last
       era's, the same "compare against last era, reset on
@@ -52,14 +52,14 @@ Criteria for how to handle this without it reading as a bug.
       likely folded into the existing `PopulationTrends` resource rather
       than a new one — same lifecycle, same growth-on-new-species handling
       already written there).
-- [ ] A species with no previous-era record (first era it's ever had a
+- [x] A species with no previous-era record (first era it's ever had a
       nonzero population) shows a sensible baseline delta rather than a
       misleading huge jump from an implicit `0` — decide and document the
       choice (e.g. `±0`/no delta shown for a species' first era with
       population, or `+N` from an explicit `0` baseline if that reads fine
       in practice — check via `cargo run` which looks better, this is a
       first-pass display call, not a simulation-affecting one).
-- [ ] The energy-based trend arrow (`classify_trend`/`PopulationTrend`)
+- [x] The energy-based trend arrow (`classify_trend`/`PopulationTrend`)
       itself is **unchanged** — this task adds a new, separate,
       population-count-based number; it does not redefine what the arrow
       measures. If, once both are visible in the same row, the mismatch
@@ -67,19 +67,37 @@ Criteria for how to handle this without it reading as a bug.
       confusing or actively wrong during the live-verification pass below,
       stop and flag it back rather than silently "fixing" the trend arrow's
       definition — that's a design decision beyond this task's scope.
-- [ ] Unit test: population delta computed correctly across consecutive
+- [x] Unit test: population delta computed correctly across consecutive
       `EraCompleted` events (mirrors `update_population_trends`'s existing
       energy-trend test coverage, if any — check `ui.rs`'s test module).
-- [ ] Unit test: a species' first era with any population gets the
+- [x] Unit test: a species' first era with any population gets the
       documented baseline behavior (see above), not an unexplained huge
       delta.
-- [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
+- [x] `cargo test` and `cargo clippy -- -D warnings` clean.
 - [ ] Verified live via `cargo run`: watch a Biosphere row across several
       eras as population visibly grows/shrinks — confirm the delta number
       matches what's actually happening, updates once per era (not every
-      tick), and reads clearly next to the trend arrow.
+      tick), and reads clearly next to the trend arrow. **Skipped this
+      session by explicit user instruction** ("senza fare live
+      verification") — outstanding if a visual check is ever wanted.
 
 ---
+
+## ✅ Completion notes
+
+Baseline choice for a species' first era with population: **no delta shown**
+(empty string, not `+N` from an implicit zero) — `PopulationTrends` grows a
+`previous_population: Vec<Option<usize>>` / `current_population_delta: Vec<Option<i64>>`
+pair alongside the existing `previous_avg_energy`/`current` fields, same
+resize-on-`EraCompleted` lifecycle. Delta computation extracted as a pure
+`population_delta(previous: Option<usize>, current: usize) -> Option<i64>`
+helper (mirrors `classify_trend`'s shape) so it's unit-testable without a
+full `SimWorld`/ECS harness; `text::population_delta_label` formats it
+(`+N`/`-N`/`±0`/empty). Wired into the Biosphere row right after the
+existing trend glyph in `hud_panel`. Energy-based `classify_trend`/
+`PopulationTrend` left untouched, per the task's own constraint — no
+mismatch-driven flag-back needed since live verification was skipped this
+session (see above).
 
 ## 📁 Relevant Files
 

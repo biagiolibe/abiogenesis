@@ -79,7 +79,7 @@ neither blocks the other.
 | `[x]` | 117 | Time readout: show progress within the current era, not the run-wide tick counter | — | [117](done/117-time-readout-era-relative-pulse-progress.md) |
 | `[x]` | 118 | Rename player-facing "tick" to "pulse" | — | [118](done/118-rename-tick-to-pulse.md) |
 | `[ ]` | 119 | Moves icons: monochrome glyphs that actually render (fixes a pre-existing tofu-box bug) | — | [119](119-moves-icon-restyle-monochrome.md) |
-| `[ ]` | 120 | Biosphere: numeric population delta alongside the trend arrow | — | [120](120-biosphere-population-delta.md) |
+| `[x]` | 120 | Biosphere: numeric population delta alongside the trend arrow | — | [120](done/120-biosphere-population-delta.md) |
 
 Deliberately **not** scoped from the same doc, per this session's decision:
 auto-advance (play/pause continuous ticking) — deferred until a separate
@@ -105,6 +105,19 @@ proposal (`PROJECT_PLAN.md` §1), not available to pick up yet.
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) beyond what's already expanded into task files here.
 
 ---
+
+*Last updated: 2026-08-26 (120, Biosphere numeric population delta —
+`PopulationTrends` gains a `previous_population`/`current_population_delta`
+pair alongside its existing energy-trend fields, same resize-on-
+`EraCompleted` lifecycle; delta math extracted as a pure `population_delta`
+helper (mirrors `classify_trend`'s shape) so it's unit-testable without a
+full ECS harness. First-era-with-population baseline: no delta shown
+(empty string), not `+N` from an implicit zero. `text::population_delta_label`
+formats `+N`/`-N`/`±0`, wired into the Biosphere row right after the
+existing (unchanged, energy-based) trend glyph. Live `cargo run`
+verification explicitly skipped this session by direct user instruction —
+completed and archived to `tasks/done/`. Only 119 remains open in the "HUD
+& Notebook redesign follow-up" phase now.)*
 
 *Last updated: 2026-08-19 (078, Overview heatmap blob shape correction —
 on hold since 2026-08-10, unheld and picked up directly by user request.

@@ -267,7 +267,7 @@ Discrepancy-check findings and resolutions (decided with the user):
 - `[x]` 117 — Time readout: show progress within the current era, not the run-wide tick counter → [117](tasks/done/117-time-readout-era-relative-pulse-progress.md)
 - `[x]` 118 — Rename player-facing "tick" to "pulse" → [118](tasks/done/118-rename-tick-to-pulse.md)
 - `[ ]` 119 — Moves icons: monochrome glyphs that actually render (fixes a pre-existing tofu-box bug) → [119](tasks/119-moves-icon-restyle-monochrome.md)
-- `[ ]` 120 — Biosphere: numeric population delta alongside the trend arrow → [120](tasks/120-biosphere-population-delta.md)
+- `[x]` 120 — Biosphere: numeric population delta alongside the trend arrow → [120](tasks/done/120-biosphere-population-delta.md)
 
 ### 🗻 Biomes (2026-08-11)
 

@@ -241,6 +241,21 @@ pub fn population_line(species_label: &str, population: usize, avg_energy: f32) 
     format!("  {species_label}: {population} · energy {avg_energy:.2}")
 }
 
+/// Population delta since the previous era (task 120,
+/// `redesign/abiogenesis-hud-notebook.md` §4), shown next to the
+/// energy-based trend arrow — sign-prefixed (`+4`/`-2`), `±0` for exactly
+/// no change. `None` (a species' first era with any population, no prior
+/// snapshot to diff against) renders as an empty string rather than an
+/// implicit "+N from zero", which would misread as a population explosion.
+pub fn population_delta_label(delta: Option<i64>) -> String {
+    match delta {
+        None => String::new(),
+        Some(0) => "±0".to_string(),
+        Some(d) if d > 0 => format!("+{d}"),
+        Some(d) => format!("{d}"),
+    }
+}
+
 // --- HUD — seed palette group ---
 
 /// "Species" (task 064): the horizontally scrollable species-selection strip.
@@ -724,6 +739,16 @@ mod tests {
         assert!(decomposer.contains("residue"), "got: {decomposer}");
         assert_ne!(photolithic, predator);
         assert_ne!(predator, decomposer);
+    }
+
+    /// Task 120: sign-prefixed, `±0` for exactly no change, empty for a
+    /// species with no prior-era snapshot yet.
+    #[test]
+    fn population_delta_label_formats_all_cases() {
+        assert_eq!(population_delta_label(Some(4)), "+4");
+        assert_eq!(population_delta_label(Some(-2)), "-2");
+        assert_eq!(population_delta_label(Some(0)), "±0");
+        assert_eq!(population_delta_label(None), "");
     }
 
     /// Task 103 follow-up: a species never placed on the grid

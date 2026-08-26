@@ -540,6 +540,11 @@ pub(crate) fn hud_panel(
                             ));
                             let trend = biosphere.trends.trend_for(*species);
                             ui.colored_label(trend_color(trend), trend_glyph(trend));
+                            let delta = biosphere.trends.population_delta_for(*species);
+                            let delta_label = text::population_delta_label(delta);
+                            if !delta_label.is_empty() {
+                                ui.weak(delta_label);
+                            }
                             if let Some(cause) = biosphere.death_causes.dominant_for(*species) {
                                 let metabolism = world.species[species.0 as usize].metabolism;
                                 ui.weak(text::death_cause_short_label(cause, metabolism));
@@ -1185,6 +1190,16 @@ pub enum PopulationTrend {
 /// `Falling` — without it, energy's natural tick-to-tick noise would flip
 /// the indicator most eras even when the population is actually holding
 /// steady.
+/// Pure population-count delta since the last completed era (task 120):
+/// `previous` is `None` for a species with no prior-era snapshot yet (its
+/// first era with any population), in which case there's nothing to diff
+/// against and this returns `None` rather than an implicit "+N from zero" —
+/// same baseline-handling shape as `classify_trend`'s `None` case just
+/// below.
+fn population_delta(previous: Option<usize>, current: usize) -> Option<i64> {
+    previous.map(|previous| current as i64 - previous as i64)
+}
+
 fn classify_trend(previous: Option<f32>, current: f32, epsilon: f32) -> PopulationTrend {
     let Some(previous) = previous else {
         return PopulationTrend::Stable;
@@ -1211,6 +1226,17 @@ fn classify_trend(previous: Option<f32>, current: f32, epsilon: f32) -> Populati
 pub struct PopulationTrends {
     previous_avg_energy: Vec<Option<f32>>,
     current: Vec<PopulationTrend>,
+    /// Population count as of the last completed era, per species (task
+    /// 120) — separate from `previous_avg_energy`: the delta this backs is
+    /// a population-*count* reading, deliberately independent of the
+    /// energy-based trend arrow above (see `population_delta_for`'s doc).
+    previous_population: Vec<Option<usize>>,
+    /// This era's population delta versus `previous_population`, or `None`
+    /// for a species with no prior-era snapshot yet (its first era with any
+    /// population) — shown as no delta rather than an implicit "+N from
+    /// zero", which would misrepresent a species just appearing as a
+    /// population explosion.
+    current_population_delta: Vec<Option<i64>>,
 }
 
 impl PopulationTrends {
@@ -1219,6 +1245,21 @@ impl PopulationTrends {
             .get(species.0 as usize)
             .copied()
             .unwrap_or(PopulationTrend::Stable)
+    }
+
+    /// Population-count delta since the last completed era (task 120,
+    /// `redesign/abiogenesis-hud-notebook.md` §4). This is **not** the same
+    /// signal as `trend_for`'s arrow — that one is energy-based (task 063)
+    /// — so the two can legitimately disagree on a given row; that's by
+    /// design, not a bug (see task 120's file). `None` means no prior-era
+    /// snapshot exists yet (the species' first era with a nonzero
+    /// population): the HUD shows no delta rather than a misleading jump
+    /// from an implicit zero baseline.
+    pub fn population_delta_for(&self, species: SpeciesId) -> Option<i64> {
+        self.current_population_delta
+            .get(species.0 as usize)
+            .copied()
+            .flatten()
     }
 }
 
@@ -1242,8 +1283,10 @@ fn update_population_trends(
         trends
             .current
             .resize(species_count, PopulationTrend::Stable);
+        trends.previous_population.resize(species_count, None);
+        trends.current_population_delta.resize(species_count, None);
     }
-    for (species, _population, avg_energy) in species_stats(&world) {
+    for (species, population, avg_energy) in species_stats(&world) {
         let idx = species.0 as usize;
         trends.current[idx] = classify_trend(
             trends.previous_avg_energy[idx],
@@ -1251,6 +1294,10 @@ fn update_population_trends(
             config.energy.trend_epsilon,
         );
         trends.previous_avg_energy[idx] = Some(avg_energy);
+
+        trends.current_population_delta[idx] =
+            population_delta(trends.previous_population[idx], population);
+        trends.previous_population[idx] = Some(population);
     }
 }
 
@@ -1661,6 +1708,30 @@ mod tests {
     #[test]
     fn classify_trend_with_no_previous_snapshot_reads_as_stable() {
         assert_eq!(classify_trend(None, 100.0, 0.5), PopulationTrend::Stable);
+    }
+
+    #[test]
+    fn population_delta_computed_correctly_across_consecutive_eras() {
+        // Era 1 establishes a baseline of 10, era 2 reads 14 against it.
+        let baseline = population_delta(None, 10);
+        assert_eq!(baseline, None);
+        let after_growth = population_delta(Some(10), 14);
+        assert_eq!(after_growth, Some(4));
+        // Era 3 crashes from 14 down to 9.
+        let after_crash = population_delta(Some(14), 9);
+        assert_eq!(after_crash, Some(-5));
+        // Era 4 holds exactly steady.
+        let after_steady = population_delta(Some(9), 9);
+        assert_eq!(after_steady, Some(0));
+    }
+
+    #[test]
+    fn population_delta_first_era_with_population_shows_no_delta() {
+        // A species with no prior-era snapshot (its first era with any
+        // population) must not report a misleading "+N from an implicit
+        // zero" jump.
+        assert_eq!(population_delta(None, 1), None);
+        assert_eq!(population_delta(None, 500), None);
     }
 
     #[test]

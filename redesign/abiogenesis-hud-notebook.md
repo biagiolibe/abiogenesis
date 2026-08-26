@@ -19,7 +19,7 @@ Oggi i comandi sono solo passo-singolo (tick/era). Vanno aggiunti:
 - **Avanza pulse** — un passo singolo, come oggi.
 - **Avanza era** — un blocco di pulse, come oggi.
 - **Toggle avanzamento automatico (play/pausa)** — un terzo controllo che avvia/ferma l'avanzamento continuo dei pulse senza dover premere ripetutamente "avanza pulse". Stato acceso/spento va reso visivamente distinto (es. bordo/riempimento colorato quando attivo), non solo dal simbolo dell'icona.
-- Il readout mostra sia l'era corrente sia il progresso in pulse dentro l'era corrente (es. `era 5 · pulse 14/25`), non solo l'era.
+- Il readout mostra era, stagione corrente e progresso in pulse (es. `era 5 · stagione 2/4 · pulse 14/25`) — con la revisione della scala temporale la stagione è l'unità di decisione e va resa visibile, non solo era e pulse.
 
 ### 3. Moves: 4 azioni, con indicatore di livello sulla mutazione
 
@@ -89,21 +89,21 @@ Lista specie con altezza massima fissa e scroll interno oltre 2-3 card visibili,
 
 - **Trigger:** tasto `Tab` oppure clic sul pulsante Notebook nell'HUD (vedi punto 7).
 - **Presentazione:** pannello a comparsa dal **lato sinistro** dello schermo, che copre la porzione sinistra della mappa.
-- **La mappa di gioco non sparisce**: resta visibile sullo sfondo, **attenuata** (overlay scuro semi-trasparente sopra), a comunicare che la simulazione è "ancora lì", non messa in pausa dal punto di vista percettivo, anche se probabilmente in pausa dal punto di vista logico (verificare con la logica di gioco se il tempo scorre o meno mentre il notebook è aperto — punto da chiarire in fase di implementazione, non assunto da questo documento).
+- **La mappa di gioco non sparisce**: resta visibile sullo sfondo, **attenuata** (overlay scuro semi-trasparente sopra). **Il tempo è in pausa mentre il notebook è aperto** — deciso, coerente col principio stabilito nella revisione della scala temporale: il tempo non scorre mai mentre il giocatore pianifica (il realtime "vero" è stato scartato). La mappa attenuata ma visibile comunica "il mondo è lì, ti aspetta", non "il mondo continua senza di te".
 - **La sidebar HUD resta a destra, visibile e interagibile** — il giocatore può continuare a leggere Biosphere/Species/Time mentre consulta il notebook, senza dover chiudere l'uno per vedere l'altro.
-- **Chiusura:** tasto `Tab` di nuovo, oppure clic fuori dal pannello (sulla mappa attenuata).
+- **Chiusura:** tasto `Tab` di nuovo, `Esc` (chiude solo il notebook, è il livello più alto della cascata — vedi `culture-shock-controls.md`), oppure clic fuori dal pannello (sulla mappa attenuata).
 
 ## Immagini
 
 ### HUD completo
 
-![Mockup dell'HUD con Time, Moves, Biosphere, Species, pulsante Notebook, This world wants, info seed e comandi](hud-full.svg)
+**Immagine allegata separatamente: `hud-full.svg`** — Mockup dell'HUD con Time, Moves, Biosphere, Species, pulsante Notebook, This world wants, info seed e comandi
 
 Vista d'insieme della sidebar: intestazione con seed e stato, sezione Time con readout e controlli (pulse/era/auto), Moves con le 4 azioni e il badge di livello mutazione, Biosphere con trend+delta per specie, Species con icona e info di metabolismo, pulsante Notebook con notifica, This world wants con il progresso a pallini, footer con seed e scorciatoie.
 
 ### Notebook completo, con vista d'apertura
 
-![Mockup del notebook aperto: pannello a sinistra, mappa attenuata dietro, sidebar HUD ancora visibile a destra](notebook-full.svg)
+**Immagine allegata separatamente: `notebook-full.svg`** — Mockup del notebook aperto: pannello a sinistra, mappa attenuata dietro, sidebar HUD ancora visibile a destra
 
 Mostra il notebook nel suo stato aperto: Observation log, grafo Relationships, Species catalog con le card dettagliate — **e, sulla destra dell'immagine, la composizione con mappa attenuata e sidebar HUD ancora visibile**, per chiarire visivamente il comportamento descritto al punto 9.
 
@@ -114,7 +114,8 @@ Mostra il notebook nel suo stato aperto: Observation log, grafo Relationships, S
 - **Delta Biosphere:** richiede di conservare il conteggio di popolazione dell'era precedente per calcolare la differenza — verificare se questo dato è già tracciato o va aggiunto.
 - **Era di origine nel Catalog:** richiede di registrare, per ogni specie, l'era in cui è stata seminata la prima volta — verificare se questo dato esiste già nel modello o va aggiunto.
 - **Notifica sul pulsante Notebook:** richiede un flag "osservazioni non lette dal giocatore", da resettare quando il notebook viene aperto.
-- **Comportamento del tempo a notebook aperto:** questo documento non assume se i pulse continuano a scorrere o si fermano mentre il notebook è aperto — va deciso esplicitamente, perché cambia il significato di "mappa attenuata sullo sfondo" (mondo che continua a vivere mentre osservi, oppure mondo in pausa mentre rifletti).
+- **Banca genomi dinamica:** il roster seminabile cresce durante la partita, perché l'azione Splice sintetizza nuove specie che vi si aggiungono (cfr. documento sulle azioni). L'HUD è oggi progettato assumendo un roster fisso deciso dal world-gen — va previsto l'inserimento di nuove voci in corso di partita, con distinzione visiva tra specie originali e specie sintetizzate dal giocatore.
+- **Time: unità e budget aggiornati.** Con la revisione della scala temporale, la stagione diventa l'unità di decisione e il budget di azioni si ricarica a ogni stagione, non a ogni era — il readout e il contatore "moves rimaste" nell'HUD vanno riferiti alla stagione. L'avanzamento continuo (toggle play/pausa) è parte necessaria della struttura, non un extra opzionale.
 
 ## Fuori scope
 
