@@ -63,30 +63,6 @@ only 114 remains blocked in this section.
 | `[x]` | 113 | Palude replaces `toxic_zone` | 110, 125 | [113](done/113-swamp-replaces-toxic-zone.md) |
 | `[ ]` ⏸ | 114 | BLOCKED — Geyser biome (needs a small/pulsing heat-source category, not yet scoped) | 110, 111, unscoped source-model extension | [114](114-geyser-pulsing-source-blocked.md) |
 
-**HUD & Notebook redesign follow-up** (2026-08-12, scoped from
-`redesign/abiogenesis-hud-notebook.md` after a discrepancy-check pass against
-the already-scoped notebook tasks 100-103/097 — see `PROJECT_PLAN.md` for
-the full list of discrepancies found and how each was resolved). 103 was
-extended in place (population + origin era added to its existing scope,
-not split out) rather than becoming a new task. No dependencies between
-116-120; 117/118 touch the same HUD readout line for different reasons
-(math vs. wording) and may need a small rebase if landed out of order, but
-neither blocks the other.
-
-| Status | ID | Title | Depends on | File |
-|-------|----|--------|------------|------|
-| `[x]` | 116 | Notebook: left-docked panel with dimmed map behind it, not a floating window | — | [116](done/116-notebook-docked-panel-dimmed-map.md) |
-| `[x]` | 117 | Time readout: show progress within the current era, not the run-wide tick counter | — | [117](done/117-time-readout-era-relative-pulse-progress.md) |
-| `[x]` | 118 | Rename player-facing "tick" to "pulse" | — | [118](done/118-rename-tick-to-pulse.md) |
-| `[ ]` | 119 | Moves icons: monochrome glyphs that actually render (fixes a pre-existing tofu-box bug) | — | [119](119-moves-icon-restyle-monochrome.md) |
-| `[x]` | 120 | Biosphere: numeric population delta alongside the trend arrow | — | [120](done/120-biosphere-population-delta.md) |
-
-Deliberately **not** scoped from the same doc, per this session's decision:
-auto-advance (play/pause continuous ticking) — deferred until a separate
-real-time pacing mechanic lands; the doc's mutation-tier badge — descoped
-to icon-restyle-only (119) since no tiered-unlock mechanic exists to back a
-badge yet.
-
 The "UI bugfixes" phase (115, 121) closed 2026-08-25 once 121 landed and is
 archived in `tasks/QUEUE_ARCHIVE.md`.
 
@@ -116,8 +92,10 @@ full ECS harness. First-era-with-population baseline: no delta shown
 formats `+N`/`-N`/`±0`, wired into the Biosphere row right after the
 existing (unchanged, energy-based) trend glyph. Live `cargo run`
 verification explicitly skipped this session by direct user instruction —
-completed and archived to `tasks/done/`. Only 119 remains open in the "HUD
-& Notebook redesign follow-up" phase now.)*
+completed and archived to `tasks/done/`. 119 (Moves icons monochrome
+restyle) was cancelled the same day, deferred to a future redesign pass —
+the "HUD & Notebook redesign follow-up" phase is now fully closed and
+archived to `tasks/QUEUE_ARCHIVE.md`.)*
 
 *Last updated: 2026-08-19 (078, Overview heatmap blob shape correction —
 on hold since 2026-08-10, unheld and picked up directly by user request.

@@ -8,6 +8,33 @@ it only when you need the history/rationale behind a specific past phase.
 
 ---
 
+**HUD & Notebook redesign follow-up** (2026-08-12, scoped from
+`redesign/abiogenesis-hud-notebook.md` after a discrepancy-check pass against
+the already-scoped notebook tasks 100-103/097 — see `PROJECT_PLAN.md` for
+the full list of discrepancies found and how each was resolved). 103 was
+extended in place (population + origin era added to its existing scope,
+not split out) rather than becoming a new task. No dependencies between
+116-120; 117/118 touch the same HUD readout line for different reasons
+(math vs. wording) and may need a small rebase if landed out of order, but
+neither blocks the other. Closed 2026-08-26 when 119 was cancelled
+(deferred to a future redesign pass) after 116-118/120 had already landed.
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[x]` | 116 | Notebook: left-docked panel with dimmed map behind it, not a floating window | — | [116](done/116-notebook-docked-panel-dimmed-map.md) |
+| `[x]` | 117 | Time readout: show progress within the current era, not the run-wide tick counter | — | [117](done/117-time-readout-era-relative-pulse-progress.md) |
+| `[x]` | 118 | Rename player-facing "tick" to "pulse" | — | [118](done/118-rename-tick-to-pulse.md) |
+| `[-]` | 119 | Moves icons: monochrome glyphs that actually render (fixes a pre-existing tofu-box bug) — cancelled, superseded by a planned redesign | — | — |
+| `[x]` | 120 | Biosphere: numeric population delta alongside the trend arrow | — | [120](done/120-biosphere-population-delta.md) |
+
+Deliberately **not** scoped from the same doc, per this session's decision:
+auto-advance (play/pause continuous ticking) — deferred until a separate
+real-time pacing mechanic lands; the doc's mutation-tier badge — descoped
+to icon-restyle-only (119, later cancelled) since no tiered-unlock mechanic
+exists to back a badge yet.
+
+---
+
 **Mondo vivo, notebook, death legibility, evolution & progression**
 (2026-08-11, full scoping pass over five redesign docs from this
 session's design discussion — see `PROJECT_PLAN.md` SECTION 1 for the
