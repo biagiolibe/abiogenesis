@@ -5,7 +5,7 @@
 > **Priority**: 🟡 P2
 > **Estimate**: ~2h (once unblocked)
 > **Assigned to**: unassigned — **do not start**, see Dependencies
-> **Session**: 2026-08-09 (scoped from `redesign/abiogenesis-engagement-design.md`, proposal 1.B)
+> **Session**: 2026-08-09 (scoped from `redesign/processed/abiogenesis-engagement-design.md`, proposal 1.B)
 
 ---
 

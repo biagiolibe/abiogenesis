@@ -5,7 +5,7 @@
 > **Priority**: 🟢 P3
 > **Estimate**: ~2h (once unblocked)
 > **Assigned to**: unassigned — **do not start**, see Dependencies
-> **Session**: 2026-08-11 (scoped from `redesign/abiogenesis-biomes.md`)
+> **Session**: 2026-08-11 (scoped from `redesign/processed/abiogenesis-biomes.md`)
 
 ---
 
@@ -41,7 +41,7 @@ even on an otherwise-empty grid.
       design doc.
 - [ ] `Biome::Geyser` variant added (task 110's `Biome` enum), target
       `temperature`/`light`/`toxicity` values from the table in
-      `redesign/abiogenesis-biomes.md`.
+      `redesign/processed/abiogenesis-biomes.md`.
 - [ ] Rendering: pulsing/animated treatment, distinct from every other (static)
       biome — this is the one place in the biome system where a color legitimately
       changes over time, and it must still read as "a real data pulse," not

@@ -2,6 +2,16 @@
 
 *(Titolo deciso: **Culture Shock**. "Abiogenesis" resta solo nei nomi dei file, non è urgente rinominarli.)*
 
+> **Stato al 2026-08-27 — il corpus è stato lavorato.** Tutti i documenti
+> elencati qui sono stati consumati e spostati in
+> [`processed/`](processed/README.md): le loro proposte sono diventate il backlog
+> eseguibile 134-169 (`tasks/QUEUE.md`), e le decisioni sopravvissute sono nel
+> GDD (v0.7, ora `abiogenesis-gdd.md`). **Non vanno più letti né rianalizzati**,
+> con una sola eccezione: quando un task file ne cita uno come `Design source`,
+> si apre quel documento, si legge quella sezione, e ci si ferma lì. Questo
+> indice resta fuori da `processed/` perché è la mappa del corpus e porta gli
+> esiti della Fase 0 e le correzioni applicate al piano originale.
+
 **Da leggere per primo.** Questo documento non contiene decisioni di design: dice **quale documento consultare per cosa** e **in che ordine affrontare il lavoro**. Ogni documento di dettaglio è autosufficiente; questo li mette in sequenza.
 
 ## Regole generali
@@ -22,7 +32,7 @@ Non fanno parte del piano di lavorazione, ma restano validi come riferimento sul
 ### Fonte principale
 | Documento | Cosa contiene |
 |---|---|
-| `abiogenesis-gdd-v0.7.md` | Il GDD. Decisioni, struttura, pilastri. Sintetizza tutto il resto e rimanda ai documenti di dettaglio |
+| `abiogenesis-gdd.md` | Il GDD. Decisioni, struttura, pilastri. Sintetizza tutto il resto e rimanda ai documenti di dettaglio |
 | `abiogenesis-system-hierarchy.md` | Classificazione di ogni sistema in tre livelli (core / variazione strutturale / payoff raro), i due principi trasversali, registro delle discrepanze risolte |
 | `abiogenesis-open-points.md` | Cosa resta non deciso |
 
@@ -69,6 +79,8 @@ Non fanno parte del piano di lavorazione, ma restano validi come riferimento sul
 | `culture-shock-naive-player-example.md` | Stesso inizio partita rigiocato da un giocatore ignaro — stress-test dell'onboarding, 5 punti di attrito, 4 correzioni minime |
 | `culture-shock-friction-fixes.md` | Specifica implementabile dei 4 interventi anti-attrito, con priorità e collocazione nel piano (Fase 1b) |
 | `culture-shock-controls.md` | Schema controlli completo, risolve i conflitti tra azioni/ispezione/notebook, introduce il menu di pausa |
+| `culture-shock-experiment-incentive.md` | Test dei due bot (sperimentare conviene davvero?), lezioni dai giochi comparabili |
+| `culture-shock-identity-visual-inspirations.md` | Tono narrativo, varianti wordmark, ispirazioni letterarie dichiarate (non citate) |
 | `culture-shock-wonder.md` | Pilastro 5 (meraviglia/scoperta): proposte piccole/medie/grandi/stranissime, con priorità |
 | `culture-shock-biome-cosmic-events.md` | Firme di bioma ed eventi di origine cosmica — terzo capitolo sugli eventi di mondo, specifiche implementabili |
 
@@ -76,14 +88,62 @@ Non fanno parte del piano di lavorazione, ma restano validi come riferimento sul
 
 ## Ordine di lavorazione
 
+> **Nota 2026-08-27 — questo ordine è stato adottato con tre correzioni**, ora
+> nel backlog eseguibile (`tasks/QUEUE.md`, task 134-169):
+>
+> 1. **La scala temporale (punto 3) viene prima del bilanciamento (punto 2).**
+>    `matrix-necessity-balance` dichiara che i suoi coefficienti assumono
+>    `era_ticks = 25` e vanno ritarati con la nuova scala; `time-scale-reveal`
+>    dichiara la stessa dipendenza. Il clock è la variabile indipendente: tarare
+>    e poi ritarare è lavoro rifatto. Ordine reale: 135 (scala) → 136 (bilancio).
+> 2. **`population-model-aesthetic` è due task in due fasi diverse.** Il cambio di
+>    modello di simulazione è Fase 1 (task 137); il registro visivo a grana pixel
+>    tocca HUD, icone azione e archi del notebook — cioè Fase 2 (task 151).
+>    Farlo in Fase 1 significa restilizzare un HUD che verrà poi ricostruito.
+> 3. **Il modello di popolazione rende obsoleto lavoro già consegnato.** L'overview
+>    a densità reale sostituisce il riempimento-buchi e l'erosione di
+>    `cluster::compute_cluster_render` (task 076/078): quel codice **va rimosso**,
+>    non adattato — esisteva proprio per fingere una densità che il modello non
+>    sosteneva. Task 139.
+>
+> Inoltre il **test dei due bot è stato spostato prima del bilanciamento** (task
+> 134), non dopo: misura se sperimentare conviene, cioè esattamente ciò che il
+> bilanciamento cambia — senza baseline il risultato post-modifica non è
+> confrontabile con nulla.
+
 Il criterio non è solo tecnico: **prima si rende il loop necessario e leggibile, poi si aggiunge varietà, poi si struttura la sessione, poi si rifinisce.** Il rischio maggiore del progetto non è tecnico — è che il gioco non sia divertente — quindi l'ordine massimizza quanto presto si può scoprirlo.
 
-### Fase 0 — Due verifiche, non implementazione
+### Fase 0 — Due verifiche, non implementazione — **ESEGUITA E CHIUSA (2026-08-27)**
 
-Sono letture del codice, non sviluppo, ma cambiano ciò che va fatto dopo:
+Sono letture del codice, non sviluppo, ma cambiano ciò che va fatto dopo.
+Entrambe eseguite contro la build; esiti riportati nel task 136.
 
-- **Esiste già un coefficiente di scala sull'`interaction_delta`, o le intensità `{−2..+2}` entrano grezze nella somma di energia?** → `abiogenesis-matrix-necessity-balance.md`. Se entrano grezze, i coefficienti proposti vanno ricalcolati **prima** di applicarli.
-- **Verificare l'ambito reale delle azioni** (per-cella, come da §11 e build) → `abiogenesis-actions.md`.
+- **Esiste già un coefficiente di scala sull'`interaction_delta`?** → **No.**
+  `sim.rs:715` fa `interaction_delta += entry as f32;` e `sim.rs:766` lo somma
+  grezzo all'energia. Le intensità `{−2..+2}` entrano crude: un `±2` vale oggi
+  ±2.0/pulse contro un `base_upkeep` di `0.5`. Serve un nuovo
+  `EnergyConfig::interaction_scale` prima che la ritaratura proposta significhi
+  qualcosa.
+- **Ambito reale delle azioni** → **per-cella per 3 su 4.** Seed/Stress/Cull sono
+  per-cella; **Splice è species-scoped** e `input.rs:605` fa già
+  `world.push_species(new_species)`: la "chiarificazione fondamentale" di
+  `abiogenesis-actions.md` (Splice sintetizza una nuova specie da seminare a
+  parte, non modifica una specie viva) **è già implementata**. Resta da correggere
+  il GDD §6 — fatto in `abiogenesis-gdd.md` il 2026-08-27; `abiogenesis-gdd.md`
+  lo portava già.
+
+**Terza verifica, non prevista, ed è la più importante.** La matrice è
+"ignorabile" **per costruzione**, non perché i coefficienti siano piccoli:
+`generate_matrix` (`world.rs:2725`) azzera sempre la diagonale e
+`draw_species_tags` (`world.rs:2815`) forza esaustivamente
+`net_self_interaction == 0` su ogni set di tratti generato, spliciato o nato da
+speciazione (è la correzione del task 048). Dentro un blob monospecifico
+`interaction_delta` è **esattamente 0**: la matrice agisce solo sulle celle di
+interfaccia tra specie diverse. Alzare i coefficienti rende le interfacce più
+violente senza rendere la matrice più *necessaria*. Ne discende anche un
+conflitto che nessun documento riconcilia — `crowd_factor` e la capacità portante
+per cella fanno lo stesso lavoro — che il task 136 deve risolvere prima di
+scrivere qualunque numero.
 
 ### Fase 1 — Il loop centrale
 
@@ -96,6 +156,8 @@ Sono letture del codice, non sviluppo, ma cambiano ciò che va fatto dopo:
 | 3 | Scala temporale | `time-scale-reveal` | Fissa la durata dell'era, da cui dipendono i numeri del punto 2 e la `selection_pressure_threshold` |
 
 **→ CHECKPOINT: giocare.** Con questi tre il loop è completo e onesto. È il momento di massimo valore informativo per il minimo lavoro speso: si scopre se il gioco è divertente **prima** di investire su tutto il resto. Non saltare questo passaggio.
+
+**→ CHECKPOINT: test dei due bot** (`culture-shock-experiment-incentive.md`). Headless, nessuna interfaccia richiesta, eseguibile appena la simulazione gira: due strategie automatiche (sfruttatore vs esploratore) sullo stesso seed, su qualche centinaio di mondi. Misura se il gioco premia davvero chi sperimenta o chi gioca sul sicuro — una proprietà del bilanciamento che diventa molto più costosa da correggere una volta costruito tutto il resto sopra. Due domande diagnostiche da aggiungere al playtest umano: *qualcuno ha preso appunti fuori dal gioco?* e *c'è stato un momento in cui volevi provare qualcosa e non l'hai fatto per mancanza di budget?*
 
 ### Fase 1b — Interventi anti-attrito (nuova)
 

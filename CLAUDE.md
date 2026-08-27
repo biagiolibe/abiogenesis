@@ -15,11 +15,27 @@ cargo fmt
 
 | File | Contents |
 |---|---|
-| [`abiogenesis-gdd.md`](abiogenesis-gdd.md) | **Design — source of truth.** Mechanics, tick formulas (§5.6), numeric baseline (§5.9). |
+| [`abiogenesis-gdd.md`](abiogenesis-gdd.md) | **Design — source of truth** (v0.7). Mechanics, tick formulas (§5.6), numeric baseline (§5.9). Marks `[DECIDED]` vs `[PROPOSED]` explicitly — respect the distinction. Large (~106KB): read the section you need, not the whole file. |
 | [`TECH_DESIGN.md`](TECH_DESIGN.md) | Architecture: plugins, states, `SystemSets`, invariants. |
 | [`tasks/QUEUE.md`](tasks/QUEUE.md) | **What to do now.** |
 | [`player_guide.md`](player_guide.md) | **Player-facing manual.** What the game is, controls, loop, mechanics — also surfaced in-game via the main menu's "How to play" panel. |
 | [`VISION.md`](VISION.md) | **Long-term roadmap — aspirational, not committed.** Ecosystem depth, pacing, evolution, biochemistry flavor. Ideas here graduate into `PROJECT_PLAN.md` + a task file when prioritized. |
+
+### `redesign/processed/` — do not read
+
+**Never read anything under `redesign/processed/` as part of normal work**, and
+never re-analyse that corpus. Those documents were consumed on 2026-08-27: their
+proposals became the 134-169 backlog in `tasks/QUEUE.md`, and every decision that
+survived is in the GDD. Reading them costs a large fraction of a session's
+context and adds nothing the canonical documents don't already say.
+
+The one exception: a task file that names a specific document as its
+`Design source`. Open that document, read that section, stop. Don't read around
+it, don't pull in its neighbours, don't reopen decisions the backlog records.
+
+`redesign/abiogenesis-INDEX.md` stays outside `processed/` and is the map of the
+corpus — it carries the Phase 0 code findings and the corrections applied to the
+original plan. It is short; read it when you need the corpus's shape.
 
 ## Conventions
 

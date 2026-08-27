@@ -91,7 +91,7 @@ pacing. This needs its own dedicated design pass — including whether drift
 should be visible/telegraphed at all — before it's scoped as a task, not an
 assumption that it layers cleanly on top of the current notebook mechanic.
 
-**Resolved direction (2026-08-11)**: `redesign/abiogenesis-evolution-xenotypes.md`
+**Resolved direction (2026-08-11)**: `redesign/processed/abiogenesis-evolution-xenotypes.md`
 answers this risk directly — evolution never mutates an existing,
 already-tested species in place; it always produces a new descendant
 species (speciation), reusing `Splice`'s genome-editing plumbing and
@@ -119,7 +119,7 @@ first-time player be able to guess this trait's mechanical effect from its
 name alone? If yes, the name is too on-the-nose.
 
 **Direction agreed, execution deferred (2026-08-11)**:
-`redesign/abiogenesis-evolution-xenotypes.md` sets the principle to apply
+`redesign/processed/abiogenesis-evolution-xenotypes.md` sets the principle to apply
 whenever this is picked up — describe what a trait *is* (its biochemical
 nature/mechanism), never how it interacts with others; real microbiology
 already keeps those two facts separate (knowing a microbe's metabolism
@@ -132,7 +132,7 @@ chemolithotroph) without redesigning the tag/archetype pool itself.
 
 ## Phase E — Matrix depth
 
-**Why**: `redesign/life_evolution_mystery_game_design.md` (a broader, mostly
+**Why**: `redesign/processed/life_evolution_mystery_game_design.md` (a broader, mostly
 non-adoptable alternate concept — it assumes aggregate populations per
 habitat on a 128×80 world, which conflicts with GDD §5.1's single-occupancy
 grid) surfaces two mechanics that land cleanly on the *existing* tag×tag
@@ -162,7 +162,7 @@ untested elsewhere" reads as discovery or as UI clutter.
 
 ## Phase F — Worldgen: variety and validation across worlds
 
-**Why**: `redesign/procedural_biome_generation_spec_v2.md` drove tasks
+**Why**: `redesign/processed/procedural_biome_generation_spec_v2.md` drove tasks
 123-131 (`tasks/QUEUE.md`, "Worldgen pipeline reassessment"), which cover
 the spec's *causal* geography for a single world — drainage, slope,
 rainfall, rivers, macro-regions, mountain banding. A separate slice of the

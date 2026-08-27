@@ -52,3 +52,7 @@ Aggiunto al GDD come quinto pilastro esplicito. `culture-shock-wonder.md` formal
 ## Firme di bioma ed eventi cosmici — nuovo, priorità assegnata
 
 `culture-shock-biome-cosmic-events.md` specifica trigger/meccanismo/dipendenze per 11 eventi (3 generici, 5 firme di bioma, 4 di origine cosmica), tutti riusando sistemi già esistenti (pipeline del tick, bias di famiglia, xenotratti, Precursore). Priorità alta: pioggia di micrometeoriti (identica alle tasche di anomalia sparse di `culture-shock-wonder.md`, solo narrata diversamente) e le firme di Palude/Vetta. Nessun valore numerico deciso — tutto da validare in playtest.
+
+## Incentivo a sperimentare — test definito, esito ignoto
+
+`culture-shock-experiment-incentive.md` definisce un test headless (due bot, sfruttatore vs esploratore, stesso seed) per verificare se il gioco premi davvero la sperimentazione. **Nessun esito ancora**: il test va eseguito in Fase 1. Se fallisce, le leve correttive sono già identificate in ordine di invasività (`Isola` a costo ridotto, tempistica di utilità di `Splice`, prima semina scontata, obiettivi che premiano le conferme). Resta anche da riconsiderare, quando si riprenderà il meccanismo delle ipotesi dichiarate, se il "nessun costo per sbagliare" sia la scelta giusta — Alchemists suggerisce che un costo puramente reputazionale possa funzionare.

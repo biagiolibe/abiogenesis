@@ -36,12 +36,161 @@ claude "$(cat tasks/NNN-name.md)"$'\n\nExecute this task in the current project.
 
 ## 🏃 Active Queue
 
+---
+
+# 🌍 Culture Shock redesign rollout (134-169)
+
+Adoption of the whole `redesign/processed/` corpus (25 design documents + GDD v0.7 +
+`abiogenesis-system-hierarchy.md`), sequenced 2026-08-27. Planning record:
+`~/.claude/plans/leggi-redesign-abiogenesis-index-md-e-va-composed-rose.md`.
+`redesign/abiogenesis-INDEX.md` is the map of the documents; this queue is the
+executable version of it, and it **corrects the INDEX on three points** (all
+annotated in the INDEX itself):
+
+1. The per-cell population model obsoletes tasks 076/078 — the Overview's
+   hole-filling and erosion get removed, not adapted (task 139).
+2. The time scale comes **before** the energy retune, reversing the INDEX's
+   order — both documents declare a dependency on the other, and the clock is
+   the independent variable.
+3. `culture-shock-population-model-aesthetic.md` splits into two tasks in two
+   phases: the simulation model in Phase 1 (137), the pixel-grain visual
+   register in Phase 2 (151), so the HUD isn't restyled and then rebuilt.
+
+**Task files exist only for Phase 1.** Later phases are backlog rows here and in
+`PROJECT_PLAN.md`; each becomes a task file when the previous phase closes.
+
+## Phase 0 — verifications, closed 2026-08-27, no task
+
+- **No `interaction_delta` scale coefficient exists.** `sim.rs:715` sums the raw
+  `{−2..+2}` entries; `sim.rs:766` adds them straight to energy. A new
+  `EnergyConfig::interaction_scale` is needed (task 136).
+- **Action scope: per-cell for 3 of 4.** Seed/Stress/Cull are per-cell; **Splice
+  is species-scoped**, and `input.rs:605` already does
+  `world.push_species(new_species)` — so `abiogenesis-actions.md`'s "Splice
+  creates a new species to be seeded separately" is *already implemented*. GDD §6
+  prose ("in an area") still needs correcting.
+- **Third finding, not asked for and the most important**: the matrix is
+  ignorable *by construction*. `generate_matrix` zeroes the diagonal and
+  `draw_species_tags` forces `net_self_interaction == 0`, so inside a
+  single-species blob `interaction_delta` is exactly zero. The matrix only acts
+  at interfaces between different species. Full writeup in task 136.
+
+## Phase 1 — the central loop
+
+| Status | ID | Title | Depends on | File |
+|-------|----|--------|------------|------|
+| `[ ]` | 134 | Two-bot harness (exploiter vs explorer) — pre-change baseline | — | [134](134-two-bot-experiment-incentive-harness.md) |
+| `[ ]` | 135 | Three-level time scale: Pulse → Season → Era | — | [135](135-three-level-time-scale.md) |
+| `[ ]` | 136 | Make the hidden matrix necessary (interaction_scale + retune) | 134, 135 | [136](136-matrix-necessary-balance.md) |
+| `[ ]` | 137 | Per-cell population model | 136 | [137](137-per-cell-population-model.md) |
+| `[ ]` | 138 | Tick as an explicit phased pipeline | 137 | [138](138-tick-pipeline-explicit-phases.md) |
+| `[ ]` | 139 | Overview: real density, remove the pictorial version | 137 | [139](139-overview-real-density.md) |
+| `[ ]` | 140 | End-of-era reveal beat + evolution applied there | 135 | [140](140-end-of-era-reveal-beat.md) |
+
+**→ CHECKPOINT before Phase 1b: play it, and re-run 134 against its baseline.**
+The INDEX is right that this is the highest information-per-hour moment in the
+whole plan — it is where you find out whether the game is fun, before investing
+in everything else. Do not skip it.
+
+## Phase 1b — friction fixes (`culture-shock-friction-fixes.md`)
+
+| Status | ID | Title | Priority |
+|-------|----|--------|----------|
+| `[ ]` | 141 | Saturated-with-no-outlet indicator on the detail map | Alta — the only one invisible by design, not merely unclear |
+| `[ ]` | 142 | Name the dominant stimulus in the speciation reveal | Media — the datum already exists, near-zero cost |
+| `[ ]` | 143 | Second contextual hint on the apparent stall | Media |
+| `[ ]` | 144 | Temporary trait-code translation in the first N log lines | Bassa-media |
+
+**→ Recommended before continuing:** replay `culture-shock-naive-player-example.md`'s
+scenario with all four applied, ideally with a real playtester.
+
+## Phase 2 — making the loop legible
+
+| Status | ID | Title | Doc |
+|-------|----|--------|-----|
+| `[ ]` | 145 | Stress on three selectable axes + gradual decay | `actions` |
+| `[ ]` | 146 | Cull emits a tracked notebook observation | `actions` |
+| `[ ]` | 147 | Splice restricted to confirmed traits + growing genome bank + "synthesised" origin | `actions`, `hud-notebook` |
+| `[ ]` | 149 | Inspection tool: hover tooltip + per-neighbour energy breakdown card | `inspect-tool` |
+| `[ ]` | 150 | Full control scheme + `Esc` cascade + pause menu + protected `R` | `controls` |
+| `[ ]` | 151 | Pixel-grain visual register across map, HUD and notebook | `population-model-aesthetic`, `ui-redesign` |
+| `[ ]` | 152 | HUD and sidebar: diegetic labels, notch indicators, narrative directive | `hud-notebook`, `sidebar-redesign` |
+| `[ ]` | 153 | Notebook: node graph, Chronicle section, "descends from", quiet-era compression | `notebook-cronaca` |
+| `[ ]` | 154 | Objectives: activation snapshot, 5 new types, durations in seasons, victory as a flag | `objectives` |
+
+⚠️ Apply the colour-accessibility rule ("colour is never the only channel",
+`cross-cutting` §3) **while building** this phase. Retrofitting costs far more.
+
+Already done, do not redo: tick→pulse rename (118), Biosphere numeric delta
+(120), era-relative time readout (117), Splice-creates-a-new-species (see
+Phase 0).
+
+Not planned: **Isola/Quarantena** as a fifth action — only its attachment point
+in the pipeline (task 138, phase 3). **Sposta** — the document itself does not
+recommend it. Both stay deferred.
+
+## Phase 3 — content and variety
+
+| Status | ID | Title | Doc |
+|-------|----|--------|-----|
+| `[ ]` | 155 | Trait archetypes: 3-letter codes replacing the Greek glyphs, 5 families, 15-trait active pool | `tag-archetypes` |
+| `[ ]` | 156 | Dominant family bias per world (on matrix intensity, not on trait selection) | `tag-archetypes` |
+| `[ ]` | 157 | Narrative generation: event ranking, fragment grammar, clinical register | `narrative-generation` |
+
+⚠️ **Before 157**, decide whether text fragments are structured data rather than
+concatenated strings (`cross-cutting` §5). Deciding later means rewriting the pool.
+
+Deliberately excluded from 155, playtest-gated: the "active traits per world"
+revision (4 in world 0, ceiling 9) — the document itself warns it touches the
+only difficulty knob already tuned in playtest.
+
+## Phase 4 — session structure
+
+| Status | ID | Title | Doc |
+|-------|----|--------|-----|
+| `[ ]` | 158 | Leaving/entering a world, end of run, cumulative aggregates | `transitions-metaprogression` Part 1 |
+| `[ ]` | 159 | World-summary export (seed sharing) | `culture-shock-distribution` |
+| `[ ]` | 160 | Main menu, new-run setup, updated "how to play" summary | `menu-onboarding` |
+| `[ ]` | 161 | Snapshot save, single slot consumed on load | `cross-cutting` §1 |
+
+161 is deliberately not earlier: snapshotting a state that changes every week is
+work redone continuously.
+
+## Phase 5 — polish and rare systems
+
+| Status | ID | Title | Doc |
+|-------|----|--------|-----|
+| `[ ]` | 162 | Three-layer audio + spatialisation | `audio`, `cross-cutting` §2 |
+| `[ ]` | 163 | Alternative accessible palette | `cross-cutting` §3 |
+| `[ ]` | 164 | Dynamic biomes (shared transition mechanism) | `world-events-catastrophes` |
+| `[ ]` | 165 | Catastrophic and neutral world-event catalogue | `world-events-catastrophes`, `world-events` |
+| `[ ]` | 166 | Biome signatures + cosmic-origin events | `biome-cosmic-events` |
+| `[ ]` | 167 | Anomaly pockets, fossil traces, concrete extremophile | `wonder` |
+| `[ ]` | 168 | Xenotraits as a rare speciation outcome | `tag-archetypes`, `evolution-xenotypes` |
+| `[ ]` | 169 | Emersione: lineage, family coverage, probabilistic trigger, collapse to a single entity | `emersione` |
+
+Emersione is last because it depends on nearly everything else — speciation,
+trait families, victory-as-a-flag, reveal tiers — not because it matters least.
+
+Explicitly post-MVP, not in this backlog: declared-and-refuted hypotheses
+(`culture-shock-identity.md`), concrete meta-progression and Codex
+(`transitions-metaprogression` Part 2), localisation (`cross-cutting`).
+
+---
+
+
+# 🧱 Pre-redesign work still open
+
+Everything below predates the Culture Shock redesign rollout above. Only two
+items are still open here (114, blocked; 084, excluded) — the rest is history
+kept for the rationale behind past phases.
+
 The "Two-tier map view" phase (075-078) is fully closed and archived in
 `tasks/QUEUE_ARCHIVE.md` — 078, the last open item (a same-day playtest
 correction to 076's blob rendering, on hold since 2026-08-10), landed
 2026-08-19.
 
-**Biomi** (2026-08-11, scoped from `redesign/abiogenesis-biomes.md` after a
+**Biomi** (2026-08-11, scoped from `redesign/processed/abiogenesis-biomes.md` after a
 design-discussion pass that reconciled the doc with the current codebase — full
 decision record in the doc itself). Replaces the flat `TerrainKind` bands with 16
 discrete biomes. Dependency order: 110 (data layer, areal biomes) unblocks 111
@@ -81,6 +230,21 @@ proposal (`PROJECT_PLAN.md` §1), not available to pick up yet.
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) beyond what's already expanded into task files here.
 
 ---
+
+*Last updated: 2026-08-27 (Culture Shock redesign rollout planned — the whole
+`redesign/processed/` corpus turned into the 134-169 backlog above. Phase 0's two INDEX
+verifications executed against the build and closed: no `interaction_delta`
+scale coefficient exists (raw `{−2..+2}` into the energy sum), and action scope
+is per-cell for 3 of 4 with Splice already creating a new species as
+`abiogenesis-actions.md` specifies. A third finding, not asked for, reframes the
+Phase 1 balance work: the matrix is ignorable **by construction** — zero diagonal
+plus a forced `net_self_interaction == 0` make `interaction_delta` exactly zero
+inside a single-species blob, so the matrix only ever acts at interfaces between
+different species. Task files written for Phase 1 only (134-140); later phases
+are backlog rows. Three corrections to `redesign/abiogenesis-INDEX.md` applied
+and annotated there: clock before balance, population model split across two
+phases, and the 076/078 Overview machinery marked for removal rather than
+adaptation.)*
 
 *Last updated: 2026-08-26 (120, Biosphere numeric population delta —
 `PopulationTrends` gains a `previous_population`/`current_population_delta`
@@ -249,7 +413,7 @@ run after `place_toxic_zone` so Stage B reads real generation-time
 toxic zone's footprint, since that's still the only nonzero-`toxicity`
 source at generation time — task 113 decouples the two. Unblocks 111 and
 113. 116-120 added: HUD & Notebook redesign
-follow-up, scoped from `redesign/abiogenesis-hud-notebook.md` after a
+follow-up, scoped from `redesign/processed/abiogenesis-hud-notebook.md` after a
 discrepancy-check pass against tasks 097/100-103 — see `PROJECT_PLAN.md`
 for the full discrepancy list and resolutions. Task 103 extended in place
 (population + origin era) rather than split into a new task. 096, 098, 099
@@ -259,7 +423,7 @@ spread bug in `generate_starting_palette`/`add_bonus_species`/
 `place_wild_species` that predated this session, plus the matching
 `tests/balance.rs` harness correction. 115 added: HUD-panel click-through
 bug at high zoom, reported during that same playtest. 110-114 added: biome system scoped from
-`redesign/abiogenesis-biomes.md` after a design-discussion pass reconciling the
+`redesign/processed/abiogenesis-biomes.md` after a design-discussion pass reconciling the
 doc with the current codebase — `TerrainKind`/`is_peak` already cover the
 elevation-based biomes, task 085's heat sources already back Bocca vulcanica,
 task 108 will make biome toxicity values load-bearing. 114 is scoped for

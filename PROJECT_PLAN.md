@@ -39,13 +39,13 @@ PROPOSALS  →  (review)  →  BACKLOG  →  (development)  →  DONE
 - `[?]` **Real-time mode** as an option — GDD §4 noted it "costs little to add later"; with Bevy it's nearly free (just don't stop at the end of an era).
 - `[?]` **Real main menu** with seed selection and sharing — determinism (GDD §5.7) makes sharing interesting seeds worthwhile.
 
-### Onboarding & engagement (2026-08-09, from `redesign/abiogenesis-engagement-design.md`)
+### Onboarding & engagement (2026-08-09, from `redesign/processed/abiogenesis-engagement-design.md`)
 
 Diagnosis: turn zero is a blank world with no signal there's anything to discover; reproduction (start energy `5.0`, threshold `10.0`, ~`+0.9`/tick photolithic gain) outruns a `25`-tick era before the player sees anything happen; matrix `interaction_delta` applies invisibly, read only after evidence accumulates. Full diagnosis and rationale in the linked doc.
 
 **Onboarding foundations:** scoped into tasks 080-084, see SECTION 2's "Onboarding & engagement rollout (2026-08-09)". While scoping 1.E specifically, the proposal itself shrank to a small task (081), but raised a larger, separate idea — see next entry.
 
-**Environment as sources:** scoped into tasks 085-086 (2026-08-10), see SECTION 2's "Environment as sources" entry. Full mechanics, open questions, and blast-radius analysis in `redesign/abiogenesis-environment-sources.md`.
+**Environment as sources:** scoped into tasks 085-086 (2026-08-10), see SECTION 2's "Environment as sources" entry. Full mechanics, open questions, and blast-radius analysis in `redesign/processed/abiogenesis-environment-sources.md`.
 
 **"Epic" mechanics — subito, da approfondire:**
 
@@ -59,7 +59,7 @@ Diagnosis: turn zero is a blank world with no signal there's anything to discove
 - `[?]` **2.3 — Prior-expedition data**: some worlds start with a few matrix cells pre-filled as "unverified prior readings," some correct, some wrong — stays consistent with "unlock capabilities, not answers" (GDD §10), but needs careful design of credible-yet-sometimes-false testimony that doesn't break trust in the notebook as a tool. **Data model decided**: lives as a separate "unverified" layer, visually distinct, never merged into `MatrixKnowledge`'s real-evidence weighting (task 020, `1/(1+n_confounders)`) — the player promotes a testimony to a real hypothesis only by testing it themselves. Falsification needs a procedural (not hand-authored) rule, seeded deterministically per world.
 - `[?]` **2.5 — The hidden grammar between worlds**: a deeper structural regularity under each world's shuffled matrix, perceptible only across many runs (e.g. certain glyph patterns statistically skew catalyst vs. poison) — a meta second layer of mystery for veterans; the most ambitious and most delicate to balance without introducing exploitable real patterns. **Note**: unlike 2.1/2.3, this touches the shared matrix generator itself (task 011, cyclicity constraint), not a downstream system — the exploitability risk is cross-run (a veteran who cracks it knows it on every future world, not just within one session), higher stakes than 1.B's within-session repetition risk. Stays purely conceptual until defined.
 
-### Mondo vivo (2026-08-10, from `redesign/abiogenesis-living-world.md`)
+### Mondo vivo (2026-08-10, from `redesign/processed/abiogenesis-living-world.md`)
 
 Raised directly by the user as a follow-up to the onboarding/engagement work
 (all of 080-086 landed): the opening turns should feel like discovering
@@ -79,7 +79,7 @@ world-features/residue item above stays unscoped, needing the shared
 
 **Real-time mode** (already a `[?]` above, "Camera, pacing & menu features") was raised again in this same discussion and **explicitly deferred**: the user agreed to keep it independent, revisited only after these mechanics are scoped, implemented, and playtested — stacking it now would add a second, simultaneous source of reduced legibility on top of these.
 
-### Notebook UX redesign (2026-08-10, from `redesign/abiogenesis-notebook-redesign.md`)
+### Notebook UX redesign (2026-08-10, from `redesign/processed/abiogenesis-notebook-redesign.md`)
 
 Spun out of the "Mondo vivo" discussion above (conditional tags need *some*
 notebook surface) into its own, independent track: a live screenshot review
@@ -98,7 +98,7 @@ catalog badge.
 unscoped — needs its own concrete mockup/design pass before it's
 task-ready.
 
-### Death/failure legibility (2026-08-11, from `redesign/abiogenesis-death-legibility.md`)
+### Death/failure legibility (2026-08-11, from `redesign/processed/abiogenesis-death-legibility.md`)
 
 Companion topic spun out of the notebook redesign discussion: bad
 temperature fit, no nearby prey/resource, etc. are largely invisible today
@@ -119,7 +119,7 @@ era-over-era average survivor energy, not a death tally (`ui.rs:1006-1116`)
 the ▼ glyph specifically, which can otherwise show ▲/▬ even while deaths
 are happening.
 
-### Evolution & xenotypes (2026-08-11, from `redesign/abiogenesis-evolution-xenotypes.md`)
+### Evolution & xenotypes (2026-08-11, from `redesign/processed/abiogenesis-evolution-xenotypes.md`)
 
 Raised directly by the user: the matrix "aha" has no real payoff today
 beyond knowledge itself. Two proposals, resolved against tensions already
@@ -139,7 +139,7 @@ questions in the linked doc.
 moment (open question above) and the full xenotype naming redesign stay
 unscoped, both explicitly not designed yet.
 
-### Progression & pacing (2026-08-11, from `redesign/abiogenesis-progression-pacing.md`)
+### Progression & pacing (2026-08-11, from `redesign/processed/abiogenesis-progression-pacing.md`)
 
 Reconciles "Mondo vivo" and "Evolution & xenotypes" (both above) with the
 current core loop: clearing a world's objective sequence today triggers a
@@ -158,7 +158,7 @@ mechanics existing.
 096-099/106-107 all landed — see the task file for the concrete
 `Objective::Speciation` content and energy-economy wiring.
 
-### Biomes (2026-08-11, from `redesign/abiogenesis-biomes.md`)
+### Biomes (2026-08-11, from `redesign/processed/abiogenesis-biomes.md`)
 
 16 discrete biomes replacing the flat `TerrainKind` bands as the primary
 environmental classification, reconciled against the current codebase in a
@@ -190,10 +190,94 @@ but BLOCKED, same pattern as 084.
 
 > Approved tasks. Phase 0 is already expanded into task files; later phases expand when we get there.
 
+### 🌍 Culture Shock redesign rollout (2026-08-27, from the whole `redesign/processed/` corpus)
+
+Adoption of all 25 design documents in `redesign/processed/` (plus GDD v0.7 and
+`abiogenesis-system-hierarchy.md`), sequenced into phases 1-5. Operational
+detail, dependencies and per-phase notes live in
+[`tasks/QUEUE.md`](tasks/QUEUE.md); the planning record is
+`~/.claude/plans/leggi-redesign-abiogenesis-index-md-e-va-composed-rose.md`.
+Task files exist for Phase 1 only — later phases become task files as the
+previous one closes.
+
+> **Phase 0 (the INDEX's two code verifications) executed and closed 2026-08-27.**
+> (1) **No `interaction_delta` scale coefficient exists** — `sim.rs:715` sums the
+> raw `{−2..+2}` matrix entries and `sim.rs:766` adds the total straight into the
+> energy update, so a single `±2` entry is worth 4× `base_upkeep` today. A new
+> `EnergyConfig::interaction_scale` is required before the proposed retune means
+> anything. (2) **Action scope is per-cell for 3 of 4, not 4 of 4**: Seed, Stress
+> and Cull are per-cell; **Splice is species-scoped**, and `input.rs:605` already
+> calls `world.push_species(new_species)` — so `abiogenesis-actions.md`'s central
+> clarification (Splice synthesises a *new* species that must then be seeded, it
+> does not edit a living one) is **already implemented**, shrinking that task's
+> scope. GDD §6's "in an area" prose still needs correcting.
+>
+> **A third finding, not asked for, reframes the Phase 1 balance work.** The
+> hidden matrix is ignorable *by construction*, not because its coefficients are
+> small: `generate_matrix` (`world.rs:2725`) always zeroes the diagonal, and
+> `draw_species_tags` (`world.rs:2815`) exhaustively forces
+> `net_self_interaction == 0` on every generated, spliced and speciated tag set
+> (the task-048 fix). Inside a single-species blob `interaction_delta` is
+> therefore **exactly zero** — the matrix only ever acts on cells at the interface
+> between different species. Scaling coefficients up makes interfaces more violent
+> without making the matrix more *necessary*; what does is that a monoculture
+> cannot grow on environment alone. This also surfaces a conflict no design
+> document reconciles: `crowd_factor` and the new per-cell carrying capacity do
+> the same job, and under the proposed coefficients a monoculture would not merely
+> be an "energetic dead end" but unable to cluster at all (`+0.05 − 0.30 = −0.25`
+> per pulse with two same-species neighbours). Task 136 must resolve that before
+> writing any number.
+
+Three corrections applied to `redesign/abiogenesis-INDEX.md` and annotated there:
+the time scale comes **before** the energy retune (both documents declare a
+dependency on the other; the clock is the independent variable);
+`culture-shock-population-model-aesthetic.md` splits across two phases (simulation
+model in Phase 1, pixel-grain visual register in Phase 2, so the HUD isn't
+restyled then rebuilt); and the per-cell population model **obsoletes tasks
+076/078** — the Overview's hole-filling and erosion get removed, not adapted,
+because they existed precisely to fake a density the model couldn't provide.
+
+**Phase 1 — the central loop** (task files written)
+
+- `[ ]` 134 — Two-bot harness (exploiter vs explorer), headless multi-seed, as the **pre-change baseline** for 136 → [134](tasks/134-two-bot-experiment-incentive-harness.md)
+- `[ ]` 135 — Three-level time scale Pulse → Season → Era: season as the unit of decision, action budget per season, world era budget lowered, `selection_pressure_threshold` retuned → [135](tasks/135-three-level-time-scale.md)
+- `[ ]` 136 — Make the hidden matrix necessary: `interaction_scale` + proportional retune of all four metabolisms; opens by resolving carrying-capacity vs `crowd_factor` → [136](tasks/136-matrix-necessary-balance.md)
+- `[ ]` 137 — Per-cell population model: count + aggregate energy per cell, carrying capacity, breakout, saturated-with-no-outlet flag feeding local selection pressure → [137](tasks/137-per-cell-population-model.md)
+- `[ ]` 138 — Tick as an explicit phased pipeline: habitat gate, per-biome `crowd_factor` and residue decay, protected-cell hook, intermediates kept and exposed → [138](tasks/138-tick-pipeline-explicit-phases.md)
+- `[ ]` 139 — Overview at real density, removing the pictorial machinery from `cluster.rs` → [139](tasks/139-overview-real-density.md)
+- `[ ]` 140 — End-of-era reveal as a dedicated beat, with matured evolution applied there → [140](tasks/140-end-of-era-reveal-beat.md)
+
+**Phase 1b — friction fixes**: 141 saturation indicator (high), 142 named cause
+in the speciation reveal, 143 second contextual hint, 144 temporary trait-code
+translation.
+
+**Phase 2 — legibility**: 145 Stress on three axes, 146 Cull emits an
+observation, 147 Splice restricted to confirmed traits + growing genome bank,
+149 inspection tool, 150 full control scheme + pause menu, 151 pixel-grain
+visual register, 152 HUD/sidebar, 153 notebook + Chronicle, 154 objectives.
+
+**Phase 3 — content**: 155 trait archetypes, 156 dominant family bias, 157
+narrative generation.
+
+**Phase 4 — session structure**: 158 transitions and end of run, 159 world-summary
+export, 160 menu and onboarding, 161 save.
+
+**Phase 5 — polish and rare systems**: 162 audio, 163 accessible palette, 164
+dynamic biomes, 165 world events, 166 biome/cosmic signatures, 167 wonder items,
+168 xenotraits, 169 Emersione.
+
+Decided in the planning session: **Isola/Quarantena is not implemented** — only
+its attachment point in the pipeline (138), since retrofitting it later is
+expensive and the action itself would break the "few heavy levers" principle;
+**Sposta** is dropped (the design document does not recommend it); **completing
+an objective produces no mechanical effect**, it only marks the objective done
+and unlocks the next. Post-MVP and out of this backlog: declared-and-refuted
+hypotheses, concrete meta-progression and the Codex, localisation.
+
 ### 🌍 Mondo vivo, notebook, death legibility, evolution & progression (2026-08-11)
 
 Full scoping pass over the five redesign docs from this session's design
-discussion (`redesign/abiogenesis-living-world.md`,
+discussion (`redesign/processed/abiogenesis-living-world.md`,
 `abiogenesis-notebook-redesign.md`, `abiogenesis-death-legibility.md`,
 `abiogenesis-evolution-xenotypes.md`, `abiogenesis-progression-pacing.md`
 — SECTION 1 above has the full reasoning). Dependency order: 096
@@ -221,7 +305,7 @@ redesign — all explicitly flagged as not design-ready in their source docs.
 - `[x]` 108 — Fourth metabolism: chemolithotroph, gain from toxicity → [108](tasks/done/108-chemolithotroph-metabolism.md)
 - `[x]` 109 — Long-term objective tier + within-run energy economy (depended on 096-099/106-107 shipping) → [109](tasks/done/109-progression-long-term-objective-energy.md)
 
-### 🖥️ HUD & Notebook redesign follow-up (2026-08-12, from `redesign/abiogenesis-hud-notebook.md`)
+### 🖥️ HUD & Notebook redesign follow-up (2026-08-12, from `redesign/processed/abiogenesis-hud-notebook.md`)
 
 Before starting the notebook UX track's next task, read this new doc against
 what tasks 097/100-103 already planned, specifically to avoid double work.
@@ -271,7 +355,7 @@ Discrepancy-check findings and resolutions (decided with the user):
 
 ### 🗻 Biomes (2026-08-11)
 
-Full scoping pass over `redesign/abiogenesis-biomes.md` (SECTION 1 above has the
+Full scoping pass over `redesign/processed/abiogenesis-biomes.md` (SECTION 1 above has the
 full reasoning). Dependency order: 110 unblocks 111 and 113; 112 depends on both
 110 and 111; 114 is scoped for reference but blocked on an unscoped small/pulsing
 heat-source category.
@@ -426,7 +510,7 @@ Three proposals from §1 scoped into tasks after discussion; the always-on tempe
 - `[x]` 061 — Notebook presentation refinements: every `AdjacencyObserved` event gets its own log line with a clean/confounded evidence-quality dot (not just confirmations, a deliberate reversal of the log's usual curation for this one case); the hypothesis graph gets a dashed marker for never-observed tag nodes, edge thickness by confirmed magnitude, and numeric labels on strong edges; the notebook catalog gets the species-color swatch the map/HUD/log already share → [061](tasks/done/061-notebook-presentation-refinements.md)
 - `[x]` 062 — Procedural alien-world background layer: a dim, code-generated (no art assets) background sprite behind the grid, regenerated per world from `SimWorld::seed`, explicitly scoped as an exception to GDD pillar 3 since it's purely atmospheric and must never carry gameplay signal. Variant derivation used `SimWorld::seed` directly (base hue + noise-wave directions) rather than `WorldParams`, since `WorldParams` isn't stored on `SimWorld` past `new_for_world` and seeding from the world's own seed already gives every world a distinct atmosphere with no extra plumbing → [062](tasks/done/062-procedural-background-layer.md)
 
-### 🖥️ Sidebar console redesign (2026-08-08, from `redesign/abiogenesis-sidebar-redesign.md`)
+### 🖥️ Sidebar console redesign (2026-08-08, from `redesign/processed/abiogenesis-sidebar-redesign.md`)
 
 Full HUD sidebar reskin from a self-contained design doc (with two SVG mockups): one continuous hairline-divided monospace panel instead of four bordered boxes, diegetic English labels, discrete tick indicators instead of progress bars, scrollable Biosphere/Species lists for N species, narrative-styled objective line. The doc's diegetic labels were originally Italian; confirmed directly with the user to translate them to English, then revised again after a first pass (Intervene/Census/Gene bank/Directive) read as too formal/managerial — settled on **Moves / Biosphere / Species / "This world wants"**.
 
@@ -434,7 +518,7 @@ Full HUD sidebar reskin from a self-contained design doc (with two SVG mockups):
 - `[x]` 064 — Sidebar console redesign: the structural/visual rewrite of `hud_panel` — one continuous hairline-divided monospace panel, discrete dot/tick indicators replacing progress bars, an italicized narrative-styled objective line (`RichText::italics()` approximation, no new font asset), and scrollable Biosphere/Species lists for N species. Verification surfaced and fixed two real UX bugs (`HUD_WIDTH` too narrow for monospace text; the horizontal chip strip's scrollbar overlapping the clickable row) and one egui gotcha (`ScrollArea` floors its scrolled axis at `min_scrolled_size = 64.0`pt — the Biosphere row cap is now measured from the panel's own text style instead of a hardcoded guess, keeping it and the "scroll for more" hint threshold consistent) → [064](tasks/done/064-sidebar-console-redesign.md)
 - `[x]` 065 — Species list vertical, metabolism glyph, seed relocated: playtest correction to 064, raised directly by the user. The mockup's horizontal chip strip for Species turned out less discoverable in practice than Biosphere's vertical-scroll pattern (its hidden scrollbar needed a dedicated `›` cue just to signal overflow) — switched Species to the same vertical `ScrollArea`/`SCROLL_FOR_MORE` pattern, removing the chip-strip machinery entirely. Each Species row now shows its metabolism (☀/⚔/♻, `render::metabolism_glyph`) since it's a readable GDD trait a fresh player otherwise couldn't see before opening the notebook. The seed number moved from the header to the footer, next to the keyboard hints, matching the mockup's header (which never included it) → [065](tasks/done/065-species-list-vertical-metabolism-seed-relocation.md)
 
-### 🏔️ Terrain map: elevation as real simulation data (2026-08-09, from `redesign/abiogenesis-terrain-map.md`)
+### 🏔️ Terrain map: elevation as real simulation data (2026-08-09, from `redesign/processed/abiogenesis-terrain-map.md`)
 
 The redesign doc originally proposed elevation bands as a visual-only overlay with terrain generation itself out of scope. Design discussion superseded that: elevation becomes a real per-cell dimension (plains/hills/mountains/sea, procedurally generated per world), a possible future factor in evolution alongside others TBD — not a decorative value disconnected from the simulation, per the doc's own point 6. Sea is deliberately *not* hardcoded as permanently unplaceable: a future aquatic species is planned, so gating goes through one centralized `SimWorld` check instead of scattered terrain conditionals. The toxic zone (previously a fixed bottom-right rectangle) becomes variable position/size, generated to always overlap enough placeable land to keep `SurviveIn` satisfiable. Split into three dependency-ordered tasks mirroring the 063→064 data/visual split.
 
@@ -444,10 +528,10 @@ The redesign doc originally proposed elevation bands as a visual-only overlay wi
 - `[x]` 069 — Multi-octave terrain noise (macro-continents + small islands): follow-up raised directly by the user after reviewing 068's rendering, not in the original redesign doc. Task 066's elevation field was single-scale (all waves shared one frequency range), so a world never showed both a large landmass and small separate islands at once. `terrain_waves`/`terrain_elevation` now draw and blend two bands from the same derived RNG stream (`TERRAIN_SEED_OFFSET`, unchanged): a low-frequency continent band (3 waves, 0.8–1.6) shaping macro-continent shape, and a higher-frequency island band (6 waves, 12.0–18.0, blended at 0.45 weight before normalizing) layering small separate island blobs on top — both bands' wave counts, frequency ranges, and blend weight are new `TerrainConfig` fields, no magic numbers. A first tuning pass (island weight 0.65, untouched 0.78/0.88 mountain/peak thresholds) shipped a hidden regression: the new field's narrower variance made Mountain/peak nearly unreachable (a 30-seed histogram, added after an advisor review flagged the risk, showed most individual seeds landing on zero Mountain cells). Caught before archiving; `sea_threshold`/`hill_threshold`/`mountain_threshold`/`peak_elevation_threshold` were retuned (0.32→0.36, 0.55→0.53, 0.78→0.7, 0.88→0.8) to restore reachability — the retuned defaults now produce *more* Mountain cells and peaks over 30 seeds than the pre-069 baseline, not fewer. Verified visually via a real `cargo run` window on the user's machine (driven headlessly with `cliclick`/`screencapture`, several reseeds), not just the histogram/ASCII-dump proxies used mid-investigation; all existing terrain/worldgen tests pass unmodified since they exercise `SimWorld::new`, not the wave functions directly → [069](tasks/done/069-multi-octave-terrain-noise.md)
 - `[x]` 070 — Remove task 062's decorative background layer: regression caught by the user from a screenshot right after 068 shipped. Every grid cell is one `Sprite`; occupied cells swap to a mostly-transparent metabolism shape mask (task 032), so the transparent gaps leaked task 062's decorative background (parked behind the grid) instead of the cell's own terrain color — invisible before terrain had distinct colors, now a visible dark/off-color square on every occupied or freshly-reproduced-into cell. User's explicit call: remove 062's layer outright rather than composite-fix it, since 068's terrain colors already solve the "empty black void" problem 062 was added for. `spawn_background`/`sync_background`/`BackgroundTexture`/`background_image`/`background_waves`/`background_field`/`BackgroundWave`/`BACKGROUND_*` deleted from `src/render.rs`; `cargo clippy -- -D warnings` and `cargo test` clean; user confirmed the fix visually → [070](tasks/done/070-remove-decorative-background-layer.md)
 - `[x]` 071 — Ambient residue trickle hid terrain colors grid-wide: a second, unrelated regression from the same screenshot thread. Task 060's ambient trickle (`sim::step`) settles every cell's residue at exactly `residue_ambient_trickle` (0.05) after the first tick, grid-wide, not just where something died — `cell_color` treated any `residue > 0.0` as a corpse and painted it brown, taking priority over the terrain branch, so the entire map turned uniformly brown the instant the player pressed `Space` once. Fixed by requiring `residue > residue_ambient_trickle` before the residue color applies. Verified visually (pixel-sampled terrain colors identical before/after two era advances) → [071](tasks/done/071-ambient-residue-trickle-hides-terrain-color.md)
-- `[x]` 072 — Terrain sea/land balance correction: direct playtest correction to 069, the user compared generated worlds against `redesign/terrain-map-elevation.svg` and found Sea almost never showed up (measured ~8% of cells over 30 seeds), because `generate_terrain`'s bounded-resample loop only ever rejects a draw for having *too little* land, never for having too little sea — the accepted ensemble was systematically land-heavy. A first retuning pass (higher `sea_threshold`, lower `min_placeable_fraction`) exposed a deeper issue: with only 3 low-frequency continent waves, each world's raw elevation amplitude varies a lot by chance, so fixed thresholds against the raw `[0, 1]` field gave wildly inconsistent sea/land ratios seed-to-seed (some worlds nearly all land, others nearly all sea). Fixed properly with a new `normalize_elevations` step in `generate_terrain` that min-max-rescales each world's own elevation field to fill `[0, 1]` before classification, so `TerrainConfig`'s thresholds land in the same relative place regardless of a given seed's raw amplitude; all four classification thresholds plus `min_placeable_fraction` retuned against the normalized field (Sea ≈ 33% of cells on average, 18–42% spread across a 30-seed sample, vs. the prior near-0%-to-70%+ swings). Along the way, fixed an incidental regression in `sim.rs`'s `world_with_one_organism` test helper (backs 12 pure energy-formula unit tests) — it had been unknowingly depending on seed 42's generated terrain for reproduction placement gating (task 067), so a terrain rebalance silently changed one test's outcome; now forces flat `Plain` terrain, matching task 066's original intent that `Cell::terrain` default to `Plain` so unrelated tests stay terrain-agnostic. Verified visually via a real `cargo run` window on the user's machine (`cliclick`/`screencapture`, several reseeds): Sea now reads as a substantial, clearly visible share of the map, much closer to the mockup → [072](tasks/done/072-terrain-sea-balance-correction.md)
+- `[x]` 072 — Terrain sea/land balance correction: direct playtest correction to 069, the user compared generated worlds against `redesign/processed/terrain-map-elevation.svg` and found Sea almost never showed up (measured ~8% of cells over 30 seeds), because `generate_terrain`'s bounded-resample loop only ever rejects a draw for having *too little* land, never for having too little sea — the accepted ensemble was systematically land-heavy. A first retuning pass (higher `sea_threshold`, lower `min_placeable_fraction`) exposed a deeper issue: with only 3 low-frequency continent waves, each world's raw elevation amplitude varies a lot by chance, so fixed thresholds against the raw `[0, 1]` field gave wildly inconsistent sea/land ratios seed-to-seed (some worlds nearly all land, others nearly all sea). Fixed properly with a new `normalize_elevations` step in `generate_terrain` that min-max-rescales each world's own elevation field to fill `[0, 1]` before classification, so `TerrainConfig`'s thresholds land in the same relative place regardless of a given seed's raw amplitude; all four classification thresholds plus `min_placeable_fraction` retuned against the normalized field (Sea ≈ 33% of cells on average, 18–42% spread across a 30-seed sample, vs. the prior near-0%-to-70%+ swings). Along the way, fixed an incidental regression in `sim.rs`'s `world_with_one_organism` test helper (backs 12 pure energy-formula unit tests) — it had been unknowingly depending on seed 42's generated terrain for reproduction placement gating (task 067), so a terrain rebalance silently changed one test's outcome; now forces flat `Plain` terrain, matching task 066's original intent that `Cell::terrain` default to `Plain` so unrelated tests stay terrain-agnostic. Verified visually via a real `cargo run` window on the user's machine (`cliclick`/`screencapture`, several reseeds): Sea now reads as a substantial, clearly visible share of the map, much closer to the mockup → [072](tasks/done/072-terrain-sea-balance-correction.md)
 - `[x]` 090 — Terrain island-band retune: organic coastlines, less sea: user-reported follow-up surfaced during the 085/086 live playtest session (not the original 069-072 sequence) — `Sea` was generated in "quantità eccessiva e forme non troppo credibili," several same-sized isolated near-circular blobs scattered inland ("polka-dot lakes") rather than a connected coastline, which also diluted 085's heat-source visibility (`sea_coolant_radius` reached more of the map with more sea). A throwaway ASCII-dump + 30-seed histogram diagnostic (same technique 069 used) isolated the island wave band as the cause (`island_blend_weight: 0.0` made the pattern vanish): few summed waves (6) interfere into a regular periodic pattern instead of organic noise. `island_wave_count` raised 6→16, `island_blend_weight` raised 0.45→0.55 (compensating the smaller per-wave amplitude at higher count), `sea_threshold` lowered 0.42→0.34 (sea coverage ~33%→~24% over 30 seeds) — re-verified against the same before/after histogram technique to avoid silently collapsing Mountain/peak reachability, task 069's own recorded failure mode → [090](tasks/done/090-terrain-island-band-retune.md)
 
-### 🌱 Onboarding & engagement rollout (2026-08-09, from `redesign/abiogenesis-engagement-design.md`)
+### 🌱 Onboarding & engagement rollout (2026-08-09, from `redesign/processed/abiogenesis-engagement-design.md`)
 
 The 5 "onboarding foundations" proposals (§1) scoped into task files after a
 multi-round discussion covering sequencing, permanence, and reuse of
@@ -458,14 +542,14 @@ coupled and must be tuned together, not in isolation. 084 is scoped but
 explicitly blocked — see its file.
 
 - `[x]` 080 — Interaction spark: instant visual feedback on first-seen relations → [080](tasks/done/080-interaction-spark-visual-feedback.md)
-- `[x]` 081 — The world breathes: toxic zone pulse + diffusion drift check: `toxicity_tint` (`render.rs`) now oscillates its blend strength (`0.45 * (0.85 + 0.15 * (elapsed * 0.4).sin())`, `elapsed` from `Res<Time>` threaded through `cell_color`) instead of a fixed `0.45`, only visible where `toxicity > 0`. Diffusion drift-perceptibility check (code inspection): not perceptible on the base map — `Cell::biome` (what the empty-cell branch renders) is assigned once at generation and never re-derived from `temperature`/`light` per tick, so the eroding gradient has no render effect outside the dev-only overlay; making it visible is out of scope here, tracked in `redesign/abiogenesis-environment-sources.md` instead. Live verification skipped this pass at user request → [081](tasks/done/081-ambient-diffusion-visible-on-empty-grid.md)
+- `[x]` 081 — The world breathes: toxic zone pulse + diffusion drift check: `toxicity_tint` (`render.rs`) now oscillates its blend strength (`0.45 * (0.85 + 0.15 * (elapsed * 0.4).sin())`, `elapsed` from `Res<Time>` threaded through `cell_color`) instead of a fixed `0.45`, only visible where `toxicity > 0`. Diffusion drift-perceptibility check (code inspection): not perceptible on the base map — `Cell::biome` (what the empty-cell branch renders) is assigned once at generation and never re-derived from `temperature`/`light` per tick, so the eroding gradient has no render effect outside the dev-only overlay; making it visible is out of scope here, tracked in `redesign/processed/abiogenesis-environment-sources.md` instead. Live verification skipped this pass at user request → [081](tasks/done/081-ambient-diffusion-visible-on-empty-grid.md)
 - `[x]` 082 — Shorter eras during world 0's opening: `TimeConfig` gained `onboarding_eras`/`onboarding_era_ticks` (defaults `3`/`8`, mirrored into `sim_config.ron`); a new `worldgen::era_ticks_for(world_index, era, config)` helper returns the onboarding length only for world 0's first `onboarding_eras`, standard `era_ticks` otherwise. `start_era`/`single_tick` (`input.rs`) now call it instead of reading `config.time.era_ticks` directly, threading in `RunProgress`/`SimWorld`. Fixed an existing test (`repeated_single_ticks_alone_complete_an_era_and_refill_the_budget`) that implicitly assumed world 0/era 0 always uses the standard length — updated to `world_index: 1` since it's testing generic tick bookkeeping, not the onboarding exception → [082](tasks/done/082-shorter-onboarding-eras.md)
 - `[x]` 083 — Newborn incubation: reproduction delayed to the following era: `Organism` gained `born_era: u32`; the child spawn site in `sim.rs` sets it to `world.era` explicitly, the parent's post-cost copy inherits it via `..organism`. Reproduction now additionally requires `organism.born_era < world.era`. No new `SimConfig` coefficient — a structural gate on existing state, per the task's explicit constraint. `tests/balance.rs`'s population-dynamics suites re-ran clean with no assertion changes needed. New inline test confirms a same-era-born organism can't reproduce even above `repro_threshold`, and can once `world.era` advances → [083](tasks/done/083-newborn-incubation-reproduction-delay.md)
 - `[ ]` 084 — Guaranteed "first light" relation in world 0's matrix (**BLOCKED** on the "Meta-progression persistence" proposal, §1 — do not start) → [084](tasks/084-first-light-guaranteed-relation-world0.md)
 
 > The "epic" mechanics (2.2/2.4/2.6 subito, 2.1/2.3/2.5 futuro) remain `[?]` in §1 — not scoped this round.
 
-### 🌡️ Environment as sources (2026-08-10, from `redesign/abiogenesis-environment-sources.md`)
+### 🌡️ Environment as sources (2026-08-10, from `redesign/processed/abiogenesis-environment-sources.md`)
 
 Replaces the fixed left-right temperature / top-bottom light gradients with per-world heat sources (+ wind bias, + `Sea` cells as passive coolant, + reinjection to counter diffusion erosion) and a per-world sun direction (+ `Mountain` shading). Same class of change as the terrain redesign (066-072): worldgen + downstream balance, not just rendering. 085 is the combined temperature+light generation task (Sea/Mountain coupling folded into its acceptance criteria rather than split out); 086 is a legibility check on the existing T/L overlays once 085 lands. Follow-ups deliberately not pre-planned — filed individually if playtest surfaces them, mirroring 069-072. GDD §5.2's "2D niche via crossed axes" framing is explicitly not preserved and gets rewritten after implementation + playtest, not before.
 
@@ -587,7 +671,7 @@ restored green (`0/50` across all four balance properties).
 >
 > **🔭 Follow-up raised during the visual check, not fixed here:** at `128×80`, individual organism dots read as small and some species colors (dark/muted hues against dark terrain, see the toxic-zone screenshot from this session) are hard to distinguish at a glance — a legibility problem this task's acceptance criteria explicitly scope out ("don't silently re-tune unrelated systems"). The user's own framing points past a simple zoom control toward a two-tier rendering idea: a zoomed-out view showing per-species population-density indicators (e.g. a glyph that scales with local population) rather than individual dots, with a zoom-in revealing actual per-organism granularity — mechanics for isolated/small-population experiments under that scheme still need to be worked out. Worked out into a proposal below.
 
-- `[/]` Two-tier map view (Overview cluster-heatmap + Detail per-cell grid) — design closed 2026-08-09, full decision record in `redesign/abiogenesis-two-tier-view.md`. Split into task files 075-077, plus a same-day playtest correction (078) → [075](tasks/done/075-zoom-camera-overview-detail-switch.md) (done), [076](tasks/done/076-overview-cluster-heatmap-rendering.md) (done), [077](tasks/done/077-action-gating-by-view-mode.md) (done), [078](tasks/078-overview-heatmap-blob-shape-correction.md). Single continuous-zoom camera (mouse wheel, centered on cursor); hard threshold switch (not a blend) between Overview (per-species connected-component clusters rendered as density-heatmap blobs — not a fixed grid of blocks, so an isolated organism is its own visible one-cell cluster) and Detail (today's per-cell organism rendering, whatever's in the camera frustum — no separate windowed system, panning is just normal camera movement). Stress/Cull require Detail (need per-organism precision); Seed/Splice stay available in both, with a brief transient on-screen indicator (task-054 style) marking exactly where a Overview-mode placement landed. Task 076's first pass rendered blobs as a 1:1 recoloring of the real occupied-cell sprites, so a cluster's blob reproduced its exact footprint including internal gaps; task 078 corrects this to a smaller, uniformly-filled abstraction, per direct user feedback right after seeing 076 live.
+- `[/]` Two-tier map view (Overview cluster-heatmap + Detail per-cell grid) — design closed 2026-08-09, full decision record in `redesign/processed/abiogenesis-two-tier-view.md`. Split into task files 075-077, plus a same-day playtest correction (078) → [075](tasks/done/075-zoom-camera-overview-detail-switch.md) (done), [076](tasks/done/076-overview-cluster-heatmap-rendering.md) (done), [077](tasks/done/077-action-gating-by-view-mode.md) (done), [078](tasks/done/078-overview-heatmap-blob-shape-correction.md). Single continuous-zoom camera (mouse wheel, centered on cursor); hard threshold switch (not a blend) between Overview (per-species connected-component clusters rendered as density-heatmap blobs — not a fixed grid of blocks, so an isolated organism is its own visible one-cell cluster) and Detail (today's per-cell organism rendering, whatever's in the camera frustum — no separate windowed system, panning is just normal camera movement). Stress/Cull require Detail (need per-organism precision); Seed/Splice stay available in both, with a brief transient on-screen indicator (task-054 style) marking exactly where a Overview-mode placement landed. Task 076's first pass rendered blobs as a 1:1 recoloring of the real occupied-cell sprites, so a cluster's blob reproduced its exact footprint including internal gaps; task 078 corrects this to a smaller, uniformly-filled abstraction, per direct user feedback right after seeing 076 live.
 
 > **📐 Task 075 (2026-08-09): zoom camera + `MapViewMode` landed**, `CameraConfig` (`zoom_min`/`max`/`threshold`/`speed`) added to `SimConfig`. Two real bugs surfaced during live playtesting on the user's machine, both fixed: pan drift left the grid off-center at the zoomed-out floor (a cursor-centered zoom formula alone doesn't guarantee translation returns to `(0,0)` at `zoom_max` — fixed with a general pan clamp derived from `AutoMin`'s own projection dimensions); and the terrain/toxic-zone overlay bled into the HUD sidebar once zoom let players view a sub-region (`Camera::world_to_viewport` doesn't clip to the camera's actual cropped viewport — fixed by clipping the overlay painters to `Camera::logical_viewport_rect()`). Full writeup in [075](tasks/done/075-zoom-camera-overview-detail-switch.md)'s Resolution section.
 
