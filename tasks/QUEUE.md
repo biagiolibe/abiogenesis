@@ -79,13 +79,28 @@ annotated in the INDEX itself):
 
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
-| `[ ]` | 134 | Two-bot harness (exploiter vs explorer) — pre-change baseline | — | [134](134-two-bot-experiment-incentive-harness.md) |
+| `[x]` | 134 | Two-bot harness (exploiter vs explorer) — pre-change baseline | — | [134](done/134-two-bot-experiment-incentive-harness.md) |
 | `[ ]` | 135 | Three-level time scale: Pulse → Season → Era | — | [135](135-three-level-time-scale.md) |
 | `[ ]` | 136 | Make the hidden matrix necessary (interaction_scale + retune) | 134, 135 | [136](136-matrix-necessary-balance.md) |
 | `[ ]` | 137 | Per-cell population model | 136 | [137](137-per-cell-population-model.md) |
 | `[ ]` | 138 | Tick as an explicit phased pipeline | 137 | [138](138-tick-pipeline-explicit-phases.md) |
 | `[ ]` | 139 | Overview: real density, remove the pictorial version | 137 | [139](139-overview-real-density.md) |
 | `[ ]` | 140 | End-of-era reveal beat + evolution applied there | 135 | [140](140-end-of-era-reveal-beat.md) |
+
+> **134 landed 2026-08-27, and its baseline reframes 136.** Head to head the
+> exploiter is ahead (faster on 9 of 17 comparable seeds, explorer on 4, 4
+> tied), but the finding that matters is a line the survey wasn't designed to
+> produce: with 20 off-diagonal pairs per world, the exploiter ends a world
+> having confirmed **0.82** of them and the explorer — after spending 3016 of
+> its 4458 points deliberately probing — **1.45**. Neither bot reached a
+> *known* placement context even once across 40 worlds. The matrix in world 0
+> isn't merely optional, it's nearly **unobtainable**: three clean observations
+> are needed per pair, and organisms rarely stay adjacent to a stable,
+> unconfounded neighbour long enough to produce them. Task 136 makes the matrix
+> *necessary*; on this evidence that is not the same as making it *learnable*,
+> and the `Isolate` lever (attachment point scoped into 138) looks
+> better-motivated than it did on paper. Full numbers and the definitions used
+> are in the task file.
 
 **→ CHECKPOINT before Phase 1b: play it, and re-run 134 against its baseline.**
 The INDEX is right that this is the highest information-per-hour moment in the
@@ -230,6 +245,21 @@ proposal (`PROJECT_PLAN.md` §1), not available to pick up yet.
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) beyond what's already expanded into task files here.
 
 ---
+
+*Last updated: 2026-08-27 (134, two-bot experiment-incentive harness —
+`examples/two_bot_survey.rs` runs an exploiter and an explorer against the same
+40 world-0 seeds and reports eras-to-clear plus the known/unknown/isolated split
+of every point spent. Two library extractions were forced by the crate structure
+(`tests/`/`examples/` can't see the binary's modules): `MatrixKnowledge` moved
+from `notebook.rs` into a new `src/knowledge.rs` alongside a pure
+`accumulate_adjacency_evidence` that now owns the GDD §7 weight formula, and
+`attempt_seed` moved from `input.rs` into a new `src/actions.rs`, returning
+`Option<usize>` so `PlayerPlacedCells` bookkeeping stays in the binary.
+`sim::env_fit` and `objectives::update_grace_progress` made `pub`. Stress/Cull
+stay in `input.rs` until tasks 145/146 rework them; the bots use only `Seed`,
+since Cull emits no observation yet and Splice's confirmed-traits constraint is
+task 147. Baseline recorded verbatim in the task file — it is what 136 must be
+compared against. Nothing tuned.)*
 
 *Last updated: 2026-08-27 (Culture Shock redesign rollout planned — the whole
 `redesign/processed/` corpus turned into the 134-169 backlog above. Phase 0's two INDEX

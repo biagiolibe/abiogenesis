@@ -11,13 +11,13 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
 use crate::notebook::{
-    MatrixKnowledge, NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells,
-    TerrainKnowledge,
+    NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells, TerrainKnowledge,
 };
 use crate::render::SeenRelations;
 use crate::text;
 use crate::ui::{IsolationHint, SelectedSpecies, SpliceDraft};
 use abiogenesis::config::SimConfig;
+use abiogenesis::knowledge::MatrixKnowledge;
 use abiogenesis::objectives::{CurrentObjective, CurrentWorldOutcome, ObjectiveProgress};
 use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::ActionBudget;

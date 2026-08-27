@@ -7,6 +7,7 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
 
+use abiogenesis::actions;
 use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::{apply_tick_outcome, ObjectiveOutcomeParams};
 #[cfg(test)]
@@ -23,7 +24,7 @@ use abiogenesis::sim::{
     SpeciesExtinct, TerrainGateObserved, TerrainRevealed,
 };
 use abiogenesis::state::{EraState, GameState};
-use abiogenesis::world::{draw_species_name, net_self_interaction, Organism, SimWorld, SpeciesId};
+use abiogenesis::world::{draw_species_name, net_self_interaction, SimWorld};
 use abiogenesis::worldgen::era_ticks_for;
 
 use crate::notebook::{
@@ -253,45 +254,6 @@ fn reseed_world(
 /// checks whether the placement was isolated and sets `IsolationHint` (task
 /// 055) accordingly — informational only, never a gate on the placement
 /// itself (task 050 deliberately removed placement constraints).
-/// Every rejection rule `seed_organism_on_click` enforces once a clicked
-/// cell is known: affordable, placeable (task 067 — not Sea or a mountain
-/// peak), and empty. Pulled out of the system so it's unit-testable without
-/// the mouse/window/camera harness `clicked_cell` needs. Silent no-op on
-/// every rejection, matching the rest of this file's action gates (no
-/// rejected-action feedback mechanism exists yet); returns whether the
-/// placement actually happened.
-#[allow(clippy::too_many_arguments)]
-fn attempt_seed(
-    world: &mut SimWorld,
-    config: &SimConfig,
-    budget: &mut ActionBudget,
-    placed: &mut PlayerPlacedCells,
-    species: SpeciesId,
-    x: usize,
-    y: usize,
-) -> bool {
-    if budget.points_remaining < config.time.action_costs.seed {
-        return false;
-    }
-    if !world.is_placeable_for(x, y, species) {
-        return false;
-    }
-    let index = world.index(x, y);
-    let era = world.era;
-    let cell = world.get_mut(x, y);
-    if cell.organism.is_some() {
-        return false;
-    }
-    cell.organism = Some(Organism {
-        species,
-        energy: config.energy.seed_energy,
-        born_era: era,
-    });
-    budget.points_remaining -= config.time.action_costs.seed;
-    placed.0.insert(index);
-    true
-}
-
 /// Bundled into one `SystemParam` (mirrors `objectives.rs`'s
 /// `ObjectiveOutcomeParams`, `run_flow.rs`'s `WorldResetParams`) purely to
 /// stay under Bevy's per-function system-param limit — `seed_organism_on_click`
@@ -351,17 +313,14 @@ fn seed_organism_on_click(
     ) else {
         return;
     };
-    if !attempt_seed(
-        &mut world,
-        &config,
-        &mut budget,
-        &mut placed,
-        selected.0,
-        x,
-        y,
-    ) {
+    let Some(index) = actions::attempt_seed(&mut world, &config, &mut budget, selected.0, x, y)
+    else {
         return;
-    }
+    };
+    // Task 026's placement record stays here rather than in the library
+    // action: `PlayerPlacedCells` is notebook bookkeeping, not simulation
+    // state, and nothing headless has a use for it.
+    placed.0.insert(index);
 
     // Overview's cluster-heatmap aggregation (task 076) doesn't show
     // individual cells, so a placement there gets a transient ring marking
@@ -629,8 +588,8 @@ fn quit(keys: Res<ButtonInput<KeyCode>>, mut exit: MessageWriter<AppExit>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::notebook::{MatrixKnowledge, NotebookHasUnseenConfirmation};
-    use abiogenesis::world::{Species, TagId, TagMatrix, TagSlot, TerrainKind};
+    use crate::notebook::NotebookHasUnseenConfirmation;
+    use abiogenesis::world::{Organism, Species, SpeciesId, TagId, TagMatrix, TagSlot};
     use abiogenesis::worldgen::generate_starting_palette;
     use bevy::ecs::system::SystemState;
     use bevy::state::state::State;
@@ -1204,7 +1163,7 @@ mod tests {
         app.insert_resource(keys);
         app.insert_resource(EraProgress::default());
         app.insert_resource(NextState::<EraState>::default());
-        app.insert_resource(MatrixKnowledge::new(5, 3.0));
+        app.insert_resource(abiogenesis::knowledge::MatrixKnowledge::new(5, 3.0));
         app.insert_resource(crate::notebook::TerrainKnowledge::new(5, 3.0));
         app.insert_resource(ObservationLog::default());
         app.insert_resource(ActionBudget::default());
@@ -1335,85 +1294,5 @@ mod tests {
             born_era: 0,
         });
         assert!(!is_isolated_placement(&world, 5, 5));
-    }
-
-    #[test]
-    fn attempt_seed_rejects_an_unplaceable_cell() {
-        let config = SimConfig::default();
-        let mut world = SimWorld::new(42, &config);
-        world.get_mut(5, 5).terrain = TerrainKind::Sea;
-        let mut budget = ActionBudget {
-            points_remaining: 3,
-        };
-        let mut placed = PlayerPlacedCells::default();
-
-        let placed_ok = attempt_seed(
-            &mut world,
-            &config,
-            &mut budget,
-            &mut placed,
-            SpeciesId(0),
-            5,
-            5,
-        );
-
-        assert!(!placed_ok);
-        assert!(world.get(5, 5).organism.is_none());
-        assert_eq!(
-            budget.points_remaining, 3,
-            "budget must not be spent on a rejected placement"
-        );
-        assert!(placed.0.is_empty());
-    }
-
-    #[test]
-    fn attempt_seed_rejects_an_unplaceable_peak_even_though_the_terrain_is_mountain() {
-        let config = SimConfig::default();
-        let mut world = SimWorld::new(42, &config);
-        let cell = world.get_mut(5, 5);
-        cell.terrain = TerrainKind::Mountain;
-        cell.is_peak = true;
-        let mut budget = ActionBudget {
-            points_remaining: 3,
-        };
-        let mut placed = PlayerPlacedCells::default();
-
-        let placed_ok = attempt_seed(
-            &mut world,
-            &config,
-            &mut budget,
-            &mut placed,
-            SpeciesId(0),
-            5,
-            5,
-        );
-
-        assert!(!placed_ok);
-        assert!(world.get(5, 5).organism.is_none());
-    }
-
-    #[test]
-    fn attempt_seed_succeeds_on_ordinary_placeable_terrain() {
-        let config = SimConfig::default();
-        let mut world = SimWorld::new(42, &config);
-        world.get_mut(5, 5).terrain = TerrainKind::Plain;
-        let mut budget = ActionBudget {
-            points_remaining: 3,
-        };
-        let mut placed = PlayerPlacedCells::default();
-
-        let placed_ok = attempt_seed(
-            &mut world,
-            &config,
-            &mut budget,
-            &mut placed,
-            SpeciesId(0),
-            5,
-            5,
-        );
-
-        assert!(placed_ok);
-        assert!(world.get(5, 5).organism.is_some());
-        assert_eq!(budget.points_remaining, 2);
     }
 }

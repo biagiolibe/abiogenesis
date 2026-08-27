@@ -117,7 +117,7 @@ pub struct GraceProgress {
 /// Advances (or resets) `grace`'s alive-streak for one simulated tick.
 /// No-ops once `foothold_reached` is already set — the streak no longer
 /// matters at that point, so there's nothing to keep counting.
-fn update_grace_progress(world: &SimWorld, grace: &mut GraceProgress, foothold_ticks: u32) {
+pub fn update_grace_progress(world: &SimWorld, grace: &mut GraceProgress, foothold_ticks: u32) {
     if grace.foothold_reached {
         return;
     }

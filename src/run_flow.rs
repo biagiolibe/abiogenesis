@@ -24,11 +24,11 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 use crate::notebook::{
-    BirthTally, MatrixKnowledge, NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells,
-    TerrainKnowledge,
+    BirthTally, NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells, TerrainKnowledge,
 };
 use crate::render::SeenRelations;
 use crate::ui::{DeathCauseTally, IsolationHint, PopulationTrends, SelectedSpecies, SpliceDraft};
+use abiogenesis::knowledge::MatrixKnowledge;
 
 /// Every piece of per-world state a world (re)start resets, bundled into one
 /// `SystemParam` (task 054) — `start_world`'s individual `&mut` arguments

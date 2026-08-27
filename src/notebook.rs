@@ -9,6 +9,7 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
 use abiogenesis::config::SimConfig;
+use abiogenesis::knowledge::{accumulate_adjacency_evidence, MatrixKnowledge};
 use abiogenesis::objectives::ObjectiveAdvanced;
 use abiogenesis::sim::{
     AdjacencyObserved, EraCompleted, OrganismBorn, OrganismDied, SpeciesEvolved, SpeciesExtinct,
@@ -97,74 +98,6 @@ pub struct EverSeeded(pub bool);
 /// eras, unlike the death/extinction logs it sits alongside.
 #[derive(Resource, Default)]
 pub struct BirthTally(Vec<u32>);
-
-/// Cumulative weighted evidence for every `(exerter_tag, receiver_tag)`
-/// pair (GDD §7's "B with a hint of C" confirmation model) — the mechanism
-/// that progressively reveals `world.matrix`, not a second opacity layer.
-/// Sized and laid out exactly like `TagMatrix`
-/// (`exerter.0 * size + receiver.0`) so the two stay trivially parallel for
-/// task 021's UI.
-///
-/// Reads through to `world.matrix` for the revealed sign once a pair is
-/// confirmed, rather than storing its own copy of the value — simpler, and
-/// there's only ever one `SimWorld` to read from.
-///
-/// There is no "confirmed zero effect" state (GDD §5.9's `0` cell): task
-/// 018 only emits `AdjacencyObserved` for pairs with a non-zero matrix
-/// entry, so evidence never accumulates for a genuinely-zero pair — the
-/// hypothesis grid (021) only distinguishes `?` (unconfirmed) from `±!`
-/// (confirmed non-zero, sign shown).
-#[derive(Resource)]
-pub struct MatrixKnowledge {
-    size: usize,
-    threshold: f32,
-    evidence: Vec<f32>,
-}
-
-impl MatrixKnowledge {
-    pub fn new(active_tags: usize, threshold: f32) -> Self {
-        Self {
-            size: active_tags,
-            threshold,
-            evidence: vec![0.0; active_tags * active_tags],
-        }
-    }
-
-    /// Adds `weight` to a pair's evidence, returning `true` if this call is
-    /// the one that pushed it from below `threshold` to at/above it (GDD
-    /// §7's "aha" moment) — `false` on every other call, including repeat
-    /// evidence for an already-confirmed pair.
-    pub fn record(&mut self, exerter: TagSlot, receiver: TagSlot, weight: f32) -> bool {
-        let idx = exerter.0 as usize * self.size + receiver.0 as usize;
-        let was_confirmed = self.evidence[idx] >= self.threshold;
-        self.evidence[idx] += weight;
-        !was_confirmed && self.evidence[idx] >= self.threshold
-    }
-
-    pub fn evidence(&self, exerter: TagSlot, receiver: TagSlot) -> f32 {
-        self.evidence[exerter.0 as usize * self.size + receiver.0 as usize]
-    }
-
-    pub fn is_confirmed(&self, exerter: TagSlot, receiver: TagSlot) -> bool {
-        self.evidence(exerter, receiver) >= self.threshold
-    }
-
-    pub fn threshold(&self) -> f32 {
-        self.threshold
-    }
-
-    /// The real matrix value for a confirmed pair, `None` if not yet
-    /// confirmed. Reads through `world.matrix`, not a stored snapshot.
-    pub fn revealed_value(
-        &self,
-        exerter: TagSlot,
-        receiver: TagSlot,
-        world: &SimWorld,
-    ) -> Option<i8> {
-        self.is_confirmed(exerter, receiver)
-            .then(|| world.matrix.get(exerter, receiver))
-    }
-}
 
 /// Cumulative weighted evidence for every `(TagSlot, TerrainKind)` pair
 /// (task 097, `redesign/abiogenesis-living-world.md` §1) — the gradual,
@@ -275,11 +208,15 @@ impl Plugin for NotebookPlugin {
     }
 }
 
-/// Drains `AdjacencyObserved` (task 018) into `MatrixKnowledge`, weighting
-/// each observation `observation_weight_numerator / (1 + n_confounders)`
-/// (GDD §7). Every pair `record` reports as newly confirmed gets a log
-/// entry and raises the HUD badge (task 054) — the game's central discovery
-/// beat, previously silent outside the hypothesis grid itself.
+/// Drains `AdjacencyObserved` (task 018) into `MatrixKnowledge` via
+/// `knowledge::accumulate_adjacency_evidence`, which owns the weight formula
+/// (GDD §7), and does the presentation half here: every pair that call
+/// reports as newly confirmed gets a log entry and raises the HUD badge
+/// (task 054) — the game's central discovery beat, previously silent outside
+/// the hypothesis grid itself.
+///
+/// Split this way since task 134: the accumulation is simulation knowledge
+/// the headless bot survey shares, the log line and the badge are not.
 fn accumulate_evidence(
     config: Res<SimConfig>,
     world: Res<SimWorld>,
@@ -288,22 +225,18 @@ fn accumulate_evidence(
     mut log: ResMut<ObservationLog>,
     mut unseen: ResMut<NotebookHasUnseenConfirmation>,
 ) {
-    for event in observed.read() {
-        let from_glyph = tag_glyph(world.active_tags[event.exerter_tag.0 as usize]);
-        let to_glyph = tag_glyph(world.active_tags[event.receiver_tag.0 as usize]);
-
-        let weight =
-            config.notebook.observation_weight_numerator / (1.0 + event.n_confounders as f32);
-        let newly_confirmed = knowledge.record(event.exerter_tag, event.receiver_tag, weight);
-        if newly_confirmed {
-            let positive = world.matrix.get(event.exerter_tag, event.receiver_tag) > 0;
-            log.entries.push(LogEntry {
-                era: world.era,
-                species: None,
-                text: text::confirmation_message(from_glyph, to_glyph, positive),
-            });
-            unseen.0 = true;
-        }
+    let confirmed =
+        accumulate_adjacency_evidence(observed.read().copied(), &config, &mut knowledge);
+    for (exerter, receiver) in confirmed {
+        let from_glyph = tag_glyph(world.active_tags[exerter.0 as usize]);
+        let to_glyph = tag_glyph(world.active_tags[receiver.0 as usize]);
+        let positive = world.matrix.get(exerter, receiver) > 0;
+        log.entries.push(LogEntry {
+            era: world.era,
+            species: None,
+            text: text::confirmation_message(from_glyph, to_glyph, positive),
+        });
+        unseen.0 = true;
     }
 }
 
@@ -1560,47 +1493,6 @@ mod tests {
     }
 
     const THRESHOLD: f32 = 3.0;
-
-    #[test]
-    fn three_isolated_observations_reach_the_threshold_exactly() {
-        // GDD §7: n_confounders = 0 -> weight 1.0 each; 3 * 1.0 == threshold.
-        let mut knowledge = MatrixKnowledge::new(2, THRESHOLD);
-        for _ in 0..3 {
-            knowledge.record(TagSlot(0), TagSlot(1), 1.0);
-        }
-        assert!((knowledge.evidence(TagSlot(0), TagSlot(1)) - 3.0).abs() < 1e-6);
-        assert!(knowledge.is_confirmed(TagSlot(0), TagSlot(1)));
-    }
-
-    #[test]
-    fn record_reports_the_confirmation_transition_exactly_once() {
-        let mut knowledge = MatrixKnowledge::new(2, THRESHOLD);
-        assert!(!knowledge.record(TagSlot(0), TagSlot(1), 1.0));
-        assert!(!knowledge.record(TagSlot(0), TagSlot(1), 1.0));
-        assert!(knowledge.record(TagSlot(0), TagSlot(1), 1.0));
-        // Already confirmed: further evidence keeps accumulating but no
-        // longer reports a fresh transition.
-        assert!(!knowledge.record(TagSlot(0), TagSlot(1), 1.0));
-    }
-
-    #[test]
-    fn confounded_observations_need_four_times_as_many() {
-        // n_confounders = 3 -> weight 0.25 each; 12 * 0.25 == threshold.
-        let mut knowledge = MatrixKnowledge::new(2, THRESHOLD);
-        for _ in 0..11 {
-            knowledge.record(TagSlot(0), TagSlot(1), 0.25);
-        }
-        assert!(
-            !knowledge.is_confirmed(TagSlot(0), TagSlot(1)),
-            "11 * 0.25 = 2.75, just under threshold"
-        );
-
-        knowledge.record(TagSlot(0), TagSlot(1), 0.25);
-        assert!(
-            knowledge.is_confirmed(TagSlot(0), TagSlot(1)),
-            "the 12th observation crosses the threshold"
-        );
-    }
 
     #[test]
     fn terrain_knowledge_record_reports_the_confirmation_transition_exactly_once() {

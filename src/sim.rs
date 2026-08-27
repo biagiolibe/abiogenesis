@@ -867,7 +867,13 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
 }
 
 /// Gaussian environmental fitness around the species' thermal optimum (GDD §5.9).
-fn env_fit(temperature: f32, optimum: f32, tolerance: f32) -> f32 {
+///
+/// `pub` since task 134: the headless bot survey needs to judge where a
+/// species would be viable before placing it — the same reading a player
+/// makes from the temperature overlay and the species' thermal range — and
+/// re-deriving the curve in the harness would be a second copy of a §5.9
+/// formula free to drift from this one.
+pub fn env_fit(temperature: f32, optimum: f32, tolerance: f32) -> f32 {
     let d = temperature - optimum;
     (-(d * d) / (2.0 * tolerance * tolerance)).exp()
 }
