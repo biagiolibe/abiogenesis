@@ -143,17 +143,10 @@ The INDEX is right that this is the highest information-per-hour moment in the
 whole plan — it is where you find out whether the game is fun, before investing
 in everything else. Do not skip it.
 
-## Phase 1b — friction fixes (`culture-shock-friction-fixes.md`)
-
-| Status | ID | Title | Priority |
-|-------|----|--------|----------|
-| `[ ]` | 141 | Saturated-with-no-outlet indicator on the detail map | Alta — the only one invisible by design, not merely unclear |
-| `[ ]` | 142 | Name the dominant stimulus in the speciation reveal | Media — the datum already exists, near-zero cost |
-| `[ ]` | 143 | Second contextual hint on the apparent stall | Media |
-| `[ ]` | 144 | Temporary trait-code translation in the first N log lines | Bassa-media |
-
-**→ Recommended before continuing:** replay `culture-shock-naive-player-example.md`'s
-scenario with all four applied, ideally with a real playtester.
+Phase 1b (141-144, anti-friction interventions) closed 2026-08-28 and is
+archived in `tasks/QUEUE_ARCHIVE.md`. **Recommended before Phase 2:** replay
+`culture-shock-naive-player-example.md`'s scenario with all four applied,
+ideally with a real playtester — not yet done.
 
 ## Phase 2 — making the loop legible
 
@@ -281,6 +274,32 @@ proposal (`PROJECT_PLAN.md` §1), not available to pick up yet.
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) beyond what's already expanded into task files here.
 
 ---
+
+*Last updated: 2026-08-28 (Phase 1b, 141-144, all four landed this session —
+Phase 1 playtest checkpoint deliberately skipped per direct user instruction,
+to be recovered after Phase 1b. 141: `Population::blocked` (already computed
+by task 137) rendered as a shape+color marker in Detail view only —
+`render::BlockedIndicatorSeen` tracks first-occurrence-per-cell for a pulsing
+accent vs. a static one after. 142: `sim::DominantStimulus` made `pub`,
+`EraEvolutionReveal` gains a `dominant_stimulus` field, `text::era_reveal_evolution_line`
+appends a one-clause-per-stimulus cause sentence — no new calculation, only
+new exposure of what `speciate` already computes. 143: new
+`SimWorld::stall_ticks` (grid-sized, `sim::step`-maintained) plus
+`sim::any_population_stalled`; `ui::StallHint` mirrors `IsolationHint`'s
+one-shot `MetaProgress`-gated, era-derived-duration shape, shown below both
+task-053 hints and the isolation hint. 144: `notebook::translated_tag_label`
+appends the current roster's species names to a bare tag glyph for the
+log's first 5 entries — applied to both `accumulate_evidence` (matrix
+confirmations) and `accumulate_terrain_evidence` (terrain-gate
+confirmations). Two scope corrections against the design doc, both noted in
+QUEUE_ARCHIVE.md's Phase 1b entry: 144 applies its principle to this
+codebase's actual single-Greek-letter tag glyphs, not the doc's
+illustrative three-letter codes (task 155's rework, unshipped); 142's cause
+clause stays at the three-stimulus category level, since
+`SelectionThresholdCrossed` has no per-neighbour attribution to name more
+specifically. Recommended before Phase 2: replay
+`culture-shock-naive-player-example.md`'s scenario with all four applied —
+not yet done. `cargo test`/`clippy -- -D warnings` clean throughout.)*
 
 *Last updated: 2026-08-27 (134, two-bot experiment-incentive harness —
 `examples/two_bot_survey.rs` runs an exploiter and an explorer against the same

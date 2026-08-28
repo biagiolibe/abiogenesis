@@ -195,8 +195,14 @@ impl Plugin for GridRenderPlugin {
         // as `NotebookPlugin`'s `MatrixKnowledge` init.
         let config = app.world().resource::<SimConfig>();
         let seen_relations = SeenRelations::new(config.tags.active_tags_early as usize);
+        // Task 141: grid dimensions are fixed by `SimConfig`, unlike
+        // `SeenRelations`' tag-count size — no per-world resize needed,
+        // only the `WorldResetParams` all-`false` reset.
+        let blocked_indicator_seen =
+            BlockedIndicatorSeen::new(config.grid.width as usize, config.grid.height as usize);
 
         app.insert_resource(seen_relations)
+            .insert_resource(blocked_indicator_seen)
             .add_systems(Startup, (spawn_camera, spawn_grid, spawn_metabolism_shapes))
             .init_resource::<EnvironmentOverlay>()
             .init_resource::<MapViewMode>()
@@ -1068,6 +1074,39 @@ pub struct SeenRelations {
     seen: Vec<bool>,
 }
 
+/// Task 141: tracks, per grid cell, whether a saturated-with-no-outlet
+/// breakout (`Population::blocked`) has ever been shown on the detail map
+/// in the current world — the first occurrence gets a pulsing accent
+/// (`cell_color`'s emphasis branch), later ones a static marker only, so
+/// the indicator doesn't turn into permanent noise once the player has
+/// learned to recognise it. Sized once at `Startup` from `SimConfig::grid`
+/// (fixed grid dimensions, unlike `SeenRelations`' tag-count-dependent
+/// size) and reset to all-`false` on every world (re)start via
+/// `WorldResetParams`, same lifecycle as `SeenRelations`.
+#[derive(Resource)]
+pub struct BlockedIndicatorSeen {
+    width: usize,
+    seen: Vec<bool>,
+}
+
+impl BlockedIndicatorSeen {
+    pub fn new(width: usize, height: usize) -> Self {
+        Self {
+            width,
+            seen: vec![false; width * height],
+        }
+    }
+
+    /// Marks cell `(x, y)` as having shown the indicator, returning `true`
+    /// if this call is the first time.
+    fn mark_seen(&mut self, x: usize, y: usize) -> bool {
+        let idx = y * self.width + x;
+        let first = !self.seen[idx];
+        self.seen[idx] = true;
+        first
+    }
+}
+
 impl SeenRelations {
     pub fn new(active_tags: usize) -> Self {
         Self {
@@ -1355,15 +1394,25 @@ struct MetabolismShapes {
     predator: Handle<Image>,
     decomposer: Handle<Image>,
     chemolithotroph: Handle<Image>,
+    // Task 141: same four shapes with `blocked_marker_mask` composited on
+    // top, swapped in for a cell whose `Population::blocked` is `true`.
+    photolithic_blocked: Handle<Image>,
+    predator_blocked: Handle<Image>,
+    decomposer_blocked: Handle<Image>,
+    chemolithotroph_blocked: Handle<Image>,
 }
 
 impl MetabolismShapes {
-    fn handle_for(&self, metabolism: Metabolism) -> Handle<Image> {
-        match metabolism {
-            Metabolism::Photolithic => self.photolithic.clone(),
-            Metabolism::Predator => self.predator.clone(),
-            Metabolism::Decomposer => self.decomposer.clone(),
-            Metabolism::Chemolithotroph => self.chemolithotroph.clone(),
+    fn handle_for(&self, metabolism: Metabolism, blocked: bool) -> Handle<Image> {
+        match (metabolism, blocked) {
+            (Metabolism::Photolithic, false) => self.photolithic.clone(),
+            (Metabolism::Predator, false) => self.predator.clone(),
+            (Metabolism::Decomposer, false) => self.decomposer.clone(),
+            (Metabolism::Chemolithotroph, false) => self.chemolithotroph.clone(),
+            (Metabolism::Photolithic, true) => self.photolithic_blocked.clone(),
+            (Metabolism::Predator, true) => self.predator_blocked.clone(),
+            (Metabolism::Decomposer, true) => self.decomposer_blocked.clone(),
+            (Metabolism::Chemolithotroph, true) => self.chemolithotroph_blocked.clone(),
         }
     }
 }
@@ -1429,12 +1478,30 @@ fn cross_mask(nx: f32, ny: f32) -> bool {
     (nx.abs() <= half_arm && ny.abs() <= extent) || (ny.abs() <= half_arm && nx.abs() <= extent)
 }
 
+/// A small filled square in the texture's top-right corner (task 141) — the
+/// saturated-with-no-outlet indicator. Composited on top of a metabolism
+/// mask (`with_blocked_marker`) rather than replacing it, so the shape's own
+/// species/metabolism reading stays intact; distinguishable by shape (a
+/// notch breaking the outline), not only by `cell_color`'s accent tint, per
+/// the colour-accessibility rule ("colour is never the only channel").
+fn blocked_marker_mask(nx: f32, ny: f32) -> bool {
+    (0.45..=0.95).contains(&nx) && (-0.95..=-0.45).contains(&ny)
+}
+
+fn with_blocked_marker(base: impl Fn(f32, f32) -> bool) -> impl Fn(f32, f32) -> bool {
+    move |nx, ny| base(nx, ny) || blocked_marker_mask(nx, ny)
+}
+
 fn spawn_metabolism_shapes(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     commands.insert_resource(MetabolismShapes {
         photolithic: images.add(shape_mask_image(circle_mask)),
         predator: images.add(shape_mask_image(triangle_mask)),
         decomposer: images.add(shape_mask_image(diamond_mask)),
         chemolithotroph: images.add(shape_mask_image(cross_mask)),
+        photolithic_blocked: images.add(shape_mask_image(with_blocked_marker(circle_mask))),
+        predator_blocked: images.add(shape_mask_image(with_blocked_marker(triangle_mask))),
+        decomposer_blocked: images.add(shape_mask_image(with_blocked_marker(diamond_mask))),
+        chemolithotroph_blocked: images.add(shape_mask_image(with_blocked_marker(cross_mask))),
     });
 }
 
@@ -1466,11 +1533,29 @@ fn sync_grid_colors(
     shapes: Res<MetabolismShapes>,
     mode: Res<MapViewMode>,
     time: Res<Time>,
+    // Task 141: render-local "ever shown" tracking, not simulation state —
+    // mutating it here doesn't violate the read-only-`SimWorld` rule above.
+    mut blocked_seen: ResMut<BlockedIndicatorSeen>,
     mut cells: Query<(&GridCell, &mut Sprite)>,
 ) {
     let elapsed = time.elapsed_secs();
     for (cell, mut sprite) in &mut cells {
-        sprite.color = cell_color(&world, &config, cell.x, cell.y, *mode, elapsed);
+        let blocked = matches!(*mode, MapViewMode::Detail)
+            && world
+                .get(cell.x, cell.y)
+                .population
+                .is_some_and(|p| p.blocked);
+        let first_occurrence = blocked && blocked_seen.mark_seen(cell.x, cell.y);
+        sprite.color = cell_color(
+            &world,
+            &config,
+            cell.x,
+            cell.y,
+            *mode,
+            elapsed,
+            blocked,
+            first_occurrence,
+        );
         sprite.image = match *mode {
             MapViewMode::Detail => cell_shape(&world, &shapes, cell.x, cell.y),
             // Metabolism shapes are a Detail-only precision affordance
@@ -1480,15 +1565,16 @@ fn sync_grid_colors(
     }
 }
 
-/// The shape texture for cell `(x, y)` (task 032): a metabolism-specific
-/// mask for an occupied cell, or `Handle::default()` — the same implicit
-/// solid-square fallback `Sprite::from_color` itself uses — for empty and
-/// residue-only cells, which this task leaves visually unaffected.
+/// The shape texture for cell `(x, y)` (task 032, marker composited since
+/// task 141): a metabolism-specific mask for an occupied cell — with the
+/// blocked-marker corner notch when `Population::blocked` — or
+/// `Handle::default()` — the same implicit solid-square fallback
+/// `Sprite::from_color` itself uses — for empty and residue-only cells.
 fn cell_shape(world: &SimWorld, shapes: &MetabolismShapes, x: usize, y: usize) -> Handle<Image> {
     match world.get(x, y).population {
         Some(population) => {
             let metabolism = world.species[population.species.0 as usize].metabolism;
-            shapes.handle_for(metabolism)
+            shapes.handle_for(metabolism, population.blocked)
         }
         None => Handle::default(),
     }
@@ -1527,6 +1613,7 @@ pub fn world_to_cell(world_pos: Vec2, width: usize, height: usize) -> Option<(us
 /// flat color, dithered — superseding task 066/068's `TerrainKind`-only
 /// bands), then a toxicity tint (task 033) composited on top of whichever
 /// of the three applies.
+#[allow(clippy::too_many_arguments)]
 fn cell_color(
     world: &SimWorld,
     config: &SimConfig,
@@ -1534,6 +1621,11 @@ fn cell_color(
     y: usize,
     mode: MapViewMode,
     elapsed: f32,
+    // Task 141: saturated-with-no-outlet (`Population::blocked`), Detail
+    // view only — `sync_grid_colors` already gates this to `false` in
+    // Overview, where per-cell data isn't shown at all.
+    blocked: bool,
+    blocked_first_occurrence: bool,
 ) -> Color {
     let cell = world.get(x, y);
 
@@ -1588,7 +1680,29 @@ fn cell_color(
         dithered_biome_color(cell.biome, x, y)
     };
 
-    toxicity_tint(base, cell.toxicity, elapsed)
+    let base = toxicity_tint(base, cell.toxicity, elapsed);
+    blocked_tint(base, blocked, blocked_first_occurrence, elapsed)
+}
+
+/// Task 141: an amber accent for a saturated-with-no-outlet cell, on top of
+/// `blocked_marker_mask`'s shape notch so the signal doesn't rely on colour
+/// alone. First occurrence this world pulses (mirrors `toxicity_tint`'s
+/// breathing rhythm, distinct hue so it doesn't read as a toxicity
+/// warning); later occurrences get a fixed, calmer blend — noticeable but
+/// not attention-grabbing once the player has already learned to read the
+/// marker shape.
+fn blocked_tint(base: Color, blocked: bool, first_occurrence: bool, elapsed: f32) -> Color {
+    if !blocked {
+        return base;
+    }
+    const PULSE_FREQUENCY: f32 = 0.6; // rad/s — faster than toxicity_tint's, reads as "new" not "ambient".
+    let accent = Color::hsl(40.0, 0.95, 0.5);
+    let strength = if first_occurrence {
+        0.35 + 0.25 * (elapsed * PULSE_FREQUENCY).sin().abs()
+    } else {
+        0.2
+    };
+    base.mix(&accent, strength)
 }
 
 /// Flat per-biome color (task 112, `redesign/abiogenesis-biomes.md`,
@@ -1807,7 +1921,7 @@ mod tests {
     /// `cell_color` in `Detail` mode, exactly as it behaved before task 076
     /// added the `Overview` branch.
     fn detail_color(world: &SimWorld, config: &SimConfig, x: usize, y: usize) -> Color {
-        cell_color(world, config, x, y, MapViewMode::Detail, 0.0)
+        cell_color(world, config, x, y, MapViewMode::Detail, 0.0, false, false)
     }
 
     /// Task 139's core acceptance criterion: Overview now colors a cell by
@@ -1835,8 +1949,16 @@ mod tests {
             ..world.cells[idx]
         };
 
-        let Color::Hsla(occupied) = cell_color(&world, &config, x, y, MapViewMode::Overview, 0.0)
-        else {
+        let Color::Hsla(occupied) = cell_color(
+            &world,
+            &config,
+            x,
+            y,
+            MapViewMode::Overview,
+            0.0,
+            false,
+            false,
+        ) else {
             panic!("expected an HSL color");
         };
         let Color::Hsla(empty) = biome_color(Biome::Plain) else {
@@ -1868,20 +1990,111 @@ mod tests {
         };
 
         world.cells[idx].population = Some(population_at(1));
-        let Color::Hsla(lone) = cell_color(&world, &config, x, y, MapViewMode::Overview, 0.0)
-        else {
+        let Color::Hsla(lone) = cell_color(
+            &world,
+            &config,
+            x,
+            y,
+            MapViewMode::Overview,
+            0.0,
+            false,
+            false,
+        ) else {
             panic!("expected an HSL color");
         };
 
         world.cells[idx].population = Some(population_at(config.energy.cell_carrying_capacity));
-        let Color::Hsla(full) = cell_color(&world, &config, x, y, MapViewMode::Overview, 0.0)
-        else {
+        let Color::Hsla(full) = cell_color(
+            &world,
+            &config,
+            x,
+            y,
+            MapViewMode::Overview,
+            0.0,
+            false,
+            false,
+        ) else {
             panic!("expected an HSL color");
         };
 
         assert!(
             full.lightness > lone.lightness,
             "a cell at carrying capacity must read brighter than a lone individual"
+        );
+    }
+
+    /// Task 141: `blocked_marker_mask` (the shape notch) fires only where
+    /// `blocked_tint`'s accent color also fires — the two must never
+    /// disagree, since the design explicitly wants shape *and* color to
+    /// carry the same signal (colour is never the only channel).
+    #[test]
+    fn blocked_marker_mask_and_tint_agree_on_where_the_indicator_shows() {
+        let inside_notch = blocked_marker_mask(0.7, -0.7);
+        let outside_notch = blocked_marker_mask(0.0, 0.0);
+        assert!(inside_notch, "the notch's own coordinates must be covered");
+        assert!(
+            !outside_notch,
+            "the cell center must stay untouched by the notch"
+        );
+
+        let base = Color::hsl(0.0, 0.0, 0.5);
+        let unblocked = blocked_tint(base, false, false, 0.0);
+        let blocked_static = blocked_tint(base, true, false, 0.0);
+        let blocked_emphasized = blocked_tint(base, true, true, 0.0);
+
+        assert_eq!(
+            unblocked, base,
+            "an unblocked cell must render with no accent at all"
+        );
+        assert_ne!(
+            blocked_static, base,
+            "a blocked cell must always carry the accent tint, first occurrence or not"
+        );
+        assert_ne!(
+            blocked_emphasized, blocked_static,
+            "first occurrence must read differently from every later occurrence"
+        );
+    }
+
+    /// `MetabolismShapes::handle_for` must return the marked variant iff
+    /// `Population::blocked` is set — otherwise the render-loop wiring in
+    /// `cell_shape`/`sync_grid_colors` silently drops the marker.
+    #[test]
+    fn cell_shape_uses_the_blocked_marker_handle_iff_population_is_blocked() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.push_species(abiogenesis::world::Species {
+            name: "Test".to_string(),
+            metabolism: abiogenesis::world::Metabolism::Photolithic,
+            temp_optimum: 0.5,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: vec![],
+        });
+        let (x, y) = (0, 0);
+        let idx = world.index(x, y);
+        let population_at = |blocked| Population {
+            species: SpeciesId(0),
+            count: 1,
+            energy: 5.0,
+            born_season: 0,
+            blocked,
+        };
+
+        let mut app = App::new();
+        app.init_resource::<Assets<Image>>();
+        app.add_systems(Startup, spawn_metabolism_shapes);
+        app.update();
+        let shapes = app.world().resource::<MetabolismShapes>();
+
+        world.cells[idx].population = Some(population_at(false));
+        let unblocked_handle = cell_shape(&world, shapes, x, y);
+        world.cells[idx].population = Some(population_at(true));
+        let blocked_handle = cell_shape(&world, shapes, x, y);
+
+        assert_ne!(
+            unblocked_handle, blocked_handle,
+            "a blocked population must render a different shape handle than an unblocked one"
         );
     }
 

@@ -417,8 +417,11 @@ fn accumulate_selection_pressure(
 /// three-way tie is vanishingly unlikely given these are independent `f32`
 /// accumulations, so which side of the tie-break it falls on barely
 /// matters in practice.
+/// Task 142: also read by `build_era_reveal`/`text::era_reveal_evolution_line`
+/// to name the cause in the end-of-era reveal card, not just to pick
+/// `speciate`'s edit — hence `pub` since task 107.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DominantStimulus {
+pub enum DominantStimulus {
     /// Sustained negative `interaction_delta` (repeatedly harmed by
     /// adjacency) → the descendant gains an additional tag.
     InteractionHarm,
@@ -432,7 +435,7 @@ enum DominantStimulus {
     Toxicity,
 }
 
-fn dominant_stimulus(event: &SelectionThresholdCrossed) -> DominantStimulus {
+pub fn dominant_stimulus(event: &SelectionThresholdCrossed) -> DominantStimulus {
     if event.interaction_harm >= event.terrain_mismatch && event.interaction_harm >= event.toxicity
     {
         DominantStimulus::InteractionHarm
@@ -567,10 +570,10 @@ pub enum RevealTier {
 /// One matured evolution applied at the reveal (task 140): the before/after
 /// comparison the reveal card shows alongside its generated text
 /// (`redesign/processed/abiogenesis-time-scale-reveal.md` §3's "an icon that
-/// changes if it evolved a trait"). Naming *why* the descendant evolved
-/// (`DominantStimulus`) in the reveal's text is task 142's job, not this
-/// one — this struct only carries the structural before/after, not a
-/// rendered cause sentence.
+/// changes if it evolved a trait"), plus `dominant_stimulus` (task 142) so
+/// the reveal's generated text can name *why* the descendant evolved. Still
+/// only carries data, not a rendered sentence — `text::era_reveal_evolution_line`
+/// owns the wording.
 #[derive(Debug, Clone)]
 pub struct EraEvolutionReveal {
     pub parent: SpeciesId,
@@ -579,6 +582,12 @@ pub struct EraEvolutionReveal {
     pub child: SpeciesId,
     pub child_name: String,
     pub child_tag_count: usize,
+    /// Task 142: which stimulus dominated the pressure that triggered this
+    /// evolution — computed from the same `SelectionThresholdCrossed` event
+    /// `speciate` itself reads (`dominant_stimulus`), so the reveal's
+    /// generated cause clause and the actual edit `speciate` applied can
+    /// never disagree.
+    pub dominant_stimulus: DominantStimulus,
 }
 
 /// The end-of-era reveal's full content (task 140), built exactly once per
@@ -627,6 +636,30 @@ pub fn any_evolution_maturing(world: &SimWorld, config: &EvolutionConfig) -> boo
     })
 }
 
+/// Task 143 (`redesign/processed/culture-shock-friction-fixes.md`,
+/// Intervento 1): a population's per-capita net energy is "at an apparent
+/// stall" once it's stayed within this band of zero — proposed value from
+/// the design doc itself, indicative and left for playtest tuning like
+/// `MATURING_HINT_FRACTION`, hence a local const rather than a `SimConfig`
+/// field.
+const STALL_BAND: f32 = 0.1;
+
+/// Consecutive ticks within `STALL_BAND` before the second contextual hint
+/// (`ui::stall_hint_text`) is allowed to fire — same source, same
+/// "indicative, playtest-tuned" status as `STALL_BAND`.
+const STALL_TICKS_THRESHOLD: u32 = 15;
+
+/// True once any occupied cell has held a stalled net energy for
+/// `STALL_TICKS_THRESHOLD` consecutive ticks — read by `ui`'s stall-hint
+/// system to decide whether to show it (once per process session, mirroring
+/// `IsolationHint`'s `MetaProgress`-gated one-shot).
+pub fn any_population_stalled(world: &SimWorld) -> bool {
+    world
+        .stall_ticks
+        .iter()
+        .any(|&ticks| ticks >= STALL_TICKS_THRESHOLD)
+}
+
 /// True if `species` still has at least one living individual anywhere on
 /// the grid — the exact check task 140's "extinct before it matures" rule
 /// needs, distinct from `event.cell` specifically (a population can move
@@ -663,6 +696,7 @@ fn build_era_reveal(
         }
         let parent_name = world.species[event.species.0 as usize].name.clone();
         let parent_tag_count = world.species[event.species.0 as usize].tags.len();
+        let stimulus = dominant_stimulus(&event);
         if let Some(child) = speciate(&mut world, &config, &event) {
             evolutions.push(EraEvolutionReveal {
                 parent: event.species,
@@ -671,6 +705,7 @@ fn build_era_reveal(
                 child,
                 child_name: world.species[child.0 as usize].name.clone(),
                 child_tag_count: world.species[child.0 as usize].tags.len(),
+                dominant_stimulus: stimulus,
             });
             evolved.write(SpeciesEvolved { species: child });
         }
@@ -1146,8 +1181,23 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
                     species: occupant.species,
                 });
             }
+            world.stall_ticks[idx] = 0;
             continue;
         }
+
+        // Task 143: consecutive-tick "apparent stall" tracking — a
+        // per-capita net energy that stays within `STALL_BAND` of zero
+        // reads, to a new player, identically to "nothing is happening."
+        // Deliberately measured against the pre-growth aggregate (`count`,
+        // not whatever `count`/`energy_left` growth below produces) — this
+        // is the same net that decided whether this population is
+        // starving, growing, or holding, not a post-hoc reading.
+        let net_per_capita = (new_energy - occupant.energy) / occupant.count as f32;
+        world.stall_ticks[idx] = if net_per_capita.abs() < STALL_BAND {
+            world.stall_ticks[idx].saturating_add(1)
+        } else {
+            0
+        };
 
         mark_terrain_and_maybe_reveal(
             &mut world.terrain_occupancy,
@@ -1564,6 +1614,56 @@ mod tests {
             ..world.cells[idx]
         };
         (world, config)
+    }
+
+    /// Task 143: a population whose gain and upkeep very nearly cancel
+    /// (light chosen so net per-capita ≈ 0, same gain formula
+    /// `isolated_photolithic_grows` documents: `light * 1.4 - upkeep`)
+    /// accumulates `stall_ticks`; a population with a healthy net margin
+    /// (the `isolated_photolithic_grows` setup itself, net +0.48) does not.
+    #[test]
+    fn step_accumulates_stall_ticks_only_for_a_near_equilibrium_population() {
+        let (mut stalled_world, config) = world_with_one_organism(0.5 / 1.4, 0.5, 5.0);
+        let idx = stalled_world.index(stalled_world.width / 2, stalled_world.height / 2);
+        step(&mut stalled_world, &config);
+        assert_eq!(
+            stalled_world.stall_ticks[idx], 1,
+            "a near-zero net per-capita tick must increment stall_ticks"
+        );
+
+        let (mut healthy_world, config) = world_with_one_organism(0.7, 0.5, 5.0);
+        let idx = healthy_world.index(healthy_world.width / 2, healthy_world.height / 2);
+        step(&mut healthy_world, &config);
+        assert_eq!(
+            healthy_world.stall_ticks[idx], 0,
+            "a healthy positive net per-capita tick must not increment stall_ticks"
+        );
+    }
+
+    /// Task 143: `any_population_stalled` is a pure threshold read over
+    /// `SimWorld::stall_ticks` — this only proves the threshold wiring,
+    /// `step`'s own increment/reset logic is exercised indirectly by every
+    /// other `step`-based test in this module continuing to pass unchanged.
+    #[test]
+    fn any_population_stalled_reads_the_threshold_correctly() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        assert!(
+            !any_population_stalled(&world),
+            "a freshly built world has no stalled cell"
+        );
+
+        world.stall_ticks[0] = STALL_TICKS_THRESHOLD - 1;
+        assert!(
+            !any_population_stalled(&world),
+            "one tick short of the threshold must not count as stalled"
+        );
+
+        world.stall_ticks[0] = STALL_TICKS_THRESHOLD;
+        assert!(
+            any_population_stalled(&world),
+            "reaching the threshold must count as stalled"
+        );
     }
 
     #[test]

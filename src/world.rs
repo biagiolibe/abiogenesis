@@ -638,6 +638,14 @@ pub struct SimWorld {
     /// `AdjacencyExposure`'s own doc comment. Sized once, like `cells` —
     /// the grid never resizes, so this needs no lazy-grow logic.
     pub adjacency_exposure: Vec<AdjacencyExposure>,
+    /// Task 143: per-cell count of consecutive ticks a population's
+    /// per-capita net energy has sat within a narrow band around zero
+    /// (`EnergyConfig::stall_band`) — the "apparent stall" a new player
+    /// can't distinguish from a mistake. Sized once, like
+    /// `adjacency_exposure`; reset to `0` for a cell whenever its
+    /// population is absent or its net energy leaves the band, incremented
+    /// otherwise. `sim::step`'s own job, read by `any_population_stalled`.
+    pub stall_ticks: Vec<u32>,
 }
 
 impl SimWorld {
@@ -674,6 +682,7 @@ impl SimWorld {
             height,
             scratch: cells.clone(),
             adjacency_exposure: vec![AdjacencyExposure::default(); cells.len()],
+            stall_ticks: vec![0; cells.len()],
             cells,
             species: Vec::new(),
             tick: 0,

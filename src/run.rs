@@ -110,6 +110,10 @@ pub struct MetaProgress {
     /// reappears on a later world within the same run, or a later run in
     /// the same session.
     pub seen_isolation_hint: bool,
+    /// Task 143: whether the "apparent stall" second hint has already shown
+    /// this process session — same one-shot, non-persisted pattern as
+    /// `seen_isolation_hint`.
+    pub seen_stall_hint: bool,
 }
 
 impl MetaProgress {

@@ -1203,6 +1203,8 @@ mod tests {
         app.insert_resource(abiogenesis::sim::PendingEvolutions::default());
         app.insert_resource(abiogenesis::sim::EraTally::default());
         app.insert_resource(abiogenesis::sim::EraReveal::default());
+        app.insert_resource(crate::render::BlockedIndicatorSeen::new(10, 10));
+        app.insert_resource(crate::ui::StallHint::default());
         app.add_systems(Update, reseed_world);
         app.update();
 

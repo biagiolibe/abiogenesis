@@ -15,7 +15,7 @@ use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::{
     is_grace_active, CurrentObjective, GraceProgress, Objective, ObjectiveProgress,
 };
-use abiogenesis::run::RunProgress;
+use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::{
     any_evolution_maturing, ActionBudget, EraCompleted, OrganismDied, SeasonProgress,
 };
@@ -48,6 +48,18 @@ use abiogenesis::worldgen::season_pulses_for;
 #[derive(Resource, Default)]
 pub struct IsolationHint {
     pub text: Option<&'static str>,
+    pub shown_at_tick: u64,
+    pub duration_ticks: u64,
+}
+
+/// Task 143's second contextual hint, same one-shot/`MetaProgress`-gated,
+/// era-derived-duration shape as `IsolationHint` — set once by
+/// `check_stall_hint` the first time `sim::any_population_stalled` reports
+/// true, self-dismissed by `viewport_hint` exactly like `IsolationHint`
+/// (`isolation_hint_active` is reused for both, same timing rule).
+#[derive(Resource, Default)]
+pub struct StallHint {
+    pub active: bool,
     pub shown_at_tick: u64,
     pub duration_ticks: u64,
 }
@@ -234,6 +246,7 @@ impl Plugin for UiPlugin {
             .insert_resource(SelectedAction(ActionMode::Seed))
             .init_resource::<SpliceDraft>()
             .init_resource::<IsolationHint>()
+            .init_resource::<StallHint>()
             .init_resource::<PopulationTrends>()
             .init_resource::<DeathCauseTally>()
             .init_resource::<HudControlIntents>()
@@ -244,6 +257,7 @@ impl Plugin for UiPlugin {
                     reserve_hud_viewport,
                     update_population_trends,
                     tally_death_causes,
+                    check_stall_hint,
                 )
                     .run_if(in_state(GameState::Playing)),
             )
@@ -653,6 +667,27 @@ fn isolation_hint_active(shown_at_tick: u64, duration_ticks: u64, current_tick: 
     current_tick.saturating_sub(shown_at_tick) < duration_ticks
 }
 
+/// Latches `StallHint` the first time `sim::any_population_stalled` reports
+/// true this session (task 143) — mirrors `input.rs::seed_organism_on_click`'s
+/// `IsolationHint` latch: one-shot via `MetaProgress::seen_stall_hint`, same
+/// era-derived `duration_ticks` (`worldgen::season_pulses_for`).
+fn check_stall_hint(
+    world: Res<SimWorld>,
+    config: Res<SimConfig>,
+    run_progress: Res<RunProgress>,
+    mut meta: ResMut<MetaProgress>,
+    mut stall_hint: ResMut<StallHint>,
+) {
+    if meta.seen_stall_hint || !abiogenesis::sim::any_population_stalled(&world) {
+        return;
+    }
+    stall_hint.active = true;
+    stall_hint.shown_at_tick = world.tick;
+    stall_hint.duration_ticks =
+        season_pulses_for(run_progress.world_index, world.season, &config) as u64;
+    meta.seen_stall_hint = true;
+}
+
 /// Non-interactive onboarding hint over the grid viewport (task 053),
 /// guiding a fresh player through their first two actions: placing an
 /// organism, then opening the notebook. Purely state-driven — no dismiss
@@ -670,6 +705,7 @@ fn viewport_hint(
     ever_seeded: Res<EverSeeded>,
     notebook_ever_opened: Res<NotebookEverOpened>,
     mut isolation_hint: ResMut<IsolationHint>,
+    mut stall_hint: ResMut<StallHint>,
     world: Res<SimWorld>,
 ) -> Result {
     if isolation_hint.text.is_some()
@@ -681,11 +717,26 @@ fn viewport_hint(
     {
         isolation_hint.text = None;
     }
+    if stall_hint.active
+        && !isolation_hint_active(
+            stall_hint.shown_at_tick,
+            stall_hint.duration_ticks,
+            world.tick,
+        )
+    {
+        stall_hint.active = false;
+    }
 
+    // Task 143: the stall hint sits below both task-053 milestone hints and
+    // the guided first-isolation hint — it never overlaps or preempts the
+    // hints a fresh player sees first, only fills in once those have
+    // already resolved (or never applied, e.g. later in the same run).
     let hint = if let Some(text) = isolation_hint.text {
         text
     } else if let Some(text) = hint_text(ever_seeded.0, notebook_ever_opened.0) {
         text
+    } else if stall_hint.active {
+        text::HINT_APPARENT_STALL
     } else {
         return Ok(());
     };

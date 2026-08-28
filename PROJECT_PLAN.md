@@ -249,9 +249,13 @@ because they existed precisely to fake a density the model couldn't provide.
 - `[x]` 139 — Overview at real density, removing the pictorial machinery from `cluster.rs` → [139](tasks/done/139-overview-real-density.md)
 - `[x]` 140 — End-of-era reveal as a dedicated beat, with matured evolution applied there → [140](tasks/done/140-end-of-era-reveal-beat.md)
 
-**Phase 1b — friction fixes**: 141 saturation indicator (high), 142 named cause
-in the speciation reveal, 143 second contextual hint, 144 temporary trait-code
-translation.
+**Phase 1b — friction fixes** (closed 2026-08-28, all landed same session,
+playtest checkpoint before this phase deliberately skipped and still owed)
+
+- `[x]` 141 — Saturated-with-no-outlet indicator on the detail map → [141](tasks/done/141-saturated-no-outlet-indicator.md)
+- `[x]` 142 — Name the dominant stimulus in the speciation reveal → [142](tasks/done/142-name-dominant-stimulus-in-reveal.md)
+- `[x]` 143 — Second contextual hint on the apparent stall → [143](tasks/done/143-second-hint-apparent-stall.md)
+- `[x]` 144 — Temporary trait-code translation in the first N log lines → [144](tasks/done/144-trait-code-translation-in-log.md)
 
 **Phase 2 — legibility**: 145 Stress on three axes, 146 Cull emits an
 observation, 147 Splice restricted to confirmed traits + growing genome bank,

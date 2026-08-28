@@ -15,7 +15,7 @@ use crate::notebook::{
 };
 use crate::render::SeenRelations;
 use crate::text;
-use crate::ui::{IsolationHint, SelectedSpecies, SpliceDraft};
+use crate::ui::{IsolationHint, SelectedSpecies, SpliceDraft, StallHint};
 use abiogenesis::config::SimConfig;
 use abiogenesis::knowledge::MatrixKnowledge;
 use abiogenesis::objectives::{CurrentObjective, CurrentWorldOutcome, ObjectiveProgress};
@@ -169,6 +169,7 @@ fn start_run(commands: &mut Commands, config: &SimConfig, meta: &MetaProgress, r
     commands.insert_resource(PlayerPlacedCells::default());
     commands.insert_resource(NotebookHasUnseenConfirmation::default());
     commands.insert_resource(IsolationHint::default());
+    commands.insert_resource(StallHint::default());
     commands.insert_resource(ActionBudget {
         points_remaining: config.time.point_budget_per_season,
     });

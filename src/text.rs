@@ -11,7 +11,7 @@
 
 use crate::ui::ActionMode;
 use abiogenesis::objectives::ZoneKind;
-use abiogenesis::sim::RevealTier;
+use abiogenesis::sim::{DominantStimulus, RevealTier};
 use abiogenesis::world::{Metabolism, Mode, TerrainKind};
 
 // --- Main menu (`menu.rs::main_menu_ui`) ---
@@ -114,10 +114,6 @@ pub fn defeat_body(worlds_cleared: u32) -> String {
 }
 
 // --- End-of-era reveal (`screens.rs::era_reveal_screen_ui`, task 140) ---
-//
-// Naming the *cause* of a speciation (which stimulus dominated) is task
-// 142's job, not this one — these only frame the beat itself and the
-// structural before/after, never a generated "why" sentence.
 
 pub const ERA_REVEAL_CONTINUE_BUTTON: &str = "Continue";
 
@@ -135,18 +131,42 @@ pub fn era_reveal_title(era: u32, tier: RevealTier) -> String {
 
 /// One line per evolution the reveal applied this era — the before/after
 /// comparison §3 asks for, in text form (the swatch-based visual half is
-/// drawn directly in `screens.rs`, not here).
+/// drawn directly in `screens.rs`, not here), plus a clause naming *why*
+/// (task 142, `redesign/processed/culture-shock-friction-fixes.md`
+/// Intervento 3): the player sees the cause connect back to their own prior
+/// choices, not just the "what happened" the line used to stop at. Same
+/// clinical register as the rest of the reveal — natural language, no raw
+/// numbers or formula.
 pub fn era_reveal_evolution_line(
     parent_name: &str,
     parent_tag_count: usize,
     child_name: &str,
     child_tag_count: usize,
+    stimulus: DominantStimulus,
 ) -> String {
     format!(
-        "{parent_name} ({parent_tag_count} trait{}) evolved into {child_name} ({child_tag_count} trait{})",
+        "{parent_name} ({parent_tag_count} trait{}) evolved into {child_name} ({child_tag_count} trait{}), {}",
         if parent_tag_count == 1 { "" } else { "s" },
         if child_tag_count == 1 { "" } else { "s" },
+        dominant_stimulus_clause(stimulus),
     )
+}
+
+/// The natural-language cause clause for each `DominantStimulus` (task 142).
+/// Deliberately generic rather than naming a specific offending tag or
+/// terrain — `SelectionThresholdCrossed` accumulates pressure as scalars,
+/// not "which neighbour/terrain contributed most", so a more specific
+/// clause would have to invent detail the sim doesn't actually track.
+fn dominant_stimulus_clause(stimulus: DominantStimulus) -> &'static str {
+    match stimulus {
+        DominantStimulus::InteractionHarm => {
+            "worn down by sustained harm from a neighbouring species"
+        }
+        DominantStimulus::TerrainMismatch => {
+            "pushed past its limit by the terrain it was stuck occupying"
+        }
+        DominantStimulus::Toxicity => "pushed past its limit by prolonged toxic exposure",
+    }
 }
 
 /// Task 140's adopted answer to "what happens if the species goes extinct
@@ -352,6 +372,16 @@ pub const HINT_ISOLATED_FIRST_PLACEMENT: &str =
     "You isolated this species — watch its energy over the next few pulses for a clean first reading";
 pub const HINT_CLUSTERED_FIRST_PLACEMENT: &str =
     "Tip: an isolated species gives cleaner readings — try it in a future era";
+
+// --- Viewport onboarding hints — apparent-stall second hint (task 143) ---
+//
+// `redesign/processed/culture-shock-friction-fixes.md` Intervento 1: a
+// population sitting near energy break-even shows no visible change for
+// many ticks, and a new player can't tell that apart from "I did something
+// wrong."
+
+pub const HINT_APPARENT_STALL: &str =
+    "No change isn't a mistake — it's worth watching what happens when two species touch";
 
 // --- HUD — objective panel (`ui.rs::objective_panel`) ---
 
@@ -804,6 +834,27 @@ mod tests {
         assert!(decomposer.contains("residue"), "got: {decomposer}");
         assert_ne!(photolithic, predator);
         assert_ne!(predator, decomposer);
+    }
+
+    /// Task 142: the reveal line must name a different cause per
+    /// `DominantStimulus`, so the player can connect the event to *why* it
+    /// happened, not just see identical text with a shuffled species name.
+    #[test]
+    fn era_reveal_evolution_line_names_a_different_cause_per_dominant_stimulus() {
+        let line = |stimulus| era_reveal_evolution_line("Alpha", 1, "Beta", 2, stimulus);
+        let interaction = line(DominantStimulus::InteractionHarm);
+        let terrain = line(DominantStimulus::TerrainMismatch);
+        let toxicity = line(DominantStimulus::Toxicity);
+
+        assert_ne!(interaction, terrain);
+        assert_ne!(terrain, toxicity);
+        assert_ne!(interaction, toxicity);
+        for line in [&interaction, &terrain, &toxicity] {
+            assert!(
+                line.starts_with("Alpha (1 trait) evolved into Beta (2 traits)"),
+                "got: {line}"
+            );
+        }
     }
 
     /// Task 120: sign-prefixed, `±0` for exactly no change, empty for a

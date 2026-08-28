@@ -255,6 +255,7 @@ fn era_reveal_screen_ui(
                 entry.parent_tag_count,
                 &entry.child_name,
                 entry.child_tag_count,
+                entry.dominant_stimulus,
             ));
             ui.add_space(6.0);
         }

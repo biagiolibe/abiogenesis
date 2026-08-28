@@ -8,6 +8,27 @@ it only when you need the history/rationale behind a specific past phase.
 
 ---
 
+**Phase 1b — anti-friction interventions** (`culture-shock-friction-fixes.md`,
+part of the Culture Shock redesign rollout, 134-169). Closed 2026-08-28, all
+four landed same-session. Design doc corrections applied along the way: this
+codebase's tag glyphs are single Greek letters, not the doc's illustrative
+three-letter codes (144 applies its principle to the existing scheme rather
+than waiting on task 155's unshipped code rework); the reveal's cause clause
+(142) stays at the three-stimulus category level rather than naming a
+specific offending tag/neighbour, since `SelectionThresholdCrossed`
+accumulates pressure as scalars, not per-neighbour attribution. Recommended
+playtest (`culture-shock-naive-player-example.md`'s scenario, all four
+applied) not yet run — flag before treating Phase 1b's premise as verified.
+
+| Status | ID | Title | Priority | File |
+|-------|----|--------|----------|------|
+| `[x]` | 141 | Saturated-with-no-outlet indicator on the detail map | Alta | [141](done/141-saturated-no-outlet-indicator.md) |
+| `[x]` | 142 | Name the dominant stimulus in the speciation reveal | Media | [142](done/142-name-dominant-stimulus-in-reveal.md) |
+| `[x]` | 143 | Second contextual hint on the apparent stall | Media | [143](done/143-second-hint-apparent-stall.md) |
+| `[x]` | 144 | Temporary trait-code translation in the first N log lines | Bassa-media | [144](done/144-trait-code-translation-in-log.md) |
+
+---
+
 **HUD & Notebook redesign follow-up** (2026-08-12, scoped from
 `redesign/abiogenesis-hud-notebook.md` after a discrepancy-check pass against
 the already-scoped notebook tasks 100-103/097 — see `PROJECT_PLAN.md` for

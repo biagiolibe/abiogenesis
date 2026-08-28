@@ -234,13 +234,19 @@ fn accumulate_evidence(
     let confirmed =
         accumulate_adjacency_evidence(observed.read().copied(), &config, &mut knowledge);
     for (exerter, receiver) in confirmed {
-        let from_glyph = tag_glyph(world.active_tags[exerter.0 as usize]);
-        let to_glyph = tag_glyph(world.active_tags[receiver.0 as usize]);
+        // Task 144: translate for only the log's first few entries — by the
+        // time the player has read that many, the glyph-to-species
+        // association has had a chance to form, and the compact code-only
+        // form is more consistent with the "referto di laboratorio"
+        // register the rest of the log uses.
+        let translate = log.entries.len() < FIRST_N_TRANSLATED_OBSERVATIONS;
+        let from_label = translated_tag_label(&world, exerter, translate);
+        let to_label = translated_tag_label(&world, receiver, translate);
         let positive = world.matrix.get(exerter, receiver) > 0;
         log.entries.push(LogEntry {
             era: world.era,
             species: None,
-            text: text::confirmation_message(from_glyph, to_glyph, positive),
+            text: text::confirmation_message(&from_label, &to_label, positive),
         });
         unseen.0 = true;
     }
@@ -294,12 +300,14 @@ fn accumulate_terrain_evidence(
             config.notebook.observation_weight_numerator,
         );
         if newly_confirmed {
-            let glyph = tag_glyph(tag_id);
+            // Task 144: same first-N translation as `accumulate_evidence`.
+            let translate = log.entries.len() < FIRST_N_TRANSLATED_OBSERVATIONS;
+            let label = translated_tag_label(&world, event.tag, translate);
             log.entries.push(LogEntry {
                 era: world.era,
                 species: None,
                 text: text::terrain_gate_confirmed_message(
-                    glyph,
+                    &label,
                     conditional.terrain,
                     conditional.mode,
                 ),
@@ -523,6 +531,43 @@ const TAG_LETTERS: [&str; 24] = [
 /// distinguishable handle, not a hint at meaning (GDD §11).
 pub fn tag_glyph(tag: TagId) -> &'static str {
     TAG_LETTERS[tag.0 as usize % TAG_LETTERS.len()]
+}
+
+/// Task 143's friction fix would matter equally for `tag_glyph` if the game
+/// ever named traits with opaque codes — it currently only uses single
+/// Greek letters (`TAG_LETTERS`), already less opaque than the design
+/// doc's illustrative three-letter codes, but task 144 still applies the
+/// same principle: for the log's first few observations, the confirmation
+/// message names which species currently carry the glyph, not just the
+/// glyph alone.
+const FIRST_N_TRANSLATED_OBSERVATIONS: usize = 5;
+
+/// `tag_glyph(tag)`, optionally suffixed with the current roster's species
+/// that carry it — `"α (Halo)"`, `"α (Halo, Rask)"` if more than one, or
+/// plain `"α"` if none do (a tag not yet on any known species, or
+/// translation not requested). Applied by `accumulate_evidence` only for
+/// the first `FIRST_N_TRANSLATED_OBSERVATIONS` log entries of a run (task
+/// 144, `redesign/processed/culture-shock-friction-fixes.md` Intervento
+/// 4): the player hasn't yet learned to connect a bare glyph back to the
+/// species they seeded, so the earliest confirmations spell it out; later
+/// ones drop back to the compact code-only form once that association has
+/// had a chance to form.
+fn translated_tag_label(world: &SimWorld, slot: TagSlot, translate: bool) -> String {
+    let glyph = tag_glyph(world.active_tags[slot.0 as usize]);
+    if !translate {
+        return glyph.to_string();
+    }
+    let names: Vec<&str> = world
+        .species
+        .iter()
+        .filter(|species| species.tags.contains(&slot))
+        .map(|species| species.name.as_str())
+        .collect();
+    if names.is_empty() {
+        glyph.to_string()
+    } else {
+        format!("{glyph} ({})", names.join(", "))
+    }
 }
 
 /// On-screen width of the notebook panel (task 116), mirroring `ui.rs`'s
@@ -1293,6 +1338,51 @@ mod tests {
         let a = egui::pos2(10.0, 20.0);
         let b = egui::pos2(80.0, 65.0);
         assert_eq!(bow_axis(a, b), bow_axis(b, a));
+    }
+
+    /// Task 144: the translated form appends every species currently
+    /// carrying the tag, comma-joined; the untranslated form (and a tag no
+    /// known species carries) stay bare-glyph.
+    #[test]
+    fn translated_tag_label_appends_carrying_species_names_only_when_requested() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        world.active_tags = vec![TagId(0), TagId(1)];
+        let carried_slot = TagSlot(0);
+        let uncarried_slot = TagSlot(1);
+        let glyph = tag_glyph(TagId(0));
+
+        world.push_species(abiogenesis::world::Species {
+            name: "Halo".to_string(),
+            metabolism: Metabolism::Photolithic,
+            temp_optimum: 0.5,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: vec![carried_slot],
+        });
+        world.push_species(abiogenesis::world::Species {
+            name: "Rask".to_string(),
+            metabolism: Metabolism::Photolithic,
+            temp_optimum: 0.5,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: vec![carried_slot],
+        });
+
+        assert_eq!(
+            translated_tag_label(&world, carried_slot, false),
+            glyph,
+            "untranslated must stay bare-glyph regardless of who carries the tag"
+        );
+        assert_eq!(
+            translated_tag_label(&world, carried_slot, true),
+            format!("{glyph} (Halo, Rask)")
+        );
+        assert_eq!(
+            translated_tag_label(&world, uncarried_slot, true),
+            tag_glyph(TagId(1)),
+            "a tag no known species carries must fall back to bare-glyph even when translating"
+        );
     }
 
     #[test]

@@ -26,8 +26,10 @@ use bevy::prelude::*;
 use crate::notebook::{
     BirthTally, NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells, TerrainKnowledge,
 };
-use crate::render::SeenRelations;
-use crate::ui::{DeathCauseTally, IsolationHint, PopulationTrends, SelectedSpecies, SpliceDraft};
+use crate::render::{BlockedIndicatorSeen, SeenRelations};
+use crate::ui::{
+    DeathCauseTally, IsolationHint, PopulationTrends, SelectedSpecies, SpliceDraft, StallHint,
+};
 use abiogenesis::knowledge::MatrixKnowledge;
 
 /// Every piece of per-world state a world (re)start resets, bundled into one
@@ -48,6 +50,7 @@ pub struct WorldResetParams<'w> {
     pub placed: ResMut<'w, PlayerPlacedCells>,
     pub unseen_confirmation: ResMut<'w, NotebookHasUnseenConfirmation>,
     pub isolation_hint: ResMut<'w, IsolationHint>,
+    pub stall_hint: ResMut<'w, StallHint>,
     pub objective: ResMut<'w, CurrentObjective>,
     pub objective_progress: ResMut<'w, ObjectiveProgress>,
     pub outcome: ResMut<'w, CurrentWorldOutcome>,
@@ -59,6 +62,7 @@ pub struct WorldResetParams<'w> {
     pub pending_evolutions: ResMut<'w, PendingEvolutions>,
     pub era_tally: ResMut<'w, EraTally>,
     pub era_reveal: ResMut<'w, EraReveal>,
+    pub blocked_indicator_seen: ResMut<'w, BlockedIndicatorSeen>,
 }
 
 /// Rebuilds `world` in place as world `world_index` seeded with `seed`
@@ -109,6 +113,10 @@ pub fn start_world(
     // (task 055) — `current_tick.saturating_sub(shown_at_tick)` saturates to
     // 0 elapsed, not a large "already expired" value.
     reset.isolation_hint.text = None;
+    // Task 143: same staleness risk as `isolation_hint` above — a stall
+    // latched against the world just left must not read as still active
+    // against the new world's freshly-reset `tick`.
+    reset.stall_hint.active = false;
 
     *reset.objective = CurrentObjective::new(new_objectives);
     *reset.objective_progress = ObjectiveProgress::default();
@@ -126,6 +134,10 @@ pub fn start_world(
     reset.pending_evolutions.0.clear();
     *reset.era_tally = EraTally::default();
     *reset.era_reveal = EraReveal::default();
+    // Task 141: a "first occurrence" marker shown against the world just
+    // left must not carry over — the new world's grid starts unmarked.
+    *reset.blocked_indicator_seen =
+        BlockedIndicatorSeen::new(config.grid.width as usize, config.grid.height as usize);
 }
 
 /// The concrete effect of "World cleared → Continue" (task 045): advances
@@ -226,6 +238,8 @@ mod tests {
         ecs_world.insert_resource(PendingEvolutions::default());
         ecs_world.insert_resource(EraTally::default());
         ecs_world.insert_resource(EraReveal::default());
+        ecs_world.insert_resource(BlockedIndicatorSeen::new(10, 10));
+        ecs_world.insert_resource(StallHint::default());
         ecs_world
     }
 
