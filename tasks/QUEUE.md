@@ -80,9 +80,10 @@ annotated in the INDEX itself):
 | Status | ID | Title | Depends on | File |
 |-------|----|--------|------------|------|
 | `[x]` | 134 | Two-bot harness (exploiter vs explorer) — pre-change baseline | — | [134](done/134-two-bot-experiment-incentive-harness.md) |
+| `[ ]` | 134b | Make the bot policies competent, re-record the baseline | 134 | [134b](134b-competent-bot-policies-and-rebaseline.md) |
 | `[ ]` | 135 | Three-level time scale: Pulse → Season → Era | — | [135](135-three-level-time-scale.md) |
-| `[ ]` | 136 | Make the hidden matrix necessary (interaction_scale + retune) | 134, 135 | [136](136-matrix-necessary-balance.md) |
-| `[ ]` | 136b | Evidence per distinct observation, not per tick — de-duplicate sustained adjacencies, retune `confirmation_threshold` | 136 | *(to scope)* |
+| `[ ]` | 136 | Make the hidden matrix necessary (interaction_scale + retune) | 134b, 135 | [136](136-matrix-necessary-balance.md) |
+| `[ ]` | 136b | Evidence per distinct observation, not per tick | 136 | [136b](136b-evidence-per-distinct-observation.md) |
 | `[ ]` | 137 | Per-cell population model | 136 | [137](137-per-cell-population-model.md) |
 | `[ ]` | 138 | Tick as an explicit phased pipeline | 137 | [138](138-tick-pipeline-explicit-phases.md) |
 | `[ ]` | 139 | Overview: real density, remove the pictorial version | 137 | [139](139-overview-real-density.md) |
@@ -116,8 +117,15 @@ annotated in the INDEX itself):
 >    Clean observations (`n_confounders == 0`) are **577 of 12.2M**, 0.005%.
 >
 > Defect 1 is task 136's existing job, now with a measurable target: raise the
-> cross-species contact fraction. Defect 2 is new work — see 136b below. Full
-> numbers in the task file.
+> cross-species contact fraction. Defect 2 is task **136b**, deliberately placed
+> *before* the playtest checkpoint even though 138 rewrites the same emission
+> site — reaching the checkpoint with an evidence economy that rewards flooding
+> would falsify exactly the judgement the checkpoint exists to make.
+>
+> A third consequence: 134's own baseline is not fit to verify 136 against. Its
+> bots reach dozens of organisms where the diagnostic reached thousands, so they
+> measure a strategy nobody would play. Task **134b** makes them competent and
+> re-records the baseline before 136 uses it. Full numbers in 134's task file.
 
 **→ CHECKPOINT before Phase 1b: play it, and re-run 134 against its baseline.**
 The INDEX is right that this is the highest information-per-hour moment in the

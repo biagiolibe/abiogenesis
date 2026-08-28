@@ -240,6 +240,8 @@ because they existed precisely to fake a density the model couldn't provide.
 **Phase 1 — the central loop** (task files written)
 
 - `[x]` 134 — Two-bot harness (exploiter vs explorer), headless multi-seed, as the **pre-change baseline** for 136 → [134](tasks/done/134-two-bot-experiment-incentive-harness.md)
+- `[ ]` 134b — Make the two bot policies competent (they reach dozens of organisms where a greedy diagnostic reaches thousands, so they measure a strategy nobody would play) and re-record the baseline 136 is verified against → [134b](tasks/134b-competent-bot-policies-and-rebaseline.md)
+- `[ ]` 136b — Evidence per distinct observation, not per tick: `AdjacencyObserved` fires every tick an adjacency persists, so confirming the matrix is a function of population × time rather than of what the player does. Lands before the playtest checkpoint → [136b](tasks/136b-evidence-per-distinct-observation.md)
 - `[ ]` 135 — Three-level time scale Pulse → Season → Era: season as the unit of decision, action budget per season, world era budget lowered, `selection_pressure_threshold` retuned → [135](tasks/135-three-level-time-scale.md)
 - `[ ]` 136 — Make the hidden matrix necessary: `interaction_scale` + proportional retune of all four metabolisms; opens by resolving carrying-capacity vs `crowd_factor` → [136](tasks/136-matrix-necessary-balance.md)
 - `[ ]` 137 — Per-cell population model: count + aggregate energy per cell, carrying capacity, breakout, saturated-with-no-outlet flag feeding local selection pressure → [137](tasks/137-per-cell-population-model.md)
