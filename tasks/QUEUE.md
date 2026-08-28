@@ -141,17 +141,41 @@ ideally with a real playtester — not yet done.
 
 | Status | ID | Title | Doc |
 |-------|----|--------|-----|
-| `[ ]` | 145 | Stress on three selectable axes + gradual decay | `actions` |
-| `[ ]` | 146 | Cull emits a tracked notebook observation | `actions` |
-| `[ ]` | 147 | Splice restricted to confirmed traits + growing genome bank + "synthesised" origin | `actions`, `hud-notebook` |
-| `[ ]` | 149 | Inspection tool: hover tooltip + per-neighbour energy breakdown card | `inspect-tool` |
-| `[ ]` | 150 | Full control scheme + `Esc` cascade + pause menu + protected `R` | `controls` |
-| `[ ]` | 151 | Pixel-grain visual register across map, HUD and notebook | `population-model-aesthetic`, `ui-redesign` |
-| `[ ]` | 152 | HUD and sidebar: diegetic labels, notch indicators, narrative directive | `hud-notebook`, `sidebar-redesign` |
-| `[ ]` | 153 | Notebook: node graph, Chronicle section, "descends from", quiet-era compression | `notebook-cronaca` |
-| `[ ]` | 154 | Objectives: activation snapshot, 5 new types, durations in seasons, victory as a flag | `objectives` |
-| `[ ]` | 170 | Speciation cause readability: surface dominant pressure stimulus + genome before/after diff | GDD §5.11 |
-| `[ ]` | 171 | Causal-legibility playtest gate: bot-vs-bot necessity check + human playtest protocol, gates Phase 3 | GDD §5.8/§5.9 |
+| `[ ]` | 145 | Stress on three selectable axes + gradual decay | `actions` — [145](145-stress-three-axes-gradual-decay.md) |
+| `[ ]` | 146 | Cull emits a tracked notebook observation | `actions` — [146](146-cull-emits-tracked-observation.md) |
+| `[ ]` | 147 | Splice restricted to confirmed traits + growing genome bank + "synthesised" origin | `actions`, `hud-notebook` — [147](147-splice-confirmed-traits-genome-bank.md) |
+| `[ ]` | 149 | Inspection tool: hover tooltip + per-neighbour energy breakdown card | `inspect-tool` — [149](149-inspection-tool.md) |
+| `[ ]` | 150 | Full control scheme + `Esc` cascade + pause menu + protected `R` | `controls` — [150](150-control-scheme-pause-menu.md) |
+| `[ ]` | 151 | Pixel-grain visual register across map, HUD and notebook | `population-model-aesthetic`, `ui-redesign` — [151](151-pixel-grain-visual-register.md) |
+| `[ ]` | 152 | HUD: auto-advance toggle, mutation-tier badge, species subtext (title corrected — `sidebar-redesign` already shipped as 064/065, this is `hud-notebook`'s residual gap) | `hud-notebook` — [152](152-hud-sidebar-diegetic-redesign.md) |
+| `[ ]` | 153 | Notebook: Chronicle section + "descends from" (node graph already shipped, see file) | `notebook-cronaca` — [153](153-notebook-node-graph-chronicle.md) |
+| `[ ]` | 154 | Objectives: activation snapshot, 5 new types, durations in seasons, victory as a flag | `objectives` — [154](154-objectives-activation-victory-flag.md) |
+| `[ ]` | 170 | Speciation cause readability: surface dominant pressure stimulus + genome before/after diff | GDD §5.11 — [170](170-speciation-cause-readability.md) |
+| `[ ]` | 171 | Causal-legibility playtest gate: bot-vs-bot necessity check + human playtest protocol, gates Phase 3 | GDD §5.8/§5.9 — [171](171-causal-legibility-playtest-gate.md) |
+
+**All 10 Phase 2 task files now exist (2026-08-29).** Suggested execution
+order, from cross-task dependencies each file's own scoping surfaced (not a
+strict requirement, but avoids rework):
+
+1. **145** (Stress axes) — no dependencies, already scoped first.
+2. **146, 147, 170** — independent of each other and of everything else
+   below; each extends an existing system (Cull's evidence hookup, Splice's
+   trait filter, the speciation reveal) without touching UI structure.
+3. **150** (control scheme) before **152** (HUD) — 152 explicitly claims the
+   `p`/continuous-advance keybind that 150 deliberately punted; run 150
+   first so 152 isn't guessing at 150's final key-handling shape. **149**
+   (inspection tool) also soft-depends on 150 for the click-to-inspect vs.
+   armed-action conflict.
+4. **153** (notebook Chronicle) — independent, can run anywhere after 145.
+5. **154** (objectives) — independent but the largest (~3-4h); consider
+   splitting if picked up piecemeal (flagged in the file itself).
+6. **151** (pixel-grain restyle) — deliberately **last**: restyles whatever
+   UI surface 149/150/152/153 add, per the aesthetic doc's own phase-split
+   rationale.
+7. **171** (causal-legibility gate) — deliberately **last of all**: its
+   bot-vs-bot half specifically depends on 146/147/170 (what a bot can read
+   changes), and it's the Phase-3 gate, so nothing about running it early
+   helps.
 
 ⚠️ Apply the colour-accessibility rule ("colour is never the only channel",
 `cross-cutting` §3) **while building** this phase. Retrofitting costs far more.
@@ -269,6 +293,36 @@ proposal (`PROJECT_PLAN.md` §1), not available to pick up yet.
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) beyond what's already expanded into task files here.
 
 ---
+
+*Last updated: 2026-08-29 (all 10 Phase 2 task files written this session —
+145 first, then 146/147/149/150/152/153/154/170/171 scoped in parallel by
+sibling agents, 151 last (needed 152/153's findings first). No
+implementation done yet, scoping only, per direct user instruction to scope
+the whole phase before building any of it. Notable findings from scoping,
+not from playtest: **152's QUEUE title was stale** — the `sidebar-redesign`
+doc it named already shipped as tasks 064/065 (verified against the live
+`ui.rs`/`text.rs`); 152 was re-scoped from `hud-notebook.md`'s residual gap
+instead (continuous-advance toggle, mutation-tier badge, species subtext),
+row title corrected above. **153's "node graph" is also already shipped**
+(`notebook.rs::hypothesis_grid`, tasks 021-102) — 153's real scope is the
+Chronicle section and a new `Species::parent` field for "descends from".
+**149 surfaced a real gap**: `ActionMode` has no "no action armed" state,
+so click-to-inspect can't fire without at least a minimal deselect seam
+(149 adds one, defers the full `Esc`-cascade UX to 150). **150 and 152
+both reached for the `p`/continuous-advance keybind** — resolved by
+cross-linking the two files: 150 explicitly excludes it (no underlying
+auto-play loop exists), 152 owns it as one of its three real gaps. **171
+recommends running last**: its bot-vs-bot half depends on 146/147/170
+(what a bot can legitimately read). **154 is the largest single scope**
+(~3-4h, four sub-changes including the `objectives.rs:511-513` fix that
+makes Emersione/task-169 structurally unreachable today) — flagged as a
+candidate for a future 154a/b/c split if picked up piecemeal, kept as one
+file for now since QUEUE.md only reserved one ID. A minor unrelated
+discrepancy surfaced by 153's scoping — `notebook_window`'s doc comment
+says sim time is deliberately unaffected while the notebook is open, but a
+companion design doc says it should pause — is noted in 153's file but not
+assigned to any task; revisit if it turns out to matter. Suggested
+execution order recorded above the Phase 2 table.)*
 
 *Last updated: 2026-08-28 (Phase 1b, 141-144, all four landed this session —
 Phase 1 playtest checkpoint deliberately skipped per direct user instruction,
