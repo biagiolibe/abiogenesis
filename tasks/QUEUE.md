@@ -89,6 +89,17 @@ annotated in the INDEX itself):
 | `[x]` | 139 | Overview: real density, remove the pictorial version | 137 | [139](done/139-overview-real-density.md) |
 | `[x]` | 140 | End-of-era reveal beat + evolution applied there | 135 | [140](done/140-end-of-era-reveal-beat.md) |
 
+> **Known issue, not yet fixed**: task 140's end-of-era reveal card
+> (`screens::era_reveal_screen_ui`) doesn't dim the live grid behind it in the
+> user's actual `cargo run` session — only the card's text shows, floating
+> directly over the fully-lit map/terrain-border layer, no darkened backdrop.
+> This was live-verified as *working* in-session (screenshot via `cliclick` +
+> `screencapture`) right after the fix, but the user's own subsequent run
+> still showed the old broken behavior — a real discrepancy between the two
+> environments/runs, not yet root-caused. Flagged 2026-08-28, explicitly
+> deferred rather than investigated immediately. Needs its own look before
+> task 142 (which builds on this same card) lands.
+
 > **134 landed 2026-08-27; its diagnosis was corrected 2026-08-28 and 136's
 > scope changed with it.** Head to head the exploiter is ahead (faster on 9 of
 > 17 comparable seeds, explorer on 4, 4 tied). The first reading of the low
