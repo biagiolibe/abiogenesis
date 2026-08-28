@@ -121,6 +121,7 @@ mod tests {
             receiver_species: crate::world::SpeciesId(0),
             exerter_tag: TagSlot(exerter),
             receiver_tag: TagSlot(receiver),
+            contribution: 0.0,
             n_confounders,
             cell: 0,
         }

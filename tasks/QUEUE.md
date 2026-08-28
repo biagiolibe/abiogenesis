@@ -85,8 +85,8 @@ annotated in the INDEX itself):
 | `[x]` | 136 | Make the hidden matrix necessary (interaction_scale + retune) | 134b, 135 | [136](done/136-matrix-necessary-balance.md) |
 | `[x]` | 136b | Evidence per distinct observation, not per tick | 136 | [136b](done/136b-evidence-per-distinct-observation.md) |
 | `[x]` | 137 | Per-cell population model | 136 | [137](done/137-per-cell-population-model.md) |
-| `[ ]` | 138 | Tick as an explicit phased pipeline | 137 | [138](138-tick-pipeline-explicit-phases.md) |
-| `[ ]` | 139 | Overview: real density, remove the pictorial version | 137 | [139](139-overview-real-density.md) |
+| `[x]` | 138 | Tick as an explicit phased pipeline | 137 | [138](done/138-tick-pipeline-explicit-phases.md) |
+| `[x]` | 139 | Overview: real density, remove the pictorial version | 137 | [139](done/139-overview-real-density.md) |
 | `[ ]` | 140 | End-of-era reveal beat + evolution applied there | 135 | [140](140-end-of-era-reveal-beat.md) |
 
 > **134 landed 2026-08-27; its diagnosis was corrected 2026-08-28 and 136's

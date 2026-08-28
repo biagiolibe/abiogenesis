@@ -16,11 +16,6 @@
         zoom_speed: 0.9,
         pan_speed: 120.0,
     ),
-    cluster: (
-        density_saturation: 20.0,
-        blob_erosion_min_size: 8,
-        blob_erosion_iterations: 1,
-    ),
     environment: (
         diffusion_rate: 0.05,
         light_high: 0.9,
@@ -51,7 +46,7 @@
     energy: (
         seed_energy: 5.0,
         base_upkeep: 0.5,
-        crowd_factor: 0.15,
+        crowd_factor: [0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15],
         repro_threshold: 10.0,
         repro_cost: 5.0,
         cell_carrying_capacity: 6,
@@ -64,7 +59,8 @@
         chemolithotroph_metabolism_gain: 1.4,
         chemolithotroph_upkeep: 0.5,
         residue_on_death: 3.0,
-        residue_decay: 0.2,
+        residue_decay: [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+        biome_habitable: [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true],
         residue_ambient_trickle: 0.05,
         default_temp_tolerance: 0.15,
         splice_temp_shift: 0.15,

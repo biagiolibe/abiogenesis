@@ -6,6 +6,14 @@ use bevy::prelude::*;
 use bevy_common_assets::ron::RonAssetPlugin;
 use serde::{Deserialize, Serialize};
 
+/// Width of every per-biome array in `EnergyConfig` (task 138). Mirrors
+/// `crate::world::Biome::COUNT` without `config` importing `world` — `world`
+/// already imports config types the other way, and this module stays a
+/// dependency leaf. Callers index with `Biome::index()`; `config_ron_sync`'s
+/// drift test plus `sim.rs`'s own `Biome::COUNT` assertion catch the two
+/// numbers ever disagreeing.
+const BIOME_COUNT: usize = 17;
+
 /// Every simulation coefficient in one place (GDD §5.9). Loaded from
 /// `assets/config/sim_config.ron` (task 073) with hot-reload: editing that
 /// file while `cargo run` is active updates the live resource without a
@@ -17,7 +25,6 @@ use serde::{Deserialize, Serialize};
 pub struct SimConfig {
     pub grid: GridConfig,
     pub camera: CameraConfig,
-    pub cluster: ClusterConfig,
     pub environment: EnvironmentConfig,
     pub time: TimeConfig,
     pub energy: EnergyConfig,
@@ -69,8 +76,8 @@ pub struct CameraConfig {
     /// whole grid," never past it into empty space.
     pub zoom_max: f32,
     /// `scale` threshold below which `MapViewMode` switches to `Detail`
-    /// (individual organism rendering); at or above it, `Overview` (cluster
-    /// heatmap, task 076) is active. A hard cutoff, not a blend
+    /// (individual organism rendering); at or above it, `Overview` (real
+    /// per-cell density, task 076/139) is active. A hard cutoff, not a blend
     /// (`redesign/abiogenesis-two-tier-view.md`).
     pub zoom_threshold: f32,
     /// Multiplicative zoom step per unit of mouse-wheel scroll: each scroll
@@ -93,46 +100,6 @@ impl Default for CameraConfig {
             zoom_threshold: 0.4,
             zoom_speed: 0.9,
             pan_speed: 120.0,
-        }
-    }
-}
-
-/// Overview mode's per-species cluster heatmap (task 076,
-/// `redesign/abiogenesis-two-tier-view.md`, `cluster::compute_cluster_render`;
-/// blob shape corrected by task 078).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClusterConfig {
-    /// Cluster cell count at which a blob's density (and therefore
-    /// brightness) saturates to `1.0`; population above this reads as
-    /// equally maximal, not brighter still. Chosen so a real, established
-    /// colony (tens of cells) reads as a clear hot spot while a lone
-    /// organism — a one-cell cluster — sits well below saturation and stays
-    /// visibly dimmer, the opposite of scoring it as "fully dense" the way
-    /// a compactness-only formula (occupied cells / bounding-box area)
-    /// would.
-    pub density_saturation: f32,
-    /// Task 078: a cluster's filled (holes-included) footprint must reach
-    /// at least this many cells before erosion touches it at all — below
-    /// this, a cluster is already small enough to read as "abstracted"
-    /// without shrinking further, and eroding it risks making a lone or
-    /// near-lone organism (task 076's own "stays visibly distinct"
-    /// acceptance criterion) disappear or read as fainter than it should.
-    pub blob_erosion_min_size: u32,
-    /// Task 078: how many morphological-erosion passes shrink a large
-    /// cluster's filled blob — each pass removes every cell touching the
-    /// shape's edge (or the grid's edge). More passes read as more
-    /// abstracted/smaller; an iteration that would erode a blob away to
-    /// nothing is skipped rather than applied (`compute_blob`'s own guard),
-    /// so this can be tuned generously without risking a cluster vanishing.
-    pub blob_erosion_iterations: u32,
-}
-
-impl Default for ClusterConfig {
-    fn default() -> Self {
-        Self {
-            density_saturation: 20.0,
-            blob_erosion_min_size: 8,
-            blob_erosion_iterations: 1,
         }
     }
 }
@@ -311,7 +278,13 @@ pub struct EnergyConfig {
     /// species (task 136 narrowed this from "any occupied neighbour" — see
     /// `sim::step`'s cost section for why). Same-species density is capped
     /// by the future per-cell carrying capacity (task 137), not this.
-    pub crowd_factor: f32,
+    /// Per-biome since task 138 (a forest sustains more density than a
+    /// peak): indexed by `Biome::index`, keyed on the organism's *own* cell
+    /// — this is a cost, so it enters at phase 4, never phase 2, to avoid
+    /// double-counting the biome's already-baked-in scalar effects. Ships
+    /// with a uniform value across all biomes (task 138: real per-biome
+    /// numbers are out of scope, calibrated later in playtest).
+    pub crowd_factor: Vec<f32>,
     /// Energy threshold at which an organism can reproduce.
     pub repro_threshold: f32,
     /// Energy cost passed to the child on reproduction.
@@ -387,8 +360,20 @@ pub struct EnergyConfig {
     pub chemolithotroph_upkeep: f32,
     /// Residue energy deposited when an organism dies.
     pub residue_on_death: f32,
-    /// Residue decay rate per tick.
-    pub residue_decay: f32,
+    /// Residue decay rate per tick. Per-biome since task 138 (a lake
+    /// retains residue, a slope disperses it): indexed by `Biome::index`,
+    /// keyed on each cell's own biome, applied outside the per-organism
+    /// pipeline (residue decays for every cell, occupied or not). Ships
+    /// with a uniform value across all biomes (real per-biome numbers are
+    /// out of scope for task 138).
+    pub residue_decay: Vec<f32>,
+    /// Per-biome habitability gate (task 138 phase 0): a cell whose biome
+    /// is `false` here is outright uninhabitable, independent of any
+    /// scalar fit — deep water is not "low light and cold", it is a place
+    /// a land organism cannot be. Indexed by `Biome::index`. Ships
+    /// all-`true` (neutral): real per-biome/per-metabolism restrictions are
+    /// out of scope for task 138, defined later alongside the biome roster.
+    pub biome_habitable: Vec<bool>,
     /// Ambient background residue gained by every cell each tick,
     /// independent of organism deaths. Must stay strictly below
     /// `residue_decay` so residue reaches a small stable equilibrium
@@ -414,7 +399,7 @@ impl Default for EnergyConfig {
         Self {
             seed_energy: 5.0,
             base_upkeep: 0.5,
-            crowd_factor: 0.15,
+            crowd_factor: vec![0.15; BIOME_COUNT],
             repro_threshold: 10.0,
             repro_cost: 5.0,
             cell_carrying_capacity: 6,
@@ -435,12 +420,33 @@ impl Default for EnergyConfig {
             chemolithotroph_metabolism_gain: 1.4,
             chemolithotroph_upkeep: 0.5,
             residue_on_death: 3.0,
-            residue_decay: 0.2,
+            residue_decay: vec![0.2; BIOME_COUNT],
+            biome_habitable: vec![true; BIOME_COUNT],
             residue_ambient_trickle: 0.05,
             default_temp_tolerance: 0.15,
             splice_temp_shift: 0.15,
             trend_epsilon: 0.5,
         }
+    }
+}
+
+impl EnergyConfig {
+    /// Per-biome carrying-capacity penalty (task 138 phase 4), keyed on the
+    /// organism's own cell (`Biome::index()`).
+    pub fn crowd_factor_for(&self, biome_index: usize) -> f32 {
+        self.crowd_factor[biome_index]
+    }
+
+    /// Per-biome residue decay rate (task 138 phase 4), keyed on a cell's
+    /// own biome (`Biome::index()`).
+    pub fn residue_decay_for(&self, biome_index: usize) -> f32 {
+        self.residue_decay[biome_index]
+    }
+
+    /// Whether the biome at `biome_index` (`Biome::index()`) is habitable at
+    /// all (task 138 phase 0), independent of any scalar fit.
+    pub fn is_habitable(&self, biome_index: usize) -> bool {
+        self.biome_habitable[biome_index]
     }
 }
 

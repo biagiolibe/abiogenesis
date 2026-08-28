@@ -1392,6 +1392,7 @@ mod tests {
             .write(OrganismDied {
                 cell: 137,
                 species: SpeciesId(0),
+                cause: abiogenesis::sim::DeathCause::Starvation,
                 gain: 0.4,
                 env_fit: 0.9,
                 interaction_delta: 0.0,
@@ -1437,6 +1438,7 @@ mod tests {
             .write(OrganismDied {
                 cell: 42,
                 species: SpeciesId(0),
+                cause: abiogenesis::sim::DeathCause::Starvation,
                 gain: 0.0,
                 env_fit: 0.9,
                 interaction_delta: 0.0,
@@ -1479,6 +1481,7 @@ mod tests {
             .write(OrganismDied {
                 cell: 9,
                 species: SpeciesId(1),
+                cause: abiogenesis::sim::DeathCause::Starvation,
                 gain: 0.0,
                 env_fit: 0.9,
                 interaction_delta: 0.0,
@@ -1639,6 +1642,7 @@ mod tests {
                 receiver_species: SpeciesId(0),
                 exerter_tag: TagSlot(0),
                 receiver_tag: TagSlot(1),
+                contribution: 0.15,
                 n_confounders: 3,
                 cell: 0,
             });
@@ -1685,6 +1689,7 @@ mod tests {
                 receiver_species: SpeciesId(0),
                 exerter_tag: TagSlot(0),
                 receiver_tag: TagSlot(1),
+                contribution: 0.15,
                 n_confounders: 1,
                 cell: 0,
             });

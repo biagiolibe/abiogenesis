@@ -326,7 +326,7 @@ fn seed_organism_on_click(
     // state, and nothing headless has a use for it.
     placed.0.insert(index);
 
-    // Overview's cluster-heatmap aggregation (task 076) doesn't show
+    // Overview's real-density coloring (task 076/139) doesn't show
     // individual cells, so a placement there gets a transient ring marking
     // exactly which cell it landed on (task 077) — Detail already shows the
     // organism sprite directly, no indicator needed.
@@ -391,8 +391,8 @@ fn stress_on_click(
     if *gate.era_state.get() == EraState::Advancing {
         return;
     }
-    // Stress needs per-cell precision Overview's cluster-heatmap aggregation
-    // (task 076) doesn't preserve — gated to Detail (task 077). The HUD
+    // Stress needs per-cell precision Overview's real-density coloring
+    // (task 076/139) doesn't preserve — gated to Detail (task 077). The HUD
     // (`ui.rs`) also disables the Stress button in Overview so the player
     // never reaches a click that silently does nothing; this check is
     // defense-in-depth against a `SelectedAction` left on Stress from before

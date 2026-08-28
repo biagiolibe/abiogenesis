@@ -9,7 +9,6 @@ use bevy_egui::egui;
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::EguiPrimaryContextPass;
 
-use abiogenesis::cluster::compute_cluster_render;
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::AdjacencyObserved;
 use abiogenesis::state::GameState;
@@ -201,7 +200,6 @@ impl Plugin for GridRenderPlugin {
             .add_systems(Startup, (spawn_camera, spawn_grid, spawn_metabolism_shapes))
             .init_resource::<EnvironmentOverlay>()
             .init_resource::<MapViewMode>()
-            .init_resource::<ClusterDensity>()
             .init_resource::<placement_indicator::PlacementIndicator>()
             .init_resource::<SparkIndicators>()
             .add_systems(
@@ -214,11 +212,8 @@ impl Plugin for GridRenderPlugin {
                     update_map_view_mode
                         .after(pan_camera)
                         .run_if(in_state(GameState::Playing)),
-                    update_cluster_density
-                        .after(update_map_view_mode)
-                        .run_if(in_state(GameState::Playing)),
                     sync_grid_colors
-                        .after(update_cluster_density)
+                        .after(update_map_view_mode)
                         .run_if(in_state(GameState::Playing)),
                     toggle_environment_overlay,
                     apply_environment_overlay
@@ -864,11 +859,10 @@ mod terrain_overlay {
 }
 
 /// A brief on-map ring marking exactly where a Seed placement landed while
-/// `MapViewMode::Overview` is active (task 077): Overview's cluster-heatmap
-/// aggregation (task 076) doesn't show individual cells, so without this the
-/// player has no way to tell which cell of a blob they just placed into —
-/// the cluster blob then carries visibility forward on its own once it grows
-/// large enough to render (`redesign/abiogenesis-two-tier-view.md`). Uses
+/// `MapViewMode::Overview` is active (task 077): Overview's `sync_grid_colors`
+/// still repaints on the world's own change cadence, not the player's click,
+/// so without this the player has no immediate confirmation of exactly which
+/// cell they just placed into (`redesign/abiogenesis-two-tier-view.md`). Uses
 /// real (`Res<Time>`) rather than sim-tick duration: `SimWorld::tick` only
 /// advances on era ticks, so a tick-based flash could linger a whole era if
 /// the player doesn't advance time right away. Same egui-painter/
@@ -970,9 +964,9 @@ mod placement_indicator {
 /// tick, unlike a Seed placement which only ever happens one at a time.
 /// Renders at the exact cell in both `MapViewMode::Detail` and `Overview` —
 /// Overview reuses the same per-cell sprites as Detail, just recolored by
-/// cluster density (`cluster::compute_cluster_render`), so there is no
-/// separate blob/centroid geometry to aggregate onto; the cell position
-/// alone is correct in either mode.
+/// real per-cell density (task 139), so there is no separate blob/centroid
+/// geometry to aggregate onto; the cell position alone is correct in either
+/// mode.
 pub use spark_indicator::SparkIndicators;
 
 mod spark_indicator {
@@ -1116,11 +1110,13 @@ fn spawn_spark_on_first_observation(
 /// Which representation the organism layer renders in — the hard-threshold
 /// switch task 075 introduces (`redesign/abiogenesis-two-tier-view.md`):
 /// `Overview` (default, matches the un-zoomed `scale == 1.0` whole-grid
-/// framing) shows the per-species cluster heatmap (task 076); `Detail`
-/// shows today's per-cell organism sprites, unchanged. Driven by
-/// `update_map_view_mode` from the camera's current zoom (`CameraConfig::
-/// zoom_threshold`), consumed here only for a debug indicator — task 076
-/// reads it to pick a rendering path, task 077 to gate Stress/Cull.
+/// framing) shows real per-cell density (task 139: `population /
+/// cell_carrying_capacity`, replacing task 076/078's clustered-blob
+/// approximation); `Detail` shows today's per-cell organism sprites,
+/// unchanged. Driven by `update_map_view_mode` from the camera's current
+/// zoom (`CameraConfig::zoom_threshold`), consumed here only for a debug
+/// indicator — `cell_color` reads it to pick a rendering path, task 077 to
+/// gate Stress/Cull.
 #[derive(Resource, Default, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MapViewMode {
     #[default]
@@ -1341,47 +1337,6 @@ fn update_map_view_mode(
     }
 }
 
-/// Per-cell Overview blob data (task 076, extended by task 078's blob-shape
-/// correction: `cluster::compute_cluster_render`), consumed by `cell_color`
-/// when `MapViewMode::Overview` is active. Indexed like `SimWorld::cells`
-/// (`world.index(x, y)`); `density` is `0.0` and `species` is `None` for any
-/// cell no blob claims — task 078 means that's no longer exactly "any cell
-/// with no organism": a filled-hole cell can be claimed with no `Population`,
-/// and an eroded-away edge cell can hold one without being claimed.
-#[derive(Resource, Default)]
-struct ClusterDensity {
-    density: Vec<f32>,
-    species: Vec<Option<SpeciesId>>,
-}
-
-/// Recomputes `ClusterDensity` only when there's something new to show: a
-/// population-changing event (tick advance, action resolution) mutates
-/// `SimWorld` via `ResMut` elsewhere, which is exactly what `Res<SimWorld>::
-/// is_changed` reports here — connected-component clustering is O(cells) and
-/// the task doc calls out not re-running it unconditionally every render
-/// frame on a ~10000+ cell grid. Also recomputes on entering `Overview`
-/// (`mode.is_changed()`) so switching from `Detail` never shows a stale
-/// frame even if the population hasn't changed since the last time
-/// `Overview` was active — recomputing then is cheap (it happens once per
-/// mode switch, not per frame) and guarantees freshness without tracking a
-/// separate "was this ever computed" flag.
-fn update_cluster_density(
-    world: Res<SimWorld>,
-    config: Res<SimConfig>,
-    mode: Res<MapViewMode>,
-    mut density: ResMut<ClusterDensity>,
-) {
-    if *mode != MapViewMode::Overview {
-        return;
-    }
-    if !world.is_changed() && !mode.is_changed() {
-        return;
-    }
-    let render = compute_cluster_render(&world, &config);
-    density.density = render.density;
-    density.species = render.species;
-}
-
 /// Side length, in texels, of a generated shape mask (task 032). Independent
 /// of `CELL_SIZE` — `Sprite::custom_size` stretches whatever texture
 /// resolution to the on-screen cell, so this only controls how smooth the
@@ -1501,29 +1456,25 @@ fn spawn_grid(mut commands: Commands, config: Res<SimConfig>) {
 /// `Sprite::color` and `Sprite::image` (task 032 — shape by metabolism),
 /// read-only against `SimWorld` (never `ResMut` here — rendering must not
 /// mutate simulation state).
-/// `MapViewMode::Overview` (task 076) reuses these same per-cell sprites for
-/// the cluster heatmap instead of spawning separate blob entities: coloring
-/// every cell in a cluster by that cluster's shared density makes the
-/// sprite union read as one blob whose shape is the cluster's real
-/// footprint, and it comes with the click/viewport math (`world_to_cell`,
-/// the zoom camera) already solved for free.
+/// `MapViewMode::Overview` (task 076, real density since task 139) reuses
+/// these same per-cell sprites rather than spawning separate entities: it
+/// comes with the click/viewport math (`world_to_cell`, the zoom camera)
+/// already solved for free.
 fn sync_grid_colors(
     world: Res<SimWorld>,
     config: Res<SimConfig>,
     shapes: Res<MetabolismShapes>,
     mode: Res<MapViewMode>,
-    density: Res<ClusterDensity>,
     time: Res<Time>,
     mut cells: Query<(&GridCell, &mut Sprite)>,
 ) {
     let elapsed = time.elapsed_secs();
     for (cell, mut sprite) in &mut cells {
-        sprite.color = cell_color(&world, &config, cell.x, cell.y, *mode, &density, elapsed);
+        sprite.color = cell_color(&world, &config, cell.x, cell.y, *mode, elapsed);
         sprite.image = match *mode {
             MapViewMode::Detail => cell_shape(&world, &shapes, cell.x, cell.y),
             // Metabolism shapes are a Detail-only precision affordance
-            // (task 032); Overview's aggregated blobs don't carry per-cell
-            // identity, so cells fall back to the plain solid-square shape.
+            // (task 032); Overview reads real per-cell density instead.
             MapViewMode::Overview => Handle::default(),
         };
     }
@@ -1569,9 +1520,9 @@ pub fn world_to_cell(world_pos: Vec2, width: usize, height: usize) -> Option<(us
 }
 
 /// The single place that decides a cell's color (GDD §11): occupied cells by
-/// species hue and energy (`Detail`) or a cell's Overview blob (task 076,
-/// blob shape corrected by task 078) by species hue and cluster density,
-/// cells with leftover residue by a neutral hue scaled by how much is left,
+/// species hue and energy (`Detail`) or by species hue and real density
+/// (`Overview`, task 139), cells with leftover residue by a neutral hue
+/// scaled by how much is left,
 /// empty cells by their biome (task 112, `redesign/abiogenesis-biomes.md` —
 /// flat color, dithered — superseding task 066/068's `TerrainKind`-only
 /// bands), then a toxicity tint (task 033) composited on top of whichever
@@ -1582,16 +1533,17 @@ fn cell_color(
     x: usize,
     y: usize,
     mode: MapViewMode,
-    density: &ClusterDensity,
     elapsed: f32,
 ) -> Color {
     let cell = world.get(x, y);
-    let idx = world.index(x, y);
 
-    // `Detail` colors the literal `Cell::population`; `Overview` colors
-    // whichever species' blob (task 078: real cells, interior holes filled,
-    // then eroded smaller — no longer 1:1 with literal occupancy) claims
-    // this cell, via `cluster::compute_cluster_render`'s `density.species`.
+    // `Detail` colors the literal `Cell::population` by readiness-to-grow;
+    // `Overview` (task 139, replacing task 076/078's clustered-blob
+    // approximation) colors the same literal cell by its real density —
+    // `population.count / cell_carrying_capacity` — nothing pictorial: an
+    // isolated single-individual cell is still `1 / cell_carrying_capacity`
+    // above zero, so it stays visible without any special-cased "lone
+    // organism" handling.
     let occupant = match mode {
         MapViewMode::Detail => cell.population.map(|population| {
             // Task 137: `energy` is now the cell's aggregate across
@@ -1604,20 +1556,18 @@ fn cell_color(
             let fill = (per_capita_energy / config.energy.repro_threshold).clamp(0.0, 1.0);
             (population.species, 0.15 + fill * 0.35)
         }),
-        // `compute_cluster_render`'s density is a population-mass reading
-        // (large, established colonies saturate toward `1.0`; a one-cell
-        // cluster sits near the bottom), not Detail's per-organism energy
-        // fill, so it gets its own lightness range rather than reusing
-        // Detail's: a higher floor (`0.20`, above every `terrain_color`
-        // band's lightness so a lone organism never blends into the ground
-        // beneath it) keeps even a barely-above-zero density "clearly
-        // visible" per task 076's acceptance criteria, while still reading
-        // strictly dimmer than a saturated colony's `0.50` ceiling. Same hue
-        // formula as Detail either way, so the sidebar/notebook swatches
-        // (`species_color`) still agree with the grid.
-        MapViewMode::Overview => {
-            density.species[idx].map(|species| (species, 0.20 + density.density[idx] * 0.30))
-        }
+        // Same lightness range Detail's density-adjacent reading uses
+        // (`0.15`-`0.50`), shifted up (`0.20` floor) so a one-individual
+        // cell stays above every `terrain_color` band's lightness and never
+        // blends into the ground beneath it, matching task 076's original
+        // "clearly visible" criterion. Same hue formula as Detail either
+        // way, so the sidebar/notebook swatches (`species_color`) still
+        // agree with the grid.
+        MapViewMode::Overview => cell.population.map(|population| {
+            let fill = (population.count as f32 / config.energy.cell_carrying_capacity as f32)
+                .clamp(0.0, 1.0);
+            (population.species, 0.20 + fill * 0.30)
+        }),
     };
 
     let base = if let Some((species, lightness)) = occupant {
@@ -1855,18 +1805,84 @@ mod tests {
     }
 
     /// `cell_color` in `Detail` mode, exactly as it behaved before task 076
-    /// added the `Overview` branch — the density argument is unused on this
-    /// path, so an empty `ClusterDensity` is fine for every test below.
+    /// added the `Overview` branch.
     fn detail_color(world: &SimWorld, config: &SimConfig, x: usize, y: usize) -> Color {
-        cell_color(
-            world,
-            config,
-            x,
-            y,
-            MapViewMode::Detail,
-            &ClusterDensity::default(),
-            0.0,
-        )
+        cell_color(world, config, x, y, MapViewMode::Detail, 0.0)
+    }
+
+    /// Task 139's core acceptance criterion: Overview now colors a cell by
+    /// its own real `population.count / cell_carrying_capacity`, no cluster
+    /// blob in between — so a single isolated individual (`count == 1`) must
+    /// still read as visibly brighter than the surrounding empty biome, the
+    /// same "stays visibly distinct" property task 076 originally shipped
+    /// via blob density, now achieved with no clustering step at all.
+    #[test]
+    fn overview_isolated_single_individual_reads_brighter_than_empty_biome() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        let (x, y) = (0, 0);
+        let idx = world.index(x, y);
+        world.cells[idx] = Cell {
+            population: Some(Population {
+                species: SpeciesId(0),
+                count: 1,
+                energy: 5.0,
+                born_season: 0,
+                blocked: false,
+            }),
+            biome: Biome::Plain,
+            residue: 0.0,
+            ..world.cells[idx]
+        };
+
+        let Color::Hsla(occupied) = cell_color(&world, &config, x, y, MapViewMode::Overview, 0.0)
+        else {
+            panic!("expected an HSL color");
+        };
+        let Color::Hsla(empty) = biome_color(Biome::Plain) else {
+            panic!("expected an HSL color");
+        };
+        assert!(
+            occupied.lightness > empty.lightness,
+            "a lone individual's Overview cell (lightness {}) must read brighter than the \
+             empty biome underneath it (lightness {})",
+            occupied.lightness,
+            empty.lightness
+        );
+    }
+
+    /// A cell at `cell_carrying_capacity` must read brighter than a lone
+    /// individual — real density scaling, not a flat "occupied or not" read.
+    #[test]
+    fn overview_density_scales_with_population_count() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        let (x, y) = (0, 0);
+        let idx = world.index(x, y);
+        let population_at = |count| Population {
+            species: SpeciesId(0),
+            count,
+            energy: 5.0,
+            born_season: 0,
+            blocked: false,
+        };
+
+        world.cells[idx].population = Some(population_at(1));
+        let Color::Hsla(lone) = cell_color(&world, &config, x, y, MapViewMode::Overview, 0.0)
+        else {
+            panic!("expected an HSL color");
+        };
+
+        world.cells[idx].population = Some(population_at(config.energy.cell_carrying_capacity));
+        let Color::Hsla(full) = cell_color(&world, &config, x, y, MapViewMode::Overview, 0.0)
+        else {
+            panic!("expected an HSL color");
+        };
+
+        assert!(
+            full.lightness > lone.lightness,
+            "a cell at carrying capacity must read brighter than a lone individual"
+        );
     }
 
     #[test]
@@ -2156,6 +2172,7 @@ mod tests {
             receiver_species: SpeciesId(0),
             exerter_tag: TagSlot(0),
             receiver_tag: TagSlot(1),
+            contribution: 0.3,
             n_confounders: 0,
             cell: 5,
         };

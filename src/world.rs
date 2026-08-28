@@ -251,6 +251,35 @@ pub enum Biome {
     VolcanicVent,
 }
 
+impl Biome {
+    /// Number of `Biome` variants — the width of any per-biome array
+    /// (task 138: habitability, `crowd_factor`, residue decay).
+    pub const COUNT: usize = 17;
+
+    /// Stable index into a per-biome array, mirroring `TerrainKind::index`.
+    pub fn index(self) -> usize {
+        match self {
+            Biome::DeepWater => 0,
+            Biome::ShallowWater => 1,
+            Biome::Plain => 2,
+            Biome::Hill => 3,
+            Biome::Mountain => 4,
+            Biome::Peak => 5,
+            Biome::Desert => 6,
+            Biome::Tundra => 7,
+            Biome::BareRock => 8,
+            Biome::Glacier => 9,
+            Biome::AlpineMeadow => 10,
+            Biome::Forest => 11,
+            Biome::Swamp => 12,
+            Biome::Crater => 13,
+            Biome::CrystalField => 14,
+            Biome::Lake => 15,
+            Biome::VolcanicVent => 16,
+        }
+    }
+}
+
 /// Which `TerrainKind` bands a species' lineage has ever occupied this run
 /// (task 099) — a tiny bitmask over `TerrainKind`'s 4 variants, one entry
 /// per `SpeciesId` in `SimWorld::terrain_occupancy`. Deliberately named and
@@ -2976,6 +3005,53 @@ mod tests {
 
     fn test_config() -> SimConfig {
         SimConfig::default()
+    }
+
+    /// Task 138: `Biome::index()` is hand-written and `EnergyConfig`'s
+    /// per-biome arrays are sized from a hand-written mirror of
+    /// `Biome::COUNT` (`config::BIOME_COUNT`, kept a plain constant so
+    /// `config` stays a dependency leaf). Adding a `Biome` variant without
+    /// updating both would panic on out-of-bounds indexing instead of at
+    /// this cheap, explicit check.
+    #[test]
+    fn biome_index_covers_every_variant_within_count() {
+        let all = [
+            Biome::DeepWater,
+            Biome::ShallowWater,
+            Biome::Plain,
+            Biome::Hill,
+            Biome::Mountain,
+            Biome::Peak,
+            Biome::Desert,
+            Biome::Tundra,
+            Biome::BareRock,
+            Biome::Glacier,
+            Biome::AlpineMeadow,
+            Biome::Forest,
+            Biome::Swamp,
+            Biome::Crater,
+            Biome::CrystalField,
+            Biome::Lake,
+            Biome::VolcanicVent,
+        ];
+        assert_eq!(
+            all.len(),
+            Biome::COUNT,
+            "add the new variant to this list too"
+        );
+        let mut seen = [false; Biome::COUNT];
+        for biome in all {
+            let idx = biome.index();
+            assert!(
+                idx < Biome::COUNT,
+                "{biome:?}.index() = {idx} >= Biome::COUNT"
+            );
+            assert!(
+                !seen[idx],
+                "{biome:?}.index() = {idx} collides with another variant"
+            );
+            seen[idx] = true;
+        }
     }
 
     #[test]

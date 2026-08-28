@@ -13,6 +13,22 @@ use crate::world::{
     TerrainOccupancy,
 };
 
+/// Which gate ended a population, distinct from `text::DominantDeathCause`
+/// (task 105), which infers *which energy term* dominated a starvation
+/// death from its numeric fields — this instead records *which pipeline
+/// phase* fired (task 138). A habitat-gate death has no meaningful energy
+/// terms at all (`gain`/`env_fit`/`interaction_delta`/upkeep are all `0.0`),
+/// so numeric inference alone would silently misclassify it as starvation;
+/// this field is why that can't happen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeathCause {
+    /// Energy reached zero (GDD §5.6 step 5) — the only cause before task 138.
+    Starvation,
+    /// Task 138 phase 0: the cell's biome is outright uninhabitable for this
+    /// species, independent of any scalar fit.
+    Habitat,
+}
+
 /// One organism's energy reached zero and it was removed this tick, with
 /// the exact terms of the energy update (GDD §5.6 step 5) that led there —
 /// consumed by `notebook.rs` to explain a salient death instead of leaving
@@ -21,6 +37,7 @@ use crate::world::{
 pub struct OrganismDied {
     pub cell: usize,
     pub species: SpeciesId,
+    pub cause: DeathCause,
     /// Metabolic gain (step 1-2, `Metabolism`-dependent).
     pub gain: f32,
     /// Environmental fitness (step 1, `env_fit`) at the organism's own cell
@@ -115,6 +132,12 @@ pub struct AdjacencyObserved {
     pub receiver_species: SpeciesId,
     pub exerter_tag: TagSlot,
     pub receiver_tag: TagSlot,
+    /// This exact `(exerter_tag, receiver_tag)` pair's energy contribution
+    /// this tick (`matrix entry × interaction_scale`, task 138) — the
+    /// per-neighbouring-tag breakdown task 149's inspection card needs,
+    /// kept alongside the pair rather than only folded into the cell's
+    /// summed `interaction_delta`.
+    pub contribution: f32,
     pub n_confounders: u32,
     /// The receiver's cell index (`SimWorld::index`), for presentation-only
     /// consumers (task 080's interaction spark) that need to know *where*
@@ -193,6 +216,12 @@ pub struct SelectionThresholdCrossed {
 /// Bevy `MessageWriter`s. Kept as a plain struct (not `MessageWriter`
 /// parameters on `step()` itself) so `step()` stays callable without a Bevy
 /// `App` (invariant 2) — see existing `sim.rs` unit tests.
+///
+/// This is the tick pipeline's phase 7, observation/event emission (task
+/// 138): every per-cell observation the tick produces goes through here,
+/// exactly once, rather than through a separate path. Task 146's `Cull`
+/// knockout observation belongs here too, once it exists — not implemented
+/// by this task.
 #[derive(Debug, Default)]
 pub struct TickEvents {
     pub deaths: Vec<OrganismDied>,
@@ -503,8 +532,11 @@ pub fn speciate(
 pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
     let energy = &config.energy;
     debug_assert!(
-        energy.residue_ambient_trickle < energy.residue_decay,
-        "residue_ambient_trickle must stay below residue_decay, or residue grows unboundedly"
+        energy
+            .residue_decay
+            .iter()
+            .all(|&decay| energy.residue_ambient_trickle < decay),
+        "residue_ambient_trickle must stay below every biome's residue_decay, or residue grows unboundedly"
     );
     debug_assert!(
         energy.repro_cost > 0.0,
@@ -575,8 +607,8 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
     // low equilibrium everywhere, keeping an isolated Decomposer readable
     // instead of starving out with zero information.
     for cell in world.scratch.iter_mut() {
-        cell.residue =
-            (cell.residue - energy.residue_decay).max(0.0) + energy.residue_ambient_trickle;
+        cell.residue = (cell.residue - energy.residue_decay_for(cell.biome.index())).max(0.0)
+            + energy.residue_ambient_trickle;
     }
 
     // Predation pre-pass (GDD §5.4): a shared-resource drain computed from
@@ -689,6 +721,37 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
         };
         let species = &world.species[occupant.species.0 as usize];
 
+        // 0. Habitat gate (task 138): a biome can make a cell outright
+        // uninhabitable independent of scalars (deep water is not "low
+        // light and cold", it is a place a land organism cannot be).
+        // Ships neutral (all-habitable) by default — see
+        // `EnergyConfig::biome_habitable`'s doc comment — so this is a
+        // structural attachment point, not yet a real balance restriction.
+        if !energy.is_habitable(cell.biome.index()) {
+            world.scratch[idx].population = None;
+            world.scratch[idx].residue = energy.residue_on_death;
+            events.deaths.push(OrganismDied {
+                cell: idx,
+                species: occupant.species,
+                cause: DeathCause::Habitat,
+                gain: 0.0,
+                env_fit: 0.0,
+                interaction_delta: 0.0,
+                upkeep: 0.0,
+                crowding_penalty: 0.0,
+                predation_loss: 0.0,
+                energy_before: occupant.energy,
+            });
+            let species_idx = occupant.species.0 as usize;
+            population[species_idx] -= 1;
+            if population[species_idx] == 0 {
+                events.extinctions.push(SpeciesExtinct {
+                    species: occupant.species,
+                });
+            }
+            continue;
+        }
+
         // 1-2. Environmental fitness and metabolic gain. Photolithic/
         // Chemolithotroph gain is a genuine per-capita rate (each individual
         // independently reads the same `light`/`toxicity`), scaled to a
@@ -725,6 +788,14 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
         // before 137 and is scaled to a total by `occupant.count` below,
         // same as the per-capita gain above.
         let (x, y) = (idx % world.width, idx / world.width);
+
+        // Protected-cell hook (task 138): the attachment point for the
+        // future `Isola` action, not implemented here — only made
+        // near-free to retrofit now, before it's expensive to. Always
+        // `false` today; when a cell is protected, this phase contributes
+        // zero.
+        let protected = false;
+
         let mut interaction_delta = 0.0;
 
         // Distinct exerter tags carried by this cell's occupied Moore
@@ -769,37 +840,46 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
             exerter_tags: current_mask,
         });
 
-        for neighbour_idx in world.moore_neighbours(x, y) {
-            let Some(neighbour) = world.cells[neighbour_idx].population else {
-                continue;
-            };
-            let neighbour_species = &world.species[neighbour.species.0 as usize];
-            for &their_tag in &neighbour_species.tags {
-                if !tag_gate_satisfied(
-                    world,
-                    their_tag,
-                    world.cells[neighbour_idx].terrain,
-                    &mut events.terrain_gates,
-                ) {
+        if !protected {
+            for neighbour_idx in world.moore_neighbours(x, y) {
+                let Some(neighbour) = world.cells[neighbour_idx].population else {
                     continue;
-                }
-                for &my_tag in &species.tags {
-                    if !tag_gate_satisfied(world, my_tag, cell.terrain, &mut events.terrain_gates) {
+                };
+                let neighbour_species = &world.species[neighbour.species.0 as usize];
+                for &their_tag in &neighbour_species.tags {
+                    if !tag_gate_satisfied(
+                        world,
+                        their_tag,
+                        world.cells[neighbour_idx].terrain,
+                        &mut events.terrain_gates,
+                    ) {
                         continue;
                     }
-                    let entry = world.matrix.get(their_tag, my_tag);
-                    interaction_delta += entry as f32 * energy.interaction_scale;
-                    let is_onset = onset_mask & (1 << their_tag.0) != 0;
-                    if entry != 0 && is_onset {
-                        let n_confounders =
-                            neighbour_tags.iter().filter(|&&t| t != their_tag).count() as u32;
-                        events.adjacencies.push(AdjacencyObserved {
-                            receiver_species: occupant.species,
-                            exerter_tag: their_tag,
-                            receiver_tag: my_tag,
-                            n_confounders,
-                            cell: idx,
-                        });
+                    for &my_tag in &species.tags {
+                        if !tag_gate_satisfied(
+                            world,
+                            my_tag,
+                            cell.terrain,
+                            &mut events.terrain_gates,
+                        ) {
+                            continue;
+                        }
+                        let entry = world.matrix.get(their_tag, my_tag);
+                        let contribution = entry as f32 * energy.interaction_scale;
+                        interaction_delta += contribution;
+                        let is_onset = onset_mask & (1 << their_tag.0) != 0;
+                        if entry != 0 && is_onset {
+                            let n_confounders =
+                                neighbour_tags.iter().filter(|&&t| t != their_tag).count() as u32;
+                            events.adjacencies.push(AdjacencyObserved {
+                                receiver_species: occupant.species,
+                                exerter_tag: their_tag,
+                                receiver_tag: my_tag,
+                                contribution,
+                                n_confounders,
+                                cell: idx,
+                            });
+                        }
                     }
                 }
             }
@@ -857,7 +937,8 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
             Metabolism::Decomposer => energy.decomposer_upkeep,
             Metabolism::Chemolithotroph => energy.chemolithotroph_upkeep,
         };
-        let per_capita_crowding = energy.crowd_factor * occupied_neighbours as f32;
+        let per_capita_crowding =
+            energy.crowd_factor_for(cell.biome.index()) * occupied_neighbours as f32;
         let aggregate_upkeep = per_capita_upkeep * occupant.count as f32;
         let aggregate_crowding = per_capita_crowding * occupant.count as f32;
 
@@ -882,6 +963,7 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
             events.deaths.push(OrganismDied {
                 cell: idx,
                 species: occupant.species,
+                cause: DeathCause::Starvation,
                 gain: per_capita_gain,
                 env_fit: fit,
                 interaction_delta,
@@ -1250,7 +1332,7 @@ fn speciate_on_threshold_crossed(
 mod tests {
     use super::*;
     use crate::world::{
-        Cell, ConditionalTag, Species, SpeciesId, TagId, TagMatrix, TagSlot, TerrainKind,
+        Biome, Cell, ConditionalTag, Species, SpeciesId, TagId, TagMatrix, TagSlot, TerrainKind,
     };
 
     const TOLERANCE: f32 = 1e-4;
@@ -1367,6 +1449,37 @@ mod tests {
         assert!(
             !events.births.is_empty(),
             "once world.season has advanced past born_season, reproduction may proceed"
+        );
+    }
+
+    /// Task 138 phase 0: an uninhabitable biome kills the population
+    /// outright, with `DeathCause::Habitat`, before any energy formula
+    /// runs — independent of `light`/`temperature`, which here are set to
+    /// values that would otherwise net strongly positive energy.
+    #[test]
+    fn uninhabitable_biome_kills_regardless_of_scalars() {
+        let (mut world, mut config) = world_with_one_organism(0.7, 0.5, 5.0);
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let idx = world.index(cx, cy);
+        // `world_with_one_organism` forces `terrain` to `Plain` but doesn't
+        // touch `Cell::biome` (classified independently at generation
+        // time) — pin the exact biome under test rather than relying on
+        // whatever this seed happened to classify at this cell.
+        world.cells[idx].biome = Biome::Plain;
+        config.energy.biome_habitable[Biome::Plain.index()] = false;
+
+        let events = step(&mut world, &config);
+
+        assert!(
+            world.get(cx, cy).population.is_none(),
+            "an uninhabitable biome must empty the cell regardless of scalars"
+        );
+        assert_eq!(events.deaths.len(), 1);
+        assert_eq!(events.deaths[0].cause, DeathCause::Habitat);
+        assert_eq!(
+            events.extinctions.len(),
+            1,
+            "the only population of this species just died, so it must go extinct"
         );
     }
 
@@ -1889,6 +2002,92 @@ mod tests {
         let b = world.get(cx + 1, cy).population.expect("B survives");
         // Same result as negative_adjacency_effect_subtracts_energy: 5.03.
         assert!((b.energy - 5.03).abs() < TOLERANCE, "got {}", b.energy);
+    }
+
+    /// Task 138 caveat: `net_self_interaction == 0` (task 088's invariant on
+    /// every drawn species' tag set) makes a same-species neighbour
+    /// contribute exactly zero `interaction_delta` — *when both cells'
+    /// `tag_gate_satisfied` verdicts agree*. Since task 096's conditional
+    /// tags, that agreement isn't guaranteed: this pins the case where it
+    /// doesn't hold, rather than letting the discrepancy surface later
+    /// during balance work. Two organisms of the *same* species carry
+    /// `{T0, T1}` with `matrix.get(T0, T1) = +2`, `matrix.get(T1, T0) = -2`
+    /// (`net_self_interaction == 0`, satisfying the invariant a real drawn
+    /// species would need). `T0` is `Mode::Inducible` on `Hill`; `T1` is
+    /// unconditional. A sits on `Hill`, B on `Plain`, so the two cells'
+    /// gate verdicts for `T0` disagree depending on which cell is asked to
+    /// carry it as exerter vs. receiver — breaking the cancellation.
+    #[test]
+    fn same_species_neutrality_breaks_when_conditional_gates_disagree() {
+        let conditional = ConditionalTag {
+            tag: TagId(0),
+            terrain: TerrainKind::Hill,
+            mode: Mode::Inducible,
+        };
+        let matrix = TagMatrix {
+            size: 2,
+            values: vec![0, 2, -2, 0],
+        };
+        assert_eq!(
+            net_self_interaction(&matrix, &[TagSlot(0), TagSlot(1)]),
+            0,
+            "test setup: the tag set itself must satisfy the zero-self-interaction invariant"
+        );
+
+        let (mut world, config) = world_with_two_neighbours(
+            matrix,
+            vec![TagSlot(0), TagSlot(1)],
+            vec![TagSlot(0), TagSlot(1)],
+            0.7,
+            0.5,
+            5.0,
+            5.0,
+        );
+        world.active_tags = vec![TagId(0), TagId(1)];
+        world.conditional_tags = vec![conditional];
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let a_idx = world.index(cx, cy);
+        let b_idx = world.index(cx + 1, cy);
+        world.cells[a_idx].terrain = TerrainKind::Hill;
+        world.cells[b_idx].terrain = TerrainKind::Plain;
+        // Force both organisms to actually be the same species — the
+        // helper gives each cell its own `Species` entry so their tag sets
+        // can differ in general; here both are `[T0, T1]`, and this makes
+        // it literally one species occupying both cells.
+        world.cells[b_idx].population = Some(Population {
+            species: SpeciesId(0),
+            ..world.cells[b_idx].population.unwrap()
+        });
+
+        step(&mut world, &config);
+
+        let a = world.get(cx, cy).population.expect("A survives");
+        let b = world.get(cx + 1, cy).population.expect("B survives");
+        // Same-species neighbours never count toward crowding (task 136:
+        // `occupied_neighbours` filters to *different*-species only), so
+        // this pair's baseline (no interaction, no crowding) is
+        // 5.0 + gain(0.98) - upkeep(0.5) = 5.48 for both, not the
+        // 5.33 a cross-species pair would see. Pre-096 (or with agreeing
+        // gates), both would stay at that baseline: net effect zero on
+        // each side. Here the gate disagreement leaves each side seeing
+        // only one leg of the matrix pair instead of both cancelling: A
+        // sees only `matrix.get(T1, T0) = -2` (T0 gates off as exerter
+        // from B's Plain cell but on as receiver on A's own Hill cell), B
+        // sees only `matrix.get(T0, T1) = +2` (the mirror asymmetry) —
+        // nonzero and *different* on each side, despite
+        // `net_self_interaction == 0`.
+        assert!(
+            (a.energy - 5.18).abs() < TOLERANCE,
+            "expected A's same-species neighbour to cost -2*scale despite \
+             net_self_interaction == 0, got {}",
+            a.energy
+        );
+        assert!(
+            (b.energy - 5.78).abs() < TOLERANCE,
+            "expected B's same-species neighbour to add +2*scale despite \
+             net_self_interaction == 0, got {}",
+            b.energy
+        );
     }
 
     #[test]

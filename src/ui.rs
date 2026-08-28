@@ -1011,8 +1011,8 @@ fn action_icon_row(
     ui.horizontal(|ui| {
         for (action_mode, glyph) in ACTION_GLYPHS {
             let cost = action_cost(action_mode, config, run_progress);
-            // Stress/Cull need per-organism precision Overview's
-            // cluster-heatmap aggregation (task 076) doesn't preserve, so
+            // Stress/Cull need per-organism precision Overview's real-density
+            // coloring (task 076/139) doesn't preserve, so
             // they're disabled outside Detail (task 077) — same
             // `add_enabled_ui` pattern `splice_panel` already uses for its
             // tag-cap gating, rather than leaving a clickable button that
@@ -1587,6 +1587,7 @@ mod tests {
         let base = OrganismDied {
             cell: 0,
             species,
+            cause: abiogenesis::sim::DeathCause::Starvation,
             gain: 0.5,
             env_fit: 0.9,
             interaction_delta: 0.0,
