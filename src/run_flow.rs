@@ -28,7 +28,8 @@ use crate::notebook::{
 };
 use crate::render::{BlockedIndicatorSeen, SeenRelations};
 use crate::ui::{
-    DeathCauseTally, IsolationHint, PopulationTrends, SelectedSpecies, SpliceDraft, StallHint,
+    DeathCauseTally, IsolationHint, PauseMenuOpen, PendingConfirmation, PopulationTrends,
+    SelectedSpecies, SpliceDraft, StallHint, WorldTouched,
 };
 use abiogenesis::knowledge::MatrixKnowledge;
 
@@ -63,6 +64,12 @@ pub struct WorldResetParams<'w> {
     pub era_tally: ResMut<'w, EraTally>,
     pub era_reveal: ResMut<'w, EraReveal>,
     pub blocked_indicator_seen: ResMut<'w, BlockedIndicatorSeen>,
+    /// Task 150: a "touched" flag from the world just left must not gate
+    /// `r`'s confirmation for the fresh one — it starts with nothing to
+    /// lose, same reasoning `budget`/`selected` above already follow.
+    pub world_touched: ResMut<'w, WorldTouched>,
+    pub pause_menu_open: ResMut<'w, PauseMenuOpen>,
+    pub pending_confirmation: ResMut<'w, PendingConfirmation>,
 }
 
 /// Rebuilds `world` in place as world `world_index` seeded with `seed`
@@ -138,6 +145,11 @@ pub fn start_world(
     // left must not carry over — the new world's grid starts unmarked.
     *reset.blocked_indicator_seen =
         BlockedIndicatorSeen::new(config.grid.width as usize, config.grid.height as usize);
+    // Task 150: the new world starts untouched, with no in-flight pause/
+    // confirmation state carried over from the one just left.
+    *reset.world_touched = WorldTouched::default();
+    reset.pause_menu_open.0 = false;
+    *reset.pending_confirmation = PendingConfirmation::default();
 }
 
 /// The concrete effect of "World cleared → Continue" (task 045): advances
@@ -240,6 +252,9 @@ mod tests {
         ecs_world.insert_resource(EraReveal::default());
         ecs_world.insert_resource(BlockedIndicatorSeen::new(10, 10));
         ecs_world.insert_resource(StallHint::default());
+        ecs_world.insert_resource(WorldTouched::default());
+        ecs_world.insert_resource(PauseMenuOpen::default());
+        ecs_world.insert_resource(PendingConfirmation::default());
         ecs_world
     }
 

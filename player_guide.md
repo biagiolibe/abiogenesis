@@ -10,15 +10,19 @@ There are two mysteries running at once: **what will happen** — the ecosystem 
 
 | Key / action | Effect |
 |---|---|
-| Left click | Perform the selected action (Seed / Stress / Cull) on the clicked cell |
-| `space` | Advance one full era (a block of pulses, animated) |
+| Left click | Perform the selected action (Seed / Stress / Cull) on the clicked cell, or open the inspect card on it if no action is armed |
+| Right click | Disarm the current action (back to observation-only) |
+| `space` | Advance one season (animated) |
+| `shift + space` | Advance a full era at once (instant, not animated) |
 | `n` | Advance a single pulse (fine-grained observation) |
 | `wasd` / arrow keys | Pan the camera |
 | `tab` | Open / close your notebook |
-| `r` | Reseed the current world (same difficulty, fresh random state) |
+| `r` | Reseed the current world (same difficulty, fresh random state) — asks for confirmation once you've acted on this world |
 | `t` | Toggle a temperature heatmap over the grid (blue = cold, red = hot) |
 | `l` | Toggle a light heatmap over the grid (blue = dark, red = bright) |
-| `Esc` | Quit |
+| `Esc` | Close whatever's on top — the pause menu, then your notebook, then the inspect card, then an armed action; with nothing open, opens the pause menu |
+
+Hovering any cell shows a quick label (biome, and species/population/trend if occupied); the inspect card (left click with no action armed) gives the full picture, including a line-by-line energy breakdown for a populated cell.
 
 The HUD's right-hand console lets you pick which species to seed (**Species**), which action is active (**Moves**), and shows your biosphere and its trends (**Biosphere**) and current goal (**This world wants**) at a glance.
 

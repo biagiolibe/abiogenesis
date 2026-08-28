@@ -46,9 +46,11 @@ pub const HOW_TO_PLAY_SECTIONS: &[(&str, &str)] = &[
     ),
     (
         "Controls",
-        "Left click: perform the selected action on a cell. Space: advance one era. \
-         N: advance a single pulse. Arrow keys or WASD: pan the camera. Tab: open your notebook. \
-         R: reseed the current world. Esc: quit.",
+        "Left click: perform the selected action on a cell, or inspect it if no action is \
+         armed. Right click: disarm the current action. Space: advance one season, Shift+Space: \
+         a full era at once. N: advance a single pulse. Arrow keys or WASD: pan the camera. \
+         Tab: open your notebook. R: reseed the current world. Esc: close whatever's on top, or \
+         open the pause menu if nothing is.",
     ),
     (
         "The loop",
@@ -366,6 +368,26 @@ pub fn band_label(value: f32, low: f32, high: f32, labels: [&'static str; 3]) ->
 pub const SATURATED_NO_OUTLET_WARNING: &str = "Saturated, no room to grow";
 pub const HABITABLE_LABEL: &str = "Habitable";
 pub const NOT_HABITABLE_LABEL: &str = "Not habitable";
+
+// --- Pause menu (`ui.rs::pause_menu`, task 150) ---
+
+pub const PAUSE_MENU_TITLE: &str = "Paused";
+pub const PAUSE_RESUME_BUTTON: &str = "Resume";
+pub const PAUSE_SETTINGS_BUTTON: &str = "Settings";
+pub const PAUSE_SETTINGS_UNAVAILABLE_HINT: &str = "Not yet available";
+pub const PAUSE_SAVE_AND_EXIT_BUTTON: &str = "Save and exit";
+pub const PAUSE_ABANDON_BUTTON: &str = "Abandon without saving";
+
+// --- Shared confirm/cancel dialog (`ui.rs::confirmation_dialog`, task 150) ---
+
+pub const CONFIRM_BUTTON: &str = "Confirm";
+pub const CANCEL_BUTTON: &str = "Cancel";
+pub const CONFIRM_RESEED_TITLE: &str = "Reseed this world?";
+pub const CONFIRM_RESEED_BODY: &str =
+    "This world has already been touched by your actions. Reseeding discards its current state.";
+pub const CONFIRM_ABANDON_TITLE: &str = "Abandon this run?";
+pub const CONFIRM_ABANDON_BODY: &str =
+    "There is no save system yet — leaving now discards this run's progress.";
 
 pub fn population_delta_label(delta: Option<i64>) -> String {
     match delta {

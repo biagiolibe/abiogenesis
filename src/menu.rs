@@ -15,7 +15,10 @@ use crate::notebook::{
 };
 use crate::render::SeenRelations;
 use crate::text;
-use crate::ui::{IsolationHint, SelectedSpecies, SpliceDraft, StallHint};
+use crate::ui::{
+    IsolationHint, PauseMenuOpen, PendingConfirmation, SelectedSpecies, SpliceDraft, StallHint,
+    WorldTouched,
+};
 use abiogenesis::config::SimConfig;
 use abiogenesis::knowledge::MatrixKnowledge;
 use abiogenesis::objectives::{CurrentObjective, CurrentWorldOutcome, ObjectiveProgress};
@@ -178,4 +181,9 @@ fn start_run(commands: &mut Commands, config: &SimConfig, meta: &MetaProgress, r
     commands.insert_resource(CurrentObjective::new(objectives));
     commands.insert_resource(ObjectiveProgress::default());
     commands.insert_resource(CurrentWorldOutcome::default());
+    // Task 150: a fresh run starts untouched, with no pause/confirmation
+    // state left over from whatever was abandoned to reach this menu.
+    commands.insert_resource(WorldTouched::default());
+    commands.insert_resource(PauseMenuOpen::default());
+    commands.insert_resource(PendingConfirmation::default());
 }

@@ -9,7 +9,7 @@ use bevy_egui::input::EguiWantsInput;
 
 use abiogenesis::actions;
 use abiogenesis::config::SimConfig;
-use abiogenesis::objectives::{apply_tick_outcome, ObjectiveOutcomeParams};
+use abiogenesis::objectives::{apply_tick_outcome, ObjectiveOutcomeParams, WorldOutcome};
 #[cfg(test)]
 use abiogenesis::objectives::{
     CurrentObjective, CurrentWorldOutcome, GraceProgress, ObjectiveAdvanced, ObjectiveProgress,
@@ -35,9 +35,9 @@ use crate::render::{species_label, world_to_cell, GridCamera, MapViewMode, Place
 use crate::run_flow::{start_world, WorldResetParams};
 use crate::text;
 use crate::ui::{
-    cursor_over_hud_panel, ActionMode, HoveredCell, HudControlIntents, IsolationHint,
-    SelectedAction, SelectedCell, SelectedSpecies, SelectedStressAxis, SpliceDraft,
-    SpliceEditChoice,
+    cursor_over_hud_panel, ActionMode, ConfirmationKind, HoveredCell, HudControlIntents,
+    IsolationHint, PauseMenuOpen, PendingConfirmation, SelectedAction, SelectedCell,
+    SelectedSpecies, SelectedStressAxis, SpliceDraft, SpliceEditChoice, WorldTouched,
 };
 
 pub struct InputPlugin;
@@ -56,10 +56,14 @@ impl Plugin for InputPlugin {
                 apply_splice,
                 hover_cell,
                 select_cell_on_click,
+                disarm_action_on_right_click,
+                advance_full_era,
+                resolve_abandon_confirmation,
             )
                 .run_if(in_state(GameState::Playing)),
         )
-        .add_systems(Update, quit);
+        .add_systems(Update, escape_cascade.run_if(in_state(GameState::Playing)))
+        .add_systems(Update, quit_from_menu.run_if(in_state(GameState::MainMenu)));
     }
 }
 
@@ -238,19 +242,144 @@ fn reseed_world(
     mut next_state: ResMut<NextState<EraState>>,
     mut reset: WorldResetParams,
 ) {
-    if keys.just_pressed(KeyCode::KeyR) {
-        let new_seed = world.next_seed();
-        start_world(
+    // Reads `WorldResetParams`' own `world_touched`/`pending_confirmation`
+    // fields directly rather than taking a second, separate `Res`/`ResMut`
+    // on either — Bevy rejects two system parameters aliasing the same
+    // resource (`error[B0002]`) even when one is read-only.
+    let requested = keys.just_pressed(KeyCode::KeyR);
+    let confirmed_here = reset.pending_confirmation.kind == Some(ConfirmationKind::ReseedWorld)
+        && reset.pending_confirmation.confirmed;
+    if !requested && !confirmed_here {
+        return;
+    }
+    // Task 150: once the world has been touched by a player action, `r`
+    // opens `PendingConfirmation` instead of reseeding instantly — task
+    // 094's original "no confirmation, no affordance to add one" reasoning
+    // no longer holds now the pause menu's shared confirm/cancel dialog
+    // exists. An untouched world (nothing to lose) still reseeds instantly.
+    if requested && reset.world_touched.0 && !confirmed_here {
+        reset.pending_confirmation.kind = Some(ConfirmationKind::ReseedWorld);
+        reset.pending_confirmation.confirmed = false;
+        return;
+    }
+    let new_seed = world.next_seed();
+    // `start_world` resets `reset.pending_confirmation`/`world_touched` to
+    // their defaults itself, alongside every other per-world resource.
+    start_world(
+        &mut world,
+        run_progress.world_index,
+        new_seed,
+        &config,
+        run_progress.unlocks.bonus_available_species,
+        &mut progress,
+        &mut next_state,
+        &mut reset,
+    );
+    run_progress.world_seed = new_seed;
+}
+
+/// Applies the pause menu's "Save and exit"/"Abandon without saving" once
+/// `PendingConfirmation` reports `AbandonRun` confirmed (task 150) — both
+/// currently take the same path, since task 161 (Phase 4, snapshot save)
+/// doesn't exist yet; "Save and exit" is wired here as a `// TODO(task
+/// 161)` rather than dropped, per the design doc wanting the full four-item
+/// menu shipped as a unit. `menu::start_run` fully reinserts every
+/// per-run resource fresh on the next "New run", so returning to
+/// `MainMenu` needs no explicit reset here.
+fn resolve_abandon_confirmation(
+    mut pending: ResMut<PendingConfirmation>,
+    mut pause_menu_open: ResMut<PauseMenuOpen>,
+    mut next_state: ResMut<NextState<GameState>>,
+) {
+    if pending.kind != Some(ConfirmationKind::AbandonRun) || !pending.confirmed {
+        return;
+    }
+    // TODO(task 161): once a snapshot-save system exists, this should save
+    // the run before leaving instead of reusing the abandon path.
+    next_state.set(GameState::MainMenu);
+    pause_menu_open.0 = false;
+    *pending = PendingConfirmation::default();
+}
+
+/// Right-click disarms the current action (task 150): returns to
+/// observation-only, executing nothing — the mouse-driven equivalent of the
+/// Esc cascade's "an action is armed" tier.
+fn disarm_action_on_right_click(
+    buttons: Res<ButtonInput<MouseButton>>,
+    egui_wants_input: Res<EguiWantsInput>,
+    mut selected_action: ResMut<SelectedAction>,
+) {
+    if !buttons.just_pressed(MouseButton::Right) {
+        return;
+    }
+    if egui_wants_input.wants_pointer_input() {
+        return;
+    }
+    selected_action.0 = None;
+}
+
+/// `Shift+space`: advances a full era in one input (task 150), by repeating
+/// `single_tick`'s own per-tick machinery (`tick_and_complete_season`,
+/// `apply_tick_outcome`) until the era boundary closes, rather than
+/// duplicating that bookkeeping. Instant, like `n` — not animated like
+/// plain `space`'s `EraState::Advancing` playback — since GDD §11 only asks
+/// for a full-era *skip*, and animating up to `seasons_per_era *
+/// season_pulses` ticks from one keypress would need its own pacing
+/// contract `n`'s "manual, no `EraState` transition" doesn't have. Breaks
+/// early if a tick's outcome leaves `Ongoing` (extinction/era-budget
+/// failure, or an objective clearing) — `apply_tick_outcome` already
+/// applied whichever `GameState` transition that implies, so ticking
+/// further would simulate a world nothing is still watching.
+#[allow(clippy::too_many_arguments)]
+fn advance_full_era(
+    keys: Res<ButtonInput<KeyCode>>,
+    era_state: Res<State<EraState>>,
+    mut era_next_state: ResMut<NextState<EraState>>,
+    mut world: ResMut<SimWorld>,
+    config: Res<SimConfig>,
+    mut progress: ResMut<SeasonProgress>,
+    mut budget: ResMut<ActionBudget>,
+    mut era_completed: MessageWriter<EraCompleted>,
+    mut tally: ResMut<EraTally>,
+    mut writers: TickEventWriters,
+    mut objective_outcome: ObjectiveOutcomeParams,
+    pause_menu_open: Res<PauseMenuOpen>,
+) {
+    if *era_state.get() != EraState::Observing {
+        return;
+    }
+    if pause_menu_open.0 {
+        return;
+    }
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    if !shift || !keys.just_pressed(KeyCode::Space) {
+        return;
+    }
+    let era_before = world.era;
+    loop {
+        if progress.remaining() == 0 {
+            progress.start(season_pulses_for(
+                objective_outcome.run_progress.world_index,
+                world.season,
+                &config,
+            ));
+        }
+        let events = tick_and_complete_season(
             &mut world,
-            run_progress.world_index,
-            new_seed,
             &config,
-            run_progress.unlocks.bonus_available_species,
             &mut progress,
-            &mut next_state,
-            &mut reset,
+            &mut budget,
+            &mut era_completed,
+            &mut tally,
         );
-        run_progress.world_seed = new_seed;
+        writers.write_all(events);
+        apply_tick_outcome(&world, &config, &mut objective_outcome);
+        if world.era != era_before || objective_outcome.outcome.0 != WorldOutcome::Ongoing {
+            break;
+        }
+    }
+    if world.era != era_before {
+        era_next_state.set(EraState::Reveal);
     }
 }
 
@@ -295,6 +424,12 @@ struct IsolationHintParams<'w> {
 struct ClickGateState<'w> {
     era_state: Res<'w, State<EraState>>,
     notebook_open: Res<'w, NotebookWindowOpen>,
+    /// Task 150: latched `true` the first time any of the three click
+    /// actions actually succeeds against the current world — bundled here
+    /// rather than as a fourth top-level system argument, since these
+    /// click systems already sit close to Bevy's per-system parameter
+    /// ceiling.
+    world_touched: ResMut<'w, WorldTouched>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -302,7 +437,7 @@ fn seed_organism_on_click(
     buttons: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
-    gate: ClickGateState,
+    mut gate: ClickGateState,
     selected_action: Res<SelectedAction>,
     selected: Res<SelectedSpecies>,
     mut world: ResMut<SimWorld>,
@@ -336,6 +471,7 @@ fn seed_organism_on_click(
     else {
         return;
     };
+    gate.world_touched.0 = true;
     // Task 026's placement record stays here rather than in the library
     // action: `PlayerPlacedCells` is notebook bookkeeping, not simulation
     // state, and nothing headless has a use for it.
@@ -390,7 +526,7 @@ fn stress_on_click(
     buttons: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
-    gate: ClickGateState,
+    mut gate: ClickGateState,
     selected_action: Res<SelectedAction>,
     selected_stress_axis: Res<SelectedStressAxis>,
     mut world: ResMut<SimWorld>,
@@ -431,6 +567,7 @@ fn stress_on_click(
 
     world.apply_stress(x, y, selected_stress_axis.0, &config);
     budget.points_remaining -= config.time.action_costs.stress;
+    gate.world_touched.0 = true;
 }
 
 /// Left-click while `ActionMode::Cull` is selected (GDD §6 "Cull"): removes
@@ -454,7 +591,7 @@ fn cull_on_click(
     buttons: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
-    gate: ClickGateState,
+    mut gate: ClickGateState,
     selected_action: Res<SelectedAction>,
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
@@ -501,6 +638,7 @@ fn cull_on_click(
     world.get_mut(x, y).population = None;
     budget.points_remaining -= config.time.action_costs.cull;
     placed.0.remove(&index);
+    gate.world_touched.0 = true;
 }
 
 /// Applies a `Splice` (GDD §6) once the HUD's editor panel (`ui.rs`) sets
@@ -520,6 +658,7 @@ fn cull_on_click(
 /// species self-reinforce or self-drain, the exact invariant
 /// `draw_species_tags` already enforces for worldgen-created species (task
 /// 088) — rather than partially applying it.
+#[allow(clippy::too_many_arguments)]
 fn apply_splice(
     era_state: Res<State<EraState>>,
     mut draft: ResMut<SpliceDraft>,
@@ -528,6 +667,7 @@ fn apply_splice(
     run_progress: Res<RunProgress>,
     mut budget: ResMut<ActionBudget>,
     mut log: ResMut<ObservationLog>,
+    mut world_touched: ResMut<WorldTouched>,
 ) {
     if !draft.apply_requested {
         return;
@@ -596,24 +736,49 @@ fn apply_splice(
     });
     budget.points_remaining -= splice_cost;
     *draft = SpliceDraft::default();
+    world_touched.0 = true;
 }
 
-/// `Esc` quits — unless task 149's inspect card is open, in which case it
-/// closes the card instead (the task's own minimal requirement: "closing
-/// the card, not the game"). Full Esc-cascade semantics (multiple things
-/// competing for the same key) are task 150's job; this is just the one
-/// case that exists today. `q` was planned in GDD v0.3 but removed in v0.4,
-/// kept free for future text input.
-fn quit(
+/// `Esc` closes whatever UI layer is topmost (GDD §11), rather than exiting
+/// the game directly (task 150 fix — the old behavior was the exact
+/// "accidental instant exit" risk `culture-shock-controls.md` exists to
+/// remove). One handler with one priority order, not several independent
+/// checks racing each other, per the doc's own integration note: (1) pause
+/// menu open -> close it; (2) else notebook open -> close it; (3) else
+/// task 149's inspect card open -> close it; (4) else an action armed ->
+/// disarm to observation-only; (5) else -> open the pause menu. Quitting
+/// the app now only happens via the pause menu's "Abandon without saving"/
+/// "Save and exit" (`resolve_abandon_confirmation`). `q` was planned in GDD
+/// v0.3 but removed in v0.4, kept free for future text input.
+fn escape_cascade(
     keys: Res<ButtonInput<KeyCode>>,
-    mut exit: MessageWriter<AppExit>,
+    mut pause_menu_open: ResMut<PauseMenuOpen>,
+    mut notebook_open: ResMut<NotebookWindowOpen>,
     mut selected_cell: ResMut<SelectedCell>,
+    mut selected_action: ResMut<SelectedAction>,
 ) {
+    if !keys.just_pressed(KeyCode::Escape) {
+        return;
+    }
+    if pause_menu_open.0 {
+        pause_menu_open.0 = false;
+    } else if notebook_open.0 {
+        notebook_open.0 = false;
+    } else if selected_cell.0.is_some() {
+        selected_cell.0 = None;
+    } else if selected_action.0.is_some() {
+        selected_action.0 = None;
+    } else {
+        pause_menu_open.0 = true;
+    }
+}
+
+/// `Esc` at the main menu still quits directly (task 150) — there is no UI
+/// layer to close there, so pressing Esc at the title screen is a
+/// deliberate "leave the app" gesture, not the accidental mid-game exit
+/// risk `escape_cascade` above removes.
+fn quit_from_menu(keys: Res<ButtonInput<KeyCode>>, mut exit: MessageWriter<AppExit>) {
     if keys.just_pressed(KeyCode::Escape) {
-        if selected_cell.0.is_some() {
-            selected_cell.0 = None;
-            return;
-        }
         exit.write(AppExit::Success);
     }
 }
@@ -808,6 +973,7 @@ mod tests {
         app.insert_resource(draft);
         app.insert_resource(ObservationLog::default());
         app.insert_resource(RunProgress::default());
+        app.insert_resource(WorldTouched::default());
         app.add_systems(Update, apply_splice);
         app
     }
@@ -1285,6 +1451,9 @@ mod tests {
         app.insert_resource(abiogenesis::sim::EraReveal::default());
         app.insert_resource(crate::render::BlockedIndicatorSeen::new(10, 10));
         app.insert_resource(crate::ui::StallHint::default());
+        app.insert_resource(WorldTouched::default());
+        app.insert_resource(PauseMenuOpen::default());
+        app.insert_resource(PendingConfirmation::default());
         app.add_systems(Update, reseed_world);
         app.update();
 
@@ -1307,6 +1476,78 @@ mod tests {
             placed.0.is_empty(),
             "stale player-placed cell indices from the old world must not carry over"
         );
+    }
+
+    /// Task 150: `r` on a touched world opens `PendingConfirmation` instead
+    /// of reseeding instantly — the exact reset the untouched-world test
+    /// above already covers stays untriggered on this first press.
+    #[test]
+    fn reseed_requires_confirmation_once_the_world_is_touched() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        generate_starting_palette(&mut world, &config);
+
+        let mut keys = ButtonInput::<KeyCode>::default();
+        keys.press(KeyCode::KeyR);
+
+        let mut app = App::new();
+        app.insert_resource(config);
+        app.insert_resource(world);
+        app.insert_resource(keys);
+        app.insert_resource(SeasonProgress::default());
+        app.insert_resource(NextState::<EraState>::default());
+        app.insert_resource(abiogenesis::knowledge::MatrixKnowledge::new(5, 3.0));
+        app.insert_resource(crate::notebook::TerrainKnowledge::new(5, 3.0));
+        app.insert_resource(ObservationLog::default());
+        app.insert_resource(ActionBudget::default());
+        app.insert_resource(SelectedSpecies(SpeciesId(2)));
+        app.insert_resource(SpliceDraft::default());
+        app.insert_resource(PlayerPlacedCells::default());
+        app.insert_resource(NotebookHasUnseenConfirmation::default());
+        app.insert_resource(IsolationHint::default());
+        app.insert_resource(RunProgress::default());
+        app.insert_resource(CurrentObjective::default());
+        app.insert_resource(ObjectiveProgress::default());
+        app.insert_resource(CurrentWorldOutcome::default());
+        app.insert_resource(GraceProgress::default());
+        app.insert_resource(crate::ui::PopulationTrends::default());
+        app.insert_resource(crate::ui::DeathCauseTally::default());
+        app.insert_resource(crate::notebook::BirthTally::default());
+        app.insert_resource(crate::render::SeenRelations::new(5));
+        app.insert_resource(abiogenesis::sim::PendingEvolutions::default());
+        app.insert_resource(abiogenesis::sim::EraTally::default());
+        app.insert_resource(abiogenesis::sim::EraReveal::default());
+        app.insert_resource(crate::render::BlockedIndicatorSeen::new(10, 10));
+        app.insert_resource(crate::ui::StallHint::default());
+        app.insert_resource(WorldTouched(true));
+        app.insert_resource(PauseMenuOpen::default());
+        app.insert_resource(PendingConfirmation::default());
+        app.add_systems(Update, reseed_world);
+        app.update();
+
+        let selected = app.world().resource::<SelectedSpecies>();
+        assert_eq!(
+            selected.0,
+            SpeciesId(2),
+            "the touched world must not reseed on the first press — only open the dialog"
+        );
+        let pending = app.world().resource::<PendingConfirmation>();
+        assert_eq!(pending.kind, Some(crate::ui::ConfirmationKind::ReseedWorld));
+        assert!(!pending.confirmed);
+
+        // Confirming (no fresh `r` press needed) now performs the reseed.
+        app.world_mut()
+            .resource_mut::<PendingConfirmation>()
+            .confirmed = true;
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .release(KeyCode::KeyR);
+        app.update();
+
+        let selected = app.world().resource::<SelectedSpecies>();
+        assert_eq!(selected.0, SpeciesId(0), "confirming must actually reseed");
+        let pending = app.world().resource::<PendingConfirmation>();
+        assert_eq!(pending.kind, None, "the dialog must clear after resolving");
     }
 
     /// A player who only ever presses `s` (never `space`) must still see
@@ -1398,5 +1639,56 @@ mod tests {
             blocked: false,
         });
         assert!(!is_isolated_placement(&world, 5, 5));
+    }
+
+    /// Task 150: one Esc press closes only the topmost open layer, in
+    /// priority order — pause menu, then notebook, then the inspect card,
+    /// then an armed action — never more than one tier per press, and never
+    /// falls through to opening the pause menu while any higher tier is
+    /// still up.
+    #[test]
+    fn escape_cascade_closes_one_topmost_layer_per_press() {
+        let mut app = App::new();
+        app.insert_resource(ButtonInput::<KeyCode>::default());
+        app.insert_resource(PauseMenuOpen(true));
+        app.insert_resource(NotebookWindowOpen(true));
+        app.insert_resource(SelectedCell(Some(3)));
+        app.insert_resource(SelectedAction(Some(ActionMode::Seed)));
+        app.add_systems(Update, escape_cascade);
+
+        let press_escape = |app: &mut App| {
+            app.world_mut()
+                .resource_mut::<ButtonInput<KeyCode>>()
+                .press(KeyCode::Escape);
+            app.update();
+            app.world_mut()
+                .resource_mut::<ButtonInput<KeyCode>>()
+                .release(KeyCode::Escape);
+        };
+
+        press_escape(&mut app);
+        assert!(!app.world().resource::<PauseMenuOpen>().0);
+        assert!(app.world().resource::<NotebookWindowOpen>().0);
+
+        press_escape(&mut app);
+        assert!(!app.world().resource::<NotebookWindowOpen>().0);
+        assert_eq!(app.world().resource::<SelectedCell>().0, Some(3));
+
+        press_escape(&mut app);
+        assert_eq!(app.world().resource::<SelectedCell>().0, None);
+        assert_eq!(
+            app.world().resource::<SelectedAction>().0,
+            Some(ActionMode::Seed)
+        );
+
+        press_escape(&mut app);
+        assert_eq!(app.world().resource::<SelectedAction>().0, None);
+        assert!(!app.world().resource::<PauseMenuOpen>().0);
+
+        press_escape(&mut app);
+        assert!(
+            app.world().resource::<PauseMenuOpen>().0,
+            "with nothing else open/armed, Esc opens the pause menu"
+        );
     }
 }

@@ -125,6 +125,47 @@ pub struct HoveredCell(pub Option<usize>);
 #[derive(Resource, Default)]
 pub struct SelectedCell(pub Option<usize>);
 
+/// Whether the pause menu is open (task 150). A resource, not a
+/// `GameState` variant: `EraState` is a substate of `GameState::Playing`
+/// (`state.rs`), so leaving `Playing` to "pause" would reset it back to its
+/// `Observing` default — losing exactly the mid-season/mid-era progress a
+/// pause is supposed to preserve. `input.rs`'s Esc cascade is the only
+/// writer; `sim.rs`'s `advance_tick`/`objectives.rs`'s objective evaluation
+/// both gate on this too, so simulation time genuinely stops while it's up.
+#[derive(Resource, Default)]
+pub struct PauseMenuOpen(pub bool);
+
+/// True once the current world has taken its first successful player
+/// action (task 150, `input.rs`'s four click/splice systems are the only
+/// writers) — `r` requires an explicit `PendingConfirmation` once this is
+/// set, instead of reseeding instantly (nothing to lose before this is
+/// true). Reset alongside every other per-world resource in
+/// `run_flow::start_world`'s `WorldResetParams` and `menu::start_run`.
+#[derive(Resource, Default)]
+pub struct WorldTouched(pub bool);
+
+/// Which destructive action `PendingConfirmation` is gating (task 150) —
+/// `r`'s reseed-when-touched gate and the pause menu's "Abbandona senza
+/// salvare"/"Salva ed esci" items share this one dialog primitive, per the
+/// design doc's own reasoning for why a second one shouldn't exist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfirmationKind {
+    ReseedWorld,
+    AbandonRun,
+}
+
+/// The in-flight confirmation dialog, if any (task 150). `confirmation_dialog`
+/// (this module) only ever sets `kind`/toggles `confirmed` — it never
+/// performs the action itself, matching TECH_DESIGN.md §3.3's "`ui.rs`
+/// writes only intents": `input.rs`'s `reseed_world`/pause-menu systems own
+/// applying the effect once `confirmed` is seen, then clear this back to
+/// `default()`.
+#[derive(Resource, Default)]
+pub struct PendingConfirmation {
+    pub kind: Option<ConfirmationKind>,
+    pub confirmed: bool,
+}
+
 /// Which axis `Stress` targets (task 145) — a UI intent read by both this
 /// module (the axis sub-selector, shown only while `Stress` is the active
 /// action) and `input.rs`'s `stress_on_click`. Defaults to `Temperature` so
@@ -282,6 +323,9 @@ impl Plugin for UiPlugin {
             .init_resource::<HudControlIntents>()
             .init_resource::<HoveredCell>()
             .init_resource::<SelectedCell>()
+            .init_resource::<PauseMenuOpen>()
+            .init_resource::<WorldTouched>()
+            .init_resource::<PendingConfirmation>()
             .add_systems(Startup, spawn_hud_camera)
             .add_systems(
                 Update,
@@ -303,9 +347,17 @@ impl Plugin for UiPlugin {
                 // so drawing both in the same frame would overlap rather
                 // than layer cleanly the way the notebook's dim-not-hide
                 // overlay does.
-                (hud_panel, viewport_hint, hover_tooltip, inspect_card).run_if(
-                    in_state(GameState::Playing).and_eager(not(in_state(EraState::Reveal))),
-                ),
+                (
+                    hud_panel,
+                    viewport_hint,
+                    hover_tooltip,
+                    inspect_card,
+                    pause_menu,
+                    confirmation_dialog,
+                )
+                    .run_if(
+                        in_state(GameState::Playing).and_eager(not(in_state(EraState::Reveal))),
+                    ),
             );
     }
 }
@@ -993,6 +1045,95 @@ fn empty_cell_card(ui: &mut egui::Ui, config: &SimConfig, cell: &Cell) {
     } else {
         text::NOT_HABITABLE_LABEL
     });
+}
+
+/// Alert color for the pause menu's "Abandon without saving" item (task
+/// 150's own "visually distinct" requirement) — a new, standalone accent:
+/// none of this module's existing colors (`DOT_FILLED_COLOR`'s green,
+/// `HAIRLINE_COLOR`'s neutral gray) read as a warning.
+const ALERT_COLOR: egui::Color32 = egui::Color32::from_rgb(210, 90, 90);
+
+/// Task 150's pause menu: reachable via the Esc cascade's last tier
+/// (`input.rs::escape_cascade`) when nothing else is open/armed, or the
+/// notebook/inspect-card/action-armed layers being closed one at a time.
+/// Reuses egui's own default window chrome rather than `menu.rs`'s
+/// full-viewport `CentralPanel` layout — that panel assumes it owns the
+/// whole screen, which the pause menu must not (it overlays `Playing`, it
+/// doesn't replace it). "Settings" has no panel to reuse yet, per the task's
+/// own note — disabled with a hint rather than a silent no-op. "Save and
+/// exit" has no save system yet (task 161) so it takes the same path as
+/// "Abandon without saving" for now (see `input.rs::resolve_abandon_confirmation`).
+fn pause_menu(
+    mut contexts: EguiContexts,
+    mut open: ResMut<PauseMenuOpen>,
+    mut pending: ResMut<PendingConfirmation>,
+) -> Result {
+    if !open.0 {
+        return Ok(());
+    }
+    let ctx = contexts.ctx_mut()?;
+    egui::Window::new(text::PAUSE_MENU_TITLE)
+        .resizable(false)
+        .collapsible(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .show(ctx, |ui| {
+            ui.vertical_centered(|ui| {
+                if ui.button(text::PAUSE_RESUME_BUTTON).clicked() {
+                    open.0 = false;
+                }
+                ui.add_enabled_ui(false, |ui| ui.button(text::PAUSE_SETTINGS_BUTTON))
+                    .inner
+                    .on_disabled_hover_text(text::PAUSE_SETTINGS_UNAVAILABLE_HINT);
+                if ui.button(text::PAUSE_SAVE_AND_EXIT_BUTTON).clicked() {
+                    pending.kind = Some(ConfirmationKind::AbandonRun);
+                    pending.confirmed = false;
+                }
+                let abandon = egui::Button::new(
+                    egui::RichText::new(text::PAUSE_ABANDON_BUTTON).color(ALERT_COLOR),
+                );
+                if ui.add(abandon).clicked() {
+                    pending.kind = Some(ConfirmationKind::AbandonRun);
+                    pending.confirmed = false;
+                }
+            });
+        });
+    Ok(())
+}
+
+/// Task 150's shared confirm/cancel dialog — `r`'s reseed-when-touched gate
+/// and the pause menu's "Save and exit"/"Abandon without saving" all set
+/// `PendingConfirmation::kind` and read this back; this system only ever
+/// flips `confirmed` or clears `kind`, never applies the effect itself
+/// (TECH_DESIGN.md §3.3, `ui.rs` writes only intents) — `input.rs`'s
+/// `reseed_world`/`resolve_abandon_confirmation` own that.
+fn confirmation_dialog(
+    mut contexts: EguiContexts,
+    mut pending: ResMut<PendingConfirmation>,
+) -> Result {
+    let Some(kind) = pending.kind else {
+        return Ok(());
+    };
+    let (title, body) = match kind {
+        ConfirmationKind::ReseedWorld => (text::CONFIRM_RESEED_TITLE, text::CONFIRM_RESEED_BODY),
+        ConfirmationKind::AbandonRun => (text::CONFIRM_ABANDON_TITLE, text::CONFIRM_ABANDON_BODY),
+    };
+    let ctx = contexts.ctx_mut()?;
+    egui::Window::new(title)
+        .resizable(false)
+        .collapsible(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 40.0))
+        .show(ctx, |ui| {
+            ui.label(body);
+            ui.horizontal(|ui| {
+                if ui.button(text::CONFIRM_BUTTON).clicked() {
+                    pending.confirmed = true;
+                }
+                if ui.button(text::CANCEL_BUTTON).clicked() {
+                    *pending = PendingConfirmation::default();
+                }
+            });
+        });
+    Ok(())
 }
 
 /// Current-objective panel (task 043, GDD §11; restyled task 064 per the
