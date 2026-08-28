@@ -348,6 +348,7 @@ fn spawn_hud_camera(mut commands: Commands) {
 fn reserve_hud_viewport(
     windows: Query<&Window>,
     mut cameras: Query<&mut Camera, With<GridCamera>>,
+    era_state: Res<State<EraState>>,
 ) {
     let Ok(window) = windows.single() else {
         return;
@@ -356,10 +357,27 @@ fn reserve_hud_viewport(
         return;
     };
 
-    let hud_px = (HUD_WIDTH * window.scale_factor()) as u32;
     let full_width = window.physical_width();
     let full_height = window.physical_height();
-    if full_width <= hud_px || full_height == 0 {
+    if full_height == 0 {
+        return;
+    }
+
+    // `hud_panel` doesn't draw during `EraState::Reveal` (task 140), so
+    // reserving its strip here would leave a blank, un-rendered gap on the
+    // right rather than letting the grid — and the reveal card's dim
+    // backdrop over it — use the full window.
+    if *era_state.get() == EraState::Reveal {
+        camera.viewport = Some(Viewport {
+            physical_position: UVec2::ZERO,
+            physical_size: UVec2::new(full_width, full_height),
+            ..default()
+        });
+        return;
+    }
+
+    let hud_px = (HUD_WIDTH * window.scale_factor()) as u32;
+    if full_width <= hud_px {
         return;
     }
 

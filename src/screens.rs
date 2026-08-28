@@ -194,89 +194,101 @@ fn era_reveal_screen_ui(
     mut next_state: ResMut<NextState<EraState>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
-    interstitial(ctx, "era-reveal-viewport", |ui| {
-        // Unlike `WorldCleared`/`WorldFailed`/`Defeat` (different top-level
-        // `GameState`s the grid never renders under), `EraState::Reveal`
-        // stays inside `Playing` — the grid keeps rendering behind this
-        // card every frame. Dim it first, through *this* `Ui`'s own painter
-        // (the exact widget path already proven to render — the heading/
-        // button drawn below it show up fine) rather than a
-        // separately-constructed `Ui`/raw `ctx.layer_painter(..)` — two
-        // earlier attempts at the latter compiled but never actually
-        // rendered anything, a bug caught live twice in a row.
-        ui.painter()
-            .rect_filled(ui.max_rect(), 0.0, egui::Color32::from_black_alpha(140));
-        match reveal.tier {
-            RevealTier::Epochal => {
-                ui.heading(
-                    egui::RichText::new(text::era_reveal_title(reveal.era, reveal.tier)).size(28.0),
-                );
-            }
-            RevealTier::Notable => {
-                ui.heading(text::era_reveal_title(reveal.era, reveal.tier));
-            }
-            RevealTier::Minor => {
-                ui.label(text::era_reveal_title(reveal.era, reveal.tier));
-            }
-        }
-        ui.add_space(12.0);
+    // Unlike `WorldCleared`/`WorldFailed`/`Defeat` (different top-level
+    // `GameState`s the grid never renders under), `EraState::Reveal` stays
+    // inside `Playing` — the grid keeps rendering behind this card every
+    // frame. Dim it via the panel's own frame fill (see
+    // `interstitial_framed`), not a `rect_filled` painted from inside the
+    // content closure — that closure's `Ui` is the centered text column,
+    // not the full viewport, so a rect painted from there dims only the
+    // column.
+    let dim_frame = egui::CentralPanel::default()
+        .frame(egui::Frame::NONE.fill(egui::Color32::from_black_alpha(140)));
+    interstitial_framed(ctx, "era-reveal-viewport", dim_frame, |ui| {
+        // The dim backdrop (this panel's own `Frame` fill) covers the whole
+        // viewport; the text itself still needs a visually distinct card so
+        // it doesn't read as bare text floating on the darkened grid.
+        egui::Frame::group(ui.style())
+            .fill(ui.visuals().panel_fill)
+            .corner_radius(8.0)
+            .inner_margin(egui::Margin::same(20))
+            .show(ui, |ui| {
+                ui.set_max_width(420.0);
+                match reveal.tier {
+                    RevealTier::Epochal => {
+                        ui.heading(
+                            egui::RichText::new(text::era_reveal_title(reveal.era, reveal.tier))
+                                .size(28.0),
+                        );
+                    }
+                    RevealTier::Notable => {
+                        ui.heading(text::era_reveal_title(reveal.era, reveal.tier));
+                    }
+                    RevealTier::Minor => {
+                        ui.label(text::era_reveal_title(reveal.era, reveal.tier));
+                    }
+                }
+                ui.add_space(12.0);
 
-        // `Minor` is exactly "nothing evolutions/extinctions/losses-worthy
-        // happened" (`sim::build_era_reveal`'s own tier assignment) — reuse
-        // that instead of re-deriving "quiet" from a subset of the same
-        // fields (a bug caught live: 4 extinctions this era still showed
-        // this line, because the check only looked at `evolutions`/
-        // `evolutions_lost`, not the tier they already determined).
-        if reveal.tier == RevealTier::Minor {
-            ui.weak(text::ERA_REVEAL_QUIET_LINE);
-        }
+                // `Minor` is exactly "nothing evolutions/extinctions/losses-
+                // worthy happened" (`sim::build_era_reveal`'s own tier
+                // assignment) — reuse that instead of re-deriving "quiet"
+                // from a subset of the same fields (a bug caught live: 4
+                // extinctions this era still showed this line, because the
+                // check only looked at `evolutions`/`evolutions_lost`, not
+                // the tier they already determined).
+                if reveal.tier == RevealTier::Minor {
+                    ui.weak(text::ERA_REVEAL_QUIET_LINE);
+                }
 
-        // Before/after comparison (§3): a colored swatch per side, matching
-        // the exact hue `species_color`/`cell_color` already use for this
-        // species everywhere else in the game, so the reveal's "icon that
-        // changes" reads as the same identity the player already recognizes
-        // from the grid and the notebook.
-        for entry in &reveal.evolutions {
-            ui.horizontal(|ui| {
-                let (rect, _) =
-                    ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
-                ui.painter()
-                    .rect_filled(rect, 2.0, species_color(entry.parent));
-                ui.label(&entry.parent_name);
-                ui.label("→");
-                let (rect, _) =
-                    ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
-                ui.painter()
-                    .rect_filled(rect, 2.0, species_color(entry.child));
-                ui.label(&entry.child_name);
+                // Before/after comparison (§3): a colored swatch per side,
+                // matching the exact hue `species_color`/`cell_color`
+                // already use for this species everywhere else in the game,
+                // so the reveal's "icon that changes" reads as the same
+                // identity the player already recognizes from the grid and
+                // the notebook.
+                for entry in &reveal.evolutions {
+                    ui.horizontal(|ui| {
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                        ui.painter()
+                            .rect_filled(rect, 2.0, species_color(entry.parent));
+                        ui.label(&entry.parent_name);
+                        ui.label("→");
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                        ui.painter()
+                            .rect_filled(rect, 2.0, species_color(entry.child));
+                        ui.label(&entry.child_name);
+                    });
+                    ui.label(text::era_reveal_evolution_line(
+                        &entry.parent_name,
+                        entry.parent_tag_count,
+                        &entry.child_name,
+                        entry.child_tag_count,
+                        entry.dominant_stimulus,
+                    ));
+                    ui.add_space(6.0);
+                }
+
+                if reveal.evolutions_lost > 0 {
+                    ui.weak(text::era_reveal_evolutions_lost_line(
+                        reveal.evolutions_lost,
+                    ));
+                }
+
+                ui.add_space(8.0);
+                ui.label(text::era_reveal_summary_line(
+                    reveal.births,
+                    reveal.deaths,
+                    reveal.extinctions,
+                ));
+
+                ui.add_space(16.0);
+                if ui.button(text::ERA_REVEAL_CONTINUE_BUTTON).clicked() {
+                    next_state.set(EraState::Observing);
+                }
             });
-            ui.label(text::era_reveal_evolution_line(
-                &entry.parent_name,
-                entry.parent_tag_count,
-                &entry.child_name,
-                entry.child_tag_count,
-                entry.dominant_stimulus,
-            ));
-            ui.add_space(6.0);
-        }
-
-        if reveal.evolutions_lost > 0 {
-            ui.weak(text::era_reveal_evolutions_lost_line(
-                reveal.evolutions_lost,
-            ));
-        }
-
-        ui.add_space(8.0);
-        ui.label(text::era_reveal_summary_line(
-            reveal.births,
-            reveal.deaths,
-            reveal.extinctions,
-        ));
-
-        ui.add_space(16.0);
-        if ui.button(text::ERA_REVEAL_CONTINUE_BUTTON).clicked() {
-            next_state.set(EraState::Observing);
-        }
     });
     Ok(())
 }
@@ -285,6 +297,27 @@ fn era_reveal_screen_ui(
 /// construction `menu.rs::main_menu_ui` uses, since both draw straight onto
 /// the egui viewport rather than a HUD-anchored panel.
 fn interstitial(ctx: &egui::Context, id: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
+    interstitial_framed(ctx, id, egui::CentralPanel::default(), add_contents);
+}
+
+/// Like [`interstitial`], but with the `CentralPanel`'s own frame overridden
+/// by the caller (task 140's dim-the-grid backdrop needs a transparent frame
+/// with a translucent fill, not the default opaque `panel_fill`).
+///
+/// The dim/fill must live on this `Frame`, not on a `rect_filled` painted
+/// from inside `add_contents`: that closure runs on the `vertical_centered`
+/// child `Ui`, whose `max_rect` is that centered column, not the full
+/// viewport — painting from there dims only the text column, not the grid
+/// behind it. The `Frame` is applied by `CentralPanel::show_inside_dyn`
+/// against the full `outer_rect` before `add_contents` ever runs, so it
+/// always covers the whole panel regardless of what the content closure
+/// does.
+fn interstitial_framed(
+    ctx: &egui::Context,
+    id: &str,
+    panel: egui::CentralPanel,
+    add_contents: impl FnOnce(&mut egui::Ui),
+) {
     let mut viewport_ui = egui::Ui::new(
         ctx.clone(),
         egui::Id::new(id),
@@ -292,7 +325,7 @@ fn interstitial(ctx: &egui::Context, id: &str, add_contents: impl FnOnce(&mut eg
             .layer_id(egui::LayerId::background())
             .max_rect(ctx.viewport_rect()),
     );
-    egui::CentralPanel::default().show(&mut viewport_ui, |ui| {
+    panel.show(&mut viewport_ui, |ui| {
         ui.add_space(40.0);
         ui.vertical_centered(add_contents);
     });

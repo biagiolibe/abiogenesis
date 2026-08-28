@@ -11,7 +11,7 @@ use bevy_egui::EguiPrimaryContextPass;
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::AdjacencyObserved;
-use abiogenesis::state::GameState;
+use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{Biome, Metabolism, SimWorld, SpeciesId, TagSlot, TerrainKind};
 
 use crate::notebook::{cursor_over_notebook_panel, NotebookWindowOpen};
@@ -233,12 +233,21 @@ impl Plugin for GridRenderPlugin {
             )
             .add_systems(
                 EguiPrimaryContextPass,
+                // Task 140: suppressed while `EraState::Reveal` is up, same
+                // as `hud_panel` (`ui.rs`) — these paint straight onto
+                // `egui::LayerId::background()` via `ctx.layer_painter`,
+                // the same layer/order the reveal card's `CentralPanel`
+                // uses, with no ordering constraint between them. Left
+                // unguarded, whichever ran later that frame painted on top
+                // non-deterministically — the terrain boundaries/peak
+                // glyphs showing through the reveal card in some runs but
+                // not others.
                 (
                     terrain_overlay::draw_terrain_overlay,
                     placement_indicator::draw_placement_indicator,
                     spark_indicator::draw_spark_indicators,
                 )
-                    .run_if(in_state(GameState::Playing)),
+                    .run_if(in_state(GameState::Playing).and_eager(not(in_state(EraState::Reveal)))),
             );
         #[cfg(debug_assertions)]
         {
@@ -256,7 +265,9 @@ impl Plugin for GridRenderPlugin {
                 )
                 .add_systems(
                     EguiPrimaryContextPass,
-                    energy_overlay::draw_energy_overlay.run_if(in_state(GameState::Playing)),
+                    energy_overlay::draw_energy_overlay.run_if(
+                        in_state(GameState::Playing).and_eager(not(in_state(EraState::Reveal))),
+                    ),
                 );
         }
     }
