@@ -16,7 +16,8 @@ use abiogenesis::objectives::{
 };
 use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::{
-    tick_and_complete_season, ActionBudget, EraCompleted, SeasonProgress, TickEventWriters,
+    tick_and_complete_season, ActionBudget, EraCompleted, EraTally, SeasonProgress,
+    TickEventWriters,
 };
 #[cfg(test)]
 use abiogenesis::sim::{
@@ -131,7 +132,7 @@ fn start_era(
     world: Res<SimWorld>,
     mut intents: ResMut<HudControlIntents>,
 ) {
-    if *era_state.get() == EraState::Advancing {
+    if *era_state.get() != EraState::Observing {
         return;
     }
     let triggered = keys.just_pressed(KeyCode::Space) || intents.advance_era;
@@ -151,9 +152,13 @@ fn start_era(
 /// `n` (or the HUD's Tick button, task 094 — `HudControlIntents::
 /// advance_tick`, consumed here so the button and the shortcut share this
 /// one implementation): advances a single tick directly, with no `EraState`
-/// transition — useful for fine observation and debugging (GDD §11). Starts
-/// a fresh era (`SeasonProgress`) if none is in flight, and shares
-/// `advance_tick`'s era-completion bookkeeping and objective evaluation via
+/// transition on an ordinary season — useful for fine observation and
+/// debugging (GDD §11) — except when this tick actually closes an era
+/// (task 140): then it transitions to `EraState::Reveal` exactly like
+/// `advance_tick` does, since the reveal must halt the game regardless of
+/// which control produced the era-closing tick. Starts a fresh era
+/// (`SeasonProgress`) if none is in flight, and shares `advance_tick`'s
+/// era-completion bookkeeping and objective evaluation via
 /// `tick_and_complete_season`/`apply_tick_outcome` — a player who only ever
 /// presses `n` must still see eras complete, the action budget refill, and
 /// objectives/failure conditions evaluate exactly as they would under
@@ -163,16 +168,18 @@ fn start_era(
 fn single_tick(
     keys: Res<ButtonInput<KeyCode>>,
     era_state: Res<State<EraState>>,
+    mut era_next_state: ResMut<NextState<EraState>>,
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
     mut progress: ResMut<SeasonProgress>,
     mut budget: ResMut<ActionBudget>,
     mut era_completed: MessageWriter<EraCompleted>,
+    mut tally: ResMut<EraTally>,
     mut writers: TickEventWriters,
     mut objective_outcome: ObjectiveOutcomeParams,
     mut intents: ResMut<HudControlIntents>,
 ) {
-    if *era_state.get() == EraState::Advancing {
+    if *era_state.get() != EraState::Observing {
         return;
     }
     let triggered = keys.just_pressed(KeyCode::KeyN) || intents.advance_tick;
@@ -187,13 +194,18 @@ fn single_tick(
             &config,
         ));
     }
+    let era_before = world.era;
     let events = tick_and_complete_season(
         &mut world,
         &config,
         &mut progress,
         &mut budget,
         &mut era_completed,
+        &mut tally,
     );
+    if world.era != era_before {
+        era_next_state.set(EraState::Reveal);
+    }
     writers.write_all(events);
     apply_tick_outcome(&world, &config, &mut objective_outcome);
 }
@@ -303,7 +315,7 @@ fn seed_organism_on_click(
     if selected_action.0 != ActionMode::Seed {
         return;
     }
-    if *gate.era_state.get() == EraState::Advancing {
+    if *gate.era_state.get() != EraState::Observing {
         return;
     }
     let Some((x, y)) = clicked_cell(
@@ -388,7 +400,7 @@ fn stress_on_click(
     if selected_action.0 != ActionMode::Stress {
         return;
     }
-    if *gate.era_state.get() == EraState::Advancing {
+    if *gate.era_state.get() != EraState::Observing {
         return;
     }
     // Stress needs per-cell precision Overview's real-density coloring
@@ -453,7 +465,7 @@ fn cull_on_click(
     if selected_action.0 != ActionMode::Cull {
         return;
     }
-    if *gate.era_state.get() == EraState::Advancing {
+    if *gate.era_state.get() != EraState::Observing {
         return;
     }
     // Same Detail-only gating as `stress_on_click` (task 077) — culling a
@@ -517,7 +529,7 @@ fn apply_splice(
         return;
     }
     draft.apply_requested = false;
-    if *era_state.get() == EraState::Advancing {
+    if *era_state.get() != EraState::Observing {
         return;
     }
     let Some(source) = draft.source else {
@@ -1188,6 +1200,9 @@ mod tests {
         app.insert_resource(crate::ui::DeathCauseTally::default());
         app.insert_resource(crate::notebook::BirthTally::default());
         app.insert_resource(crate::render::SeenRelations::new(5));
+        app.insert_resource(abiogenesis::sim::PendingEvolutions::default());
+        app.insert_resource(abiogenesis::sim::EraTally::default());
+        app.insert_resource(abiogenesis::sim::EraReveal::default());
         app.add_systems(Update, reseed_world);
         app.update();
 
@@ -1227,10 +1242,12 @@ mod tests {
         app.insert_resource(world);
         app.insert_resource(ButtonInput::<KeyCode>::default());
         app.insert_resource(State::new(EraState::Observing));
+        app.insert_resource(NextState::<EraState>::default());
         app.insert_resource(SeasonProgress::default());
         app.insert_resource(ActionBudget {
             points_remaining: 0,
         });
+        app.init_resource::<EraTally>();
         app.add_message::<OrganismDied>();
         app.add_message::<SpeciesExtinct>();
         app.add_message::<AdjacencyObserved>();

@@ -11,6 +11,7 @@
 
 use crate::ui::ActionMode;
 use abiogenesis::objectives::ZoneKind;
+use abiogenesis::sim::RevealTier;
 use abiogenesis::world::{Metabolism, Mode, TerrainKind};
 
 // --- Main menu (`menu.rs::main_menu_ui`) ---
@@ -112,6 +113,60 @@ pub fn defeat_body(worlds_cleared: u32) -> String {
     format!("This run cleared {worlds_cleared} world(s) before ending.")
 }
 
+// --- End-of-era reveal (`screens.rs::era_reveal_screen_ui`, task 140) ---
+//
+// Naming the *cause* of a speciation (which stimulus dominated) is task
+// 142's job, not this one — these only frame the beat itself and the
+// structural before/after, never a generated "why" sentence.
+
+pub const ERA_REVEAL_CONTINUE_BUTTON: &str = "Continue";
+
+/// Heading text, scaled by `sim::RevealTier` (task 140 §3: "a minor event
+/// can be a discreet badge, an epochal one can take the whole screen") —
+/// the wording itself carries some of that weight difference until task
+/// 157 builds real generated prose.
+pub fn era_reveal_title(era: u32, tier: RevealTier) -> String {
+    match tier {
+        RevealTier::Epochal => format!("Era {era} — a new lineage emerges"),
+        RevealTier::Notable => format!("Era {era} ends"),
+        RevealTier::Minor => format!("Era {era} — a quiet era"),
+    }
+}
+
+/// One line per evolution the reveal applied this era — the before/after
+/// comparison §3 asks for, in text form (the swatch-based visual half is
+/// drawn directly in `screens.rs`, not here).
+pub fn era_reveal_evolution_line(
+    parent_name: &str,
+    parent_tag_count: usize,
+    child_name: &str,
+    child_tag_count: usize,
+) -> String {
+    format!(
+        "{parent_name} ({parent_tag_count} trait{}) evolved into {child_name} ({child_tag_count} trait{})",
+        if parent_tag_count == 1 { "" } else { "s" },
+        if child_tag_count == 1 { "" } else { "s" },
+    )
+}
+
+/// Task 140's adopted answer to "what happens if the species goes extinct
+/// before its evolution matures": it's simply lost. Surfaced here rather
+/// than silently dropped, so the player learns why an expected reveal
+/// didn't show up.
+pub fn era_reveal_evolutions_lost_line(lost: u32) -> String {
+    if lost == 1 {
+        "One maturing evolution was lost — its species went extinct first.".to_string()
+    } else {
+        format!("{lost} maturing evolutions were lost — their species went extinct first.")
+    }
+}
+
+pub fn era_reveal_summary_line(births: u32, deaths: u32, extinctions: u32) -> String {
+    format!("This era: {births} born, {deaths} died, {extinctions} species went extinct.")
+}
+
+pub const ERA_REVEAL_QUIET_LINE: &str = "Nothing dramatic this era — the populations held steady.";
+
 // --- Meta-progression summary (`menu.rs::main_menu_ui`) ---
 
 pub const NO_UNLOCKS_YET: &str = "No unlocks yet — clear worlds to earn more starting species.";
@@ -152,6 +207,13 @@ pub fn state_line(state: impl std::fmt::Debug) -> String {
 /// length, so a number would go stale/misleading once it's extended past
 /// `grace_eras`.
 pub const GRACE_PERIOD_LINE: &str = "Grace period — this world can't fail from extinction yet";
+
+/// Task 140's indirect hint (`sim::any_evolution_maturing`): deliberately
+/// vague — it never names which species or why, only that *something* is
+/// building toward this era's reveal, so the reveal itself still lands as
+/// the actual confirmation.
+pub const MATURING_EVOLUTION_HINT: &str =
+    "Something is building in a population — this era's end may bring a change";
 
 // --- HUD — time control row (task 094) ---
 //

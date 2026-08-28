@@ -12,10 +12,11 @@ use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::run::{MetaProgress, RunProgress};
-use abiogenesis::sim::SeasonProgress;
+use abiogenesis::sim::{EraReveal, RevealTier, SeasonProgress};
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::SimWorld;
 
+use crate::render::species_color;
 use crate::run_flow::{advance_to_next_world, retry_world, WorldResetParams};
 use crate::text;
 
@@ -30,6 +31,7 @@ impl Plugin for ScreensPlugin {
                 world_cleared_screen_ui.run_if(in_state(GameState::WorldCleared)),
                 world_failed_screen_ui.run_if(in_state(GameState::WorldFailed)),
                 defeat_screen_ui.run_if(in_state(GameState::Defeat)),
+                era_reveal_screen_ui.run_if(in_state(EraState::Reveal)),
             ),
         );
     }
@@ -162,6 +164,117 @@ fn defeat_screen_ui(
         ui.label(text::unlocks_summary(meta.bonus_available_species));
         if ui.button(text::RETURN_TO_MENU_BUTTON).clicked() {
             next_state.set(GameState::MainMenu);
+        }
+    });
+    Ok(())
+}
+
+/// End-of-era reveal (task 140,
+/// `redesign/processed/abiogenesis-time-scale-reveal.md` §3): halts the
+/// game the instant an era closes and shows what happened, before the
+/// player can act again — `EraState::Reveal` is only ever entered by
+/// `sim::advance_tick`/`input::single_tick` on an era-closing tick, and
+/// every action/tick-advance system in `input.rs` is gated to
+/// `EraState::Observing` only, so nothing else can run while this is up.
+/// `EraReveal` itself was already built (`sim::build_era_reveal`,
+/// `OnEnter(EraState::Reveal)`) by the time this ever draws — this system
+/// only presents it and provides the one way out.
+///
+/// Presentation scales with `RevealTier` (§3's "a minor event can be a
+/// discreet badge, an epochal one can take the whole screen"): heading
+/// wording and emphasis vary by tier (`text::era_reveal_title`), and only
+/// `Epochal`/`Notable` reveals show the fuller per-evolution before/after
+/// breakdown — a quiet `Minor` era stays a short, low-emphasis line rather
+/// than padding out empty space. All three still gate time equally; this
+/// only affects how much visual weight the beat gets, not whether it stops
+/// the game.
+fn era_reveal_screen_ui(
+    mut contexts: EguiContexts,
+    reveal: Res<EraReveal>,
+    mut next_state: ResMut<NextState<EraState>>,
+) -> Result {
+    let ctx = contexts.ctx_mut()?;
+    interstitial(ctx, "era-reveal-viewport", |ui| {
+        // Unlike `WorldCleared`/`WorldFailed`/`Defeat` (different top-level
+        // `GameState`s the grid never renders under), `EraState::Reveal`
+        // stays inside `Playing` — the grid keeps rendering behind this
+        // card every frame. Dim it first, through *this* `Ui`'s own painter
+        // (the exact widget path already proven to render — the heading/
+        // button drawn below it show up fine) rather than a
+        // separately-constructed `Ui`/raw `ctx.layer_painter(..)` — two
+        // earlier attempts at the latter compiled but never actually
+        // rendered anything, a bug caught live twice in a row.
+        ui.painter()
+            .rect_filled(ui.max_rect(), 0.0, egui::Color32::from_black_alpha(140));
+        match reveal.tier {
+            RevealTier::Epochal => {
+                ui.heading(
+                    egui::RichText::new(text::era_reveal_title(reveal.era, reveal.tier)).size(28.0),
+                );
+            }
+            RevealTier::Notable => {
+                ui.heading(text::era_reveal_title(reveal.era, reveal.tier));
+            }
+            RevealTier::Minor => {
+                ui.label(text::era_reveal_title(reveal.era, reveal.tier));
+            }
+        }
+        ui.add_space(12.0);
+
+        // `Minor` is exactly "nothing evolutions/extinctions/losses-worthy
+        // happened" (`sim::build_era_reveal`'s own tier assignment) — reuse
+        // that instead of re-deriving "quiet" from a subset of the same
+        // fields (a bug caught live: 4 extinctions this era still showed
+        // this line, because the check only looked at `evolutions`/
+        // `evolutions_lost`, not the tier they already determined).
+        if reveal.tier == RevealTier::Minor {
+            ui.weak(text::ERA_REVEAL_QUIET_LINE);
+        }
+
+        // Before/after comparison (§3): a colored swatch per side, matching
+        // the exact hue `species_color`/`cell_color` already use for this
+        // species everywhere else in the game, so the reveal's "icon that
+        // changes" reads as the same identity the player already recognizes
+        // from the grid and the notebook.
+        for entry in &reveal.evolutions {
+            ui.horizontal(|ui| {
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                ui.painter()
+                    .rect_filled(rect, 2.0, species_color(entry.parent));
+                ui.label(&entry.parent_name);
+                ui.label("→");
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                ui.painter()
+                    .rect_filled(rect, 2.0, species_color(entry.child));
+                ui.label(&entry.child_name);
+            });
+            ui.label(text::era_reveal_evolution_line(
+                &entry.parent_name,
+                entry.parent_tag_count,
+                &entry.child_name,
+                entry.child_tag_count,
+            ));
+            ui.add_space(6.0);
+        }
+
+        if reveal.evolutions_lost > 0 {
+            ui.weak(text::era_reveal_evolutions_lost_line(
+                reveal.evolutions_lost,
+            ));
+        }
+
+        ui.add_space(8.0);
+        ui.label(text::era_reveal_summary_line(
+            reveal.births,
+            reveal.deaths,
+            reveal.extinctions,
+        ));
+
+        ui.add_space(16.0);
+        if ui.button(text::ERA_REVEAL_CONTINUE_BUTTON).clicked() {
+            next_state.set(EraState::Observing);
         }
     });
     Ok(())

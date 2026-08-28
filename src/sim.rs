@@ -529,6 +529,173 @@ pub fn speciate(
     Some(new_species_id)
 }
 
+/// Task 140: `SelectionThresholdCrossed` events accumulated during the
+/// current era, *not* applied immediately — `speciate` only runs once the
+/// era closes (`build_era_reveal`), so the resulting descendant is revealed
+/// alongside everything else that happened this era rather than the
+/// instant its pressure crossed the threshold. Drained (via
+/// `std::mem::take`) exactly once per era, in `build_era_reveal`.
+#[derive(Resource, Default)]
+pub struct PendingEvolutions(pub Vec<SelectionThresholdCrossed>);
+
+/// Running per-era tallies (task 140), accumulated tick-by-tick in
+/// `tick_and_complete_season` and drained into `EraReveal` when the era
+/// closes — the raw counts a reveal card summarizes, kept separate from
+/// `EraReveal` itself since they must survive across every tick of the era,
+/// not just the one the reveal is built on.
+#[derive(Resource, Default, Debug, Clone, Copy)]
+pub struct EraTally {
+    pub births: u32,
+    pub deaths: u32,
+    pub extinctions: u32,
+}
+
+/// How much presentation weight an end-of-era reveal earns (task 140,
+/// `redesign/processed/abiogenesis-time-scale-reveal.md` §3): "a minor event
+/// can be a discreet badge, an epochal one can take the whole screen." This
+/// is a first-pass, deliberately simple heuristic — task 157 builds the real
+/// event-ranking score everything (including this tier) should eventually
+/// read from instead; do not grow a second, competing scoring system here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RevealTier {
+    #[default]
+    Minor,
+    Notable,
+    Epochal,
+}
+
+/// One matured evolution applied at the reveal (task 140): the before/after
+/// comparison the reveal card shows alongside its generated text
+/// (`redesign/processed/abiogenesis-time-scale-reveal.md` §3's "an icon that
+/// changes if it evolved a trait"). Naming *why* the descendant evolved
+/// (`DominantStimulus`) in the reveal's text is task 142's job, not this
+/// one — this struct only carries the structural before/after, not a
+/// rendered cause sentence.
+#[derive(Debug, Clone)]
+pub struct EraEvolutionReveal {
+    pub parent: SpeciesId,
+    pub parent_name: String,
+    pub parent_tag_count: usize,
+    pub child: SpeciesId,
+    pub child_name: String,
+    pub child_tag_count: usize,
+}
+
+/// The end-of-era reveal's full content (task 140), built exactly once per
+/// era by `build_era_reveal` and read by `screens::era_reveal_screen_ui`
+/// until the player dismisses it.
+#[derive(Resource, Default, Debug, Clone)]
+pub struct EraReveal {
+    pub era: u32,
+    pub tier: RevealTier,
+    pub evolutions: Vec<EraEvolutionReveal>,
+    /// Task 140's adopted answer to the design doc's second open question:
+    /// a pending evolution whose species went fully extinct before the era
+    /// closed is simply lost, not applied — counted here rather than
+    /// silently dropped, so the reveal can at least say "N evolutions were
+    /// lost this era." Data-design note for a future "stratigraphic record"
+    /// (a cell remembering who died there and when, not implemented by this
+    /// task): a lost evolution is exactly the kind of fact such a record
+    /// would want to keep — keep that in mind if this field's shape is ever
+    /// revisited, rather than needing to reintroduce the concept from
+    /// scratch.
+    pub evolutions_lost: u32,
+    pub births: u32,
+    pub deaths: u32,
+    pub extinctions: u32,
+}
+
+/// Task 140's adopted answer to "do maturing evolutions give hints before
+/// the reveal, or is it a total surprise": yes — an indirect signal (here,
+/// a HUD hint; `ui::hud_panel` is the actual consumer) that *something* is
+/// nearing a threshold, without saying which species or why, so the reveal
+/// lands as a confirmation of something the player already noticed rather
+/// than a twist from nowhere. First-pass and deliberately simple: a single
+/// fixed fraction, not exposed in `SimConfig` — the design doc explicitly
+/// leaves exact relevance thresholds for playtest-time tuning, and task 157
+/// is where a real ranked-hint system belongs, not a second one grown here.
+const MATURING_HINT_FRACTION: f32 = 0.6;
+
+/// True if any species not yet past `SelectionPressure::crossed` has
+/// already accumulated `MATURING_HINT_FRACTION` of
+/// `EvolutionConfig::selection_pressure_threshold` — see
+/// `MATURING_HINT_FRACTION`'s own doc comment for the design intent.
+pub fn any_evolution_maturing(world: &SimWorld, config: &EvolutionConfig) -> bool {
+    world.selection_pressure.iter().any(|pressure| {
+        !pressure.crossed
+            && pressure.total() >= config.selection_pressure_threshold * MATURING_HINT_FRACTION
+    })
+}
+
+/// True if `species` still has at least one living individual anywhere on
+/// the grid — the exact check task 140's "extinct before it matures" rule
+/// needs, distinct from `event.cell` specifically (a population can move
+/// via breakout, or simply die and be replaced elsewhere, well before the
+/// era that started its speciation actually closes).
+fn species_still_extant(world: &SimWorld, species: SpeciesId) -> bool {
+    world
+        .cells
+        .iter()
+        .any(|cell| cell.population.is_some_and(|p| p.species == species))
+}
+
+/// Applies every evolution that matured this era (task 140) — drains
+/// `PendingEvolutions`, skips any whose species already went fully extinct
+/// (`species_still_extant`), and builds `EraReveal` from the result plus
+/// this era's `EraTally`. Runs once per era, on `OnEnter(EraState::Reveal)`
+/// (`SimPlugin::build`) — by construction that's exactly once, since
+/// `EraState` only transitions there when an era actually just closed.
+fn build_era_reveal(
+    mut world: ResMut<SimWorld>,
+    config: Res<SimConfig>,
+    mut pending: ResMut<PendingEvolutions>,
+    mut tally: ResMut<EraTally>,
+    mut reveal: ResMut<EraReveal>,
+    mut evolved: MessageWriter<SpeciesEvolved>,
+) {
+    let crossed = std::mem::take(&mut pending.0);
+    let mut evolutions = Vec::new();
+    let mut lost = 0;
+    for event in crossed {
+        if !species_still_extant(&world, event.species) {
+            lost += 1;
+            continue;
+        }
+        let parent_name = world.species[event.species.0 as usize].name.clone();
+        let parent_tag_count = world.species[event.species.0 as usize].tags.len();
+        if let Some(child) = speciate(&mut world, &config, &event) {
+            evolutions.push(EraEvolutionReveal {
+                parent: event.species,
+                parent_name,
+                parent_tag_count,
+                child,
+                child_name: world.species[child.0 as usize].name.clone(),
+                child_tag_count: world.species[child.0 as usize].tags.len(),
+            });
+            evolved.write(SpeciesEvolved { species: child });
+        }
+    }
+
+    let tally = std::mem::take(&mut *tally);
+    let tier = if !evolutions.is_empty() {
+        RevealTier::Epochal
+    } else if tally.extinctions > 0 || lost > 0 {
+        RevealTier::Notable
+    } else {
+        RevealTier::Minor
+    };
+
+    *reveal = EraReveal {
+        era: world.era,
+        tier,
+        evolutions,
+        evolutions_lost: lost,
+        births: tally.births,
+        deaths: tally.deaths,
+        extinctions: tally.extinctions,
+    };
+}
+
 pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
     let energy = &config.energy;
     debug_assert!(
@@ -1227,6 +1394,9 @@ impl Plugin for SimPlugin {
         app.add_message::<TerrainGateObserved>();
         app.add_message::<SelectionThresholdCrossed>();
         app.add_message::<SpeciesEvolved>();
+        app.init_resource::<PendingEvolutions>();
+        app.init_resource::<EraTally>();
+        app.init_resource::<EraReveal>();
         app.add_systems(
             FixedUpdate,
             advance_tick
@@ -1235,19 +1405,24 @@ impl Plugin for SimPlugin {
         );
         // `Update`, not `FixedUpdate`/`SimSet::Advance` (task 107): this
         // only reads already-drained `SelectionThresholdCrossed` messages
-        // and mutates `SimWorld` in response — it doesn't need to run in
-        // lockstep with tick advancement, and gating it to
-        // `EraState::Advancing` would miss crossings produced by
-        // `single_tick`'s manual-tick path (`input.rs`), which runs
-        // outside `Advancing`. Mirrors `notebook.rs`'s message-consuming
-        // systems' scheduling (`Update`, gated on `GameState::Playing`
-        // only) even though this one mutates `SimWorld` and they don't —
-        // `notebook.rs` is documented read-only, so the mutating half of
-        // task 107 belongs here in `sim`, not there.
+        // and buffers them — it doesn't need to run in lockstep with tick
+        // advancement, and gating it to `EraState::Advancing` would miss
+        // crossings produced by `single_tick`'s manual-tick path
+        // (`input.rs`), which runs outside `Advancing`. Mirrors
+        // `notebook.rs`'s message-consuming systems' scheduling (`Update`,
+        // gated on `GameState::Playing` only) even though this one mutates
+        // `SimWorld` and they don't — `notebook.rs` is documented
+        // read-only, so the mutating half of task 107/140 belongs here in
+        // `sim`, not there.
         app.add_systems(
             Update,
-            speciate_on_threshold_crossed.run_if(in_state(GameState::Playing)),
+            buffer_pending_evolutions.run_if(in_state(GameState::Playing)),
         );
+        // Task 140: applies every evolution buffered this era and builds
+        // the reveal card's content exactly once, the instant `EraState`
+        // transitions into `Reveal` (`advance_tick`/`input::single_tick`,
+        // on an era — not just a season — closing).
+        app.add_systems(OnEnter(EraState::Reveal), build_era_reveal);
     }
 }
 
@@ -1266,14 +1441,21 @@ impl Plugin for SimPlugin {
 /// split here). Shared by `advance_tick`'s auto-play and `single_tick`'s
 /// manual step (`input.rs`) so a season is exactly `season_pulses` ticks —
 /// and completes identically — regardless of which key triggered them.
+/// `tally` accumulates this tick's births/deaths/extinctions (task 140)
+/// regardless of season/era boundaries — `build_era_reveal` drains it
+/// exactly once, when the era it was accruing for actually closes.
 pub fn tick_and_complete_season(
     world: &mut SimWorld,
     config: &SimConfig,
     progress: &mut SeasonProgress,
     budget: &mut ActionBudget,
     era_completed: &mut MessageWriter<EraCompleted>,
+    tally: &mut EraTally,
 ) -> TickEvents {
     let events = step(world, config);
+    tally.births += events.births.len() as u32;
+    tally.deaths += events.deaths.len() as u32;
+    tally.extinctions += events.extinctions.len() as u32;
     progress.remaining -= 1;
     if progress.remaining() == 0 {
         world.season += 1;
@@ -1286,6 +1468,7 @@ pub fn tick_and_complete_season(
     events
 }
 
+#[allow(clippy::too_many_arguments)]
 fn advance_tick(
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
@@ -1293,46 +1476,53 @@ fn advance_tick(
     mut next_state: ResMut<NextState<EraState>>,
     mut budget: ResMut<ActionBudget>,
     mut era_completed: MessageWriter<EraCompleted>,
+    mut tally: ResMut<EraTally>,
     mut writers: TickEventWriters,
 ) {
     if progress.remaining() == 0 {
         return;
     }
+    let era_before = world.era;
     let events = tick_and_complete_season(
         &mut world,
         &config,
         &mut progress,
         &mut budget,
         &mut era_completed,
+        &mut tally,
     );
     writers.write_all(events);
     if progress.remaining() == 0 {
-        next_state.set(EraState::Observing);
+        // Task 140: an era that just closed (not merely a season) halts on
+        // its own for the reveal card instead of returning straight to
+        // `Observing` — `build_era_reveal` (`OnEnter(EraState::Reveal)`)
+        // does the rest.
+        if world.era != era_before {
+            next_state.set(EraState::Reveal);
+        } else {
+            next_state.set(EraState::Observing);
+        }
     }
 }
 
-/// Thin Bevy wrapper (task 107) around the pure `speciate`: reads every
-/// `SelectionThresholdCrossed` drained this frame and, for each one that
-/// actually produces a descendant, writes `SpeciesEvolved` for read-only
-/// consumers (`notebook.rs`'s logging) to react to.
-fn speciate_on_threshold_crossed(
-    mut world: ResMut<SimWorld>,
-    config: Res<SimConfig>,
+/// Task 140: `SelectionThresholdCrossed` events are no longer applied the
+/// instant they cross (that was task 107's original behavior) — they're
+/// buffered here and only turned into an actual descendant species at the
+/// era's close (`build_era_reveal`), so the reveal card can show it
+/// alongside everything else that happened this era.
+fn buffer_pending_evolutions(
+    mut pending: ResMut<PendingEvolutions>,
     mut crossed: MessageReader<SelectionThresholdCrossed>,
-    mut evolved: MessageWriter<SpeciesEvolved>,
 ) {
-    for event in crossed.read() {
-        if let Some(species) = speciate(&mut world, &config, event) {
-            evolved.write(SpeciesEvolved { species });
-        }
-    }
+    pending.0.extend(crossed.read().copied());
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::world::{
-        Biome, Cell, ConditionalTag, Species, SpeciesId, TagId, TagMatrix, TagSlot, TerrainKind,
+        Biome, Cell, ConditionalTag, SelectionPressure, Species, SpeciesId, TagId, TagMatrix,
+        TagSlot, TerrainKind,
     };
 
     const TOLERANCE: f32 = 1e-4;
@@ -1665,6 +1855,7 @@ mod tests {
         app.add_sub_state::<EraState>();
         app.init_resource::<SeasonProgress>();
         app.init_resource::<ActionBudget>();
+        app.init_resource::<EraTally>();
         app.add_message::<OrganismDied>();
         app.add_message::<SpeciesExtinct>();
         app.add_message::<AdjacencyObserved>();
@@ -1723,6 +1914,92 @@ mod tests {
             sim_world.tick, config.time.season_pulses as u64,
             "no extra ticks should run once the season has ended"
         );
+    }
+
+    /// Task 140's core acceptance criterion: an era that actually closes
+    /// (not merely a season) halts the game in `EraState::Reveal`, not
+    /// `Observing` — verified by running exactly `seasons_per_era` seasons'
+    /// worth of ticks through the same `advance_tick`/`FixedUpdate`
+    /// machinery `season_advances_exactly_season_pulses_then_stops_at_observing`
+    /// exercises for a single season.
+    #[test]
+    fn era_closing_halts_in_reveal_not_observing() {
+        let config = SimConfig::default();
+        let (world, _) = world_with_one_organism(0.7, 0.5, 5.0);
+
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.add_plugins(bevy::state::app::StatesPlugin);
+        app.insert_resource(config.clone());
+        app.insert_resource(world);
+        app.init_state::<GameState>();
+        app.add_sub_state::<EraState>();
+        app.init_resource::<SeasonProgress>();
+        app.init_resource::<ActionBudget>();
+        app.init_resource::<EraTally>();
+        app.init_resource::<PendingEvolutions>();
+        app.init_resource::<EraReveal>();
+        app.add_message::<OrganismDied>();
+        app.add_message::<SpeciesExtinct>();
+        app.add_message::<AdjacencyObserved>();
+        app.add_message::<EraCompleted>();
+        app.add_message::<OrganismBorn>();
+        app.add_message::<TerrainRevealed>();
+        app.add_message::<TerrainGateObserved>();
+        app.add_message::<SelectionThresholdCrossed>();
+        app.add_message::<SpeciesEvolved>();
+        app.add_systems(Update, advance_tick.run_if(in_state(EraState::Advancing)));
+        app.add_systems(OnEnter(EraState::Reveal), build_era_reveal);
+
+        app.world_mut()
+            .resource_mut::<NextState<GameState>>()
+            .set(GameState::Playing);
+        app.update();
+
+        app.world_mut()
+            .resource_mut::<SeasonProgress>()
+            .start(config.time.season_pulses);
+        app.world_mut()
+            .resource_mut::<NextState<EraState>>()
+            .set(EraState::Advancing);
+
+        // This minimal harness has no `input::start_era` system, so each
+        // season past the first needs its own manual "player pressed space
+        // again" — `SeasonProgress::start` plus flipping back to
+        // `Advancing` — exactly like a real session's `space` key would,
+        // just driven by the test instead of `ButtonInput`. Checked after
+        // every single `app.update()` (not batched in blocks of
+        // `season_pulses`): a state set via `NextState` only becomes
+        // visible through `State::get()` starting the *next* `app.update()`
+        // call, so batching the check would read a stale state on the
+        // exact call where a season/era boundary lands.
+        let mut seasons_started = 1;
+        for _ in 0..(config.time.season_pulses * config.time.seasons_per_era) + 50 {
+            app.update();
+            match *app.world().resource::<State<EraState>>().get() {
+                EraState::Observing if seasons_started < config.time.seasons_per_era => {
+                    seasons_started += 1;
+                    app.world_mut()
+                        .resource_mut::<SeasonProgress>()
+                        .start(config.time.season_pulses);
+                    app.world_mut()
+                        .resource_mut::<NextState<EraState>>()
+                        .set(EraState::Advancing);
+                }
+                EraState::Reveal => break,
+                _ => {}
+            }
+        }
+
+        let sim_world = app.world().resource::<SimWorld>();
+        assert_eq!(sim_world.era, 1, "exactly one era should have closed");
+        assert_eq!(
+            *app.world().resource::<State<EraState>>().get(),
+            EraState::Reveal,
+            "an era closing must halt in Reveal, not fall through to Observing"
+        );
+        let reveal = app.world().resource::<EraReveal>();
+        assert_eq!(reveal.era, 1);
     }
 
     /// Two adjacent photolithic organisms (species 0 at `(cx, cy)`, species 1
@@ -3614,8 +3891,8 @@ mod tests {
     /// sustained toxicity exposure through real `step()` calls eventually
     /// crosses the threshold, and feeding that *actual* emitted event into
     /// `speciate` produces a distinct descendant without touching the
-    /// parent — the full pure-Rust pipeline `sim::speciate_on_threshold_crossed`
-    /// wires together, without needing a running `App`/GUI to confirm it.
+    /// parent — the full pure-Rust pipeline `sim::build_era_reveal` wires
+    /// together, without needing a running `App`/GUI to confirm it.
     #[test]
     fn a_real_threshold_crossing_from_step_produces_a_descendant_species() {
         let (mut world, mut config) = world_with_one_organism(0.7, 0.5, 5.0);
@@ -3646,5 +3923,121 @@ mod tests {
             world.species[0].name, source_name_before,
             "the source species must be unchanged"
         );
+    }
+
+    #[test]
+    fn species_still_extant_is_false_once_every_cell_of_that_species_is_empty() {
+        let (mut world, _config, idx) = world_for_speciation();
+        assert!(species_still_extant(&world, SpeciesId(0)));
+        world.cells[idx].population = None;
+        assert!(!species_still_extant(&world, SpeciesId(0)));
+    }
+
+    #[test]
+    fn any_evolution_maturing_only_true_past_the_fraction_and_never_once_crossed() {
+        let config = SimConfig::default();
+        let mut world = SimWorld::new(42, &config);
+        let threshold = config.evolution.selection_pressure_threshold;
+
+        assert!(
+            !any_evolution_maturing(&world, &config.evolution),
+            "no species has accrued any pressure yet"
+        );
+
+        world.selection_pressure = vec![SelectionPressure {
+            toxicity: threshold * 0.5,
+            ..Default::default()
+        }];
+        assert!(
+            !any_evolution_maturing(&world, &config.evolution),
+            "below MATURING_HINT_FRACTION of the threshold"
+        );
+
+        world.selection_pressure[0].toxicity = threshold * 0.9;
+        assert!(
+            any_evolution_maturing(&world, &config.evolution),
+            "past MATURING_HINT_FRACTION of the threshold"
+        );
+
+        world.selection_pressure[0].crossed = true;
+        assert!(
+            !any_evolution_maturing(&world, &config.evolution),
+            "a species that already crossed is done maturing, not still maturing"
+        );
+    }
+
+    /// Task 140's core deferred-application behavior: `build_era_reveal`
+    /// (not `step`/`buffer_pending_evolutions`) is the only place a buffered
+    /// `SelectionThresholdCrossed` actually turns into a new species —
+    /// exercised here as the plain Bevy system it is, via a minimal `App`,
+    /// same pattern `a_real_threshold_crossing_from_step_produces_a_descendant_species`
+    /// uses for `speciate` itself.
+    #[test]
+    fn build_era_reveal_applies_pending_evolutions_and_reports_the_tier() {
+        let (world, config, idx) = world_for_speciation();
+        let event = toxicity_dominant_event(SpeciesId(0), idx);
+
+        let mut app = App::new();
+        app.insert_resource(config);
+        app.insert_resource(world);
+        app.insert_resource(PendingEvolutions(vec![event]));
+        app.init_resource::<EraTally>();
+        app.init_resource::<EraReveal>();
+        app.add_message::<SpeciesEvolved>();
+        app.add_systems(Update, build_era_reveal);
+
+        // Before `build_era_reveal` runs: still one species, buffered.
+        assert_eq!(app.world().resource::<SimWorld>().species.len(), 1);
+
+        app.update();
+
+        let world = app.world().resource::<SimWorld>();
+        assert_eq!(
+            world.species.len(),
+            2,
+            "the pending crossing must be applied once the era closes"
+        );
+        assert!(
+            app.world().resource::<PendingEvolutions>().0.is_empty(),
+            "pending evolutions must be drained, not left to reapply next era"
+        );
+        let reveal = app.world().resource::<EraReveal>();
+        assert_eq!(reveal.tier, RevealTier::Epochal);
+        assert_eq!(reveal.evolutions.len(), 1);
+        assert_eq!(reveal.evolutions[0].parent, SpeciesId(0));
+        assert_eq!(reveal.evolutions[0].child, SpeciesId(1));
+        assert_eq!(reveal.evolutions_lost, 0);
+    }
+
+    /// Task 140's adopted answer to "what if the species goes extinct before
+    /// its evolution matures": the pending crossing is dropped, counted as
+    /// `evolutions_lost`, not applied — and with nothing else notable this
+    /// era, the tier reads `Notable` (an extinction/loss), not `Epochal`.
+    #[test]
+    fn build_era_reveal_drops_a_pending_evolution_for_an_extinct_species() {
+        let (mut world, config, idx) = world_for_speciation();
+        let event = toxicity_dominant_event(SpeciesId(0), idx);
+        world.cells[idx].population = None; // the species has since gone extinct
+
+        let mut app = App::new();
+        app.insert_resource(config);
+        app.insert_resource(world);
+        app.insert_resource(PendingEvolutions(vec![event]));
+        app.init_resource::<EraTally>();
+        app.init_resource::<EraReveal>();
+        app.add_message::<SpeciesEvolved>();
+        app.add_systems(Update, build_era_reveal);
+
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<SimWorld>().species.len(),
+            1,
+            "an extinct species' pending evolution must not be applied"
+        );
+        let reveal = app.world().resource::<EraReveal>();
+        assert!(reveal.evolutions.is_empty());
+        assert_eq!(reveal.evolutions_lost, 1);
+        assert_eq!(reveal.tier, RevealTier::Notable);
     }
 }

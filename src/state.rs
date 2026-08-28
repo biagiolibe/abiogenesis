@@ -48,4 +48,10 @@ pub enum EraState {
     #[default]
     Observing,
     Advancing,
+    /// Task 140: entered instead of `Observing` the instant an era actually
+    /// completes (not every season) — the world halts on its own and shows
+    /// the end-of-era reveal card (`screens::era_reveal_screen_ui`) until
+    /// the player dismisses it, the same "must be seen before acting again"
+    /// gate every action/tick-advance system already applies to `Advancing`.
+    Reveal,
 }

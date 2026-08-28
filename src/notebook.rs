@@ -15,7 +15,7 @@ use abiogenesis::sim::{
     AdjacencyObserved, EraCompleted, OrganismBorn, OrganismDied, SpeciesEvolved, SpeciesExtinct,
     TerrainGateObserved, TerrainRevealed,
 };
-use abiogenesis::state::GameState;
+use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{
     Metabolism, Mode, SimWorld, SpeciesId, TagId, TagSlot, TerrainKind, TERRAIN_KIND_COUNT,
 };
@@ -202,8 +202,14 @@ impl Plugin for NotebookPlugin {
             )
             .add_systems(
                 EguiPrimaryContextPass,
-                (notebook_window, clear_stray_tab_focus.after(hud_panel))
-                    .run_if(in_state(GameState::Playing)),
+                // Task 140: suppressed during `EraState::Reveal` for the
+                // same reason `ui::hud_panel` is — both paint a
+                // full-viewport panel on the background egui layer, which
+                // would overlap the reveal card's own `CentralPanel`
+                // rather than layer cleanly.
+                (notebook_window, clear_stray_tab_focus.after(hud_panel)).run_if(
+                    in_state(GameState::Playing).and_eager(not(in_state(EraState::Reveal))),
+                ),
             );
     }
 }

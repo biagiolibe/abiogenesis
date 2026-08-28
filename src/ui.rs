@@ -16,7 +16,9 @@ use abiogenesis::objectives::{
     is_grace_active, CurrentObjective, GraceProgress, Objective, ObjectiveProgress,
 };
 use abiogenesis::run::RunProgress;
-use abiogenesis::sim::{ActionBudget, EraCompleted, OrganismDied, SeasonProgress};
+use abiogenesis::sim::{
+    any_evolution_maturing, ActionBudget, EraCompleted, OrganismDied, SeasonProgress,
+};
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{SimWorld, SpeciesId, TagSlot};
 use abiogenesis::worldgen::season_pulses_for;
@@ -248,7 +250,16 @@ impl Plugin for UiPlugin {
             .add_systems(EguiPrimaryContextPass, configure_fonts)
             .add_systems(
                 EguiPrimaryContextPass,
-                (hud_panel, viewport_hint).run_if(in_state(GameState::Playing)),
+                // Task 140: suppressed while `EraState::Reveal` is up rather
+                // than merely disabled — the reveal card is a full-viewport
+                // `CentralPanel` on the same background egui layer
+                // `hud_panel` itself paints on (`screens::interstitial`),
+                // so drawing both in the same frame would overlap rather
+                // than layer cleanly the way the notebook's dim-not-hide
+                // overlay does.
+                (hud_panel, viewport_hint).run_if(
+                    in_state(GameState::Playing).and_eager(not(in_state(EraState::Reveal))),
+                ),
             );
     }
 }
@@ -488,6 +499,9 @@ pub(crate) fn hud_panel(
             ui.label(text::state_line(era_state.get()));
             if is_grace_active(world.season, config.time.grace_seasons, &readouts.grace) {
                 ui.weak(text::GRACE_PERIOD_LINE);
+            }
+            if any_evolution_maturing(&world, &config.evolution) {
+                ui.weak(text::MATURING_EVOLUTION_HINT);
             }
             time_control_row(
                 ui,

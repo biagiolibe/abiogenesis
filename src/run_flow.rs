@@ -16,7 +16,7 @@ use abiogenesis::objectives::{
 #[cfg(test)]
 use abiogenesis::objectives::{FailureReason, WorldOutcome};
 use abiogenesis::run::RunProgress;
-use abiogenesis::sim::{ActionBudget, SeasonProgress};
+use abiogenesis::sim::{ActionBudget, EraReveal, EraTally, PendingEvolutions, SeasonProgress};
 use abiogenesis::state::EraState;
 use abiogenesis::world::{SimWorld, SpeciesId};
 use abiogenesis::worldgen::build_world;
@@ -56,6 +56,9 @@ pub struct WorldResetParams<'w> {
     pub death_cause_tally: ResMut<'w, DeathCauseTally>,
     pub birth_tally: ResMut<'w, BirthTally>,
     pub seen_relations: ResMut<'w, SeenRelations>,
+    pub pending_evolutions: ResMut<'w, PendingEvolutions>,
+    pub era_tally: ResMut<'w, EraTally>,
+    pub era_reveal: ResMut<'w, EraReveal>,
 }
 
 /// Rebuilds `world` in place as world `world_index` seeded with `seed`
@@ -118,6 +121,11 @@ pub fn start_world(
     *reset.population_trends = PopulationTrends::default();
     *reset.death_cause_tally = DeathCauseTally::default();
     *reset.birth_tally = BirthTally::default();
+    // Task 140: a pending/reveal-in-progress evolution or tally from the
+    // world just left must not leak into the new one's first era.
+    reset.pending_evolutions.0.clear();
+    *reset.era_tally = EraTally::default();
+    *reset.era_reveal = EraReveal::default();
 }
 
 /// The concrete effect of "World cleared → Continue" (task 045): advances
@@ -215,6 +223,9 @@ mod tests {
         ecs_world.insert_resource(DeathCauseTally::default());
         ecs_world.insert_resource(BirthTally::default());
         ecs_world.insert_resource(SeenRelations::new(5));
+        ecs_world.insert_resource(PendingEvolutions::default());
+        ecs_world.insert_resource(EraTally::default());
+        ecs_world.insert_resource(EraReveal::default());
         ecs_world
     }
 

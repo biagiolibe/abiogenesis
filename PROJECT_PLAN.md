@@ -247,7 +247,7 @@ because they existed precisely to fake a density the model couldn't provide.
 - `[x]` 137 — Per-cell population model: count + aggregate energy per cell, carrying capacity, breakout, saturated-with-no-outlet flag feeding local selection pressure → [137](tasks/done/137-per-cell-population-model.md)
 - `[x]` 138 — Tick as an explicit phased pipeline: habitat gate, per-biome `crowd_factor` and residue decay, protected-cell hook, intermediates kept and exposed → [138](tasks/done/138-tick-pipeline-explicit-phases.md)
 - `[x]` 139 — Overview at real density, removing the pictorial machinery from `cluster.rs` → [139](tasks/done/139-overview-real-density.md)
-- `[ ]` 140 — End-of-era reveal as a dedicated beat, with matured evolution applied there → [140](tasks/140-end-of-era-reveal-beat.md)
+- `[x]` 140 — End-of-era reveal as a dedicated beat, with matured evolution applied there → [140](tasks/done/140-end-of-era-reveal-beat.md)
 
 **Phase 1b — friction fixes**: 141 saturation indicator (high), 142 named cause
 in the speciation reveal, 143 second contextual hint, 144 temporary trait-code
