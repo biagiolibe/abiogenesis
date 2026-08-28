@@ -12,7 +12,7 @@
 use crate::ui::ActionMode;
 use abiogenesis::objectives::ZoneKind;
 use abiogenesis::sim::{DominantStimulus, RevealTier};
-use abiogenesis::world::{Metabolism, Mode, TerrainKind};
+use abiogenesis::world::{Metabolism, Mode, StressAxis, TerrainKind};
 
 // --- Main menu (`menu.rs::main_menu_ui`) ---
 
@@ -283,11 +283,23 @@ pub fn action_name(mode: ActionMode) -> &'static str {
 pub fn action_description(mode: ActionMode) -> &'static str {
     match mode {
         ActionMode::Seed => "Place an organism of the selected species on an empty cell.",
-        ActionMode::Stress => "Raise the temperature of the clicked cell.",
+        ActionMode::Stress => {
+            "Shift the selected axis on the clicked cell — decays back over time."
+        }
         ActionMode::Cull => "Remove the organism on the clicked cell, if any.",
         ActionMode::Splice => {
             "Edit a species' genome: swap or add a tag, or shift its thermal optimum."
         }
+    }
+}
+
+/// Display name for one `StressAxis` (task 145) — the icon row's hover
+/// text and the axis sub-selector's button labels.
+pub fn stress_axis_name(axis: StressAxis) -> &'static str {
+    match axis {
+        StressAxis::Temperature => "Thermal",
+        StressAxis::Light => "Light",
+        StressAxis::Toxicity => "Toxicity",
     }
 }
 

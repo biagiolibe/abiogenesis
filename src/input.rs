@@ -36,7 +36,7 @@ use crate::run_flow::{start_world, WorldResetParams};
 use crate::text;
 use crate::ui::{
     cursor_over_hud_panel, ActionMode, HudControlIntents, IsolationHint, SelectedAction,
-    SelectedSpecies, SpliceDraft, SpliceEditChoice,
+    SelectedSpecies, SelectedStressAxis, SpliceDraft, SpliceEditChoice,
 };
 
 pub struct InputPlugin;
@@ -374,16 +374,14 @@ fn is_isolated_placement(world: &SimWorld, x: usize, y: usize) -> bool {
         .all(|idx| world.cells[idx].population.is_none())
 }
 
-/// Left-click while `ActionMode::Stress` is selected (GDD §6 "Stress"):
-/// shifts the clicked cell's temperature by `config.environment.stress_delta`,
-/// clamped to `[0,1]` (the existing scalar-range invariant) — temperature,
-/// not toxicity, since `sim::step`'s `env_fit` reads temperature every tick
-/// and toxicity currently isn't read anywhere, so a stressed cell has an
-/// observable effect on any organism sitting on it (subject to environmental
-/// diffusion smearing it back toward neighbours over subsequent ticks, same
-/// as any other scalar). Unlike `Seed`, occupancy isn't a precondition —
-/// Stress targets the environment, so it works on empty and occupied cells
-/// alike. Same budget-check-then-decrement pattern as `Seed`.
+/// Left-click while `ActionMode::Stress` is selected (GDD §6 "Stress", task
+/// 145): shifts the clicked cell's selected axis (`SelectedStressAxis` —
+/// temperature/light/toxicity) by `config.environment.stress_delta`, clamped
+/// to `[0,1]`, via `SimWorld::apply_stress`. Unlike `Seed`, occupancy isn't a
+/// precondition — Stress targets the environment, so it works on empty and
+/// occupied cells alike. Same budget-check-then-decrement pattern as `Seed`.
+/// The shift is temporary: `SimWorld::decay_environment_stress` relaxes it
+/// back every tick (see that method's doc comment).
 #[allow(clippy::too_many_arguments)]
 fn stress_on_click(
     buttons: Res<ButtonInput<MouseButton>>,
@@ -391,6 +389,7 @@ fn stress_on_click(
     cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
     gate: ClickGateState,
     selected_action: Res<SelectedAction>,
+    selected_stress_axis: Res<SelectedStressAxis>,
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
     mut budget: ResMut<ActionBudget>,
@@ -427,8 +426,7 @@ fn stress_on_click(
         return;
     }
 
-    let cell = world.get_mut(x, y);
-    cell.temperature = (cell.temperature + config.environment.stress_delta).clamp(0.0, 1.0);
+    world.apply_stress(x, y, selected_stress_axis.0, &config);
     budget.points_remaining -= config.time.action_costs.stress;
 }
 

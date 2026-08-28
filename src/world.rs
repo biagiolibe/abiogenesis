@@ -646,6 +646,33 @@ pub struct SimWorld {
     /// population is absent or its net energy leaves the band, incremented
     /// otherwise. `sim::step`'s own job, read by `any_population_stalled`.
     pub stall_ticks: Vec<u32>,
+    /// Per-cell, per-axis pre-`Stress` baseline (task 145): `Some(v)` means
+    /// that axis on that cell is actively relaxing back toward `v`;
+    /// `None` means no stress is currently decaying there (ordinary
+    /// diffusion/reinjection is the only thing touching that axis). Sized
+    /// once, like `stall_ticks`.
+    pub stress_decay: Vec<StressDecay>,
+}
+
+/// One cell's active `Stress`-decay targets (task 145), one field per axis.
+/// See `SimWorld::stress_decay`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StressDecay {
+    pub temperature: Option<f32>,
+    pub light: Option<f32>,
+    pub toxicity: Option<f32>,
+}
+
+/// Which environmental scalar the `Stress` action targets (task 145,
+/// `abiogenesis-actions.md`). Lives in `world.rs`, not `ui.rs`, so
+/// `SimWorld::apply_stress` can take it directly without `sim`/`world`
+/// depending on the UI crate boundary the other way around.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StressAxis {
+    #[default]
+    Temperature,
+    Light,
+    Toxicity,
 }
 
 impl SimWorld {
@@ -683,6 +710,7 @@ impl SimWorld {
             scratch: cells.clone(),
             adjacency_exposure: vec![AdjacencyExposure::default(); cells.len()],
             stall_ticks: vec![0; cells.len()],
+            stress_decay: vec![StressDecay::default(); cells.len()],
             cells,
             species: Vec::new(),
             tick: 0,
@@ -2229,6 +2257,93 @@ impl SimWorld {
             let current = self.scratch[idx].toxicity;
             self.scratch[idx].toxicity += source_cfg.toxic_reinjection_strength
                 * (config.environment.swamp_toxicity_value - current);
+        }
+    }
+
+    /// Applies one `Stress` click (task 145) to `(x, y)`'s chosen axis:
+    /// snapshots the cell's current value as the decay target (only if that
+    /// axis isn't already mid-decay, so repeated stress on the same cell
+    /// keeps pushing away from the *original* baseline instead of resetting
+    /// it to an already-shifted value), then shifts the value by
+    /// `EnvironmentConfig::stress_delta`, clamped to `[0,1]`.
+    pub fn apply_stress(&mut self, x: usize, y: usize, axis: StressAxis, config: &SimConfig) {
+        let idx = self.index(x, y);
+        let delta = config.environment.stress_delta;
+        let cell = &mut self.cells[idx];
+        let decay = &mut self.stress_decay[idx];
+        match axis {
+            StressAxis::Temperature => {
+                decay.temperature.get_or_insert(cell.temperature);
+                cell.temperature = (cell.temperature + delta).clamp(0.0, 1.0);
+            }
+            StressAxis::Light => {
+                decay.light.get_or_insert(cell.light);
+                cell.light = (cell.light + delta).clamp(0.0, 1.0);
+            }
+            StressAxis::Toxicity => {
+                decay.toxicity.get_or_insert(cell.toxicity);
+                cell.toxicity = (cell.toxicity + delta).clamp(0.0, 1.0);
+            }
+        }
+    }
+
+    /// Relaxes every actively-decaying `Stress` axis back toward its
+    /// pre-stress baseline (task 145), a fraction `stress_decay_rate` per
+    /// tick — the same exponential-approach shape `diffuse_environment`
+    /// uses for neighbour-blur, but pulling toward a stored per-cell target
+    /// instead of the local mean, since diffusion alone never returns an
+    /// isolated stressed cell to where it started. Reads/writes `scratch`
+    /// (called alongside `diffuse_environment`/`reinject_environment_sources`
+    /// in `sim::step`, before the scratch/cells swap). Skips the axis on
+    /// cells `reinject_environment_sources` already owns (heat sources for
+    /// temperature, toxic Swamp cells for toxicity) — decay would otherwise
+    /// fight a pull that's supposed to win, and clears the stored baseline
+    /// there since reinjection makes it moot.
+    pub fn decay_environment_stress(&mut self, config: &SimConfig) {
+        let rate = config.environment.stress_decay_rate;
+        const SNAP_EPSILON: f32 = 1e-4;
+        // Every field starts as an `is_some()` check (cheap) before any
+        // `heat_sources`/`toxic_swamp_cells` lookup, so an ordinary tick
+        // with no active `Stress` decay anywhere pays no linear-scan cost —
+        // the common case, since a player clicks `Stress` far less often
+        // than every tick runs.
+        for idx in 0..self.stress_decay.len() {
+            let decay = &mut self.stress_decay[idx];
+
+            if let Some(baseline) = decay.temperature {
+                if self.heat_sources.contains(&idx) {
+                    decay.temperature = None;
+                } else {
+                    let current = &mut self.scratch[idx].temperature;
+                    *current += rate * (baseline - *current);
+                    if (*current - baseline).abs() < SNAP_EPSILON {
+                        *current = baseline;
+                        decay.temperature = None;
+                    }
+                }
+            }
+
+            if let Some(baseline) = decay.light {
+                let current = &mut self.scratch[idx].light;
+                *current += rate * (baseline - *current);
+                if (*current - baseline).abs() < SNAP_EPSILON {
+                    *current = baseline;
+                    decay.light = None;
+                }
+            }
+
+            if let Some(baseline) = decay.toxicity {
+                if self.toxic_swamp_cells.contains(&idx) && self.cells[idx].biome == Biome::Swamp {
+                    decay.toxicity = None;
+                } else {
+                    let current = &mut self.scratch[idx].toxicity;
+                    *current += rate * (baseline - *current);
+                    if (*current - baseline).abs() < SNAP_EPSILON {
+                        *current = baseline;
+                        decay.toxicity = None;
+                    }
+                }
+            }
         }
     }
 
@@ -4798,5 +4913,74 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Task 145: `apply_stress` must shift only the chosen axis, leaving the
+    /// other two untouched.
+    #[test]
+    fn apply_stress_shifts_only_the_selected_axis() {
+        let config = test_config();
+        let mut world = SimWorld::new(1, &config);
+        let idx = world.index(5, 5);
+        let before = world.cells[idx];
+
+        world.apply_stress(5, 5, StressAxis::Light, &config);
+
+        let after = world.cells[idx];
+        assert_eq!(
+            after.light,
+            (before.light + config.environment.stress_delta).clamp(0.0, 1.0),
+            "light must shift by exactly stress_delta"
+        );
+        assert_eq!(
+            after.temperature, before.temperature,
+            "temperature must be untouched by a Light-axis stress"
+        );
+        assert_eq!(
+            after.toxicity, before.toxicity,
+            "toxicity must be untouched by a Light-axis stress"
+        );
+    }
+
+    /// Task 145: a stressed, isolated cell (no heat source / toxic Swamp
+    /// nearby to fight the pull) must relax back toward its pre-stress
+    /// value over repeated ticks, and the decay must terminate (clear back
+    /// to `None`) once it snaps to baseline rather than oscillating forever.
+    #[test]
+    fn stressed_light_decays_back_toward_its_pre_stress_baseline() {
+        let config = test_config();
+        let mut world = SimWorld::new(1, &config);
+        let idx = world.index(5, 5);
+        let baseline = world.cells[idx].light;
+
+        world.apply_stress(5, 5, StressAxis::Light, &config);
+        let stressed = world.cells[idx].light;
+        assert_ne!(stressed, baseline, "stress must have moved the value");
+
+        // Mirror `sim::step`'s own scratch lifecycle: copy cells into
+        // scratch, decay, then swap — `decay_environment_stress` reads and
+        // writes `scratch`, same as `diffuse_environment`/
+        // `reinject_environment_sources`.
+        let mut last = stressed;
+        for _ in 0..200 {
+            world.scratch.copy_from_slice(&world.cells);
+            world.decay_environment_stress(&config);
+            std::mem::swap(&mut world.cells, &mut world.scratch);
+            let current = world.cells[idx].light;
+            assert!(
+                (current - baseline).abs() <= (last - baseline).abs() + f32::EPSILON,
+                "decay must move monotonically toward baseline, not away from it"
+            );
+            last = current;
+        }
+
+        assert_eq!(
+            world.cells[idx].light, baseline,
+            "after enough ticks the value must snap exactly to baseline"
+        );
+        assert_eq!(
+            world.stress_decay[idx].light, None,
+            "the decay target must clear once baseline is reached"
+        );
     }
 }

@@ -803,6 +803,10 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
     // a distinct step from the blur above, so `diffuse_environment`'s own
     // fixed-point tests stay unaffected by it.
     world.reinject_environment_sources(config);
+    // Relaxes any actively-`Stress`ed axis back toward its pre-stress value
+    // (task 145) — after reinjection, so it can see (and skip) the cells
+    // reinjection already owns for that axis.
+    world.decay_environment_stress(config);
 
     // Residue decays every tick unless a death overwrites it further down.
     // A small ambient trickle is added after decay so residue settles to a

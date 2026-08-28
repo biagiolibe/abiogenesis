@@ -247,7 +247,9 @@ impl Plugin for GridRenderPlugin {
                     placement_indicator::draw_placement_indicator,
                     spark_indicator::draw_spark_indicators,
                 )
-                    .run_if(in_state(GameState::Playing).and_eager(not(in_state(EraState::Reveal)))),
+                    .run_if(
+                        in_state(GameState::Playing).and_eager(not(in_state(EraState::Reveal))),
+                    ),
             );
         #[cfg(debug_assertions)]
         {

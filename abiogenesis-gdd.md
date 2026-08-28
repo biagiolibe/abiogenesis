@@ -333,7 +333,7 @@ A proposed terminal, rare transition: a lineage that has been reshaped enough by
 Actions are what the player queues before advancing time:
 
 - **Seed** (`Seed`) — place an organism of an available species in a cell.
-- **Environmental stress** (`Stress`) — alter an environmental scalar in the selected cell. **[PROPOSED]** the axis is *selectable* — thermal, light, or toxicity — rather than thermal only. This isn't a new action but a choice inside the existing one: it removes an arbitrary asymmetry (light and toxicity matter as much as temperature, for `Photolithic` and `Chemolithotroph` respectively) without inflating the roster.
+- **Environmental stress** (`Stress`) — alter an environmental scalar in the selected cell. **[DECIDED, task 145]** the axis is *selectable* — thermal, light, or toxicity — rather than thermal only. This isn't a new action but a choice inside the existing one: it removes an arbitrary asymmetry (light and toxicity matter as much as temperature, for `Photolithic` and `Chemolithotroph` respectively) without inflating the roster. A single application is temporary: the shifted axis decays back toward its pre-stress value over subsequent ticks (`EnvironmentConfig::stress_decay_rate`), distinct from environmental diffusion's neighbour-blur.
 - **Removal / cull** (`Cull`) — eliminate the organism in the selected cell.
 - **Synthesis / splice** (`Splice`) — **synthesise a new species** with chosen traits, added to the seedable roster. The most powerful and most expensive experimental tool.
 

@@ -24,6 +24,7 @@
         ambient_temperature: 0.25,
         swamp_toxicity_value: 0.7,
         stress_delta: 0.3,
+        stress_decay_rate: 0.1,
     ),
     time: (
         season_pulses: 25,

@@ -38,8 +38,8 @@ itself now.
 
 ## 📋 Acceptance Criteria
 
-- [ ] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
-- [ ] `ActionMode::Stress` gains a selectable axis (thermal / light /
+- [x] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
+- [x] `ActionMode::Stress` gains a selectable axis (thermal / light /
       toxicity) surfaced in the UI while Stress is the active action —
       same pattern the codebase already uses for an in-progress action
       config (see `SpliceEdit`/the Splice panel in `ui.rs`), not a new
@@ -47,33 +47,33 @@ itself now.
       (e.g. `SelectedStressAxis`), defaulting to thermal so existing
       keybind/click behaviour (`1`-`4` quick-select, left-click) is
       unchanged for a player who never touches the new selector.
-- [ ] `stress_on_click` (`input.rs`) shifts `cell.temperature`,
+- [x] `stress_on_click` (`input.rs`) shifts `cell.temperature`,
       `cell.light`, or `cell.toxicity` depending on the selected axis,
       each clamped to `[0,1]`, using a per-axis delta config (see below) —
       not a single shared `stress_delta` applied to whichever field.
-- [ ] A stressed scalar decays back toward the cell's own **pre-stress
+- [x] A stressed scalar decays back toward the cell's own **pre-stress
       value** over subsequent ticks, distinct from and in addition to
       `diffuse_environment`'s neighbour-blur (which alone does not pull an
       isolated cell back to where it started — only source-adjacent cells
       get that today, via `reinject_environment_sources`). New per-cell
       baseline state + a new tick step that exponentially relaxes the
       current value toward it at a configured rate.
-- [ ] Decay must not fight `reinject_environment_sources` on cells it
+- [x] Decay must not fight `reinject_environment_sources` on cells it
       already pulls (heat sources, sea-coolant band, toxic Swamp cells):
       either skip decay on those cells for the affected axis, or make the
       baseline for them the source-driven value rather than the
       pre-stress one — pick whichever keeps the existing
       `reinject_environment_sources` invariants (`reinject_strength >
       diffusion_rate`, etc.) meaningful. Document the choice.
-- [ ] New config lives in `EnvironmentConfig` (or a small owned substruct),
+- [x] New config lives in `EnvironmentConfig` (or a small owned substruct),
       no magic numbers: per-axis stress delta, decay rate. `stress_delta`
       is replaced/renamed rather than kept alongside dead duplicates.
-- [ ] `sim_config.ron` stays in sync (`tests/config_ron_sync.rs`).
-- [ ] At least one unit/integration test exercises: (a) a stressed cell's
+- [x] `sim_config.ron` stays in sync (`tests/config_ron_sync.rs`).
+- [x] At least one unit/integration test exercises: (a) a stressed cell's
       scalar visibly shifts on the chosen axis and not the others; (b) left
       alone, it measurably relaxes back toward its pre-stress value over N
       ticks without external interference (isolated cell, no source nearby).
-- [ ] GDD §6's `Stress` entry: axis selection flips from `[PROPOSED]` to
+- [x] GDD §6's `Stress` entry: axis selection flips from `[PROPOSED]` to
       `[DECIDED]` once implemented; note the temporary/decay behaviour.
       Player guide updated if it documents Stress's current single-axis
       behaviour.

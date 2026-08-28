@@ -20,7 +20,7 @@ use abiogenesis::sim::{
     any_evolution_maturing, ActionBudget, EraCompleted, OrganismDied, SeasonProgress,
 };
 use abiogenesis::state::{EraState, GameState};
-use abiogenesis::world::{SimWorld, SpeciesId, TagSlot};
+use abiogenesis::world::{SimWorld, SpeciesId, StressAxis, TagSlot};
 use abiogenesis::worldgen::season_pulses_for;
 
 /// Task 055's guided first-isolation hint: the message to show (isolated vs.
@@ -103,6 +103,14 @@ pub enum ActionMode {
 /// who never touches the new selector.
 #[derive(Resource)]
 pub struct SelectedAction(pub ActionMode);
+
+/// Which axis `Stress` targets (task 145) — a UI intent read by both this
+/// module (the axis sub-selector, shown only while `Stress` is the active
+/// action) and `input.rs`'s `stress_on_click`. Defaults to `Temperature` so
+/// a player who never touches the selector keeps the old single-axis
+/// behaviour.
+#[derive(Resource, Default)]
+pub struct SelectedStressAxis(pub StressAxis);
 
 /// One in-progress `Splice` edit (GDD §6): swap one tag for another, add a
 /// tag to a species with room under the 1-3 tag cap (GDD §5.3, task 027), or
@@ -244,6 +252,7 @@ impl Plugin for UiPlugin {
             .auto_create_primary_context = false;
         app.insert_resource(SelectedSpecies(SpeciesId(0)))
             .insert_resource(SelectedAction(ActionMode::Seed))
+            .init_resource::<SelectedStressAxis>()
             .init_resource::<SpliceDraft>()
             .init_resource::<IsolationHint>()
             .init_resource::<StallHint>()
@@ -479,6 +488,7 @@ pub(crate) fn hud_panel(
     era_state: Res<State<EraState>>,
     mut selected: ResMut<SelectedSpecies>,
     mut selected_action: ResMut<SelectedAction>,
+    mut selected_stress_axis: ResMut<SelectedStressAxis>,
     mut splice_draft: ResMut<SpliceDraft>,
     budget: Res<ActionBudget>,
     config: Res<SimConfig>,
@@ -551,6 +561,9 @@ pub(crate) fn hud_panel(
                 &readouts.run_progress,
                 *mode,
             );
+            if selected_action.0 == ActionMode::Stress {
+                stress_axis_row(ui, &mut selected_stress_axis);
+            }
 
             let total = config.time.point_budget_per_season;
             dot_row(ui, budget.points_remaining, total, DotShape::Tick)
@@ -1123,6 +1136,29 @@ fn action_icon_row(
                 )
             };
             response.on_hover_text(tooltip);
+        }
+    });
+}
+
+/// Three-way axis toggle (task 145) shown only while `Stress` is the active
+/// action — same slot in the roster, same icon, same cost; the axis choice
+/// lives *inside* the action rather than adding a fifth `ActionMode`, per
+/// `abiogenesis-actions.md`'s explicit framing.
+const STRESS_AXES: [StressAxis; 3] = [
+    StressAxis::Temperature,
+    StressAxis::Light,
+    StressAxis::Toxicity,
+];
+
+fn stress_axis_row(ui: &mut egui::Ui, selected: &mut SelectedStressAxis) {
+    ui.horizontal(|ui| {
+        for axis in STRESS_AXES {
+            if ui
+                .selectable_label(selected.0 == axis, text::stress_axis_name(axis))
+                .clicked()
+            {
+                selected.0 = axis;
+            }
         }
     });
 }

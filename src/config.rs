@@ -130,20 +130,24 @@ pub struct EnvironmentConfig {
     /// zone — this is now the only generation-time source of nonzero
     /// `Cell::toxicity`). Elsewhere it's 0.0.
     pub swamp_toxicity_value: f32,
-    /// How much the `Stress` action (GDD §6) shifts a clicked cell's
-    /// temperature, before clamping to `[0,1]`. Temperature, not toxicity:
-    /// `sim::step`'s `env_fit` reads temperature every tick, so a stressed
-    /// cell has an observable, deducible effect on organisms sitting on it —
-    /// toxicity is currently written (world generation, diffusion) but read
-    /// by nothing in the tick, so stressing it would be an inert action.
-    /// Stressing a heat-source cell specifically is overridden the very next
-    /// tick by `reinject_environment_sources`' pull back toward
-    /// `source_temperature` (task 085) — the same "diffusion erodes it"
-    /// caveat as any other cell, just enforced faster and pinned exactly on
-    /// source cells; not worth special-casing, since a source cell's
-    /// temperature was never a meaningful place to `Stress` in the first
-    /// place (it's already the hottest point on the map).
+    /// How much the `Stress` action (GDD §6, task 145) shifts a clicked
+    /// cell's chosen axis (temperature/light/toxicity), before clamping to
+    /// `[0,1]`. One shared delta across all three axes — no design reason
+    /// found yet to differ per axis; split this into three fields if that
+    /// changes. Temporary: `SimWorld::decay_environment_stress` relaxes the
+    /// shift back toward its pre-stress value at `stress_decay_rate`.
+    /// Stressing a heat-source cell's temperature, or a toxic-Swamp cell's
+    /// toxicity, is overridden the very next tick by
+    /// `reinject_environment_sources`' pull toward its own standing value
+    /// (task 085/122) — `decay_environment_stress` skips those cells for
+    /// the axis reinjection already owns rather than fighting it.
     pub stress_delta: f32,
+    /// Fraction per tick that a stressed scalar relaxes back toward its
+    /// pre-stress value (task 145), same exponential-approach shape as
+    /// `diffusion_rate`. Independent of `diffusion_rate`: diffusion blurs a
+    /// cell toward its *neighbours'* mean, which alone doesn't return an
+    /// isolated stressed cell to where it started.
+    pub stress_decay_rate: f32,
 }
 
 impl Default for EnvironmentConfig {
@@ -156,6 +160,7 @@ impl Default for EnvironmentConfig {
             ambient_temperature: 0.25,
             swamp_toxicity_value: 0.7,
             stress_delta: 0.3,
+            stress_decay_rate: 0.1,
         }
     }
 }

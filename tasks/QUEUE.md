@@ -141,7 +141,7 @@ ideally with a real playtester — not yet done.
 
 | Status | ID | Title | Doc |
 |-------|----|--------|-----|
-| `[ ]` | 145 | Stress on three selectable axes + gradual decay | `actions` — [145](145-stress-three-axes-gradual-decay.md) |
+| `[x]` | 145 | Stress on three selectable axes + gradual decay | `actions` — [145](done/145-stress-three-axes-gradual-decay.md) |
 | `[ ]` | 146 | Cull emits a tracked notebook observation | `actions` — [146](146-cull-emits-tracked-observation.md) |
 | `[ ]` | 147 | Splice restricted to confirmed traits + growing genome bank + "synthesised" origin | `actions`, `hud-notebook` — [147](147-splice-confirmed-traits-genome-bank.md) |
 | `[ ]` | 149 | Inspection tool: hover tooltip + per-neighbour energy breakdown card | `inspect-tool` — [149](149-inspection-tool.md) |
@@ -293,6 +293,21 @@ proposal (`PROJECT_PLAN.md` §1), not available to pick up yet.
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) beyond what's already expanded into task files here.
 
 ---
+
+*Last updated: 2026-08-29 (145, Stress on three selectable axes + gradual
+decay — implemented and archived to `tasks/done/`. `ActionMode::Stress`
+keeps one slot; `SelectedStressAxis` (task 032, `ui.rs`) picks
+thermal/light/toxicity, shown as a sub-row only while Stress is active.
+`SimWorld::apply_stress` snapshots the pre-stress value per axis into a new
+`stress_decay: Vec<StressDecay>` grid, `SimWorld::decay_environment_stress`
+relaxes it back at `EnvironmentConfig::stress_decay_rate` every tick
+(wired into `sim::step` right after `reinject_environment_sources`, whose
+heat-source/toxic-Swamp cells it explicitly skips rather than fighting).
+`EnvironmentConfig::stress_delta` kept as one shared value across axes, no
+design reason found yet to split it per-axis. Era-spanning permanent
+biome-transition accumulation stayed out of scope per the task file, still
+blocked on task 164. GDD §6 flipped to `[DECIDED]`. `cargo test`/`clippy -D
+warnings`/`fmt` clean.)*
 
 *Last updated: 2026-08-29 (all 10 Phase 2 task files written this session —
 145 first, then 146/147/149/150/152/153/154/170/171 scoped in parallel by
