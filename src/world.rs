@@ -314,6 +314,40 @@ impl SelectionPressure {
     }
 }
 
+/// Per-cell adjacency-evidence onset tracking (task 136b,
+/// `SimWorld::adjacency_exposure`, one entry per grid cell, sized once at
+/// construction like `cells` — the grid never resizes). `sim::step` used to
+/// emit `AdjacencyObserved` for every occupied Moore neighbour, every tick,
+/// for as long as the adjacency held — a blob sitting still for 200 ticks
+/// counted as 200 independent observations of the same fact, the opposite of
+/// GDD §7's "the isolated observation is the valuable one." This tracks which
+/// exerter tags were already adjacent as of the last tick this cell's
+/// organism was processed, so evidence only accrues on a tag's *onset* —
+/// the transition into adjacency, not its continued presence.
+///
+/// Deliberately keyed by cell, not folded into `Organism` (which stays a
+/// small `Copy` snapshot, see `SelectionPressure`'s own doc comment): an
+/// organism never moves, so "this cell's history" and "this organism's
+/// history" are the same thing for as long as the same organism occupies it.
+/// `owner_born_season` is how a stale history gets discarded when a
+/// different organism (a different birth) later takes the same cell — this
+/// task's own note that task 137's per-cell population model will give this
+/// a cleaner home; this is the simplest correct version for today.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct AdjacencyExposure {
+    /// `Organism::born_season` of whichever organism this exposure state
+    /// belongs to. `None` before any organism has ever occupied this cell.
+    /// A mismatch against the current organism's `born_season` means a
+    /// different organism now holds the cell, so the stored mask is stale
+    /// and must be treated as empty rather than reused.
+    pub owner_born_season: Option<u32>,
+    /// Bitmask over `TagSlot` indices: bit `n` set means `TagSlot(n)` was
+    /// adjacent to this cell's organism as of the last tick it was
+    /// processed. `u32` comfortably covers `TagConfig::global_tag_pool`
+    /// (`10` by default) with room to spare.
+    pub exerter_tags: u32,
+}
+
 /// One grid cell. Single occupancy (GDD §5.1): `organism` is never a collection.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Cell {
@@ -553,6 +587,10 @@ pub struct SimWorld {
     /// Write-side double buffer for the tick (TECH_DESIGN.md §6). `pub(crate)`
     /// so `sim::step` can read/write it directly without a cell-by-cell API.
     pub(crate) scratch: Vec<Cell>,
+    /// Per-cell adjacency-evidence onset tracking (task 136b). See
+    /// `AdjacencyExposure`'s own doc comment. Sized once, like `cells` —
+    /// the grid never resizes, so this needs no lazy-grow logic.
+    pub adjacency_exposure: Vec<AdjacencyExposure>,
 }
 
 impl SimWorld {
@@ -588,6 +626,7 @@ impl SimWorld {
             width,
             height,
             scratch: cells.clone(),
+            adjacency_exposure: vec![AdjacencyExposure::default(); cells.len()],
             cells,
             species: Vec::new(),
             tick: 0,

@@ -54,23 +54,26 @@ buying information the simulation hands out for free.
 
 ## 📋 Acceptance Criteria
 
-- [ ] An adjacency contributes evidence **on onset**, not on every tick it
+- [x] An adjacency contributes evidence **on onset**, not on every tick it
       persists: while the same receiver stays adjacent to the same exerter tag,
       no further evidence accrues from that configuration.
-- [ ] The tracking is deterministic and snapshot-based like the rest of
+- [x] The tracking is deterministic and snapshot-based like the rest of
       `sim::step` — no `HashMap` iteration, no ordering sensitivity
       (`TECH_DESIGN.md` §5).
-- [ ] `confirmation_threshold` retuned so that the weighting finally bites: a
+- [x] `confirmation_threshold` retuned so that the weighting finally bites: a
       clean observation (weight 1.0) should be worth confirming on its own or
       nearly so, while a confounded one (0.33) should need several *distinct*
       episodes. Record the reasoning and the measured before/after.
-- [ ] Re-run the diagnostic shape above and record the new event count and
+      **Measured and kept at `1.0` — see Resolution: the value already gives
+      exactly this shape once onset-gating stops inflating episode count.**
+- [x] Re-run the diagnostic shape above and record the new event count and
       confirmed-pair rate. The target is that confirmation tracks player
       activity, not elapsed time: doubling the run length with no new actions
       should no longer roughly double what gets confirmed.
-- [ ] `assets/config/sim_config.ron` updated in the same commit
-      (`tests/config_ron_sync.rs`).
-- [ ] `cargo test` and `cargo clippy --all-targets -- -D warnings` clean.
+- [x] `assets/config/sim_config.ron` updated in the same commit
+      (`tests/config_ron_sync.rs`). **No value changed, so no edit was
+      needed — `confirmation_threshold` stayed at its existing default.**
+- [x] `cargo test` and `cargo clippy --all-targets -- -D warnings` clean.
 
 ---
 
@@ -106,6 +109,64 @@ buying information the simulation hands out for free.
   their own. Measure after 136 has landed, not before.
 
 ---
+
+## ✅ Resolution (2026-08-28)
+
+**Mechanism.** `SimWorld` gained `adjacency_exposure: Vec<AdjacencyExposure>`,
+one entry per cell (sized once at construction, like `cells` — the grid
+never resizes). Each entry records `owner_born_season` (whose organism this
+history belongs to) and a `u32` bitmask of `TagSlot`s adjacent as of the
+last tick that organism was processed. Each tick, `sim::step` computes the
+current tick's adjacent-tag mask (already gathered as `neighbour_tags` for
+the confounder count), takes `onset_mask = current & !prior`, and only
+pushes `AdjacencyObserved` for tags in `onset_mask`. If a different organism
+(different `born_season`) now owns the cell, the prior mask is discarded
+first — a fresh organism has observed nothing yet. `interaction_delta` (the
+*energy* effect of the same adjacency) is untouched and keeps applying every
+tick regardless; only the evidence emission is onset-gated.
+
+State lives on `SimWorld`, not `Organism` — consistent with `SelectionPressure`'s
+own precedent (`Organism` stays a small `Copy` snapshot) — and is applied via
+a one-pass local buffer (`new_exposure: Vec<Option<AdjacencyExposure>>`)
+collected during the main per-cell loop and written back after it, rather
+than mutating `world.adjacency_exposure` mid-loop against the live
+`species`/`world` borrows already in scope. Deterministic and
+snapshot-based: no `HashMap`, no ordering sensitivity — a cell's onset only
+ever depends on its own prior state and this tick's own neighbour scan.
+
+**`confirmation_threshold`: measured, not changed.** At `threshold = 1.0`,
+`observation_weight_numerator = 1.0`, a clean observation (weight `1.0`)
+already confirms outright, and a confounded one (e.g. `2` confounders,
+weight `0.33`) already needs `3` distinct episodes (`3 × 0.33 = 1.0`) — that
+is exactly the shape this task asked for. The bug was never the threshold
+number; it was that "episode" and "tick" were conflated, so the same episode
+counted itself dozens or hundreds of times. Once onset-gating stops that
+inflation, the existing threshold already bites correctly, so it was left
+unchanged (`assets/config/sim_config.ron` needed no edit as a result).
+
+**Diagnostic re-run** (same shape as task 134's original: 12 world-0 seeds,
+greedy per-season seeding, matched to the original's 750-tick horizon —
+30 old-eras × 25 ticks, unaffected by task 135's relabeling):
+
+| | before (task 134's original) | after |
+|---|---|---|
+| `AdjacencyObserved` events | 12,197,641 | **204** |
+| confirmed pairs | 48 / ~112 confirmable (43%) | **5 / 112 (4.5%)** |
+
+A ~60,000x drop in event volume, and confirmation now tracks real
+exploration rather than population × time. Directly verified the target
+property acceptance criterion #4 names: running each seed for a further 750
+idle ticks (no further seeding, population just sitting) after the first
+750 added **zero** additional confirmed pairs in every one of the 12 seeds —
+previously, doubling the run length with no new actions would have
+roughly doubled the confirmed count, since evidence was elapsed-time-bound.
+It is now flat under idling, which is the whole point of this task.
+
+**Not done here (by design, per the task's own constraints):** no attempt
+to build the task 137 (per-cell population) version of this tracking — the
+per-cell `Vec<AdjacencyExposure>` here is the "simplest thing that is
+correct now" the task asked for, and is expected to simplify once organisms
+become per-cell populations rather than single occupants.
 
 ## 🔗 Dependencies
 

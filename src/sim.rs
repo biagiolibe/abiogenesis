@@ -8,8 +8,9 @@ use rand::RngExt;
 use crate::config::{EvolutionConfig, SimConfig};
 use crate::state::{EraState, GameState};
 use crate::world::{
-    draw_species_name, net_self_interaction, ConditionalTag, Metabolism, Mode, Organism,
-    SelectionPressure, SimWorld, SpeciesId, TagId, TagSlot, TerrainKind, TerrainOccupancy,
+    draw_species_name, net_self_interaction, AdjacencyExposure, ConditionalTag, Metabolism, Mode,
+    Organism, SelectionPressure, SimWorld, SpeciesId, TagId, TagSlot, TerrainKind,
+    TerrainOccupancy,
 };
 
 /// One organism's energy reached zero and it was removed this tick, with
@@ -85,6 +86,16 @@ pub struct EraCompleted {
 /// One raw piece of evidence for the confirmation engine (task 020, GDD
 /// §7): a receiver organism of `receiver_species` had a Moore neighbour
 /// carrying `exerter_tag` while it itself carried `receiver_tag`.
+///
+/// Emitted only on **onset** (task 136b) — the tick `exerter_tag` first
+/// becomes adjacent to this cell's organism, tracked in
+/// `SimWorld::adjacency_exposure`. An adjacency that persists tick after
+/// tick emits exactly once, not once per tick it holds: the confirmation
+/// engine counts distinct episodes of exposure, not elapsed time, matching
+/// GDD §7's isolated-observation model rather than rewarding a population
+/// that simply sits still long enough. `interaction_delta`, the *energy*
+/// effect of the same adjacency, is unaffected by this and keeps applying
+/// every tick regardless — only the evidence is onset-gated.
 ///
 /// `n_confounders` is the count of *other* distinct tags — besides
 /// `exerter_tag` — present among the receiver's occupied Moore neighbours
@@ -647,6 +658,14 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
         cell.residue = (cell.residue - loss).max(0.0);
     }
 
+    // Task 136b: new `AdjacencyExposure` per occupied cell, collected here
+    // rather than written straight into `world.adjacency_exposure` inside
+    // the loop below — that loop already borrows `world.species` for the
+    // whole iteration (`species`, read further down for upkeep/reproduction
+    // too), and applying the update in one pass afterwards sidesteps that
+    // entirely rather than fighting it with narrower borrows.
+    let mut new_exposure: Vec<Option<AdjacencyExposure>> = vec![None; world.cells.len()];
+
     for idx in 0..world.cells.len() {
         let cell = world.cells[idx];
         let Some(organism) = cell.organism else {
@@ -693,6 +712,30 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
             }
         }
 
+        // Task 136b: evidence accrues on a tag's *onset* into adjacency, not
+        // on every tick it persists. `prior_mask` is this cell's exposure as
+        // of the last tick it was processed — discarded (treated as empty)
+        // if a different organism (a different birth) has since taken the
+        // cell, since a fresh organism has observed nothing yet. `onset_mask`
+        // is exactly the tags that are adjacent now but weren't last time;
+        // `current_mask` (all tags adjacent now) becomes next tick's
+        // `prior_mask` regardless of which tags were newly onset.
+        let prior = world.adjacency_exposure[idx];
+        let prior_mask = if prior.owner_born_season == Some(organism.born_season) {
+            prior.exerter_tags
+        } else {
+            0
+        };
+        let mut current_mask: u32 = 0;
+        for &tag in &neighbour_tags {
+            current_mask |= 1 << tag.0;
+        }
+        let onset_mask = current_mask & !prior_mask;
+        new_exposure[idx] = Some(AdjacencyExposure {
+            owner_born_season: Some(organism.born_season),
+            exerter_tags: current_mask,
+        });
+
         for neighbour_idx in world.moore_neighbours(x, y) {
             let Some(neighbour) = world.cells[neighbour_idx].organism else {
                 continue;
@@ -713,7 +756,8 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
                     }
                     let entry = world.matrix.get(their_tag, my_tag);
                     interaction_delta += entry as f32 * energy.interaction_scale;
-                    if entry != 0 {
+                    let is_onset = onset_mask & (1 << their_tag.0) != 0;
+                    if entry != 0 && is_onset {
                         let n_confounders =
                             neighbour_tags.iter().filter(|&&t| t != their_tag).count() as u32;
                         events.adjacencies.push(AdjacencyObserved {
@@ -879,6 +923,12 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
                     });
                 }
             }
+        }
+    }
+
+    for (idx, exposure) in new_exposure.into_iter().enumerate() {
+        if let Some(exposure) = exposure {
+            world.adjacency_exposure[idx] = exposure;
         }
     }
 
@@ -1506,6 +1556,121 @@ mod tests {
         // 0.15, interaction_delta -2 * interaction_scale 0.15 = -0.3:
         // net 5.0 + 0.7 - 0.5 - 0.15 - 0.3 = 5.03.
         assert!((b.energy - 5.03).abs() < TOLERANCE, "got {}", b.energy);
+    }
+
+    /// Task 136b: a persisting adjacency must not keep emitting
+    /// `AdjacencyObserved` tick after tick — only its onset (the tick the
+    /// tag first becomes adjacent) counts as evidence. `interaction_delta`
+    /// itself is unaffected: it's an energy effect, not evidence, and must
+    /// keep applying every tick regardless (checked via `b`'s energy delta
+    /// being the same on both ticks).
+    #[test]
+    fn adjacency_evidence_fires_once_on_onset_not_every_tick() {
+        let matrix = TagMatrix {
+            size: 2,
+            values: vec![0, -2, 0, 0],
+        };
+        let (mut world, mut config) = world_with_two_neighbours(
+            matrix,
+            vec![TagSlot(0)],
+            vec![TagSlot(1)],
+            0.7,
+            0.5,
+            5.0,
+            5.0,
+        );
+        // No conditional gating and no diffusion: this test isolates the
+        // onset/energy behaviour, not terrain gates or environmental drift
+        // (see `unconditional_tags_match_pre_096_formula` for the same
+        // pattern).
+        world.conditional_tags = Vec::new();
+        config.environment.diffusion_rate = 0.0;
+
+        let first = step(&mut world, &config);
+        assert_eq!(
+            first.adjacencies.len(),
+            1,
+            "the first tick this pair is adjacent must emit evidence"
+        );
+
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let energy_after_first = world.get(cx + 1, cy).organism.expect("B survives").energy;
+
+        let second = step(&mut world, &config);
+        assert!(
+            second.adjacencies.is_empty(),
+            "the same still-adjacent pair must not emit evidence again: {:?}",
+            second.adjacencies
+        );
+        // `interaction_delta` is an energy effect, not evidence, so it must
+        // keep applying every tick: without it B's isolated net would be
+        // close to +0.48/tick (see `isolated_photolithic_grows`); with the
+        // -2 interaction still in effect the second-tick delta should stay
+        // far below that, not jump up just because evidence stopped firing.
+        let energy_after_second = world.get(cx + 1, cy).organism.expect("B survives").energy;
+        let delta_second_tick = energy_after_second - energy_after_first;
+        assert!(
+            delta_second_tick < 0.2,
+            "the negative interaction should still be dragging B down on the second \
+             tick too, got delta {delta_second_tick}"
+        );
+    }
+
+    /// Task 136b: a new exerter tag becoming adjacent (a second neighbour
+    /// with a tag the receiver hasn't been next to before) is a fresh onset
+    /// and must emit evidence, even though the *first* neighbour's tag —
+    /// already adjacent since the previous tick — correctly stays silent.
+    #[test]
+    fn adjacency_evidence_refires_for_a_newly_adjacent_tag() {
+        let matrix = TagMatrix {
+            size: 3,
+            values: vec![0, 0, -2, 0, 0, -2, 0, 0, 0],
+        };
+        let (mut world, config) = world_with_two_neighbours(
+            matrix,
+            vec![TagSlot(0)],
+            vec![TagSlot(2)],
+            0.7,
+            0.5,
+            5.0,
+            5.0,
+        );
+        world.conditional_tags = Vec::new();
+        let first = step(&mut world, &config);
+        assert_eq!(first.adjacencies.len(), 1);
+
+        // A third organism, carrying a different exerter tag (1) that also
+        // harms receiver tag 2, placed newly adjacent to B.
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        world.push_species(Species {
+            name: "C".to_string(),
+            metabolism: Metabolism::Photolithic,
+            temp_optimum: 0.5,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: vec![TagSlot(1)],
+        });
+        let c_idx = world.index(cx + 2, cy);
+        world.cells[c_idx] = Cell {
+            light: 0.7,
+            temperature: 0.5,
+            organism: Some(Organism {
+                species: SpeciesId(2),
+                energy: 5.0,
+                born_season: world.season,
+            }),
+            ..world.cells[c_idx]
+        };
+
+        let second = step(&mut world, &config);
+        assert_eq!(
+            second.adjacencies.len(),
+            1,
+            "the newly-adjacent tag (1) must emit evidence even though tag 0's \
+             already-adjacent pair correctly stays silent: {:?}",
+            second.adjacencies
+        );
+        assert_eq!(second.adjacencies[0].exerter_tag, TagSlot(1));
     }
 
     #[test]
