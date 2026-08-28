@@ -16,13 +16,13 @@ use abiogenesis::objectives::{
 };
 use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::{
-    tick_and_complete_season, ActionBudget, EraCompleted, EraTally, SeasonProgress,
-    TickEventWriters,
+    cull_knockout_observations, tick_and_complete_season, ActionBudget, AdjacencyObserved,
+    EraCompleted, EraTally, SeasonProgress, TickEventWriters,
 };
 #[cfg(test)]
 use abiogenesis::sim::{
-    AdjacencyObserved, OrganismBorn, OrganismDied, SelectionThresholdCrossed, SpeciesEvolved,
-    SpeciesExtinct, TerrainGateObserved, TerrainRevealed,
+    OrganismBorn, OrganismDied, SelectionThresholdCrossed, SpeciesEvolved, SpeciesExtinct,
+    TerrainGateObserved, TerrainRevealed,
 };
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{draw_species_name, net_self_interaction, SimWorld};
@@ -459,6 +459,7 @@ fn cull_on_click(
     mut placed: ResMut<PlayerPlacedCells>,
     mode: Res<MapViewMode>,
     egui_wants_input: Res<EguiWantsInput>,
+    mut observed: MessageWriter<AdjacencyObserved>,
 ) {
     if selected_action.0 != ActionMode::Cull {
         return;
@@ -485,14 +486,16 @@ fn cull_on_click(
     };
 
     let index = world.index(x, y);
-    let cell = world.get_mut(x, y);
-    if cell.population.is_none() {
+    if world.cells[index].population.is_none() {
         return;
     }
     if budget.points_remaining < config.time.action_costs.cull {
         return;
     }
-    cell.population = None;
+    // Task 146: the knockout observation reads the culled organism's still-
+    // living neighbours, so it must run before the cell is cleared below.
+    observed.write_batch(cull_knockout_observations(&world, &config, x, y));
+    world.get_mut(x, y).population = None;
     budget.points_remaining -= config.time.action_costs.cull;
     placed.0.remove(&index);
 }

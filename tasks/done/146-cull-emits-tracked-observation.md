@@ -34,8 +34,8 @@ a price to raise.
 
 ## 📋 Acceptance Criteria
 
-- [ ] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
-- [ ] `cull_on_click` (`input.rs:452`), immediately before clearing
+- [x] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
+- [x] `cull_on_click` (`input.rs:452`), immediately before clearing
       `cell.population`, emits one `AdjacencyObserved` (`sim.rs:131`) per
       occupied Moore neighbour tag pair between the culled organism and its
       still-living neighbours — reusing the **exact same event shape**
@@ -49,7 +49,7 @@ a price to raise.
       (`text::confirmation_message`) and unseen-confirmation badge
       (`NotebookHasUnseenConfirmation`) an ordinary adjacency confirmation
       does today.
-- [ ] The matrix-lookup/confounder logic used for this is a shared helper
+- [x] The matrix-lookup/confounder logic used for this is a shared helper
       extracted from (or called by) both `sim::step`'s tick loop and
       `cull_on_click`, not a second hand-written copy — this codebase's own
       stated principle (`knowledge.rs`'s doc comment: a duplicated formula
@@ -63,22 +63,22 @@ a price to raise.
       `adjacency_exposure`/`onset_mask`; every currently-adjacent tag pair
       counts, this is the one and only observation this event will ever
       produce for this pairing).
-- [ ] `input.rs`'s Bevy system gains a `MessageWriter<AdjacencyObserved>`
+- [x] `input.rs`'s Bevy system gains a `MessageWriter<AdjacencyObserved>`
       (or pushes through `TickEvents`/`TickEventWriters` if that plumbing
       is reachable outside `sim::step` — pick whichever fits the existing
       message-writer wiring with the least new surface, document the
       choice).
-- [ ] A culled organism with **no** living neighbours emits nothing (no
+- [x] A culled organism with **no** living neighbours emits nothing (no
       panic, no zero-weight noise) — mirrors `AdjacencyObserved`'s existing
       "only emitted for pairs with a non-zero matrix entry" behaviour
       (`knowledge.rs:31`).
-- [ ] At least one test (in `sim.rs`'s existing unit-test module, next to
+- [x] At least one test (in `sim.rs`'s existing unit-test module, next to
       the adjacency-evidence tests, or a new `input.rs` test if the click
       handler is directly testable) confirms: culling an organism next to
       a single differently-tagged neighbour produces the expected
       `AdjacencyObserved` event(s) with `n_confounders` computed from that
       neighbour's *other* neighbours, matching the tick-loop formula.
-- [ ] `sim.rs:222`'s `TickEvents` doc comment note about task 146 is
+- [x] `sim.rs:222`'s `TickEvents` doc comment note about task 146 is
       resolved — updated or removed once the mechanism lands elsewhere.
 
 ---

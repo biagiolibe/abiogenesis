@@ -142,7 +142,7 @@ ideally with a real playtester — not yet done.
 | Status | ID | Title | Doc |
 |-------|----|--------|-----|
 | `[x]` | 145 | Stress on three selectable axes + gradual decay | `actions` — [145](done/145-stress-three-axes-gradual-decay.md) |
-| `[ ]` | 146 | Cull emits a tracked notebook observation | `actions` — [146](146-cull-emits-tracked-observation.md) |
+| `[x]` | 146 | Cull emits a tracked notebook observation | `actions` — [146](done/146-cull-emits-tracked-observation.md) |
 | `[ ]` | 147 | Splice restricted to confirmed traits + growing genome bank + "synthesised" origin | `actions`, `hud-notebook` — [147](147-splice-confirmed-traits-genome-bank.md) |
 | `[ ]` | 149 | Inspection tool: hover tooltip + per-neighbour energy breakdown card | `inspect-tool` — [149](149-inspection-tool.md) |
 | `[ ]` | 150 | Full control scheme + `Esc` cascade + pause menu + protected `R` | `controls` — [150](150-control-scheme-pause-menu.md) |
@@ -293,6 +293,24 @@ proposal (`PROJECT_PLAN.md` §1), not available to pick up yet.
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) beyond what's already expanded into task files here.
 
 ---
+
+*Last updated: 2026-08-29 (146, Cull emits a tracked notebook observation —
+implemented and archived to `tasks/done/`. Extracted the tick loop's
+per-neighbour-pair adjacency scan into two shared helpers (`sim.rs`):
+`distinct_neighbour_tags` (confounder basis) and `adjacency_pair_observations`
+(tag-gate + matrix lookup + contribution + confounder count, no onset
+gating). `sim::step` now calls these and filters the result by
+`onset_mask` itself; the new `cull_knockout_observations` calls them once
+per living neighbour with the culled cell as exerter, no filtering —
+matching the design doc's "Y behaves differently after removing X" framing
+(culled organism as exerter, surviving neighbour as receiver). Wired into
+`input.rs::cull_on_click` via a `MessageWriter<AdjacencyObserved>`, called
+before the cell is cleared. `TerrainGateObserved` events from the
+underlying tag-gate checks are discarded for Cull — out of scope, terrain
+evidence stays a tick-loop concern. `sim.rs:222`'s task-146 placeholder
+comment resolved. `cargo test`/`clippy -D warnings`/`fmt` clean, including
+the full `tests/balance.rs` suite (unaffected — the refactor changes
+control flow, not the energy formula).)*
 
 *Last updated: 2026-08-29 (145, Stress on three selectable axes + gradual
 decay — implemented and archived to `tasks/done/`. `ActionMode::Stress`
