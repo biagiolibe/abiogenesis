@@ -260,7 +260,10 @@ playtest checkpoint before this phase deliberately skipped and still owed)
 **Phase 2 — legibility**: 145 Stress on three axes, 146 Cull emits an
 observation, 147 Splice restricted to confirmed traits + growing genome bank,
 149 inspection tool, 150 full control scheme + pause menu, 151 pixel-grain
-visual register, 152 HUD/sidebar, 153 notebook + Chronicle, 154 objectives.
+visual register, 152 HUD/sidebar, 153 notebook + Chronicle, 154 objectives,
+170 speciation genome before/after diff, 171 causal-legibility playtest gate
+(bot-vs-bot necessity check + human playtest protocol, informally gates the
+start of Phase 3).
 
 **Phase 3 — content**: 155 trait archetypes, 156 dominant family bias, 157
 narrative generation.
