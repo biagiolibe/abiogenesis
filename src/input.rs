@@ -35,8 +35,9 @@ use crate::render::{species_label, world_to_cell, GridCamera, MapViewMode, Place
 use crate::run_flow::{start_world, WorldResetParams};
 use crate::text;
 use crate::ui::{
-    cursor_over_hud_panel, ActionMode, HudControlIntents, IsolationHint, SelectedAction,
-    SelectedSpecies, SelectedStressAxis, SpliceDraft, SpliceEditChoice,
+    cursor_over_hud_panel, ActionMode, HoveredCell, HudControlIntents, IsolationHint,
+    SelectedAction, SelectedCell, SelectedSpecies, SelectedStressAxis, SpliceDraft,
+    SpliceEditChoice,
 };
 
 pub struct InputPlugin;
@@ -53,6 +54,8 @@ impl Plugin for InputPlugin {
                 stress_on_click,
                 cull_on_click,
                 apply_splice,
+                hover_cell,
+                select_cell_on_click,
             )
                 .run_if(in_state(GameState::Playing)),
         )
@@ -312,7 +315,7 @@ fn seed_organism_on_click(
     mut placement_indicator: ResMut<PlacementIndicator>,
     egui_wants_input: Res<EguiWantsInput>,
 ) {
-    if selected_action.0 != ActionMode::Seed {
+    if selected_action.0 != Some(ActionMode::Seed) {
         return;
     }
     if *gate.era_state.get() != EraState::Observing {
@@ -396,7 +399,7 @@ fn stress_on_click(
     mode: Res<MapViewMode>,
     egui_wants_input: Res<EguiWantsInput>,
 ) {
-    if selected_action.0 != ActionMode::Stress {
+    if selected_action.0 != Some(ActionMode::Stress) {
         return;
     }
     if *gate.era_state.get() != EraState::Observing {
@@ -461,7 +464,7 @@ fn cull_on_click(
     egui_wants_input: Res<EguiWantsInput>,
     mut observed: MessageWriter<AdjacencyObserved>,
 ) {
-    if selected_action.0 != ActionMode::Cull {
+    if selected_action.0 != Some(ActionMode::Cull) {
         return;
     }
     if *gate.era_state.get() != EraState::Observing {
@@ -595,12 +598,87 @@ fn apply_splice(
     *draft = SpliceDraft::default();
 }
 
-/// `Esc` quits. `q` was planned in GDD v0.3 but removed in v0.4, kept free
-/// for future text input.
-fn quit(keys: Res<ButtonInput<KeyCode>>, mut exit: MessageWriter<AppExit>) {
+/// `Esc` quits — unless task 149's inspect card is open, in which case it
+/// closes the card instead (the task's own minimal requirement: "closing
+/// the card, not the game"). Full Esc-cascade semantics (multiple things
+/// competing for the same key) are task 150's job; this is just the one
+/// case that exists today. `q` was planned in GDD v0.3 but removed in v0.4,
+/// kept free for future text input.
+fn quit(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut exit: MessageWriter<AppExit>,
+    mut selected_cell: ResMut<SelectedCell>,
+) {
     if keys.just_pressed(KeyCode::Escape) {
+        if selected_cell.0.is_some() {
+            selected_cell.0 = None;
+            return;
+        }
         exit.write(AppExit::Success);
     }
+}
+
+/// Task 149's hover tooltip data source: updates `HoveredCell` every frame
+/// from the cursor's screen position, independent of `SelectedAction`/
+/// `ActionBudget`/era state — the hover tooltip is free and always on.
+/// Reuses `clicked_cell`'s window→camera→grid math, without the click gate.
+fn hover_cell(
+    windows: Query<&Window>,
+    cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
+    world: Res<SimWorld>,
+    egui_wants_input: Res<EguiWantsInput>,
+    notebook_open: Res<NotebookWindowOpen>,
+    mut hovered: ResMut<HoveredCell>,
+) {
+    hovered.0 = (|| {
+        if notebook_open.0 {
+            return None;
+        }
+        if egui_wants_input.wants_pointer_input() {
+            return None;
+        }
+        let window = windows.single().ok()?;
+        let cursor = window.cursor_position()?;
+        if cursor_over_hud_panel(cursor, window.width()) {
+            return None;
+        }
+        let (camera, camera_transform) = cameras.single().ok()?;
+        let world_pos = camera.viewport_to_world_2d(camera_transform, cursor).ok()?;
+        let (x, y) = world_to_cell(world_pos, world.width, world.height)?;
+        Some(world.index(x, y))
+    })();
+}
+
+/// Task 149's click-to-inspect entry point: only acts when `SelectedAction`
+/// reports no action armed (`None`) — otherwise the click performs that
+/// action instead, unchanged (see `SelectedAction`'s own doc comment for
+/// how "no action armed" is reached today).
+#[allow(clippy::too_many_arguments)]
+fn select_cell_on_click(
+    buttons: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window>,
+    cameras: Query<(&Camera, &GlobalTransform), With<GridCamera>>,
+    egui_wants_input: Res<EguiWantsInput>,
+    notebook_open: Res<NotebookWindowOpen>,
+    world: Res<SimWorld>,
+    selected_action: Res<SelectedAction>,
+    mut selected_cell: ResMut<SelectedCell>,
+) {
+    if selected_action.0.is_some() {
+        return;
+    }
+    let Some((x, y)) = clicked_cell(
+        &buttons,
+        &windows,
+        &cameras,
+        world.width,
+        world.height,
+        &egui_wants_input,
+        &notebook_open,
+    ) else {
+        return;
+    };
+    selected_cell.0 = Some(world.index(x, y));
 }
 
 #[cfg(test)]

@@ -18,10 +18,13 @@ use abiogenesis::objectives::{
 };
 use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::{
-    any_evolution_maturing, ActionBudget, EraCompleted, OrganismDied, SeasonProgress,
+    any_evolution_maturing, cell_energy_breakdown, ActionBudget, EraCompleted, OrganismDied,
+    SeasonProgress,
 };
 use abiogenesis::state::{EraState, GameState};
-use abiogenesis::world::{SimWorld, SpeciesId, SpeciesOrigin, StressAxis, TagSlot};
+use abiogenesis::world::{
+    Cell, Population, SimWorld, SpeciesId, SpeciesOrigin, StressAxis, TagSlot,
+};
 use abiogenesis::worldgen::season_pulses_for;
 
 /// Task 055's guided first-isolation hint: the message to show (isolated vs.
@@ -99,11 +102,28 @@ pub enum ActionMode {
     Splice,
 }
 
-/// The currently-selected click action. A UI intent like `SelectedSpecies`,
-/// defaulting to `Seed` so existing click behavior is unchanged for anyone
-/// who never touches the new selector.
+/// The currently-selected click action, or `None` if no action is armed
+/// (task 149's minimal seam for task 150's full Esc-cascade/action-armed
+/// scheme: clicking the already-selected action's button again deselects
+/// it, which is the only way to reach `None` today — this task only needs
+/// *some* entry point into it so the click-inspect path has one). Defaults
+/// to `Some(Seed)` so existing click behavior is unchanged for anyone who
+/// never touches the new selector.
 #[derive(Resource)]
-pub struct SelectedAction(pub ActionMode);
+pub struct SelectedAction(pub Option<ActionMode>);
+
+/// Which cell the cursor is currently over (task 149), updated every frame
+/// regardless of `SelectedAction`/`ActionBudget` — the hover tooltip is
+/// free and always on. `SimWorld::index`-flattened, not `(x, y)`, matching
+/// what `sim::cell_energy_breakdown` and the click-inspect card both need.
+#[derive(Resource, Default)]
+pub struct HoveredCell(pub Option<usize>);
+
+/// The cell the click-to-inspect card is showing (task 149) — distinct from
+/// `HoveredCell`: the card follows the last click, not the cursor, and
+/// stays open until another cell is selected or Esc is pressed.
+#[derive(Resource, Default)]
+pub struct SelectedCell(pub Option<usize>);
 
 /// Which axis `Stress` targets (task 145) — a UI intent read by both this
 /// module (the axis sub-selector, shown only while `Stress` is the active
@@ -252,7 +272,7 @@ impl Plugin for UiPlugin {
             .resource_mut::<EguiGlobalSettings>()
             .auto_create_primary_context = false;
         app.insert_resource(SelectedSpecies(SpeciesId(0)))
-            .insert_resource(SelectedAction(ActionMode::Seed))
+            .insert_resource(SelectedAction(Some(ActionMode::Seed)))
             .init_resource::<SelectedStressAxis>()
             .init_resource::<SpliceDraft>()
             .init_resource::<IsolationHint>()
@@ -260,6 +280,8 @@ impl Plugin for UiPlugin {
             .init_resource::<PopulationTrends>()
             .init_resource::<DeathCauseTally>()
             .init_resource::<HudControlIntents>()
+            .init_resource::<HoveredCell>()
+            .init_resource::<SelectedCell>()
             .add_systems(Startup, spawn_hud_camera)
             .add_systems(
                 Update,
@@ -281,7 +303,7 @@ impl Plugin for UiPlugin {
                 // so drawing both in the same frame would overlap rather
                 // than layer cleanly the way the notebook's dim-not-hide
                 // overlay does.
-                (hud_panel, viewport_hint).run_if(
+                (hud_panel, viewport_hint, hover_tooltip, inspect_card).run_if(
                     in_state(GameState::Playing).and_eager(not(in_state(EraState::Reveal))),
                 ),
             );
@@ -572,7 +594,7 @@ pub(crate) fn hud_panel(
                 &readouts.run_progress,
                 *mode,
             );
-            if selected_action.0 == ActionMode::Stress {
+            if selected_action.0 == Some(ActionMode::Stress) {
                 stress_axis_row(ui, &mut selected_stress_axis);
             }
 
@@ -581,7 +603,7 @@ pub(crate) fn hud_panel(
                 .on_hover_text(text::BUDGET_HOVER);
             ui.weak(text::budget_bar_text(budget.points_remaining, total));
 
-            if selected_action.0 == ActionMode::Splice {
+            if selected_action.0 == Some(ActionMode::Splice) {
                 ui.indent("splice_panel", |ui| {
                     splice_panel(ui, &world, &mut splice.draft, &splice.knowledge);
                 });
@@ -802,6 +824,175 @@ fn viewport_hint(
         });
 
     Ok(())
+}
+
+/// Task 149's hover tooltip: free, always on, independent of `ActionMode`/
+/// `ActionBudget` — a minimal label next to the cursor (biome name for any
+/// cell, plus species/population/trend for a populated one). Reuses
+/// `PopulationTrends`' own trend glyph/color and `text::population_delta_label`
+/// (task 120) rather than inventing a second trend convention.
+fn hover_tooltip(
+    mut contexts: EguiContexts,
+    hovered: Res<HoveredCell>,
+    world: Res<SimWorld>,
+    trends: Res<PopulationTrends>,
+) -> Result {
+    let Some(idx) = hovered.0 else {
+        return Ok(());
+    };
+    let cell = world.cells[idx];
+    let ctx = contexts.ctx_mut()?;
+    let Some(cursor_pos) = ctx.pointer_hover_pos() else {
+        return Ok(());
+    };
+
+    egui::Area::new("hover_tooltip".into())
+        .order(egui::Order::Foreground)
+        .interactable(false)
+        .fixed_pos(cursor_pos + egui::vec2(16.0, 16.0))
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.label(cell.biome.label());
+                if let Some(population) = cell.population {
+                    let trend = trends.trend_for(population.species);
+                    ui.horizontal(|ui| {
+                        ui.label(species_label(&world, population.species));
+                        ui.colored_label(trend_color(trend), trend_glyph(trend));
+                    });
+                    let delta = trends.population_delta_for(population.species);
+                    ui.label(format!(
+                        "Population {} {}",
+                        population.count,
+                        text::population_delta_label(delta)
+                    ));
+                }
+            });
+        });
+
+    Ok(())
+}
+
+/// Task 149's click-to-inspect card: opens on `SelectedCell`, only reachable
+/// today via a click while no action is armed (see `SelectedAction`'s doc
+/// comment) — stays open until another cell is selected or Esc clears it
+/// (`quit`, `input.rs`), not tied to the hovered cell at all.
+fn inspect_card(
+    mut contexts: EguiContexts,
+    selected: Res<SelectedCell>,
+    world: Res<SimWorld>,
+    config: Res<SimConfig>,
+) -> Result {
+    let Some(idx) = selected.0 else {
+        return Ok(());
+    };
+    let cell = world.cells[idx];
+    let ctx = contexts.ctx_mut()?;
+    egui::Window::new("Inspect")
+        .resizable(false)
+        .collapsible(false)
+        .show(ctx, |ui| match cell.population {
+            Some(population) => populated_cell_card(ui, &world, &config, idx, population),
+            None => empty_cell_card(ui, &config, &cell),
+        });
+    Ok(())
+}
+
+/// Populated-cell body of `inspect_card` (task 149): species, origin,
+/// population, per-capita energy, a discrete tick indicator toward
+/// `repro_threshold` (`dot_row`, the same idiom the action-budget/era-progress
+/// rows already use — not a continuous bar), active tags, the saturated-
+/// no-outlet warning (`Population::blocked`, task 137/141), and the
+/// last-pulse balance breakdown (`sim::cell_energy_breakdown`).
+fn populated_cell_card(
+    ui: &mut egui::Ui,
+    world: &SimWorld,
+    config: &SimConfig,
+    idx: usize,
+    population: Population,
+) {
+    let species = &world.species[population.species.0 as usize];
+    ui.heading(species_label(world, population.species));
+    ui.label(format!(
+        "Origin: {}",
+        text::species_origin_label(world.species_origin(population.species))
+    ));
+    ui.label(format!("Population: {}", population.count));
+    let per_capita = population.energy / population.count as f32;
+    ui.label(format!("Per-capita energy: {per_capita:.2}"));
+
+    let notches = config.energy.repro_threshold.round().max(1.0) as u32;
+    let filled = per_capita.floor().clamp(0.0, notches as f32) as u32;
+    dot_row(ui, filled, notches, DotShape::Tick);
+
+    ui.horizontal(|ui| {
+        for &slot in &species.tags {
+            let tag = world.active_tags[slot.0 as usize];
+            ui.label(tag_glyph(tag));
+        }
+    });
+
+    if population.blocked {
+        ui.colored_label(DOT_FILLED_COLOR, text::SATURATED_NO_OUTLET_WARNING);
+    }
+
+    hairline(ui);
+    if let Some(breakdown) = cell_energy_breakdown(world, config, idx) {
+        ui.label(format!("Gain: {:+.2}", breakdown.gain));
+        for line in &breakdown.neighbours {
+            ui.label(format!(
+                "{}: {:+.2}",
+                tag_glyph(line.tag),
+                line.contribution
+            ));
+        }
+        ui.label(format!("Upkeep: {:.2}", -breakdown.upkeep));
+        ui.label(format!("Crowding: {:.2}", -breakdown.crowding));
+        ui.label(format!("Net: {:+.2}", breakdown.net));
+    }
+}
+
+/// Empty-cell body of `inspect_card` (task 149): biome name, qualitative
+/// temperature/light/toxicity bands (`text::band_label`, config-bound
+/// thresholds), and a habitability flag. Deliberately never touches
+/// `world.conditional_tags`/tag data at all — the hard constraint this
+/// task calls out: the card must never leak whether a terrain-conditional
+/// tag gate exists on this biome.
+fn empty_cell_card(ui: &mut egui::Ui, config: &SimConfig, cell: &Cell) {
+    let env = &config.environment;
+    ui.heading(cell.biome.label());
+    ui.label(format!(
+        "Temperature: {}",
+        text::band_label(
+            cell.temperature,
+            env.ambient_temperature,
+            env.source_temperature,
+            ["cold", "temperate", "hot"],
+        )
+    ));
+    ui.label(format!(
+        "Light: {}",
+        text::band_label(
+            cell.light,
+            env.light_low,
+            env.light_high,
+            ["dim", "moderate", "bright"]
+        )
+    ));
+    ui.label(format!(
+        "Toxicity: {}",
+        text::band_label(
+            cell.toxicity,
+            0.0,
+            env.swamp_toxicity_value,
+            ["low", "moderate", "high"],
+        )
+    ));
+    let habitable = config.energy.is_habitable(cell.biome.index());
+    ui.label(if habitable {
+        text::HABITABLE_LABEL
+    } else {
+        text::NOT_HABITABLE_LABEL
+    });
 }
 
 /// Current-objective panel (task 043, GDD §11; restyled task 064 per the
@@ -1141,13 +1332,21 @@ fn action_icon_row(
             let response = ui
                 .add_enabled_ui(enabled, |ui| {
                     ui.selectable_label(
-                        selected_action.0 == action_mode,
+                        selected_action.0 == Some(action_mode),
                         egui::RichText::new(glyph).size(20.0),
                     )
                 })
                 .inner;
             if response.clicked() {
-                selected_action.0 = action_mode;
+                selected_action.0 = if selected_action.0 == Some(action_mode) {
+                    // Task 149's minimal deselect seam: clicking the
+                    // already-armed action again disarms it, the only way
+                    // today to reach "no action armed" (task 150 owns the
+                    // full Esc-cascade/explicit-none scheme).
+                    None
+                } else {
+                    Some(action_mode)
+                };
             }
             let tooltip = if enabled {
                 text::action_tooltip(action_mode, cost)

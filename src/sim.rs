@@ -391,6 +391,147 @@ fn adjacency_pair_observations(
     (interaction_delta, observations)
 }
 
+/// One distinct neighbouring exerter tag's signed contribution to a cell's
+/// current-tick energy balance (task 149's inspection card) — grouped by
+/// tag identity, not by neighbour cell, matching the card's "one line per
+/// tag" framing (a tag exerted by two neighbours folds into one line, its
+/// contributions summed).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NeighbourContribution {
+    pub tag: TagId,
+    pub contribution: f32,
+}
+
+/// A cell's last-pulse per-capita energy balance (task 149), computed
+/// on-demand from the same inputs/formula `step`'s tick loop applies
+/// (`~1095-1260`), not read from any persisted per-tick state — see the
+/// task's "no new persistent per-tick state" constraint. Per-capita, like
+/// `interaction_delta` in `step` itself, matching the card's own
+/// "per-capita energy" line rather than an aggregate the player has no
+/// other aggregate figure to compare it against.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnergyBreakdown {
+    pub gain: f32,
+    pub neighbours: Vec<NeighbourContribution>,
+    pub upkeep: f32,
+    pub crowding: f32,
+    pub net: f32,
+}
+
+/// Pure recomputation of `cell_index`'s current energy balance (task 149).
+/// `None` for an unoccupied cell. Deliberately reruns the tag-gate-checked
+/// neighbour loop (via `adjacency_pair_observations`, the same helper
+/// `step` uses) instead of reading `AdjacencyObserved`/`adjacency_exposure`:
+/// those only ever carry onset evidence (task 136b), which goes silent for
+/// a persisting neighbour after its first tick and so can't drive a "what's
+/// happening right now" card. Gain for `Predator`/`Decomposer` is an
+/// approximation post-tick: their shared-pool draw prepass in `step` reads
+/// `world.scratch` mid-tick (already-decayed residue / not-yet-applied
+/// deaths), which no longer exists once the tick has committed — this
+/// recomputes the same formula from `world.cells`' current, settled state
+/// instead.
+pub fn cell_energy_breakdown(
+    world: &SimWorld,
+    config: &SimConfig,
+    cell_index: usize,
+) -> Option<EnergyBreakdown> {
+    let energy = &config.energy;
+    let cell = world.cells[cell_index];
+    let occupant = cell.population?;
+    let species = &world.species[occupant.species.0 as usize];
+    let (x, y) = (cell_index % world.width, cell_index / world.width);
+
+    let fit = env_fit(
+        cell.temperature,
+        species.temp_optimum,
+        species.temp_tolerance,
+    );
+    let gain = match species.metabolism {
+        Metabolism::Photolithic => cell.light * energy.photolithic_metabolism_gain * fit,
+        Metabolism::Chemolithotroph => cell.toxicity * energy.chemolithotroph_metabolism_gain * fit,
+        Metabolism::Predator => {
+            let prey: Vec<usize> = world
+                .moore_neighbours(x, y)
+                .filter(|&n| world.cells[n].population.is_some())
+                .collect();
+            if prey.is_empty() {
+                0.0
+            } else {
+                let available: f32 = prey
+                    .iter()
+                    .map(|&n| world.cells[n].population.unwrap().energy)
+                    .sum();
+                (energy.predator_drain_cap * fit).min(available)
+            }
+        }
+        Metabolism::Decomposer => {
+            let sources: Vec<usize> = std::iter::once(cell_index)
+                .chain(world.moore_neighbours(x, y))
+                .filter(|&n| world.cells[n].residue > 0.0)
+                .collect();
+            if sources.is_empty() {
+                0.0
+            } else {
+                let available: f32 = sources.iter().map(|&n| world.cells[n].residue).sum();
+                (energy.decomposer_extract_rate * fit).min(available)
+            }
+        }
+    };
+
+    let neighbour_tags = distinct_neighbour_tags(world, x, y);
+    let mut gate_events = Vec::new();
+    let mut neighbours: Vec<NeighbourContribution> = Vec::new();
+    for neighbour_idx in world.moore_neighbours(x, y) {
+        let (_, candidates) = adjacency_pair_observations(
+            world,
+            energy,
+            cell_index,
+            occupant.species,
+            &species.tags,
+            neighbour_idx,
+            &neighbour_tags,
+            &mut gate_events,
+        );
+        for candidate in candidates {
+            let tag = world.active_tags[candidate.exerter_tag.0 as usize];
+            if let Some(line) = neighbours.iter_mut().find(|line| line.tag == tag) {
+                line.contribution += candidate.contribution;
+            } else {
+                neighbours.push(NeighbourContribution {
+                    tag,
+                    contribution: candidate.contribution,
+                });
+            }
+        }
+    }
+
+    let occupied_neighbours = world
+        .moore_neighbours(x, y)
+        .filter(|&n| {
+            world.cells[n]
+                .population
+                .is_some_and(|neighbour| neighbour.species != occupant.species)
+        })
+        .count();
+    let upkeep = match species.metabolism {
+        Metabolism::Photolithic => energy.base_upkeep,
+        Metabolism::Predator => energy.predator_upkeep,
+        Metabolism::Decomposer => energy.decomposer_upkeep,
+        Metabolism::Chemolithotroph => energy.chemolithotroph_upkeep,
+    };
+    let crowding = energy.crowd_factor_for(cell.biome.index()) * occupied_neighbours as f32;
+    let interaction: f32 = neighbours.iter().map(|line| line.contribution).sum();
+    let net = gain + interaction - upkeep - crowding;
+
+    Some(EnergyBreakdown {
+        gain,
+        neighbours,
+        upkeep,
+        crowding,
+        net,
+    })
+}
+
 /// The observation(s) a `Cull` click on `(x, y)` generates (task 146, GDD
 /// §6 "Cull — knockout, non sterminio") — call *before* removing the
 /// organism there. The culled organism is treated as the sole exerter onto
@@ -3448,6 +3589,55 @@ mod tests {
             world.get(cx, cy).residue.abs() < TOLERANCE,
             "expected residue fully depleted (over-drawn to 0), got {}",
             world.get(cx, cy).residue
+        );
+    }
+
+    #[test]
+    fn cell_energy_breakdown_neighbour_lines_match_steps_own_interaction_delta() {
+        // A strongly negative matrix entry (T0 exerted -> T1 received)
+        // guarantees B starves this tick, so `step` reports its own
+        // `interaction_delta` via `OrganismDied` to compare against.
+        let matrix = TagMatrix {
+            size: 2,
+            values: vec![0, -20, 0, 0],
+        };
+        let (mut world, config) = world_with_two_neighbours(
+            matrix,
+            vec![TagSlot(0)],
+            vec![TagSlot(1)],
+            0.7,
+            0.5,
+            5.0,
+            1.0,
+        );
+        let (cx, cy) = (world.width / 2, world.height / 2);
+        let b_idx = world.index(cx + 1, cy);
+
+        let breakdown =
+            cell_energy_breakdown(&world, &config, b_idx).expect("B is occupied before the tick");
+        assert_eq!(breakdown.neighbours.len(), 1, "only T0 -> T1 is nonzero");
+        let line = breakdown.neighbours[0];
+        let expected_line =
+            world.matrix.get(TagSlot(0), TagSlot(1)) as f32 * config.energy.interaction_scale;
+        assert!(
+            (line.contribution - expected_line).abs() < TOLERANCE,
+            "got {}, expected {}",
+            line.contribution,
+            expected_line
+        );
+        assert_eq!(line.tag, world.active_tags[0]);
+
+        let events = step(&mut world, &config);
+        let death = events
+            .deaths
+            .iter()
+            .find(|d| d.cell == b_idx)
+            .expect("B starves this tick under a -20 matrix entry");
+        let line_sum: f32 = breakdown.neighbours.iter().map(|l| l.contribution).sum();
+        assert!(
+            (line_sum - death.interaction_delta).abs() < TOLERANCE,
+            "breakdown lines ({line_sum}) must sum to step's own interaction_delta ({})",
+            death.interaction_delta
         );
     }
 

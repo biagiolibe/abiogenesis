@@ -278,6 +278,32 @@ impl Biome {
             Biome::VolcanicVent => 16,
         }
     }
+
+    /// Player-facing display name (task 149): biomes were previously only
+    /// distinguishable by map color/texture, with no textual label at all —
+    /// a real gap against `abiogenesis-cross-cutting.md`'s "colour is never
+    /// the only channel" rule.
+    pub fn label(self) -> &'static str {
+        match self {
+            Biome::DeepWater => "Deep water",
+            Biome::ShallowWater => "Shallow water",
+            Biome::Plain => "Plain",
+            Biome::Hill => "Hill",
+            Biome::Mountain => "Mountain",
+            Biome::Peak => "Peak",
+            Biome::Desert => "Desert",
+            Biome::Tundra => "Tundra",
+            Biome::BareRock => "Bare rock",
+            Biome::Glacier => "Glacier",
+            Biome::AlpineMeadow => "Alpine meadow",
+            Biome::Forest => "Forest",
+            Biome::Swamp => "Swamp",
+            Biome::Crater => "Crater",
+            Biome::CrystalField => "Crystal field",
+            Biome::Lake => "Lake",
+            Biome::VolcanicVent => "Volcanic vent",
+        }
+    }
 }
 
 /// Which `TerrainKind` bands a species' lineage has ever occupied this run

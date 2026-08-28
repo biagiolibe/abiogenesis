@@ -144,7 +144,7 @@ ideally with a real playtester — not yet done.
 | `[x]` | 145 | Stress on three selectable axes + gradual decay | `actions` — [145](done/145-stress-three-axes-gradual-decay.md) |
 | `[x]` | 146 | Cull emits a tracked notebook observation | `actions` — [146](done/146-cull-emits-tracked-observation.md) |
 | `[x]` | 147 | Splice restricted to confirmed traits + growing genome bank + "synthesised" origin | `actions`, `hud-notebook` — [147](done/147-splice-confirmed-traits-genome-bank.md) |
-| `[ ]` | 149 | Inspection tool: hover tooltip + per-neighbour energy breakdown card | `inspect-tool` — [149](149-inspection-tool.md) |
+| `[x]` | 149 | Inspection tool: hover tooltip + per-neighbour energy breakdown card | `inspect-tool` — [149](done/149-inspection-tool.md) |
 | `[ ]` | 150 | Full control scheme + `Esc` cascade + pause menu + protected `R` | `controls` — [150](150-control-scheme-pause-menu.md) |
 | `[ ]` | 151 | Pixel-grain visual register across map, HUD and notebook | `population-model-aesthetic`, `ui-redesign` — [151](151-pixel-grain-visual-register.md) |
 | `[ ]` | 152 | HUD: auto-advance toggle, mutation-tier badge, species subtext (title corrected — `sidebar-redesign` already shipped as 064/065, this is `hud-notebook`'s residual gap) | `hud-notebook` — [152](152-hud-sidebar-diegetic-redesign.md) |

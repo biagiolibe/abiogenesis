@@ -1162,16 +1162,12 @@ fn temperature_label(
     temp_optimum: f32,
     env: &abiogenesis::config::EnvironmentConfig,
 ) -> &'static str {
-    let low = env.ambient_temperature;
-    let high = env.source_temperature;
-    let band = (high - low) / 3.0;
-    if temp_optimum <= low + band {
-        "cold"
-    } else if temp_optimum >= high - band {
-        "hot"
-    } else {
-        "temperate"
-    }
+    text::band_label(
+        temp_optimum,
+        env.ambient_temperature,
+        env.source_temperature,
+        ["cold", "temperate", "hot"],
+    )
 }
 
 fn catalog_panel(

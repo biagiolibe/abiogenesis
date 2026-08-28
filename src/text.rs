@@ -344,6 +344,29 @@ pub fn population_line(species_label: &str, population: usize, avg_energy: f32) 
 /// no change. `None` (a species' first era with any population, no prior
 /// snapshot to diff against) renders as an empty string rather than an
 /// implicit "+N from zero", which would misread as a population explosion.
+/// Splits `[low, high]` into thirds and picks `labels[0/1/2]` (cold/dim/
+/// low, temperate/moderate, hot/bright/high) — the qualitative-band idiom
+/// task 149's inspection card shares with `notebook::temperature_label`
+/// (task 149 lifted the shared math here so both call sites stay in sync
+/// instead of drifting apart). Thresholds are always derived from the
+/// caller's own config bounds, never hardcoded (no-magic-numbers rule).
+pub fn band_label(value: f32, low: f32, high: f32, labels: [&'static str; 3]) -> &'static str {
+    let band = (high - low) / 3.0;
+    if value <= low + band {
+        labels[0]
+    } else if value >= high - band {
+        labels[2]
+    } else {
+        labels[1]
+    }
+}
+
+// --- Inspection tool (`ui.rs`'s hover tooltip / click-to-inspect card, task 149) ---
+
+pub const SATURATED_NO_OUTLET_WARNING: &str = "Saturated, no room to grow";
+pub const HABITABLE_LABEL: &str = "Habitable";
+pub const NOT_HABITABLE_LABEL: &str = "Not habitable";
+
 pub fn population_delta_label(delta: Option<i64>) -> String {
     match delta {
         None => String::new(),
