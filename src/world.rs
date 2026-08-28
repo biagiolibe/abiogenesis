@@ -124,17 +124,32 @@ pub struct Species {
     pub tags: Vec<TagSlot>,
 }
 
-/// A living instance of a species occupying a cell.
+/// A species' population occupying a cell (task 137, replacing one organism
+/// per cell — `redesign/processed/culture-shock-population-model-aesthetic.md`).
+/// A cell is dedicated to a single species — never shared — but holds
+/// however many individuals of that species currently fit under
+/// `EnergyConfig::cell_carrying_capacity`.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Organism {
+pub struct Population {
     pub species: SpeciesId,
+    /// Always `>= 1`; a cell with no individuals is `Cell::population: None`
+    /// rather than `Some` with `count: 0`.
+    pub count: u32,
+    /// Aggregate energy shared across `count` individuals. Per-capita rates
+    /// (gain, upkeep, interaction, crowding — GDD §5.6) are computed once and
+    /// then scaled by `count` where the tick needs a total; growth and
+    /// starvation both act on this pooled value, not on a per-individual one.
     pub energy: f32,
-    /// The season this organism was born in (task 083; moved from era to
-    /// season by task 135, since this gates decision-cadence timing, not
-    /// narration). Reproduction requires `born_season < world.season` — an
-    /// organism must survive into a later season than its own birth before
-    /// it can reproduce.
+    /// The season this population was founded in this cell (task 083; kept
+    /// unchanged by task 137 from `Organism::born_season`). Growth requires
+    /// `born_season < world.season` — a population must survive into a later
+    /// season than its own founding before it can grow.
     pub born_season: u32,
+    /// Set this tick when the population is at capacity with no valid
+    /// neighbour to break out into (task 137): read by rendering (task 141)
+    /// to surface the state, and by `sim::step` itself to route the blocked
+    /// growth into local selection pressure instead of discarding it.
+    pub blocked: bool,
 }
 
 /// A cell's elevation band (task 066, `redesign/abiogenesis-terrain-map.md`):
@@ -274,9 +289,9 @@ impl TerrainOccupancy {
 /// `redesign/abiogenesis-evolution-xenotypes.md`), one entry per `SpeciesId`
 /// in `SimWorld::selection_pressure`, grown lazily the same way as
 /// `terrain_occupancy`. Lineage-scoped (per `SpeciesId`, shared by every
-/// individual of that species), not per-organism: `Organism` stays a small
-/// `Copy` snapshot value (`sim.rs`'s tick relies on cheaply copying it out of
-/// the grid every iteration) and the doc's own framing talks about a
+/// individual of that species), not per-population: `Population` stays a
+/// small `Copy` snapshot value (`sim.rs`'s tick relies on cheaply copying it
+/// out of the grid every iteration) and the doc's own framing talks about a
 /// *lineage* being repeatedly exposed to a stimulus, not one individual's
 /// luck.
 ///
@@ -325,22 +340,23 @@ impl SelectionPressure {
 /// organism was processed, so evidence only accrues on a tag's *onset* —
 /// the transition into adjacency, not its continued presence.
 ///
-/// Deliberately keyed by cell, not folded into `Organism` (which stays a
-/// small `Copy` snapshot, see `SelectionPressure`'s own doc comment): an
-/// organism never moves, so "this cell's history" and "this organism's
-/// history" are the same thing for as long as the same organism occupies it.
-/// `owner_born_season` is how a stale history gets discarded when a
-/// different organism (a different birth) later takes the same cell — this
-/// task's own note that task 137's per-cell population model will give this
-/// a cleaner home; this is the simplest correct version for today.
+/// Deliberately keyed by cell, not folded into `Population` (which stays a
+/// small `Copy` snapshot, see `SelectionPressure`'s own doc comment): a
+/// population never moves as a whole, so "this cell's history" and "this
+/// population's history" are the same thing for as long as the same species
+/// occupies it. `owner_species` is how a stale history gets discarded when a
+/// different species' population later takes the same cell — task 137
+/// replaced the original `owner_born_season` staleness key with this one,
+/// since an aggregate population has no single birth season the way one
+/// organism did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct AdjacencyExposure {
-    /// `Organism::born_season` of whichever organism this exposure state
-    /// belongs to. `None` before any organism has ever occupied this cell.
-    /// A mismatch against the current organism's `born_season` means a
-    /// different organism now holds the cell, so the stored mask is stale
-    /// and must be treated as empty rather than reused.
-    pub owner_born_season: Option<u32>,
+    /// The species of whichever population this exposure state belongs to.
+    /// `None` before any population has ever occupied this cell. A mismatch
+    /// against the current population's species means a different species
+    /// now holds the cell, so the stored mask is stale and must be treated
+    /// as empty rather than reused.
+    pub owner_species: Option<SpeciesId>,
     /// Bitmask over `TagSlot` indices: bit `n` set means `TagSlot(n)` was
     /// adjacent to this cell's organism as of the last tick it was
     /// processed. `u32` comfortably covers `TagConfig::global_tag_pool`
@@ -348,13 +364,15 @@ pub struct AdjacencyExposure {
     pub exerter_tags: u32,
 }
 
-/// One grid cell. Single occupancy (GDD §5.1): `organism` is never a collection.
+/// One grid cell. Single occupancy by species (task 137, GDD §5.1): `population`
+/// holds every individual of one species at this cell, up to
+/// `EnergyConfig::cell_carrying_capacity` — never more than one species at once.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Cell {
     pub temperature: f32,
     pub light: f32,
     pub toxicity: f32,
-    pub organism: Option<Organism>,
+    pub population: Option<Population>,
     /// Dead matter left behind, feeds decomposers from Phase 1 (GDD §5.6 step 6).
     pub residue: f32,
     /// This cell's elevation band (task 066). Defaults to `Plain` — the
@@ -462,7 +480,7 @@ pub struct SimWorld {
     pub era: u32,
     /// The player's unit of decision (task 135): advances every
     /// `TimeConfig::season_pulses` ticks, refills `ActionBudget`, and gates
-    /// reproduction eligibility (`Organism::born_season`) and the onboarding
+    /// reproduction eligibility (`Population::born_season`) and the onboarding
     /// grace period — everything that used to key off `era` before the
     /// season/era split.
     pub season: u32,

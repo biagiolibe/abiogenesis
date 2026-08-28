@@ -404,7 +404,7 @@ mod energy_overlay {
         // clustered in the top-left instead of sitting on their cells).
         for y in 0..world.height {
             for x in 0..world.width {
-                let Some(organism) = world.get(x, y).organism else {
+                let Some(population) = world.get(x, y).population else {
                     continue;
                 };
                 let world_pos = cell_position(x, y, world.width, world.height);
@@ -415,7 +415,7 @@ mod energy_overlay {
                 painter.text(
                     pos,
                     egui::Align2::CENTER_CENTER,
-                    format!("{:.1}", organism.energy),
+                    format!("{:.1}", population.energy),
                     egui::FontId::monospace(ENERGY_OVERLAY_FONT_SIZE),
                     egui::Color32::WHITE,
                 );
@@ -778,7 +778,7 @@ mod terrain_overlay {
         for y in 0..world.height {
             for x in 0..world.width {
                 let cell = world.get(x, y);
-                if cell.organism.is_some() {
+                if cell.population.is_some() {
                     continue;
                 }
                 let Some(density) = tree_density(cell.biome) else {
@@ -1346,7 +1346,7 @@ fn update_map_view_mode(
 /// when `MapViewMode::Overview` is active. Indexed like `SimWorld::cells`
 /// (`world.index(x, y)`); `density` is `0.0` and `species` is `None` for any
 /// cell no blob claims — task 078 means that's no longer exactly "any cell
-/// with no organism": a filled-hole cell can be claimed with no `Organism`,
+/// with no organism": a filled-hole cell can be claimed with no `Population`,
 /// and an eroded-away edge cell can hold one without being claimed.
 #[derive(Resource, Default)]
 struct ClusterDensity {
@@ -1534,9 +1534,9 @@ fn sync_grid_colors(
 /// solid-square fallback `Sprite::from_color` itself uses — for empty and
 /// residue-only cells, which this task leaves visually unaffected.
 fn cell_shape(world: &SimWorld, shapes: &MetabolismShapes, x: usize, y: usize) -> Handle<Image> {
-    match world.get(x, y).organism {
-        Some(organism) => {
-            let metabolism = world.species[organism.species.0 as usize].metabolism;
+    match world.get(x, y).population {
+        Some(population) => {
+            let metabolism = world.species[population.species.0 as usize].metabolism;
             shapes.handle_for(metabolism)
         }
         None => Handle::default(),
@@ -1588,16 +1588,21 @@ fn cell_color(
     let cell = world.get(x, y);
     let idx = world.index(x, y);
 
-    // `Detail` colors the literal `Cell::organism`; `Overview` colors
+    // `Detail` colors the literal `Cell::population`; `Overview` colors
     // whichever species' blob (task 078: real cells, interior holes filled,
     // then eroded smaller — no longer 1:1 with literal occupancy) claims
     // this cell, via `cluster::compute_cluster_render`'s `density.species`.
     let occupant = match mode {
-        MapViewMode::Detail => cell.organism.map(|organism| {
-            // Energy can exceed repro_threshold right before reproduction;
-            // clamp.
-            let fill = (organism.energy / config.energy.repro_threshold).clamp(0.0, 1.0);
-            (organism.species, 0.15 + fill * 0.35)
+        MapViewMode::Detail => cell.population.map(|population| {
+            // Task 137: `energy` is now the cell's aggregate across
+            // `count` individuals, so the readiness-to-grow reading needs
+            // the per-capita share, not the raw aggregate, to keep meaning
+            // "how close is this population to its next growth event"
+            // rather than scaling up with population size. Can exceed
+            // `repro_threshold` right before a growth event; clamp.
+            let per_capita_energy = population.energy / population.count as f32;
+            let fill = (per_capita_energy / config.energy.repro_threshold).clamp(0.0, 1.0);
+            (population.species, 0.15 + fill * 0.35)
         }),
         // `compute_cluster_render`'s density is a population-mass reading
         // (large, established colonies saturate toward `1.0`; a one-cell
@@ -1738,7 +1743,7 @@ fn toxicity_tint(base: Color, toxicity: f32, elapsed: f32) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use abiogenesis::world::{Biome, Cell, Organism, SpeciesId};
+    use abiogenesis::world::{Biome, Cell, Population, SpeciesId};
     use bevy::ecs::system::SystemState;
     use bevy::input::mouse::MouseScrollUnit;
 
@@ -1884,10 +1889,12 @@ mod tests {
         let idx = world.index(x, y);
 
         world.cells[idx] = Cell {
-            organism: Some(Organism {
+            population: Some(Population {
                 species: SpeciesId(0),
+                count: 1,
                 energy: 5.0,
                 born_season: 0,
+                blocked: false,
             }),
             ..world.cells[idx]
         };
@@ -1896,7 +1903,7 @@ mod tests {
         };
         assert!(occupied.saturation > 0.5);
 
-        world.cells[idx].organism = None;
+        world.cells[idx].population = None;
         world.cells[idx].residue = config.energy.residue_on_death;
         let Color::Hsla(residue) = detail_color(&world, &config, x, y) else {
             panic!("expected an HSL color");
@@ -1927,7 +1934,7 @@ mod tests {
         let mut world = SimWorld::new(42, &config);
         let (x, y) = (0, 0);
         let idx = world.index(x, y);
-        world.cells[idx].organism = None;
+        world.cells[idx].population = None;
         world.cells[idx].residue = config.energy.residue_ambient_trickle;
         world.cells[idx].biome = Biome::Plain;
         world.cells[idx].toxicity = 0.0;

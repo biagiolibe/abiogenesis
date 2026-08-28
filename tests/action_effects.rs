@@ -5,7 +5,7 @@
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::step;
-use abiogenesis::world::{Organism, SimWorld, SpeciesId};
+use abiogenesis::world::{Population, SimWorld, SpeciesId};
 use abiogenesis::worldgen::generate_starting_palette;
 
 /// Worlds no longer auto-place organisms (task 050) — the player seeds them
@@ -21,10 +21,12 @@ fn place_starting_organisms(world: &mut SimWorld, config: &SimConfig) {
             i * (world.width - 1) / (count - 1)
         };
         let idx = world.index(x, 0);
-        world.cells[idx].organism = Some(Organism {
+        world.cells[idx].population = Some(Population {
             species: SpeciesId(i as u8),
+            count: 1,
             energy: config.energy.seed_energy,
             born_season: 0,
+            blocked: false,
         });
     }
 }
@@ -35,7 +37,7 @@ fn species_zero_energy(world: &SimWorld) -> Option<f32> {
     let (total, count) = world
         .cells
         .iter()
-        .filter_map(|cell| cell.organism)
+        .filter_map(|cell| cell.population)
         .filter(|organism| organism.species.0 == 0)
         .fold((0.0, 0u32), |(total, count), organism| {
             (total + organism.energy, count + 1)

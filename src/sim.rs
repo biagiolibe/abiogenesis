@@ -9,7 +9,7 @@ use crate::config::{EvolutionConfig, SimConfig};
 use crate::state::{EraState, GameState};
 use crate::world::{
     draw_species_name, net_self_interaction, AdjacencyExposure, ConditionalTag, Metabolism, Mode,
-    Organism, SelectionPressure, SimWorld, SpeciesId, TagId, TagSlot, TerrainKind,
+    Population, SelectionPressure, SimWorld, SpeciesId, TagId, TagSlot, TerrainKind,
     TerrainOccupancy,
 };
 
@@ -336,6 +336,11 @@ fn accumulate_selection_pressure(
     fit: f32,
     terrain: TerrainKind,
     toxicity: f32,
+    // Task 137: a saturated-with-no-outlet population (GDD §5.11, "the
+    // existing environmental-mismatch stimulus") folds its blocked growth in
+    // here, bucketed by the same `terrain` this call already buckets
+    // temperature mismatch by. `0.0` outside that case.
+    extra_terrain_mismatch: f32,
 ) -> Option<SelectionThresholdCrossed> {
     if pressures.len() < species_len {
         pressures.resize(species_len, SelectionPressure::default());
@@ -346,7 +351,8 @@ fn accumulate_selection_pressure(
     }
 
     pressure.interaction_harm += (-interaction_delta).max(0.0) * evolution.interaction_harm_weight;
-    pressure.terrain_mismatch[terrain.index()] += (1.0 - fit) * evolution.terrain_mismatch_weight;
+    pressure.terrain_mismatch[terrain.index()] +=
+        (1.0 - fit) * evolution.terrain_mismatch_weight + extra_terrain_mismatch;
     pressure.toxicity += toxicity * evolution.toxicity_weight;
 
     if pressure.total() < evolution.selection_pressure_threshold {
@@ -483,9 +489,9 @@ pub fn speciate(
     if grants_sea_tolerance {
         world.sea_tolerant_species.push(new_species_id);
     }
-    if let Some(organism) = world.cells[event.cell].organism.as_mut() {
-        if organism.species == event.species {
-            organism.species = new_species_id;
+    if let Some(population) = world.cells[event.cell].population.as_mut() {
+        if population.species == event.species {
+            population.species = new_species_id;
         }
     }
     // Task 109: backs `Objective::Speciation`, the long-term objective's
@@ -500,14 +506,21 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
         energy.residue_ambient_trickle < energy.residue_decay,
         "residue_ambient_trickle must stay below residue_decay, or residue grows unboundedly"
     );
+    debug_assert!(
+        energy.repro_cost > 0.0,
+        "repro_cost must be positive, or population growth (task 137) never terminates"
+    );
     let mut events = TickEvents::default();
 
-    // Pre-tick population count per species, for extinction detection
-    // (1 -> 0 transition) once deaths are recorded below.
+    // Pre-tick count of occupied cells per species, for extinction detection
+    // (1 -> 0 transition) once deaths are recorded below. Counts cells, not
+    // individuals (task 137): death is all-or-nothing per cell (see step 6
+    // below), so a species goes extinct exactly when its last occupied cell
+    // empties out, regardless of how many individuals were in it.
     let mut population = vec![0u32; world.species.len()];
     for cell in world.cells.iter() {
-        if let Some(organism) = cell.organism {
-            population[organism.species.0 as usize] += 1;
+        if let Some(population_here) = cell.population {
+            population[population_here.species.0 as usize] += 1;
         }
     }
     // Task 050: worlds start with nothing placed, so `ever_populated` only
@@ -574,17 +587,17 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
     let mut predation_gain = vec![0.0f32; world.cells.len()];
     let mut predation_loss = vec![0.0f32; world.cells.len()];
     for (idx, cell) in world.cells.iter().enumerate() {
-        let Some(organism) = cell.organism else {
+        let Some(population) = cell.population else {
             continue;
         };
-        let species = &world.species[organism.species.0 as usize];
+        let species = &world.species[population.species.0 as usize];
         if species.metabolism != Metabolism::Predator {
             continue;
         }
         let (x, y) = (idx % world.width, idx / world.width);
         let prey: Vec<usize> = world
             .moore_neighbours(x, y)
-            .filter(|&n| world.cells[n].organism.is_some())
+            .filter(|&n| world.cells[n].population.is_some())
             .collect();
         if prey.is_empty() {
             continue;
@@ -594,9 +607,12 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
             species.temp_optimum,
             species.temp_tolerance,
         );
+        // The drawable pool is each prey cell's aggregate energy, same as
+        // before task 137 — an aggregate quantity, not scaled by predator
+        // count, so more predators sharing a cell share the same fixed pool.
         let available: f32 = prey
             .iter()
-            .map(|&n| world.cells[n].organism.unwrap().energy)
+            .map(|&n| world.cells[n].population.unwrap().energy)
             .sum();
         let drawn = (energy.predator_drain_cap * fit).min(available);
         predation_gain[idx] = drawn;
@@ -617,10 +633,10 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
     let mut decomposition_gain = vec![0.0f32; world.cells.len()];
     let mut residue_loss = vec![0.0f32; world.cells.len()];
     for (idx, cell) in world.cells.iter().enumerate() {
-        let Some(organism) = cell.organism else {
+        let Some(population) = cell.population else {
             continue;
         };
-        let species = &world.species[organism.species.0 as usize];
+        let species = &world.species[population.species.0 as usize];
         if species.metabolism != Metabolism::Decomposer {
             continue;
         }
@@ -668,41 +684,56 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
 
     for idx in 0..world.cells.len() {
         let cell = world.cells[idx];
-        let Some(organism) = cell.organism else {
+        let Some(occupant) = cell.population else {
             continue;
         };
-        let species = &world.species[organism.species.0 as usize];
+        let species = &world.species[occupant.species.0 as usize];
 
-        // 1-2. Environmental fitness and metabolic gain.
+        // 1-2. Environmental fitness and metabolic gain. Photolithic/
+        // Chemolithotroph gain is a genuine per-capita rate (each individual
+        // independently reads the same `light`/`toxicity`), scaled to a
+        // total below; Predator/Decomposer gain is already an aggregate
+        // shared-resource draw from the pre-pass above, unaffected by how
+        // many individuals split it (task 137: crowding self-limits those
+        // two metabolisms for free, without touching the pre-pass code).
         let fit = env_fit(
             cell.temperature,
             species.temp_optimum,
             species.temp_tolerance,
         );
-        let gain = match species.metabolism {
+        let per_capita_gain = match species.metabolism {
             Metabolism::Photolithic => cell.light * energy.photolithic_metabolism_gain * fit,
-            Metabolism::Predator => predation_gain[idx],
-            Metabolism::Decomposer => decomposition_gain[idx],
             Metabolism::Chemolithotroph => {
                 cell.toxicity * energy.chemolithotroph_metabolism_gain * fit
             }
+            Metabolism::Predator | Metabolism::Decomposer => 0.0,
+        };
+        let aggregate_gain = match species.metabolism {
+            Metabolism::Photolithic | Metabolism::Chemolithotroph => {
+                per_capita_gain * occupant.count as f32
+            }
+            Metabolism::Predator => predation_gain[idx],
+            Metabolism::Decomposer => decomposition_gain[idx],
         };
 
         // 3. Hidden matrix effect (GDD §5.6 step 3, §5.5): additive and
         // linear (invariant 4), read only from the snapshot like everything
-        // else here, so the tick stays order-independent. For every
-        // occupied Moore neighbour, for every (their tag, my tag) pair, sum
-        // the matrix entry — row = exerting tag, column = receiving tag.
+        // else here, so the tick stays order-independent. Task 137: matrix
+        // interaction is by *presence*, not by quantity — a neighbouring
+        // cell contributes its tags exactly once regardless of how many
+        // individuals occupy it — so this per-cell rate is unchanged from
+        // before 137 and is scaled to a total by `occupant.count` below,
+        // same as the per-capita gain above.
         let (x, y) = (idx % world.width, idx / world.width);
         let mut interaction_delta = 0.0;
 
-        // Distinct exerter tags carried by this organism's occupied Moore
+        // Distinct exerter tags carried by this cell's occupied Moore
         // neighbours, gathered up front so the confounder count (see
         // `AdjacencyObserved`'s doc comment) is available for every
         // observation emitted below without re-scanning neighbours per tag.
         let mut neighbour_tags: Vec<TagSlot> = Vec::new();
         for neighbour_idx in world.moore_neighbours(x, y) {
-            if let Some(neighbour) = world.cells[neighbour_idx].organism {
+            if let Some(neighbour) = world.cells[neighbour_idx].population {
                 let neighbour_species = &world.species[neighbour.species.0 as usize];
                 for &tag in &neighbour_species.tags {
                     if !neighbour_tags.contains(&tag) {
@@ -715,13 +746,15 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
         // Task 136b: evidence accrues on a tag's *onset* into adjacency, not
         // on every tick it persists. `prior_mask` is this cell's exposure as
         // of the last tick it was processed — discarded (treated as empty)
-        // if a different organism (a different birth) has since taken the
-        // cell, since a fresh organism has observed nothing yet. `onset_mask`
+        // if a different species now occupies the cell (task 137: the
+        // staleness key moved from `Organism::born_season`, which an
+        // aggregate population no longer has one of, to the occupying
+        // species — a fresh population has observed nothing yet). `onset_mask`
         // is exactly the tags that are adjacent now but weren't last time;
         // `current_mask` (all tags adjacent now) becomes next tick's
         // `prior_mask` regardless of which tags were newly onset.
         let prior = world.adjacency_exposure[idx];
-        let prior_mask = if prior.owner_born_season == Some(organism.born_season) {
+        let prior_mask = if prior.owner_species == Some(occupant.species) {
             prior.exerter_tags
         } else {
             0
@@ -732,12 +765,12 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
         }
         let onset_mask = current_mask & !prior_mask;
         new_exposure[idx] = Some(AdjacencyExposure {
-            owner_born_season: Some(organism.born_season),
+            owner_species: Some(occupant.species),
             exerter_tags: current_mask,
         });
 
         for neighbour_idx in world.moore_neighbours(x, y) {
-            let Some(neighbour) = world.cells[neighbour_idx].organism else {
+            let Some(neighbour) = world.cells[neighbour_idx].population else {
                 continue;
             };
             let neighbour_species = &world.species[neighbour.species.0 as usize];
@@ -761,7 +794,7 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
                         let n_confounders =
                             neighbour_tags.iter().filter(|&&t| t != their_tag).count() as u32;
                         events.adjacencies.push(AdjacencyObserved {
-                            receiver_species: organism.species,
+                            receiver_species: occupant.species,
                             exerter_tag: their_tag,
                             receiver_tag: my_tag,
                             n_confounders,
@@ -771,22 +804,25 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
                 }
             }
         }
+        let aggregate_interaction = interaction_delta * occupant.count as f32;
 
         // Task 106: accumulate this tick's selection-pressure stimuli
         // (interaction harm, terrain/temp-optimum mismatch, toxicity) into
-        // the organism's species tally, before costs/death are resolved —
-        // the pressure reflects exposure this tick regardless of whether
-        // the organism survives it.
+        // the population's species tally, before costs/death are resolved —
+        // the pressure reflects exposure this tick regardless of whether the
+        // population survives it. Stays a per-capita reading (unaffected by
+        // `occupant.count`), same as before task 137.
         if let Some(crossed) = accumulate_selection_pressure(
             &mut world.selection_pressure,
             &config.evolution,
             world.species.len(),
-            organism.species,
+            occupant.species,
             idx,
             interaction_delta,
             fit,
             cell.terrain,
             cell.toxicity,
+            0.0,
         ) {
             events.selection_thresholds.push(crossed);
         }
@@ -802,128 +838,206 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
         // a pair the matrix can never compensate for no matter how the
         // player plays. Charging it crowding too would double-penalize
         // exactly that case, on top of the already-thin margin the retuned
-        // gains leave. (Measured, not merely reasoned: this change alone did
-        // not move `tests/balance.rs`'s extinction rate — the balance
-        // scenario below doesn't put same-species organisms adjacent to each
-        // other — so it is not load-bearing for that regression. It is kept
-        // because the reasoning above holds regardless.) The real per-cell
-        // carrying capacity (task 137) is the intended long-term cap on
-        // same-species density; until then this penalty stays scoped to the
-        // interface the design doc's worked examples actually measured —
-        // different species competing for the same cells.
+        // gains leave. Task 137 keeps this by-presence (one distinct
+        // different-species neighbour cell = one charge, regardless of that
+        // neighbour's own count) so it doesn't silently retune 136's
+        // coefficients; same-species density is now capped directly by
+        // `cell_carrying_capacity` instead.
         let occupied_neighbours = world
             .moore_neighbours(x, y)
             .filter(|&n| {
                 world.cells[n]
-                    .organism
-                    .is_some_and(|neighbour| neighbour.species != organism.species)
+                    .population
+                    .is_some_and(|neighbour| neighbour.species != occupant.species)
             })
             .count();
-        let upkeep = match species.metabolism {
+        let per_capita_upkeep = match species.metabolism {
             Metabolism::Photolithic => energy.base_upkeep,
             Metabolism::Predator => energy.predator_upkeep,
             Metabolism::Decomposer => energy.decomposer_upkeep,
             Metabolism::Chemolithotroph => energy.chemolithotroph_upkeep,
         };
-        let crowding_penalty = energy.crowd_factor * occupied_neighbours as f32;
+        let per_capita_crowding = energy.crowd_factor * occupied_neighbours as f32;
+        let aggregate_upkeep = per_capita_upkeep * occupant.count as f32;
+        let aggregate_crowding = per_capita_crowding * occupant.count as f32;
 
-        // 5. Energy update.
-        let new_energy = organism.energy + gain + interaction_delta
-            - upkeep
-            - crowding_penalty
+        // 5. Energy update, on the aggregate.
+        let new_energy = occupant.energy + aggregate_gain + aggregate_interaction
+            - aggregate_upkeep
+            - aggregate_crowding
             - predation_loss[idx];
 
-        // 6. Death.
+        // 6. Death: all-or-nothing per cell (task 137 keeps this shape from
+        // the one-organism-per-cell model rather than introducing a partial
+        // die-off rule) — once the aggregate can no longer sustain any of
+        // its members, the local population collapses together. `Cull`
+        // (`actions.rs`) already relies on emptying a cell being decisive;
+        // starvation now works the same way.
         if new_energy <= 0.0 {
-            world.scratch[idx].organism = None;
+            world.scratch[idx].population = None;
             // Fixed on death, not decayed leftover + this value (invariant
-            // in task spec): a death this tick overwrites the residue.
+            // in task spec): a death this tick overwrites the residue,
+            // regardless of how many individuals were in the population.
             world.scratch[idx].residue = energy.residue_on_death;
             events.deaths.push(OrganismDied {
                 cell: idx,
-                species: organism.species,
-                gain,
+                species: occupant.species,
+                gain: per_capita_gain,
                 env_fit: fit,
                 interaction_delta,
-                upkeep,
-                crowding_penalty,
+                upkeep: per_capita_upkeep,
+                crowding_penalty: per_capita_crowding,
                 predation_loss: predation_loss[idx],
-                energy_before: organism.energy,
+                energy_before: occupant.energy,
             });
-            let species_idx = organism.species.0 as usize;
+            let species_idx = occupant.species.0 as usize;
             population[species_idx] -= 1;
             if population[species_idx] == 0 {
                 events.extinctions.push(SpeciesExtinct {
-                    species: organism.species,
+                    species: occupant.species,
                 });
             }
             continue;
         }
 
-        world.scratch[idx].organism = Some(Organism {
-            energy: new_energy,
-            ..organism
-        });
         mark_terrain_and_maybe_reveal(
             &mut world.terrain_occupancy,
             &world.active_tags,
             &world.conditional_tags,
             world.species.len(),
-            organism.species,
+            occupant.species,
             &species.tags,
             cell.terrain,
             &mut events.reveals,
         );
 
-        // 7. Reproduction: only if there's still an empty, placeable
-        // neighbour once the birth cell is picked (task 067 — offspring
-        // never spawn onto Sea or a mountain peak). Empty neighbours are
-        // collected from the snapshot in index order, so the RNG draw is
-        // reproducible; the scratch buffer is re-checked to resolve
-        // contention between two parents claiming the same cell this tick.
-        if new_energy >= species.repro_threshold && organism.born_season < world.season {
+        // 7. Growth (task 137, replacing single-organism reproduction):
+        // continuous — while the population's average per-capita energy is
+        // at or above `repro_threshold`, count grows by one and the
+        // aggregate pays `repro_cost`, same as the old per-organism
+        // reproduction cost, just looped. Gated by `born_season < world.season`
+        // exactly as reproduction always was — a population founded this
+        // tick (by breakout, below) doesn't also grow the same tick.
+        let mut count = occupant.count;
+        let mut energy_left = new_energy;
+        if occupant.born_season < world.season {
+            while energy_left / count as f32 >= species.repro_threshold {
+                count += 1;
+                energy_left -= energy.repro_cost;
+                events.births.push(OrganismBorn {
+                    species: occupant.species,
+                });
+            }
+        }
+
+        // 8. Breakout (task 137): once `count` exceeds the cell's carrying
+        // capacity, the excess must migrate to a neighbouring cell that is
+        // either empty (and placeable) or already holds the same species
+        // under its own capacity — mirrors the old reproduction target
+        // search exactly (snapshot-collected candidates in index order, one
+        // RNG draw, scratch re-checked to resolve same-tick contention).
+        // With no valid outlet, the excess is capped away and its energy
+        // share feeds local selection pressure instead (GDD §5.11's
+        // existing "environmental mismatch" stimulus) — `blocked` records
+        // this for rendering (task 141).
+        let mut blocked = false;
+        if count > config.energy.cell_carrying_capacity {
+            let excess = count - config.energy.cell_carrying_capacity;
+            let excess_energy = energy_left * (excess as f32 / count as f32);
+            energy_left -= excess_energy;
+            count = config.energy.cell_carrying_capacity;
             // Cloned rather than borrowed: `world.rng_mut()` below needs
             // `&mut world` as a whole (it's a method, so the borrow checker
             // can't see that it's disjoint from `world.species`), which
-            // would conflict with a borrow still reaching into `species`
-            // afterwards for `mark_terrain_and_maybe_reveal`.
-            let repro_tags = species.tags.clone();
-            let empty_neighbours: Vec<usize> = world
+            // would conflict with `species` still being borrowed for
+            // `mark_terrain_and_maybe_reveal` afterwards.
+            let breakout_tags = species.tags.clone();
+
+            let candidates: Vec<usize> = world
                 .moore_neighbours(x, y)
-                .filter(|&n| {
-                    world.cells[n].organism.is_none()
-                        && world.is_placeable_index_for(n, organism.species)
+                .filter(|&n| match world.cells[n].population {
+                    None => world.is_placeable_index_for(n, occupant.species),
+                    Some(neighbour) => {
+                        neighbour.species == occupant.species
+                            && neighbour.count < config.energy.cell_carrying_capacity
+                    }
                 })
                 .collect();
-            if !empty_neighbours.is_empty() {
-                let pick = world.rng_mut().random_range(0..empty_neighbours.len());
-                let target = empty_neighbours[pick];
-                if world.scratch[target].organism.is_none() {
-                    world.scratch[target].organism = Some(Organism {
-                        species: organism.species,
-                        energy: energy.repro_cost,
-                        born_season: world.season,
-                    });
-                    world.scratch[idx].organism = Some(Organism {
-                        energy: new_energy - energy.repro_cost,
-                        ..organism
-                    });
+
+            if candidates.is_empty() {
+                blocked = true;
+                if let Some(crossed) = accumulate_selection_pressure(
+                    &mut world.selection_pressure,
+                    &config.evolution,
+                    world.species.len(),
+                    occupant.species,
+                    idx,
+                    0.0,
+                    1.0,
+                    cell.terrain,
+                    0.0,
+                    excess_energy * config.evolution.terrain_mismatch_weight,
+                ) {
+                    events.selection_thresholds.push(crossed);
+                }
+            } else {
+                let pick = world.rng_mut().random_range(0..candidates.len());
+                let target = candidates[pick];
+                let placed = match world.scratch[target].population {
+                    None => {
+                        world.scratch[target].population = Some(Population {
+                            species: occupant.species,
+                            count: excess,
+                            energy: excess_energy,
+                            born_season: world.season,
+                            blocked: false,
+                        });
+                        true
+                    }
+                    Some(existing)
+                        if existing.species == occupant.species
+                            && existing.count + excess <= config.energy.cell_carrying_capacity =>
+                    {
+                        world.scratch[target].population = Some(Population {
+                            count: existing.count + excess,
+                            energy: existing.energy + excess_energy,
+                            ..existing
+                        });
+                        true
+                    }
+                    // Contention: another cell's breakout already claimed this
+                    // target this tick, or it filled up in the meantime. The
+                    // excess (and its energy) is lost this tick rather than
+                    // invented a second target — rare, and the origin cell
+                    // will simply re-attempt breakout next tick if still over
+                    // capacity.
+                    _ => false,
+                };
+                if placed {
                     mark_terrain_and_maybe_reveal(
                         &mut world.terrain_occupancy,
                         &world.active_tags,
                         &world.conditional_tags,
                         world.species.len(),
-                        organism.species,
-                        &repro_tags,
+                        occupant.species,
+                        &breakout_tags,
                         world.cells[target].terrain,
                         &mut events.reveals,
                     );
                     events.births.push(OrganismBorn {
-                        species: organism.species,
+                        species: occupant.species,
                     });
                 }
             }
         }
+
+        world.scratch[idx].population = Some(Population {
+            species: occupant.species,
+            count,
+            energy: energy_left,
+            born_season: occupant.born_season,
+            blocked,
+        });
     }
 
     for (idx, exposure) in new_exposure.into_iter().enumerate() {
@@ -1168,10 +1282,12 @@ mod tests {
         world.cells[idx] = Cell {
             light,
             temperature,
-            organism: Some(Organism {
+            population: Some(Population {
                 species: SpeciesId(0),
+                count: 1,
                 energy,
                 born_season: 0,
+                blocked: false,
             }),
             ..world.cells[idx]
         };
@@ -1184,7 +1300,7 @@ mod tests {
         step(&mut world, &config);
 
         let (cx, cy) = (world.width / 2, world.height / 2);
-        let organism = world.get(cx, cy).organism.expect("organism survives");
+        let organism = world.get(cx, cy).population.expect("organism survives");
         // Task 136: gain 0.7 * 1.4 * 1 - upkeep 0.5 = net +0.48 — a modest
         // margin by design, so a matrix interaction still meaningfully
         // speeds things up, but not so thin that ordinary environmental
@@ -1209,10 +1325,12 @@ mod tests {
 
         let neighbours: Vec<usize> = world.moore_neighbours(cx, cy).collect();
         for &idx in neighbours.iter().skip(1) {
-            world.cells[idx].organism = Some(Organism {
+            world.cells[idx].population = Some(Population {
                 species: SpeciesId(0),
+                count: 1,
                 energy: 1.0,
                 born_season: 0,
+                blocked: false,
             });
         }
         let target = neighbours[0];
@@ -1221,7 +1339,7 @@ mod tests {
         let events = step(&mut world, &config);
 
         assert!(
-            world.cells[target].organism.is_none(),
+            world.cells[target].population.is_none(),
             "Sea must never receive an offspring, even as the only occupancy-empty neighbour"
         );
         assert!(
@@ -1277,16 +1395,18 @@ mod tests {
         // reproduce this tick.
         let neighbours: Vec<usize> = world.moore_neighbours(cx, cy).collect();
         for &idx in neighbours.iter().take(7) {
-            world.cells[idx].organism = Some(Organism {
+            world.cells[idx].population = Some(Population {
                 species: SpeciesId(1),
+                count: 1,
                 energy: 1.0,
                 born_season: 0,
+                blocked: false,
             });
         }
 
         step(&mut world, &config);
 
-        let organism = world.get(cx, cy).organism.expect("organism survives");
+        let organism = world.get(cx, cy).population.expect("organism survives");
         // gain 0.98 - upkeep 0.5 - crowding (7 * 0.15 = 1.05) = net -0.57.
         assert!(
             (organism.energy - 4.43).abs() < TOLERANCE,
@@ -1309,7 +1429,10 @@ mod tests {
         let (cx, cy) = (world.width / 2, world.height / 2);
 
         step(&mut world, &config);
-        let organism = world.get(cx, cy).organism.expect("survives the first tick");
+        let organism = world
+            .get(cx, cy)
+            .population
+            .expect("survives the first tick");
         assert!(
             (organism.energy - 4.78).abs() < TOLERANCE,
             "expected net -0.22/tick in the dark, got {}",
@@ -1317,13 +1440,13 @@ mod tests {
         );
 
         for _ in 0..200 {
-            if world.get(cx, cy).organism.is_none() {
+            if world.get(cx, cy).population.is_none() {
                 break;
             }
             step(&mut world, &config);
         }
         assert!(
-            world.get(cx, cy).organism.is_none(),
+            world.get(cx, cy).population.is_none(),
             "light niche: should not survive long-term"
         );
         assert!((world.get(cx, cy).residue - config.energy.residue_on_death).abs() < TOLERANCE);
@@ -1377,12 +1500,14 @@ mod tests {
         let target = world
             .cells
             .iter()
-            .position(|c| c.organism.is_none())
+            .position(|c| c.population.is_none())
             .expect("an empty cell exists");
-        world.cells[target].organism = Some(Organism {
+        world.cells[target].population = Some(Population {
             species: SpeciesId(1),
+            count: 1,
             energy: config.energy.seed_energy,
             born_season: world.era,
+            blocked: false,
         });
         step(&mut world, &config);
         assert_eq!(
@@ -1393,13 +1518,13 @@ mod tests {
 
         let (cx, cy) = (world.width / 2, world.height / 2);
         for _ in 0..200 {
-            if world.get(cx, cy).organism.is_none() {
+            if world.get(cx, cy).population.is_none() {
                 break;
             }
             step(&mut world, &config);
         }
         assert!(
-            world.get(cx, cy).organism.is_none(),
+            world.get(cx, cy).population.is_none(),
             "organism should have starved in the dark"
         );
         assert_eq!(
@@ -1520,10 +1645,12 @@ mod tests {
             world.cells[idx] = Cell {
                 light,
                 temperature,
-                organism: Some(Organism {
+                population: Some(Population {
                     species,
+                    count: 1,
                     energy,
                     born_season: 0,
+                    blocked: false,
                 }),
                 ..world.cells[idx]
             };
@@ -1551,7 +1678,7 @@ mod tests {
         step(&mut world, &config);
 
         let (cx, cy) = (world.width / 2, world.height / 2);
-        let b = world.get(cx + 1, cy).organism.expect("B survives");
+        let b = world.get(cx + 1, cy).population.expect("B survives");
         // Task 136: gain 0.7, upkeep 0.5, 1 occupied neighbour -> crowding
         // 0.15, interaction_delta -2 * interaction_scale 0.15 = -0.3:
         // net 5.0 + 0.7 - 0.5 - 0.15 - 0.3 = 5.03.
@@ -1594,7 +1721,7 @@ mod tests {
         );
 
         let (cx, cy) = (world.width / 2, world.height / 2);
-        let energy_after_first = world.get(cx + 1, cy).organism.expect("B survives").energy;
+        let energy_after_first = world.get(cx + 1, cy).population.expect("B survives").energy;
 
         let second = step(&mut world, &config);
         assert!(
@@ -1607,7 +1734,7 @@ mod tests {
         // close to +0.48/tick (see `isolated_photolithic_grows`); with the
         // -2 interaction still in effect the second-tick delta should stay
         // far below that, not jump up just because evidence stopped firing.
-        let energy_after_second = world.get(cx + 1, cy).organism.expect("B survives").energy;
+        let energy_after_second = world.get(cx + 1, cy).population.expect("B survives").energy;
         let delta_second_tick = energy_after_second - energy_after_first;
         assert!(
             delta_second_tick < 0.2,
@@ -1654,10 +1781,12 @@ mod tests {
         world.cells[c_idx] = Cell {
             light: 0.7,
             temperature: 0.5,
-            organism: Some(Organism {
+            population: Some(Population {
                 species: SpeciesId(2),
+                count: 1,
                 energy: 5.0,
                 born_season: world.season,
+                blocked: false,
             }),
             ..world.cells[c_idx]
         };
@@ -1691,7 +1820,7 @@ mod tests {
         step(&mut world, &config);
 
         let (cx, cy) = (world.width / 2, world.height / 2);
-        let b = world.get(cx + 1, cy).organism.expect("B survives");
+        let b = world.get(cx + 1, cy).population.expect("B survives");
         // Task 136: net 5.0 + 0.98 - 0.5 - 0.15 + 0.3 = 5.63.
         assert!((b.energy - 5.63).abs() < TOLERANCE, "got {}", b.energy);
     }
@@ -1709,7 +1838,7 @@ mod tests {
         step(&mut world, &config);
 
         let (cx, cy) = (world.width / 2, world.height / 2);
-        let b = world.get(cx + 1, cy).organism.expect("B survives");
+        let b = world.get(cx + 1, cy).population.expect("B survives");
         // Task 136: net 5.0 + 0.7 - 0.5 - 0.15 + 0.0 = 5.33.
         assert!((b.energy - 5.33).abs() < TOLERANCE, "got {}", b.energy);
     }
@@ -1746,16 +1875,18 @@ mod tests {
             world.cells[idx] = Cell {
                 light: 0.7,
                 temperature: 0.5,
-                organism: Some(Organism {
+                population: Some(Population {
                     species,
+                    count: 1,
                     energy,
                     born_season: 0,
+                    blocked: false,
                 }),
                 ..world.cells[idx]
             };
         }
         step(&mut world, &config);
-        let b = world.get(cx + 1, cy).organism.expect("B survives");
+        let b = world.get(cx + 1, cy).population.expect("B survives");
         // Same result as negative_adjacency_effect_subtracts_energy: 5.03.
         assert!((b.energy - 5.03).abs() < TOLERANCE, "got {}", b.energy);
     }
@@ -1789,7 +1920,7 @@ mod tests {
         let a_idx = world.index(cx, cy);
         world.cells[a_idx].terrain = TerrainKind::Hill;
         step(&mut world, &config);
-        let b = world.get(cx + 1, cy).organism.expect("B survives");
+        let b = world.get(cx + 1, cy).population.expect("B survives");
         assert!(
             (b.energy - 5.03).abs() < TOLERANCE,
             "gate should be satisfied on trigger terrain, got {}",
@@ -1812,7 +1943,7 @@ mod tests {
         let a_idx = world.index(cx, cy);
         world.cells[a_idx].terrain = TerrainKind::Plain;
         step(&mut world, &config);
-        let b = world.get(cx + 1, cy).organism.expect("B survives");
+        let b = world.get(cx + 1, cy).population.expect("B survives");
         assert!(
             (b.energy - 5.33).abs() < TOLERANCE,
             "gate should fail off the trigger terrain, got {}",
@@ -1849,7 +1980,7 @@ mod tests {
         let a_idx = world.index(cx, cy);
         world.cells[a_idx].terrain = TerrainKind::Hill;
         step(&mut world, &config);
-        let b = world.get(cx + 1, cy).organism.expect("B survives");
+        let b = world.get(cx + 1, cy).population.expect("B survives");
         assert!(
             (b.energy - 5.33).abs() < TOLERANCE,
             "gate should fail on the trigger terrain, got {}",
@@ -1873,7 +2004,7 @@ mod tests {
         let a_idx = world.index(cx, cy);
         world.cells[a_idx].terrain = TerrainKind::Plain;
         step(&mut world, &config);
-        let b = world.get(cx + 1, cy).organism.expect("B survives");
+        let b = world.get(cx + 1, cy).population.expect("B survives");
         assert!(
             (b.energy - 5.03).abs() < TOLERANCE,
             "gate should be satisfied off the trigger terrain, got {}",
@@ -2001,7 +2132,7 @@ mod tests {
         }];
         step(&mut world, &config);
         let (cx, cy) = (world.width / 2, world.height / 2);
-        let b = world.get(cx + 1, cy).organism.expect("B survives");
+        let b = world.get(cx + 1, cy).population.expect("B survives");
         assert!((b.energy - 5.03).abs() < TOLERANCE, "got {}", b.energy);
     }
 
@@ -2036,10 +2167,12 @@ mod tests {
             light: 0.7,
             temperature: 0.5,
             terrain,
-            organism: Some(Organism {
+            population: Some(Population {
                 species: SpeciesId(0),
+                count: 1,
                 energy,
                 born_season: 0,
+                blocked: false,
             }),
             ..world.cells[idx]
         };
@@ -2125,10 +2258,12 @@ mod tests {
             world.cells[idx] = Cell {
                 light: 0.7,
                 temperature: 0.5,
-                organism: Some(Organism {
+                population: Some(Population {
                     species,
+                    count: 1,
                     energy,
                     born_season: 0,
+                    blocked: false,
                 }),
                 ..world.cells[idx]
             };
@@ -2136,7 +2271,7 @@ mod tests {
 
         step(&mut world, &config);
 
-        let b = world.get(cx, cy).organism.expect("B survives");
+        let b = world.get(cx, cy).population.expect("B survives");
         // Task 136: net 5.0 + 0.98 - 0.5 - 0.15*2 + (-1 - 1) * 0.15 = 4.88.
         assert!((b.energy - 4.88).abs() < TOLERANCE, "got {}", b.energy);
     }
@@ -2157,10 +2292,12 @@ mod tests {
         world.cells[idx] = Cell {
             light: 0.0,
             temperature,
-            organism: Some(Organism {
+            population: Some(Population {
                 species: SpeciesId(0),
+                count: 1,
                 energy,
                 born_season: 0,
+                blocked: false,
             }),
             ..world.cells[idx]
         };
@@ -2176,7 +2313,7 @@ mod tests {
 
         for tick in 1..=8 {
             step(&mut world, &config);
-            let alive = world.get(cx, cy).organism.is_some();
+            let alive = world.get(cx, cy).population.is_some();
             if tick < 8 {
                 assert!(alive, "predator should still be alive at tick {tick}");
             } else {
@@ -2204,16 +2341,18 @@ mod tests {
         });
         let neighbours: Vec<usize> = world.moore_neighbours(cx, cy).collect();
         for &idx in &neighbours {
-            world.cells[idx].organism = Some(Organism {
+            world.cells[idx].population = Some(Population {
                 species: SpeciesId(1),
+                count: 1,
                 energy: 20.0,
                 born_season: 0,
+                blocked: false,
             });
         }
 
         step(&mut world, &config);
 
-        let predator = world.get(cx, cy).organism.expect("predator survives");
+        let predator = world.get(cx, cy).population.expect("predator survives");
         // Task 136: drain = min(predator_drain_cap, available) * fit = 1.4
         // (fit=1.0, available huge), upkeep 0.7, 8 occupied neighbours ->
         // crowding 0.15*8=1.2: net 5.0 + 1.4 - 0.7 - 1.2 = 4.5.
@@ -2251,10 +2390,12 @@ mod tests {
         world.cells[prey_idx] = Cell {
             light: 0.0,
             temperature: 0.5,
-            organism: Some(Organism {
+            population: Some(Population {
                 species: SpeciesId(1),
+                count: 1,
                 energy: 20.0,
                 born_season: 0,
+                blocked: false,
             }),
             ..world.cells[prey_idx]
         };
@@ -2263,10 +2404,12 @@ mod tests {
             world.cells[idx] = Cell {
                 light: 0.0,
                 temperature: 0.5,
-                organism: Some(Organism {
+                population: Some(Population {
                     species: SpeciesId(0),
+                    count: 1,
                     energy: 5.0,
                     born_season: 0,
+                    blocked: false,
                 }),
                 ..world.cells[idx]
             };
@@ -2276,11 +2419,11 @@ mod tests {
 
         let left = world
             .get(cx - 1, cy)
-            .organism
+            .population
             .expect("left predator survives");
         let right = world
             .get(cx + 1, cy)
-            .organism
+            .population
             .expect("right predator survives");
         assert!(
             (left.energy - right.energy).abs() < TOLERANCE,
@@ -2314,10 +2457,12 @@ mod tests {
         world.cells[idx] = Cell {
             light: 0.0,
             temperature,
-            organism: Some(Organism {
+            population: Some(Population {
                 species: SpeciesId(0),
+                count: 1,
                 energy,
                 born_season: 0,
+                blocked: false,
             }),
             ..world.cells[idx]
         };
@@ -2335,7 +2480,10 @@ mod tests {
         let (cx, cy) = (world.width / 2, world.height / 2);
 
         step(&mut world, &config);
-        let organism = world.get(cx, cy).organism.expect("survives the first tick");
+        let organism = world
+            .get(cx, cy)
+            .population
+            .expect("survives the first tick");
         assert!(
             (organism.energy - (config_seed_energy() - config.energy.decomposer_upkeep)).abs()
                 < TOLERANCE,
@@ -2344,13 +2492,13 @@ mod tests {
         );
 
         for _ in 0..200 {
-            if world.get(cx, cy).organism.is_none() {
+            if world.get(cx, cy).population.is_none() {
                 break;
             }
             step(&mut world, &config);
         }
         assert!(
-            world.get(cx, cy).organism.is_none(),
+            world.get(cx, cy).population.is_none(),
             "decomposer with no residue in range should not survive long-term"
         );
     }
@@ -2381,7 +2529,7 @@ mod tests {
         let mut ticks_survived = 0;
         for _ in 0..150 {
             step(&mut world, &config);
-            if world.get(cx, cy).organism.is_none() {
+            if world.get(cx, cy).population.is_none() {
                 break;
             }
             ticks_survived += 1;
@@ -2408,7 +2556,7 @@ mod tests {
 
         step(&mut world, &config);
 
-        let decomposer = world.get(cx, cy).organism.expect("decomposer survives");
+        let decomposer = world.get(cx, cy).population.expect("decomposer survives");
         // Task 136: decay first: 10.0 - residue_decay(0.2) = 9.8 available;
         // drawn = min(decomposer_extract_rate(1.05) * fit(1.0), 9.8) = 1.05;
         // net 5.0 + 1.05 - decomposer_upkeep(0.5) = 5.55.
@@ -2446,10 +2594,12 @@ mod tests {
             light: 0.0,
             temperature,
             toxicity,
-            organism: Some(Organism {
+            population: Some(Population {
                 species: SpeciesId(0),
+                count: 1,
                 energy,
                 born_season: 0,
+                blocked: false,
             }),
             ..world.cells[idx]
         };
@@ -2465,7 +2615,10 @@ mod tests {
         let (cx, cy) = (world.width / 2, world.height / 2);
 
         step(&mut world, &config);
-        let organism = world.get(cx, cy).organism.expect("survives the first tick");
+        let organism = world
+            .get(cx, cy)
+            .population
+            .expect("survives the first tick");
         assert!(
             (organism.energy - (config_seed_energy() - config.energy.chemolithotroph_upkeep)).abs()
                 < TOLERANCE,
@@ -2474,13 +2627,13 @@ mod tests {
         );
 
         for _ in 0..200 {
-            if world.get(cx, cy).organism.is_none() {
+            if world.get(cx, cy).population.is_none() {
                 break;
             }
             step(&mut world, &config);
         }
         assert!(
-            world.get(cx, cy).organism.is_none(),
+            world.get(cx, cy).population.is_none(),
             "chemolithotroph with no toxicity should not survive long-term"
         );
     }
@@ -2497,7 +2650,7 @@ mod tests {
 
         step(&mut world, &config);
 
-        let organism = world.get(cx, cy).organism.expect("survives");
+        let organism = world.get(cx, cy).population.expect("survives");
         // fit(temp_optimum == temperature) == 1.0: gain = 0.7 *
         // chemolithotroph_metabolism_gain(2.0) * 1.0 = 1.4; net =
         // 5.0 + 1.4 - chemolithotroph_upkeep(0.5) = 5.9.
@@ -2531,10 +2684,14 @@ mod tests {
         step(&mut mismatched_world, &config);
 
         let (cx, cy) = (matched_world.width / 2, matched_world.height / 2);
-        let matched_energy = matched_world.get(cx, cy).organism.expect("survives").energy;
+        let matched_energy = matched_world
+            .get(cx, cy)
+            .population
+            .expect("survives")
+            .energy;
         let mismatched_energy = mismatched_world
             .get(cx, cy)
-            .organism
+            .population
             .expect("survives")
             .energy;
         assert!(
@@ -2583,10 +2740,12 @@ mod tests {
             world.cells[idx] = Cell {
                 light: 0.0,
                 temperature: 0.5,
-                organism: Some(Organism {
+                population: Some(Population {
                     species: SpeciesId(0),
+                    count: 1,
                     energy: 5.0,
                     born_season: 0,
+                    blocked: false,
                 }),
                 ..world.cells[idx]
             };
@@ -2614,7 +2773,7 @@ mod tests {
         step(&mut world, &config);
 
         let (cx, cy) = (world.width / 2, world.height / 2);
-        let organism = world.get(cx, cy).organism.expect("organism survives");
+        let organism = world.get(cx, cy).population.expect("organism survives");
         // Task 136: same net as isolated_photolithic_grows, +0.48.
         assert!(
             (organism.energy - 5.48).abs() < TOLERANCE,
@@ -2643,10 +2802,12 @@ mod tests {
         world.cells[dying_idx] = Cell {
             light: 0.0,
             temperature: 0.5,
-            organism: Some(Organism {
+            population: Some(Population {
                 species: SpeciesId(0),
+                count: 1,
                 energy: 0.05,
                 born_season: 0,
+                blocked: false,
             }),
             ..world.cells[dying_idx]
         };
@@ -2655,10 +2816,12 @@ mod tests {
         world.cells[surviving_idx] = Cell {
             light: 0.7,
             temperature: 0.5,
-            organism: Some(Organism {
+            population: Some(Population {
                 species: SpeciesId(0),
+                count: 1,
                 energy: 5.0,
                 born_season: 0,
+                blocked: false,
             }),
             ..world.cells[surviving_idx]
         };
@@ -2681,7 +2844,7 @@ mod tests {
             events.extinctions.is_empty(),
             "species still has a survivor, should not be extinct"
         );
-        assert!(world.get(1, 1).organism.is_none());
+        assert!(world.get(1, 1).population.is_none());
     }
 
     #[test]
@@ -2798,10 +2961,12 @@ mod tests {
             world.cells[idx] = Cell {
                 light: 0.7,
                 temperature: 0.5,
-                organism: Some(Organism {
+                population: Some(Population {
                     species,
+                    count: 1,
                     energy: 5.0,
                     born_season: 0,
+                    blocked: false,
                 }),
                 ..world.cells[idx]
             };
@@ -2881,6 +3046,7 @@ mod tests {
             1.0,
             TerrainKind::Plain,
             0.0,
+            0.0,
         );
         assert_eq!(pressures[0].interaction_harm, 3.0);
         assert_eq!(pressures[0].terrain_mismatch, [0.0; 4]);
@@ -2896,6 +3062,7 @@ mod tests {
             5.0,
             1.0,
             TerrainKind::Plain,
+            0.0,
             0.0,
         );
         assert_eq!(
@@ -2913,6 +3080,7 @@ mod tests {
             0.0,
             0.4,
             TerrainKind::Hill,
+            0.0,
             0.0,
         );
         assert!((pressures[0].terrain_mismatch[TerrainKind::Hill.index()] - 0.6).abs() < TOLERANCE);
@@ -2932,6 +3100,7 @@ mod tests {
             1.0,
             TerrainKind::Plain,
             0.7,
+            0.0,
         );
         assert!((pressures[0].toxicity - 0.7).abs() < TOLERANCE);
     }
@@ -2952,6 +3121,7 @@ mod tests {
             1.0,
             TerrainKind::Plain,
             0.0,
+            0.0,
         );
         assert!(below.is_none());
 
@@ -2965,6 +3135,7 @@ mod tests {
             -2.0,
             1.0,
             TerrainKind::Plain,
+            0.0,
             0.0,
         )
         .expect("threshold crossed this call");
@@ -2988,6 +3159,7 @@ mod tests {
             1.0,
             TerrainKind::Plain,
             0.0,
+            0.0,
         );
         assert!(first.is_some(), "first call crosses the threshold");
 
@@ -3000,6 +3172,7 @@ mod tests {
             -6.0,
             1.0,
             TerrainKind::Plain,
+            0.0,
             0.0,
         );
         assert!(second.is_none(), "must not re-fire once already crossed");
@@ -3023,6 +3196,7 @@ mod tests {
             0.9,
             TerrainKind::Plain,
             0.0,
+            0.0,
         );
         accumulate_selection_pressure(
             &mut pressures,
@@ -3033,6 +3207,7 @@ mod tests {
             0.0,
             0.2,
             TerrainKind::Mountain,
+            0.0,
             0.0,
         );
         // Toxicity 0.2 tips the total to 1.1, crossing the threshold.
@@ -3046,6 +3221,7 @@ mod tests {
             1.0,
             TerrainKind::Plain,
             0.2,
+            0.0,
         )
         .expect("threshold crossed this call");
         assert_eq!(
@@ -3086,7 +3262,7 @@ mod tests {
                 crossed = Some(event);
                 break;
             }
-            if world.get(cx, cy).organism.is_none() {
+            if world.get(cx, cy).population.is_none() {
                 panic!("organism must not die from toxicity alone in this test setup");
             }
         }
@@ -3116,10 +3292,12 @@ mod tests {
         });
         let (cx, cy) = (world.width / 2, world.height / 2);
         let idx = world.index(cx, cy);
-        world.cells[idx].organism = Some(Organism {
+        world.cells[idx].population = Some(Population {
             species: SpeciesId(0),
+            count: 1,
             energy: 5.0,
             born_season: 0,
+            blocked: false,
         });
         (world, config, idx)
     }
@@ -3168,7 +3346,7 @@ mod tests {
         // Founder placement: the triggering organism's cell now belongs to
         // the descendant (this task's documented "simpler of two options"
         // choice — no new placement logic).
-        assert_eq!(world.cells[idx].organism.unwrap().species, new_id);
+        assert_eq!(world.cells[idx].population.unwrap().species, new_id);
         // Task 109: backs `Objective::Speciation`.
         assert!(world.has_speciated);
     }

@@ -38,7 +38,7 @@
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::{env_fit, step};
-use abiogenesis::world::{Metabolism, Organism, SimWorld, Species, SpeciesId};
+use abiogenesis::world::{Metabolism, Population, SimWorld, Species, SpeciesId};
 use abiogenesis::worldgen::generate_starting_palette;
 
 /// Long enough for a bloom to grow, saturate, and settle (suggested
@@ -93,7 +93,11 @@ const MAX_UNSTABLE_RATE: f32 = 0.3;
 const MAX_SATURATION_RATE: f32 = 0.3;
 
 fn population(world: &SimWorld) -> usize {
-    world.cells.iter().filter(|c| c.organism.is_some()).count()
+    world
+        .cells
+        .iter()
+        .filter(|c| c.population.is_some())
+        .count()
 }
 
 /// Worlds no longer auto-place organisms (task 050) — the player seeds them
@@ -118,7 +122,7 @@ fn place_starting_organisms(world: &mut SimWorld, config: &SimConfig) {
         let species = &world.species[i];
         let (optimum, tolerance) = (species.temp_optimum, species.temp_tolerance);
         let idx = (0..world.cells.len())
-            .filter(|&idx| world.is_placeable_index(idx) && world.cells[idx].organism.is_none())
+            .filter(|&idx| world.is_placeable_index(idx) && world.cells[idx].population.is_none())
             .max_by(|&a, &b| {
                 let score = |idx: usize| {
                     env_fit(world.cells[idx].temperature, optimum, tolerance)
@@ -127,10 +131,12 @@ fn place_starting_organisms(world: &mut SimWorld, config: &SimConfig) {
                 score(a).total_cmp(&score(b))
             })
             .expect("terrain generation guarantees at least one placeable cell");
-        world.cells[idx].organism = Some(Organism {
+        world.cells[idx].population = Some(Population {
             species: SpeciesId(i as u8),
+            count: 1,
             energy: config.energy.seed_energy,
             born_season: 0,
+            blocked: false,
         });
     }
 }
@@ -331,10 +337,12 @@ fn chemolithotroph_survives_reasonably_in_its_toxic_zone_across_seeds() {
             repro_threshold: config.energy.repro_threshold,
             tags: Vec::new(),
         });
-        world.cells[idx].organism = Some(Organism {
+        world.cells[idx].population = Some(Population {
             species: species_id,
+            count: 1,
             energy: config.energy.seed_energy,
             born_season: 0,
+            blocked: false,
         });
 
         for _ in 0..RUN_TICKS {
@@ -344,7 +352,7 @@ fn chemolithotroph_survives_reasonably_in_its_toxic_zone_across_seeds() {
         let survived = world
             .cells
             .iter()
-            .any(|c| c.organism.is_some_and(|o| o.species == species_id));
+            .any(|c| c.population.is_some_and(|o| o.species == species_id));
         if !survived {
             collapses += 1;
         }
@@ -384,7 +392,7 @@ fn dark_cells_stay_uninhabited_across_seeds() {
                     continue;
                 }
                 assert!(
-                    world.get(x, y).organism.is_none(),
+                    world.get(x, y).population.is_none(),
                     "seed {seed}: cell ({x}, {y}) has light {light:.3}, well below \
                      {threshold}, so it should be uninhabitable, but found an \
                      organism there"

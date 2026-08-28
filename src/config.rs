@@ -316,6 +316,16 @@ pub struct EnergyConfig {
     pub repro_threshold: f32,
     /// Energy cost passed to the child on reproduction.
     pub repro_cost: f32,
+    /// Task 137: the maximum individuals a single cell's population can hold
+    /// before the excess must break out to a neighbouring cell (or, with no
+    /// valid outlet, feed local selection pressure instead). A new knob, not
+    /// a retune of an existing one (task 136's coefficients stay as measured)
+    /// — picked, not swept: `repro_threshold / repro_cost = 2` growth events
+    /// consume one `repro_threshold`'s worth of aggregate energy each, so a
+    /// capacity of `6` lets a population visibly grow through a handful of
+    /// crossings before breakout pressure kicks in, without letting a single
+    /// cell silently absorb the whole grid's carrying capacity.
+    pub cell_carrying_capacity: u32,
     /// Photolithic species: energy gained per tick from metabolism
     /// (`gain = light × metabolism_gain × env_fit`, GDD §5.6). Retuned from
     /// `2.0` by task 136: at `2.0`, an isolated organism in optimal
@@ -407,6 +417,7 @@ impl Default for EnergyConfig {
             crowd_factor: 0.15,
             repro_threshold: 10.0,
             repro_cost: 5.0,
+            cell_carrying_capacity: 6,
             photolithic_metabolism_gain: 1.4,
             interaction_scale: 0.15,
             predator_drain_cap: 1.4,

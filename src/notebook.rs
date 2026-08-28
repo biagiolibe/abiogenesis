@@ -1155,11 +1155,13 @@ fn catalog_panel(
     ui.label(text::SPECIES_HEADING);
     for (id, species) in world.species.iter().enumerate() {
         let species_id = SpeciesId(id as u8);
-        let population = world
+        let population: usize = world
             .cells
             .iter()
-            .filter(|c| c.organism.is_some_and(|o| o.species == species_id))
-            .count();
+            .filter_map(|c| c.population)
+            .filter(|p| p.species == species_id)
+            .map(|p| p.count as usize)
+            .sum();
         let seeded_era = world.species_seeded_era.get(id).copied().flatten();
         ui.horizontal(|ui| {
             ui.colored_label(species_color(species_id), TAG_GLYPH);

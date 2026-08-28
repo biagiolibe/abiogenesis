@@ -10,7 +10,8 @@ use rand::RngExt;
 use crate::config::SimConfig;
 use crate::objectives::{Objective, ZoneKind};
 use crate::world::{
-    draw_species_name, draw_species_tags, Biome, Metabolism, Organism, SimWorld, Species, SpeciesId,
+    draw_species_name, draw_species_tags, Biome, Metabolism, Population, SimWorld, Species,
+    SpeciesId,
 };
 
 /// Concrete generation parameters for one world, derived from its position
@@ -367,10 +368,12 @@ fn place_wild_species(world: &mut SimWorld, config: &SimConfig) {
         world.wild_species.push(species_id);
 
         let idx = find_wild_placement(world, center, min_distance, attempts);
-        world.cells[idx].organism = Some(Organism {
+        world.cells[idx].population = Some(Population {
             species: species_id,
+            count: 1,
             energy: config.energy.seed_energy,
             born_season: world.season,
+            blocked: false,
         });
     }
 }
@@ -395,7 +398,7 @@ fn find_wild_placement(
         let x = world.rng_mut().random_range(0..width);
         let y = world.rng_mut().random_range(0..height);
         let idx = world.index(x, y);
-        if !world.is_placeable_index(idx) || world.get(x, y).organism.is_some() {
+        if !world.is_placeable_index(idx) || world.get(x, y).population.is_some() {
             continue;
         }
         let (dx, dy) = (x as f32 - center.0, y as f32 - center.1);
@@ -409,7 +412,7 @@ fn find_wild_placement(
     }
     best.map(|(idx, _)| idx).unwrap_or_else(|| {
         (0..world.cells.len())
-            .find(|&idx| world.is_placeable_index(idx) && world.cells[idx].organism.is_none())
+            .find(|&idx| world.is_placeable_index(idx) && world.cells[idx].population.is_none())
             .expect("a world always has at least one placeable, unoccupied cell")
     })
 }
@@ -704,7 +707,7 @@ mod tests {
         let placed_wild = world
             .cells
             .iter()
-            .filter(|cell| cell.organism.is_some_and(|o| world.is_wild(o.species)))
+            .filter(|cell| cell.population.is_some_and(|o| world.is_wild(o.species)))
             .count();
         assert_eq!(placed_wild, config.worldgen.wild_species_count as usize);
         assert_eq!(
@@ -722,7 +725,7 @@ mod tests {
                 let idx = world
                     .cells
                     .iter()
-                    .position(|cell| cell.organism.is_some_and(|o| o.species == species))
+                    .position(|cell| cell.population.is_some_and(|o| o.species == species))
                     .expect("every wild species has exactly one placed organism");
                 assert!(
                     world.is_placeable_index(idx),
@@ -744,7 +747,7 @@ mod tests {
                 .cells
                 .iter()
                 .enumerate()
-                .filter(|(_, cell)| cell.organism.is_some_and(|o| world.is_wild(o.species)))
+                .filter(|(_, cell)| cell.population.is_some_and(|o| world.is_wild(o.species)))
                 .map(|(idx, _)| idx)
                 .collect()
         };
@@ -802,7 +805,7 @@ mod tests {
         generate_starting_palette(&mut world, &config);
 
         assert!(
-            world.cells.iter().all(|cell| cell.organism.is_none()),
+            world.cells.iter().all(|cell| cell.population.is_none()),
             "a freshly generated world must start with an empty grid"
         );
         assert!(

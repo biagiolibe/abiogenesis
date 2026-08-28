@@ -19,7 +19,7 @@ use crate::world::{SimWorld, SpeciesId};
 /// occupied-cell set. `species`/`density` cover the cluster's *rendered*
 /// footprint (real cells, interior holes filled in, then eroded smaller —
 /// see `compute_cluster_render`'s doc comment), so a cell can be part of a
-/// blob without holding an `Organism`, and a real edge-of-cluster organism
+/// blob without holding a `Population`, and a real edge-of-cluster organism
 /// can render as plain terrain if erosion abstracted its cell away — Overview
 /// was never meant to show individual organisms precisely, only the
 /// population's coarse shape.
@@ -68,7 +68,7 @@ pub struct ClusterRender {
 /// Clusters are processed in cell-scan order (deterministic, same order
 /// `SimWorld::cells` is stored in) and a cell already claimed by an
 /// earlier-processed cluster's blob is never reclaimed — two different-
-/// species clusters can never literally share a cell (`Cell::organism` is
+/// species clusters can never literally share a cell (`Cell::population` is
 /// single-occupancy), but their *filled/eroded* blobs, being derived from a
 /// bounding box rather than exact occupancy, can otherwise overlap near
 /// each other. First-claimed-wins keeps every cell's Overview blob
@@ -87,7 +87,7 @@ pub fn compute_cluster_render(world: &SimWorld, config: &SimConfig) -> ClusterRe
             continue;
         }
         visited[start] = true;
-        let Some(organism) = world.cells[start].organism else {
+        let Some(population) = world.cells[start].population else {
             continue;
         };
 
@@ -103,8 +103,8 @@ pub fn compute_cluster_render(world: &SimWorld, config: &SimConfig) -> ClusterRe
                     continue;
                 }
                 if world.cells[neighbour]
-                    .organism
-                    .is_some_and(|o| o.species == organism.species)
+                    .population
+                    .is_some_and(|o| o.species == population.species)
                 {
                     visited[neighbour] = true;
                     members.push(neighbour);
@@ -121,7 +121,7 @@ pub fn compute_cluster_render(world: &SimWorld, config: &SimConfig) -> ClusterRe
                 continue;
             }
             claimed[idx] = true;
-            species[idx] = Some(organism.species);
+            species[idx] = Some(population.species);
             density[idx] = cluster_density;
         }
     }
@@ -280,14 +280,16 @@ fn erode_once(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::{Organism, SpeciesId};
+    use crate::world::{Population, SpeciesId};
 
     fn place(world: &mut SimWorld, x: usize, y: usize, species: u8) {
         let idx = world.index(x, y);
-        world.cells[idx].organism = Some(Organism {
+        world.cells[idx].population = Some(Population {
             species: SpeciesId(species),
+            count: 1,
             energy: 5.0,
             born_season: 0,
+            blocked: false,
         });
     }
 

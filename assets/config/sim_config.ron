@@ -54,6 +54,7 @@
         crowd_factor: 0.15,
         repro_threshold: 10.0,
         repro_cost: 5.0,
+        cell_carrying_capacity: 6,
         photolithic_metabolism_gain: 1.4,
         interaction_scale: 0.15,
         predator_drain_cap: 1.4,

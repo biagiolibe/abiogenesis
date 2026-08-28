@@ -280,7 +280,7 @@ fn play(seed: u64, policy: Policy, config: &SimConfig) -> RunResult {
         let population = world
             .cells
             .iter()
-            .filter(|cell| cell.organism.is_some())
+            .filter(|cell| cell.population.is_some())
             .count() as u32;
         peak_population = peak_population.max(population);
 
@@ -325,7 +325,7 @@ fn choose_placement(
     let mut best: Option<(f32, SpeciesId, usize, usize, Context)> = None;
     for _ in 0..CANDIDATE_SAMPLE {
         let index = placeable[rng.random_range(0..placeable.len())];
-        if world.cells[index].organism.is_some() {
+        if world.cells[index].population.is_some() {
             continue;
         }
         let (x, y) = (index % world.width, index / world.width);
@@ -395,7 +395,7 @@ fn pair_set(world: &SimWorld, species: SpeciesId, x: usize, y: usize) -> Vec<(Ta
     let own = &world.species[species.0 as usize].tags;
     let mut pairs = Vec::new();
     for neighbour in world.moore_neighbours(x, y) {
-        let Some(organism) = world.cells[neighbour].organism else {
+        let Some(organism) = world.cells[neighbour].population else {
             continue;
         };
         for &their_tag in &world.species[organism.species.0 as usize].tags {

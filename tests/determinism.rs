@@ -5,7 +5,7 @@
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::sim::step;
-use abiogenesis::world::{Organism, SimWorld, SpeciesId};
+use abiogenesis::world::{Population, SimWorld, SpeciesId};
 use abiogenesis::worldgen::generate_starting_palette;
 
 const RUN_TICKS: usize = 200;
@@ -24,10 +24,12 @@ fn place_starting_organisms(world: &mut SimWorld, config: &SimConfig) {
             i * (world.width - 1) / (count - 1)
         };
         let idx = world.index(x, 0);
-        world.cells[idx].organism = Some(Organism {
+        world.cells[idx].population = Some(Population {
             species: SpeciesId(i as u8),
+            count: 1,
             energy: config.energy.seed_energy,
             born_season: 0,
+            blocked: false,
         });
     }
 }

@@ -15,7 +15,7 @@
 
 use crate::config::SimConfig;
 use crate::sim::ActionBudget;
-use crate::world::{Organism, SimWorld, SpeciesId};
+use crate::world::{Population, SimWorld, SpeciesId};
 
 /// Every rejection rule `seed_organism_on_click` enforces once a clicked
 /// cell is known: affordable, placeable (task 067 — not Sea or a mountain
@@ -43,13 +43,15 @@ pub fn attempt_seed(
     let index = world.index(x, y);
     let season = world.season;
     let cell = world.get_mut(x, y);
-    if cell.organism.is_some() {
+    if cell.population.is_some() {
         return None;
     }
-    cell.organism = Some(Organism {
+    cell.population = Some(Population {
         species,
+        count: 1,
         energy: config.energy.seed_energy,
         born_season: season,
+        blocked: false,
     });
     budget.points_remaining -= config.time.action_costs.seed;
     Some(index)
@@ -72,7 +74,7 @@ mod tests {
         let placed = attempt_seed(&mut world, &config, &mut budget, SpeciesId(0), 5, 5);
 
         assert!(placed.is_none());
-        assert!(world.get(5, 5).organism.is_none());
+        assert!(world.get(5, 5).population.is_none());
         assert_eq!(
             budget.points_remaining, 3,
             "budget must not be spent on a rejected placement"
@@ -93,7 +95,7 @@ mod tests {
         let placed = attempt_seed(&mut world, &config, &mut budget, SpeciesId(0), 5, 5);
 
         assert!(placed.is_none());
-        assert!(world.get(5, 5).organism.is_none());
+        assert!(world.get(5, 5).population.is_none());
     }
 
     #[test]
@@ -108,7 +110,7 @@ mod tests {
         let placed = attempt_seed(&mut world, &config, &mut budget, SpeciesId(0), 5, 5);
 
         assert_eq!(placed, Some(world.index(5, 5)));
-        assert!(world.get(5, 5).organism.is_some());
+        assert!(world.get(5, 5).population.is_some());
         assert_eq!(budget.points_remaining, 2);
     }
 }

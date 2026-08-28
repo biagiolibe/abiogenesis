@@ -359,7 +359,7 @@ fn seed_organism_on_click(
 fn is_isolated_placement(world: &SimWorld, x: usize, y: usize) -> bool {
     world
         .moore_neighbours(x, y)
-        .all(|idx| world.cells[idx].organism.is_none())
+        .all(|idx| world.cells[idx].population.is_none())
 }
 
 /// Left-click while `ActionMode::Stress` is selected (GDD §6 "Stress"):
@@ -476,13 +476,13 @@ fn cull_on_click(
 
     let index = world.index(x, y);
     let cell = world.get_mut(x, y);
-    if cell.organism.is_none() {
+    if cell.population.is_none() {
         return;
     }
     if budget.points_remaining < config.time.action_costs.cull {
         return;
     }
-    cell.organism = None;
+    cell.population = None;
     budget.points_remaining -= config.time.action_costs.cull;
     placed.0.remove(&index);
 }
@@ -593,7 +593,7 @@ fn quit(keys: Res<ButtonInput<KeyCode>>, mut exit: MessageWriter<AppExit>) {
 mod tests {
     use super::*;
     use crate::notebook::NotebookHasUnseenConfirmation;
-    use abiogenesis::world::{Organism, Species, SpeciesId, TagId, TagMatrix, TagSlot};
+    use abiogenesis::world::{Population, Species, SpeciesId, TagId, TagMatrix, TagSlot};
     use abiogenesis::worldgen::generate_starting_palette;
     use bevy::ecs::system::SystemState;
     use bevy::state::state::State;
@@ -1291,10 +1291,12 @@ mod tests {
     fn is_isolated_placement_false_with_one_occupied_moore_neighbour() {
         let config = SimConfig::default();
         let mut world = SimWorld::new(42, &config);
-        world.get_mut(6, 5).organism = Some(Organism {
+        world.get_mut(6, 5).population = Some(Population {
             species: SpeciesId(0),
+            count: 1,
             energy: 1.0,
             born_season: 0,
+            blocked: false,
         });
         assert!(!is_isolated_placement(&world, 5, 5));
     }

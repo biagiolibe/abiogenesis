@@ -1159,10 +1159,10 @@ fn splice_panel(ui: &mut egui::Ui, world: &SimWorld, draft: &mut SpliceDraft) {
 fn species_stats(world: &SimWorld) -> Vec<(SpeciesId, usize, f32)> {
     let mut totals = vec![(0usize, 0.0f32); world.species.len()];
     for cell in &world.cells {
-        if let Some(organism) = cell.organism {
-            let entry = &mut totals[organism.species.0 as usize];
-            entry.0 += 1;
-            entry.1 += organism.energy;
+        if let Some(population) = cell.population {
+            let entry = &mut totals[population.species.0 as usize];
+            entry.0 += population.count as usize;
+            entry.1 += population.energy;
         }
     }
     totals

@@ -122,7 +122,7 @@ pub fn update_grace_progress(world: &SimWorld, grace: &mut GraceProgress, footho
     if grace.foothold_reached {
         return;
     }
-    let alive = world.cells.iter().any(|cell| cell.organism.is_some());
+    let alive = world.cells.iter().any(|cell| cell.population.is_some());
     if alive {
         grace.consecutive_alive_ticks += 1;
     } else {
@@ -306,9 +306,9 @@ pub fn evaluate_world(
 /// or sustain it.
 fn is_total_extinction(world: &SimWorld) -> bool {
     world.ever_populated
-        && world.cells.iter().all(|cell| match cell.organism {
+        && world.cells.iter().all(|cell| match cell.population {
             None => true,
-            Some(organism) => world.is_wild(organism.species),
+            Some(population) => world.is_wild(population.species),
         })
 }
 
@@ -345,8 +345,8 @@ fn evaluate_sustained(
 fn count_coexisting_species(world: &SimWorld) -> u32 {
     let mut population = vec![0u32; world.species.len()];
     for cell in &world.cells {
-        if let Some(organism) = cell.organism {
-            population[organism.species.0 as usize] += 1;
+        if let Some(occupant) = cell.population {
+            population[occupant.species.0 as usize] += 1;
         }
     }
     // Wild populations (task 098) don't count toward `Coexistence`: they're
@@ -371,8 +371,8 @@ fn species_present_in_zone(world: &SimWorld, species: SpeciesId, zone: ZoneKind)
     world.cells.iter().enumerate().any(|(idx, cell)| {
         let x = idx % world.width;
         let y = idx / world.width;
-        cell.organism
-            .is_some_and(|organism| organism.species == species)
+        cell.population
+            .is_some_and(|population| population.species == species)
             && cell_in_zone(world, x, y, zone)
     })
 }
@@ -383,16 +383,17 @@ fn cell_in_zone(world: &SimWorld, x: usize, y: usize, zone: ZoneKind) -> bool {
     }
 }
 
-/// Living population of `species` across the whole grid.
+/// Living population of `species` across the whole grid — task 137: the sum
+/// of individuals across every cell that species occupies, not the number of
+/// cells, now that a cell can hold more than one individual.
 fn population_of(world: &SimWorld, species: SpeciesId) -> u32 {
     world
         .cells
         .iter()
-        .filter(|cell| {
-            cell.organism
-                .is_some_and(|organism| organism.species == species)
-        })
-        .count() as u32
+        .filter_map(|cell| cell.population)
+        .filter(|population| population.species == species)
+        .map(|population| population.count)
+        .sum()
 }
 
 pub struct ObjectivesPlugin;
@@ -536,7 +537,7 @@ fn evaluate_current_objective(
 mod tests {
     use super::*;
     use crate::config::SimConfig;
-    use crate::world::{Cell, Metabolism, Organism, Species};
+    use crate::world::{Cell, Metabolism, Population, Species};
     use bevy::ecs::system::SystemState;
 
     /// Builds a scratch ECS `World` with every resource `ObjectiveOutcomeParams`
@@ -575,10 +576,12 @@ mod tests {
     fn place(world: &mut SimWorld, x: usize, y: usize, species: SpeciesId) {
         let idx = world.index(x, y);
         world.cells[idx] = Cell {
-            organism: Some(Organism {
+            population: Some(Population {
                 species,
+                count: 1,
                 energy: 5.0,
                 born_season: 0,
+                blocked: false,
             }),
             ..world.cells[idx]
         };
@@ -637,7 +640,7 @@ mod tests {
         // Species 2 drops out for one tick: the count must reset to 0, not
         // to 2.
         let idx = world.index(2, 0);
-        world.cells[idx].organism = None;
+        world.cells[idx].population = None;
         assert_eq!(
             evaluate(&objective, &world, &mut progress),
             WorldOutcome::Ongoing
@@ -859,7 +862,7 @@ mod tests {
         // un-clear.
         for x in 0..5 {
             let idx = world.index(x, 0);
-            world.cells[idx].organism = None;
+            world.cells[idx].population = None;
         }
         assert_eq!(
             evaluate(&objective, &world, &mut progress),
@@ -942,7 +945,7 @@ mod tests {
         // The lone organism dies mid-era: must fail on this very call, not
         // one tick later.
         let idx = world.index(0, 0);
-        world.cells[idx].organism = None;
+        world.cells[idx].population = None;
         assert_eq!(
             evaluate_world(Some(&objective), &world, &mut progress, 40, false),
             WorldOutcome::Failed(FailureReason::TotalExtinction),
@@ -1018,7 +1021,7 @@ mod tests {
         place(&mut world, 1, 0, SpeciesId(1));
         // The player's organism dies; the wild one lives on.
         let idx = world.index(0, 0);
-        world.cells[idx].organism = None;
+        world.cells[idx].population = None;
         let mut progress = ObjectiveProgress::default();
 
         assert_eq!(
@@ -1159,7 +1162,7 @@ mod tests {
             update_grace_progress(&world, &mut grace, 25);
         }
         let idx = world.index(0, 0);
-        world.cells[idx].organism = None;
+        world.cells[idx].population = None;
         update_grace_progress(&world, &mut grace, 25);
 
         for _ in 0..24 {
@@ -1182,7 +1185,7 @@ mod tests {
         assert!(grace.foothold_reached);
 
         let idx = world.index(0, 0);
-        world.cells[idx].organism = None;
+        world.cells[idx].population = None;
         update_grace_progress(&world, &mut grace, 25);
 
         assert!(
