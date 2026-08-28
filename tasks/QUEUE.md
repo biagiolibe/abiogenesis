@@ -82,25 +82,42 @@ annotated in the INDEX itself):
 | `[x]` | 134 | Two-bot harness (exploiter vs explorer) — pre-change baseline | — | [134](done/134-two-bot-experiment-incentive-harness.md) |
 | `[ ]` | 135 | Three-level time scale: Pulse → Season → Era | — | [135](135-three-level-time-scale.md) |
 | `[ ]` | 136 | Make the hidden matrix necessary (interaction_scale + retune) | 134, 135 | [136](136-matrix-necessary-balance.md) |
+| `[ ]` | 136b | Evidence per distinct observation, not per tick — de-duplicate sustained adjacencies, retune `confirmation_threshold` | 136 | *(to scope)* |
 | `[ ]` | 137 | Per-cell population model | 136 | [137](137-per-cell-population-model.md) |
 | `[ ]` | 138 | Tick as an explicit phased pipeline | 137 | [138](138-tick-pipeline-explicit-phases.md) |
 | `[ ]` | 139 | Overview: real density, remove the pictorial version | 137 | [139](139-overview-real-density.md) |
 | `[ ]` | 140 | End-of-era reveal beat + evolution applied there | 135 | [140](140-end-of-era-reveal-beat.md) |
 
-> **134 landed 2026-08-27, and its baseline reframes 136.** Head to head the
-> exploiter is ahead (faster on 9 of 17 comparable seeds, explorer on 4, 4
-> tied), but the finding that matters is a line the survey wasn't designed to
-> produce: with 20 off-diagonal pairs per world, the exploiter ends a world
-> having confirmed **0.82** of them and the explorer — after spending 3016 of
-> its 4458 points deliberately probing — **1.45**. Neither bot reached a
-> *known* placement context even once across 40 worlds. The matrix in world 0
-> isn't merely optional, it's nearly **unobtainable**: three clean observations
-> are needed per pair, and organisms rarely stay adjacent to a stable,
-> unconfounded neighbour long enough to produce them. Task 136 makes the matrix
-> *necessary*; on this evidence that is not the same as making it *learnable*,
-> and the `Isolate` lever (attachment point scoped into 138) looks
-> better-motivated than it did on paper. Full numbers and the definitions used
-> are in the task file.
+> **134 landed 2026-08-27; its diagnosis was corrected 2026-08-28 and 136's
+> scope changed with it.** Head to head the exploiter is ahead (faster on 9 of
+> 17 comparable seeds, explorer on 4, 4 tied). The first reading of the low
+> `pairs confirmed` figures — "the matrix is nearly unobtainable" — was wrong,
+> and rested on a threshold of `3.0` taken from a unit-test constant; the
+> shipped `confirmation_threshold` is **1.0** against a numerator of 1.0, so one
+> unconfounded observation confirms a pair outright. A direct diagnostic (12
+> seeds, 30 eras, seeding greedily) found the opposite of the original claim:
+> **12.2M `AdjacencyObserved` events** and **43% of every confirmable pair
+> confirmed** by a bot making no attempt to observe anything. The bots' low
+> figures were a property of their own passivity, not of the game.
+>
+> Two defects survive that correction, and the design corpus names only the
+> first:
+>
+> 1. **The matrix doesn't matter.** Only **1.8%** of occupied Moore adjacencies
+>    are cross-species (302,800 against 16,154,913 same-species). With
+>    `net_self_interaction == 0` forced, the other 98.2% contribute exactly
+>    zero. The hidden layer is switched off almost everywhere on the grid.
+> 2. **The matrix isn't earned.** Evidence accrues per organism, per
+>    neighbour-tag, *per tick*: a blob sitting still for 200 ticks emits the
+>    same observation 200 times. Scientifically that is one data point repeated,
+>    not 200 — so confirmation is a function of population, and the way to
+>    decode the world is to flood it, not to design an experiment. Exactly
+>    backwards from GDD §7, where the isolated observation is the valuable one.
+>    Clean observations (`n_confounders == 0`) are **577 of 12.2M**, 0.005%.
+>
+> Defect 1 is task 136's existing job, now with a measurable target: raise the
+> cross-species contact fraction. Defect 2 is new work — see 136b below. Full
+> numbers in the task file.
 
 **→ CHECKPOINT before Phase 1b: play it, and re-run 134 against its baseline.**
 The INDEX is right that this is the highest information-per-hour moment in the

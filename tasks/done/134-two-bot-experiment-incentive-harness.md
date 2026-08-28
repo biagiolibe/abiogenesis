@@ -184,20 +184,46 @@ per world. The exploiter ends a world having confirmed **0.82** of them; the
 explorer, after spending 3016 of its 4458 points deliberately probing unknown
 adjacencies, ends with **1.45**. Both are close to nothing.
 
-So the problem in world 0 is worse than "the matrix is optional". It is that
-**the matrix is nearly unobtainable**: 3 clean observations are needed to
-confirm one pair (`confirmation_threshold 1.0` against a weight of
-`1/(1+confounders)`), and organisms rarely stay adjacent to a stable, unconfounded
-neighbour long enough to produce them. A player who wants to decode the matrix
-has no efficient way to try. Neither bot ever reached a **known** context even
-once across 40 worlds — the `known 0` column is not a policy artefact, it is
-the absence of anything to exploit.
+### CORRECTION (2026-08-28): the low confirmation count is a harness artefact
 
-That reframes task 136's job. Making environmental adaptation break-even makes
-the matrix *necessary*; it does not by itself make it *learnable*. The
-`Isolate` action the experiment-incentive document names as its first
-corrective lever (and which task 138 is now scoped to leave an attachment point
-for) looks better-motivated after this run than it did on paper.
+The paragraph originally here read the `pairs confirmed` line as "the matrix is
+nearly unobtainable", and justified it with "3 clean observations are needed to
+confirm one pair". **Both halves were wrong.** The `3.0` came from
+`notebook.rs`'s unit-test constant, not from the shipped configuration:
+`assets/config/sim_config.ron` and `NotebookConfig::default` both carry
+`confirmation_threshold: 1.0` against `observation_weight_numerator: 1.0`, so a
+single unconfounded observation confirms a pair outright.
+
+A direct diagnostic (12 world-0 seeds, 30 eras, seeding greedily instead of
+carefully — deleted after use, numbers below) shows what actually happens once
+populations are allowed to grow:
+
+```text
+nonzero (confirmable) pairs:      112/240        (~9.3 of 20 per world)
+AdjacencyObserved events total:   12,197,641
+n_confounders histogram:          [577, 3666168, 8483892, 32584, 14420, 0, ...]
+confirmed pairs total:            48             (~4 per world, 43% of confirmable)
+occupied Moore adjacencies:       same species 16,154,913 — cross species 302,800
+peak population:                  up to 3307 of 10240 cells
+```
+
+So the matrix is **not** hard to learn. It is learned *passively*: 43% of every
+confirmable pair gets confirmed within 30 eras by a bot that makes no attempt to
+observe anything. Twelve million adjacency events at a threshold of one make
+confirmation a function of population, not of care.
+
+What the two-bot numbers above actually measured is therefore narrower than
+claimed: the bots place three organisms per era and mostly in isolation, so they
+never reach the population scale at which evidence floods in. **The low
+`pairs confirmed` figures are a property of the policies, not of the game.**
+
+The finding that survives, and it is a real one, is the ratio on the last line:
+**only 1.8% of occupied adjacencies are cross-species.** Combined with the
+forced `net_self_interaction == 0`, that is the mechanism behind the matrix
+being energetically ignorable — and it is the thing task 136 has to move.
+
+The corrected diagnosis, and what it implies for task 136, is written up in
+`tasks/QUEUE.md` under Phase 1.
 
 **`short_term_eras` and `full_eras` are near-identical**, which was not
 expected. `Objective::Speciation` reads `world.has_speciated`, a sticky flag —
