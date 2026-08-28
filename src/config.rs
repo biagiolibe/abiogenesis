@@ -307,19 +307,65 @@ pub struct EnergyConfig {
     pub seed_energy: f32,
     /// Base maintenance cost per tick.
     pub base_upkeep: f32,
-    /// Carrying-capacity penalty per occupied neighbour.
+    /// Carrying-capacity penalty per occupied neighbour of a *different*
+    /// species (task 136 narrowed this from "any occupied neighbour" — see
+    /// `sim::step`'s cost section for why). Same-species density is capped
+    /// by the future per-cell carrying capacity (task 137), not this.
     pub crowd_factor: f32,
     /// Energy threshold at which an organism can reproduce.
     pub repro_threshold: f32,
     /// Energy cost passed to the child on reproduction.
     pub repro_cost: f32,
-    /// Photolithic species: energy gained per tick from metabolism.
+    /// Photolithic species: energy gained per tick from metabolism
+    /// (`gain = light × metabolism_gain × env_fit`, GDD §5.6). Retuned from
+    /// `2.0` by task 136: at `2.0`, an isolated organism in optimal
+    /// conditions (`light 0.7`, `env_fit ≈ 1`) nets `0.7 × 2.0 - 0.5 ≈
+    /// +0.9`/tick — reproduction threshold in ~6 ticks on environment alone,
+    /// making the hidden matrix optional for basic survival.
+    ///
+    /// The design doc's starting proposal was `0.8` (net `≈ +0.05`/tick).
+    /// Measured against `tests/balance.rs`, that margin could not survive
+    /// contact with `diffuse_environment`, which keeps eroding a cell's
+    /// temperature toward its Moore-neighbourhood mean every tick regardless
+    /// of any placement decision: at `0.8` the breakeven `env_fit` for
+    /// `light 0.7` is `0.5 / (0.7 × 0.8) ≈ 0.89`, tolerating only `≈0.07` of
+    /// temperature drift (`default_temp_tolerance = 0.15`) away from the
+    /// exact placement optimum before an organism goes net-negative — and a
+    /// 500-tick run measurably drifts further than that even in a
+    /// stable-looking toxic patch (observed ≈0.09 drift). Isolated organisms
+    /// were dying from ambient drift alone, not surviving-but-not-
+    /// reproducing as the design intends: `chemolithotroph_survives_
+    /// reasonably_in_its_toxic_zone_across_seeds` lost 62% of seeds, well
+    /// past its 30% budget. `1.4` was the smallest value in a `0.8`-to-`2.0`
+    /// sweep that brought every `tests/balance.rs` property back under
+    /// budget (`1.2`/`1.3` still failed at 32%): breakeven-fit tolerance
+    /// `≈0.19`, comfortably past the observed drift, while net `≈
+    /// +0.48`/tick is still far short of `2.0`'s effectively-unlimited
+    /// margin — a positive matrix relation (see `interaction_scale`) still
+    /// meaningfully speeds reproduction up, it just no longer has to rescue
+    /// the organism from dying of drift first. The other three metabolisms
+    /// are scaled by the same ratio (`÷1.43`) so none of them becomes
+    /// disproportionately strong once this one drops.
     pub photolithic_metabolism_gain: f32,
-    /// Predator species: maximum energy drained from prey per tick.
+    /// Scale applied to a raw matrix intensity (`TagMatrix::get`, `{-2..2}`)
+    /// before it enters the energy update (task 136,
+    /// `redesign/processed/abiogenesis-matrix-necessity-balance.md`). Without
+    /// this, a `±2` entry was worth `±2.0`/tick — four times `base_upkeep` —
+    /// so the hidden matrix could dominate or vanish an organism's energy
+    /// balance in a single tick regardless of how well the player read the
+    /// visible environment. At `0.15`, one confirmed `+2` relation
+    /// (`2 × 0.15 = 0.30`) is worth about the same order of magnitude as one
+    /// occupied neighbour's `crowd_factor` cost — a real but not
+    /// overwhelming margin, see `photolithic_metabolism_gain`'s own doc
+    /// comment for the isolated-baseline math this is calibrated against.
+    pub interaction_scale: f32,
+    /// Predator species: maximum energy drained from prey per tick. Scaled
+    /// by the same ÷1.43 ratio as `photolithic_metabolism_gain` by task 136.
     pub predator_drain_cap: f32,
     /// Predator species: base upkeep per tick.
     pub predator_upkeep: f32,
-    /// Decomposer species: energy extracted from residue per tick.
+    /// Decomposer species: energy extracted from residue per tick. Scaled by
+    /// the same ÷1.43 ratio as `photolithic_metabolism_gain` by task 136.
     pub decomposer_extract_rate: f32,
     /// Decomposer species: base upkeep per tick.
     pub decomposer_upkeep: f32,
@@ -361,10 +407,11 @@ impl Default for EnergyConfig {
             crowd_factor: 0.15,
             repro_threshold: 10.0,
             repro_cost: 5.0,
-            photolithic_metabolism_gain: 2.0,
-            predator_drain_cap: 2.0,
+            photolithic_metabolism_gain: 1.4,
+            interaction_scale: 0.15,
+            predator_drain_cap: 1.4,
             predator_upkeep: 0.7,
-            decomposer_extract_rate: 1.5,
+            decomposer_extract_rate: 1.05,
             decomposer_upkeep: 0.5,
             // First-pass, tunable (task 108): mirrors `photolithic_metabolism_gain`/
             // `base_upkeep` exactly. `EnvironmentConfig::swamp_toxicity_value`
@@ -372,7 +419,9 @@ impl Default for EnergyConfig {
             // `light` a photolithic organism sees in a bright cell — so
             // starting from Photolithic's own numbers is the natural
             // balance-comparable baseline until playtesting says otherwise.
-            chemolithotroph_metabolism_gain: 2.0,
+            // Scaled by the same ÷1.43 ratio as `photolithic_metabolism_gain`
+            // by task 136.
+            chemolithotroph_metabolism_gain: 1.4,
             chemolithotroph_upkeep: 0.5,
             residue_on_death: 3.0,
             residue_decay: 0.2,

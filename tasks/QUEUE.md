@@ -82,7 +82,7 @@ annotated in the INDEX itself):
 | `[x]` | 134 | Two-bot harness (exploiter vs explorer) — pre-change baseline | — | [134](done/134-two-bot-experiment-incentive-harness.md) |
 | `[x]` | 134b | Make the bot policies competent, re-record the baseline | 134 | [134b](done/134b-competent-bot-policies-and-rebaseline.md) |
 | `[x]` | 135 | Three-level time scale: Pulse → Season → Era | — | [135](done/135-three-level-time-scale.md) |
-| `[ ]` | 136 | Make the hidden matrix necessary (interaction_scale + retune) | 134b, 135 | [136](136-matrix-necessary-balance.md) |
+| `[x]` | 136 | Make the hidden matrix necessary (interaction_scale + retune) | 134b, 135 | [136](done/136-matrix-necessary-balance.md) |
 | `[ ]` | 136b | Evidence per distinct observation, not per tick | 136 | [136b](136b-evidence-per-distinct-observation.md) |
 | `[ ]` | 137 | Per-cell population model | 136 | [137](137-per-cell-population-model.md) |
 | `[ ]` | 138 | Tick as an explicit phased pipeline | 137 | [138](138-tick-pipeline-explicit-phases.md) |

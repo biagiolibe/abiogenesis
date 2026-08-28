@@ -4,9 +4,13 @@
 // Together with task 007 this was Phase 0's exit gate (GDD §13). Since task
 // 050 nothing is auto-placed in real play — `place_starting_organisms` below
 // synthesizes a plausible player placement: each generated species goes onto
-// the placeable cell whose temperature is closest to that species' own
-// `temp_optimum`, so these seed-swept statistical properties measure real
-// population dynamics under a fixed, comparable starting condition.
+// the placeable cell that maximizes `env_fit(temperature) * light` — the two
+// scalars a player's HUD overlays actually show — so these seed-swept
+// statistical properties measure real population dynamics under a fixed,
+// comparable starting condition. (Task 136: temperature alone used to be
+// enough here, back when environmental gain alone was generous; see
+// `place_starting_organisms`'s own doc comment for why the retune forced
+// this to also read light.)
 //
 // This replaced a `y = 0`-corner placement (task 098/099 playtest session,
 // 2026-08-11): `generate_starting_palette` used to derive every species'
@@ -33,7 +37,7 @@
 // which is a Final Tuning concern, not something to chase here.
 
 use abiogenesis::config::SimConfig;
-use abiogenesis::sim::step;
+use abiogenesis::sim::{env_fit, step};
 use abiogenesis::world::{Metabolism, Organism, SimWorld, Species, SpeciesId};
 use abiogenesis::worldgen::generate_starting_palette;
 
@@ -46,8 +50,15 @@ const STABILITY_WINDOW: usize = 50;
 /// curve (relative amplitude), not an absolute population count.
 const STABILITY_TOLERANCE: f32 = 0.10;
 /// Light below which `light * photolithic_metabolism_gain * env_fit` can't
-/// cover `base_upkeep` even at perfect thermal fitness (GDD §5.9).
-const LIGHT_SURVIVAL_THRESHOLD: f32 = 0.25;
+/// cover `base_upkeep` even at perfect thermal fitness (GDD §5.9). Derived
+/// from config, not restated as a literal (task 136 lowered
+/// `photolithic_metabolism_gain` from `2.0` to `0.8`, moving this from
+/// `0.25` to `0.625` — a hardcoded copy would have silently gone stale and
+/// made `dark_cells_stay_uninhabited_across_seeds` pass vacuously against
+/// the old, wrong boundary).
+fn light_survival_threshold(config: &SimConfig) -> f32 {
+    config.energy.base_upkeep / config.energy.photolithic_metabolism_gain
+}
 /// Margin below `LIGHT_SURVIVAL_THRESHOLD` before a cell counts as "should
 /// be uninhabitable" for `dark_cells_stay_uninhabited_across_seeds` (task
 /// 074, rewritten per-cell in task 085 once light stopped varying only by
@@ -86,20 +97,34 @@ fn population(world: &SimWorld) -> usize {
 }
 
 /// Worlds no longer auto-place organisms (task 050) — the player seeds them
-/// via `Seed`. Mirrors the old auto-placement exactly (the first
-/// `starting_species_count` generated species, evenly spread along `y = 0`)
-/// so these seed-swept statistical properties keep measuring real
-/// population dynamics, the same nominal scenario they measured before.
+/// via `Seed`. Scores each placeable cell the same way a player reading the
+/// HUD's visible overlays would (`two_bot_survey.rs::viability` uses the
+/// identical `fit * resource` shape) and takes the best one, rather than
+/// matching temperature alone.
+///
+/// Task 136 forced this change: temperature-only placement was the same
+/// class of bug the 2026-08-11 fix (see the module doc above) already
+/// corrected once for `env_fit` itself — it silently modelled a player who
+/// reads the temperature overlay and ignores the light one. That was
+/// harmless at the old `photolithic_metabolism_gain = 2.0`, where almost the
+/// entire light range cleared `LIGHT_SURVIVAL_THRESHOLD`; at the retuned
+/// `0.8` the threshold rose to `0.625`, comfortably above this world's
+/// `light_low = 0.2`..`light_high = 0.9` midpoint, and a placement that
+/// never looked at light started landing organisms in cells they couldn't
+/// survive in on environment alone roughly half the time.
 fn place_starting_organisms(world: &mut SimWorld, config: &SimConfig) {
     let count = config.worldgen.starting_species_count as usize;
     for i in 0..count {
-        let optimum = world.species[i].temp_optimum;
+        let species = &world.species[i];
+        let (optimum, tolerance) = (species.temp_optimum, species.temp_tolerance);
         let idx = (0..world.cells.len())
             .filter(|&idx| world.is_placeable_index(idx) && world.cells[idx].organism.is_none())
-            .min_by(|&a, &b| {
-                (world.cells[a].temperature - optimum)
-                    .abs()
-                    .total_cmp(&(world.cells[b].temperature - optimum).abs())
+            .max_by(|&a, &b| {
+                let score = |idx: usize| {
+                    env_fit(world.cells[idx].temperature, optimum, tolerance)
+                        * world.cells[idx].light
+                };
+                score(a).total_cmp(&score(b))
             })
             .expect("terrain generation guarantees at least one placeable cell");
         world.cells[idx].organism = Some(Organism {
@@ -349,18 +374,19 @@ fn chemolithotroph_survives_reasonably_in_its_toxic_zone_across_seeds() {
 /// per-cell rather than per-row.
 #[test]
 fn dark_cells_stay_uninhabited_across_seeds() {
+    let threshold = light_survival_threshold(&SimConfig::default());
     for seed in SURVEY_SEEDS {
         let (world, _) = run_nominal_scenario(seed, RUN_TICKS);
         for y in 0..world.height {
             for x in 0..world.width {
                 let light = world.get(x, y).light;
-                if light >= LIGHT_SURVIVAL_THRESHOLD - DARK_CELL_MARGIN {
+                if light >= threshold - DARK_CELL_MARGIN {
                     continue;
                 }
                 assert!(
                     world.get(x, y).organism.is_none(),
                     "seed {seed}: cell ({x}, {y}) has light {light:.3}, well below \
-                     {LIGHT_SURVIVAL_THRESHOLD}, so it should be uninhabitable, but found an \
+                     {threshold}, so it should be uninhabitable, but found an \
                      organism there"
                 );
             }

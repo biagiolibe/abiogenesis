@@ -712,7 +712,7 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
                         continue;
                     }
                     let entry = world.matrix.get(their_tag, my_tag);
-                    interaction_delta += entry as f32;
+                    interaction_delta += entry as f32 * energy.interaction_scale;
                     if entry != 0 {
                         let n_confounders =
                             neighbour_tags.iter().filter(|&&t| t != their_tag).count() as u32;
@@ -748,11 +748,32 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
         }
 
         // 4. Costs: base upkeep plus a carrying-capacity penalty per
-        // occupied neighbour, read from the snapshot so the tick stays
-        // order-independent.
+        // occupied neighbour of a *different* species, read from the
+        // snapshot so the tick stays order-independent.
+        //
+        // Task 136 restricted this to cross-species neighbours: a
+        // same-species neighbour contributes exactly zero
+        // `interaction_delta` by construction (the matrix diagonal is
+        // always zero, GDD invariant, `net_self_interaction == 0`), so it is
+        // a pair the matrix can never compensate for no matter how the
+        // player plays. Charging it crowding too would double-penalize
+        // exactly that case, on top of the already-thin margin the retuned
+        // gains leave. (Measured, not merely reasoned: this change alone did
+        // not move `tests/balance.rs`'s extinction rate — the balance
+        // scenario below doesn't put same-species organisms adjacent to each
+        // other — so it is not load-bearing for that regression. It is kept
+        // because the reasoning above holds regardless.) The real per-cell
+        // carrying capacity (task 137) is the intended long-term cap on
+        // same-species density; until then this penalty stays scoped to the
+        // interface the design doc's worked examples actually measured —
+        // different species competing for the same cells.
         let occupied_neighbours = world
             .moore_neighbours(x, y)
-            .filter(|&n| world.cells[n].organism.is_some())
+            .filter(|&n| {
+                world.cells[n]
+                    .organism
+                    .is_some_and(|neighbour| neighbour.species != organism.species)
+            })
             .count();
         let upkeep = match species.metabolism {
             Metabolism::Photolithic => energy.base_upkeep,
@@ -1114,9 +1135,15 @@ mod tests {
 
         let (cx, cy) = (world.width / 2, world.height / 2);
         let organism = world.get(cx, cy).organism.expect("organism survives");
+        // Task 136: gain 0.7 * 1.4 * 1 - upkeep 0.5 = net +0.48 — a modest
+        // margin by design, so a matrix interaction still meaningfully
+        // speeds things up, but not so thin that ordinary environmental
+        // drift (`diffuse_environment`) starves an isolated organism out on
+        // its own before it ever gets the chance (see this constant's own
+        // doc comment on `EnergyConfig::photolithic_metabolism_gain`).
         assert!(
-            (organism.energy - 5.9).abs() < TOLERANCE,
-            "expected net +0.9, got {}",
+            (organism.energy - 5.48).abs() < TOLERANCE,
+            "expected net +0.48, got {}",
             organism.energy - 5.0
         );
     }
@@ -1177,15 +1204,31 @@ mod tests {
 
     #[test]
     fn crowded_photolithic_stalls_at_carrying_capacity() {
+        // Task 136: `crowd_factor` now counts only occupied neighbours of a
+        // *different* species (see `sim::step`'s cost section) — a
+        // same-species cluster nets zero `interaction_delta` by construction
+        // (the matrix diagonal is always zero) and would otherwise stall on
+        // crowding alone at the retuned gains. A second, tagless species is
+        // pushed here so the 7 neighbours are cross-species and still
+        // exercise the carrying-capacity penalty this test is named for.
         let (mut world, config) = world_with_one_organism(0.7, 0.5, 5.0);
+        world.push_species(Species {
+            name: "Neighbour".to_string(),
+            metabolism: Metabolism::Photolithic,
+            temp_optimum: 0.5,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: Vec::new(),
+        });
         let (cx, cy) = (world.width / 2, world.height / 2);
 
-        // Fill 7 of the 8 Moore neighbours with organisms of the same species,
-        // far enough from repro_threshold that they don't reproduce this tick.
+        // Fill 7 of the 8 Moore neighbours with organisms of the second
+        // species, far enough from repro_threshold that they don't
+        // reproduce this tick.
         let neighbours: Vec<usize> = world.moore_neighbours(cx, cy).collect();
         for &idx in neighbours.iter().take(7) {
             world.cells[idx].organism = Some(Organism {
-                species: SpeciesId(0),
+                species: SpeciesId(1),
                 energy: 1.0,
                 born_season: 0,
             });
@@ -1194,22 +1237,23 @@ mod tests {
         step(&mut world, &config);
 
         let organism = world.get(cx, cy).organism.expect("organism survives");
+        // gain 0.98 - upkeep 0.5 - crowding (7 * 0.15 = 1.05) = net -0.57.
         assert!(
-            (organism.energy - 4.85).abs() < TOLERANCE,
-            "expected net -0.15, got {}",
+            (organism.energy - 4.43).abs() < TOLERANCE,
+            "expected net -0.57, got {}",
             organism.energy - 5.0
         );
     }
 
     #[test]
     fn photolithic_in_the_dark_eventually_dies() {
-        // GDD §5.9: gain 0.4 < upkeep 0.5 ⇒ net -0.1/tick, doesn't survive.
-        // Starting energy is 5.0, so death takes ~50 ticks, not the first one.
-        // Diffusion disabled (task 074): otherwise this cell's forced-dark
-        // light blends back toward the ambient gradient over the run, which
-        // eventually turns the net gain positive and lets the organism
-        // survive/reproduce — a diffusion-timing artifact, not the light
-        // niche this test means to isolate.
+        // Task 136: gain 0.2 * 1.4 * 1 = 0.28 < upkeep 0.5 ⇒ net -0.22/tick,
+        // doesn't survive. Starting energy is 5.0, so death takes ~23 ticks,
+        // not the first one. Diffusion disabled (task 074): otherwise this
+        // cell's forced-dark light blends back toward the ambient gradient
+        // over the run, which eventually turns the net gain positive and
+        // lets the organism survive/reproduce — a diffusion-timing artifact,
+        // not the light niche this test means to isolate.
         let (mut world, mut config) = world_with_one_organism(0.2, 0.5, 5.0);
         config.environment.diffusion_rate = 0.0;
         let (cx, cy) = (world.width / 2, world.height / 2);
@@ -1217,8 +1261,8 @@ mod tests {
         step(&mut world, &config);
         let organism = world.get(cx, cy).organism.expect("survives the first tick");
         assert!(
-            (organism.energy - 4.9).abs() < TOLERANCE,
-            "expected net -0.1/tick in the dark, got {}",
+            (organism.energy - 4.78).abs() < TOLERANCE,
+            "expected net -0.22/tick in the dark, got {}",
             organism.energy - 5.0
         );
 
@@ -1458,9 +1502,10 @@ mod tests {
 
         let (cx, cy) = (world.width / 2, world.height / 2);
         let b = world.get(cx + 1, cy).organism.expect("B survives");
-        // gain 1.4, upkeep 0.5, 1 occupied neighbour -> crowding 0.15,
-        // interaction_delta -2: net 5.0 + 1.4 - 0.5 - 0.15 - 2.0 = 3.75.
-        assert!((b.energy - 3.75).abs() < TOLERANCE, "got {}", b.energy);
+        // Task 136: gain 0.7, upkeep 0.5, 1 occupied neighbour -> crowding
+        // 0.15, interaction_delta -2 * interaction_scale 0.15 = -0.3:
+        // net 5.0 + 0.7 - 0.5 - 0.15 - 0.3 = 5.03.
+        assert!((b.energy - 5.03).abs() < TOLERANCE, "got {}", b.energy);
     }
 
     #[test]
@@ -1482,8 +1527,8 @@ mod tests {
 
         let (cx, cy) = (world.width / 2, world.height / 2);
         let b = world.get(cx + 1, cy).organism.expect("B survives");
-        // net 5.0 + 1.4 - 0.5 - 0.15 + 2.0 = 7.75.
-        assert!((b.energy - 7.75).abs() < TOLERANCE, "got {}", b.energy);
+        // Task 136: net 5.0 + 0.98 - 0.5 - 0.15 + 0.3 = 5.63.
+        assert!((b.energy - 5.63).abs() < TOLERANCE, "got {}", b.energy);
     }
 
     #[test]
@@ -1500,8 +1545,8 @@ mod tests {
 
         let (cx, cy) = (world.width / 2, world.height / 2);
         let b = world.get(cx + 1, cy).organism.expect("B survives");
-        // net 5.0 + 1.4 - 0.5 - 0.15 + 0.0 = 5.75.
-        assert!((b.energy - 5.75).abs() < TOLERANCE, "got {}", b.energy);
+        // Task 136: net 5.0 + 0.7 - 0.5 - 0.15 + 0.0 = 5.33.
+        assert!((b.energy - 5.33).abs() < TOLERANCE, "got {}", b.energy);
     }
 
     #[test]
@@ -1546,8 +1591,8 @@ mod tests {
         }
         step(&mut world, &config);
         let b = world.get(cx + 1, cy).organism.expect("B survives");
-        // Same result as negative_adjacency_effect_subtracts_energy: 3.75.
-        assert!((b.energy - 3.75).abs() < TOLERANCE, "got {}", b.energy);
+        // Same result as negative_adjacency_effect_subtracts_energy: 5.03.
+        assert!((b.energy - 5.03).abs() < TOLERANCE, "got {}", b.energy);
     }
 
     #[test]
@@ -1581,7 +1626,7 @@ mod tests {
         step(&mut world, &config);
         let b = world.get(cx + 1, cy).organism.expect("B survives");
         assert!(
-            (b.energy - 3.75).abs() < TOLERANCE,
+            (b.energy - 5.03).abs() < TOLERANCE,
             "gate should be satisfied on trigger terrain, got {}",
             b.energy
         );
@@ -1604,7 +1649,7 @@ mod tests {
         step(&mut world, &config);
         let b = world.get(cx + 1, cy).organism.expect("B survives");
         assert!(
-            (b.energy - 5.75).abs() < TOLERANCE,
+            (b.energy - 5.33).abs() < TOLERANCE,
             "gate should fail off the trigger terrain, got {}",
             b.energy
         );
@@ -1641,7 +1686,7 @@ mod tests {
         step(&mut world, &config);
         let b = world.get(cx + 1, cy).organism.expect("B survives");
         assert!(
-            (b.energy - 5.75).abs() < TOLERANCE,
+            (b.energy - 5.33).abs() < TOLERANCE,
             "gate should fail on the trigger terrain, got {}",
             b.energy
         );
@@ -1665,7 +1710,7 @@ mod tests {
         step(&mut world, &config);
         let b = world.get(cx + 1, cy).organism.expect("B survives");
         assert!(
-            (b.energy - 3.75).abs() < TOLERANCE,
+            (b.energy - 5.03).abs() < TOLERANCE,
             "gate should be satisfied off the trigger terrain, got {}",
             b.energy
         );
@@ -1792,7 +1837,7 @@ mod tests {
         step(&mut world, &config);
         let (cx, cy) = (world.width / 2, world.height / 2);
         let b = world.get(cx + 1, cy).organism.expect("B survives");
-        assert!((b.energy - 3.75).abs() < TOLERANCE, "got {}", b.energy);
+        assert!((b.energy - 5.03).abs() < TOLERANCE, "got {}", b.energy);
     }
 
     /// One organism, carrying a single conditional tag (`TagId(0)`), whose
@@ -1927,8 +1972,8 @@ mod tests {
         step(&mut world, &config);
 
         let b = world.get(cx, cy).organism.expect("B survives");
-        // net 5.0 + 1.4 - 0.5 - 0.15*2 + (-1 - 1) = 3.6.
-        assert!((b.energy - 3.6).abs() < TOLERANCE, "got {}", b.energy);
+        // Task 136: net 5.0 + 0.98 - 0.5 - 0.15*2 + (-1 - 1) * 0.15 = 4.88.
+        assert!((b.energy - 4.88).abs() < TOLERANCE, "got {}", b.energy);
     }
 
     fn world_with_one_predator(temperature: f32, energy: f32) -> (SimWorld, SimConfig) {
@@ -2004,11 +2049,11 @@ mod tests {
         step(&mut world, &config);
 
         let predator = world.get(cx, cy).organism.expect("predator survives");
-        // drain = min(predator_drain_cap, available) * fit = 2.0 (fit=1.0,
-        // available huge), upkeep 0.7, 8 occupied neighbours -> crowding
-        // 0.15*8=1.2: net 5.0 + 2.0 - 0.7 - 1.2 = 5.1.
+        // Task 136: drain = min(predator_drain_cap, available) * fit = 1.4
+        // (fit=1.0, available huge), upkeep 0.7, 8 occupied neighbours ->
+        // crowding 0.15*8=1.2: net 5.0 + 1.4 - 0.7 - 1.2 = 4.5.
         assert!(
-            (predator.energy - 5.1).abs() < TOLERANCE,
+            (predator.energy - 4.5).abs() < TOLERANCE,
             "got {}",
             predator.energy
         );
@@ -2079,10 +2124,10 @@ mod tests {
             right.energy
         );
         // Each predator's only prey neighbour is the shared one, so each
-        // draws its full drain_cap (fit=1.0, prey has plenty of energy):
-        // net 5.0 + 2.0 - 0.7 - 0.15 = 6.15.
+        // draws its full drain_cap (fit=1.0, prey has plenty of energy).
+        // Task 136: net 5.0 + 1.4 - 0.7 - 0.15 = 5.55.
         assert!(
-            (left.energy - 6.15).abs() < TOLERANCE,
+            (left.energy - 5.55).abs() < TOLERANCE,
             "got {}",
             left.energy
         );
@@ -2199,17 +2244,17 @@ mod tests {
         step(&mut world, &config);
 
         let decomposer = world.get(cx, cy).organism.expect("decomposer survives");
-        // decay first: 10.0 - residue_decay(0.2) = 9.8 available; drawn =
-        // min(decomposer_extract_rate(1.5) * fit(1.0), 9.8) = 1.5; net
-        // 5.0 + 1.5 - decomposer_upkeep(0.5) = 6.0.
+        // Task 136: decay first: 10.0 - residue_decay(0.2) = 9.8 available;
+        // drawn = min(decomposer_extract_rate(1.05) * fit(1.0), 9.8) = 1.05;
+        // net 5.0 + 1.05 - decomposer_upkeep(0.5) = 5.55.
         assert!(
-            (decomposer.energy - 6.0).abs() < TOLERANCE,
+            (decomposer.energy - 5.55).abs() < TOLERANCE,
             "got {}",
             decomposer.energy
         );
         let (nx, ny) = (neighbour_idx % world.width, neighbour_idx / world.width);
         assert!(
-            (world.get(nx, ny).residue - 8.3).abs() < TOLERANCE,
+            (world.get(nx, ny).residue - 8.75).abs() < TOLERANCE,
             "expected residue reduced by the drawn amount, got {}",
             world.get(nx, ny).residue
         );
@@ -2350,9 +2395,24 @@ mod tests {
         // row so each is Moore-adjacent only to the residue cell, not to
         // each other, and each independently computes the full residue as
         // available — their combined draw exceeds what's actually there.
+        // Task 136: with `decomposer_extract_rate` at 0.6, each decomposer
+        // draws its full rate only if at least 0.6 is available after decay
+        // (residue_decay 0.2), and the two draws (1.2 total) must still
+        // exceed what's left (residue 1.0 - decay 0.2 = 0.8) for this test
+        // to exercise the over-draw clamp — a residue of 2.0 (right for the
+        // old 1.5 extract_rate) would leave 1.8 available, under-drawn by
+        // the new lower rate and never actually testing the clamp.
+        // `residue_ambient_trickle` is zeroed for the same reason as
+        // `decomposer_adjacent_to_residue_gains_and_residue_shrinks`: left
+        // at its default, every background cell picks up a little residue,
+        // which becomes an extra `source` diluting each decomposer's
+        // proportional share of the one cell this test actually cares
+        // about, so the combined draw no longer fully depletes it.
+        let mut config = config;
+        config.energy.residue_ambient_trickle = 0.0;
         let (cx, cy) = (world.width / 2, world.height / 2);
         let residue_idx = world.index(cx, cy);
-        world.cells[residue_idx].residue = 2.0;
+        world.cells[residue_idx].residue = 1.0;
         for dx in [-1i32, 1] {
             let idx = world.index((cx as i32 + dx) as usize, cy);
             world.cells[idx] = Cell {
@@ -2390,8 +2450,9 @@ mod tests {
 
         let (cx, cy) = (world.width / 2, world.height / 2);
         let organism = world.get(cx, cy).organism.expect("organism survives");
+        // Task 136: same net as isolated_photolithic_grows, +0.48.
         assert!(
-            (organism.energy - 5.9).abs() < TOLERANCE,
+            (organism.energy - 5.48).abs() < TOLERANCE,
             "got {}",
             organism.energy
         );
@@ -2845,8 +2906,16 @@ mod tests {
         let mut crossed = None;
         for _ in 0..200 {
             // Reset every tick: `diffuse_environment` would otherwise erode
-            // this cell's toxicity before the accumulator reads it.
+            // this cell's toxicity before the accumulator reads it. Task
+            // 136 also pins light/temperature now — the lower metabolism
+            // gains leave much less margin above upkeep, so `threshold 80.0`
+            // needs ~80 ticks to cross and diffusion's slow drift away from
+            // the pinned optimum, previously negligible next to the old
+            // +0.9/tick margin, was enough to starve the organism out well
+            // before then.
             world.cells[idx].toxicity = 1.0;
+            world.cells[idx].light = 0.7;
+            world.cells[idx].temperature = 0.5;
             let events = step(&mut world, &config);
             if let Some(event) = events.selection_thresholds.into_iter().next() {
                 crossed = Some(event);
