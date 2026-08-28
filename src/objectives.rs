@@ -102,12 +102,13 @@ pub struct ObjectiveProgress {
     pub satisfied: bool,
 }
 
-/// Onboarding grace period (task 079, GDD §8): tracks whether the player has
-/// ever kept a population alive for a full era (`config.time.era_ticks`
-/// consecutive ticks with at least one living organism) since the current
-/// world began. `foothold_reached` is sticky — once true it stays true for
-/// the rest of the world's life, even if the population later dies out
-/// again; a world only gets this leniency once.
+/// Onboarding grace period (task 079, GDD §8; unit moved from era to season
+/// by task 135): tracks whether the player has ever kept a population alive
+/// for a full season (`config.time.season_pulses` consecutive ticks with at
+/// least one living organism) since the current world began.
+/// `foothold_reached` is sticky — once true it stays true for the rest of
+/// the world's life, even if the population later dies out again; a world
+/// only gets this leniency once.
 #[derive(Resource, Debug, Clone, Copy, Default)]
 pub struct GraceProgress {
     consecutive_alive_ticks: u32,
@@ -133,14 +134,15 @@ pub fn update_grace_progress(world: &SimWorld, grace: &mut GraceProgress, footho
 }
 
 /// Whether total-extinction failure should be suppressed right now (task
-/// 079): true for the fixed `grace_eras` window regardless of `grace`, and
-/// — the anti-cliff extension — also true past that window for as long as
-/// the player still hasn't reached a foothold. A fixed window alone would
-/// let a world that's still empty right when `grace_eras` elapses fail
-/// instantly with nothing ever having been observed; this keeps extending
-/// protection until there's actually been something to watch.
-pub fn is_grace_active(world_era: u32, grace_eras: u32, grace: &GraceProgress) -> bool {
-    world_era < grace_eras || !grace.foothold_reached
+/// 079, unit moved from era to season by task 135): true for the fixed
+/// `grace_seasons` window regardless of `grace`, and — the anti-cliff
+/// extension — also true past that window for as long as the player still
+/// hasn't reached a foothold. A fixed window alone would let a world that's
+/// still empty right when `grace_seasons` elapses fail instantly with
+/// nothing ever having been observed; this keeps extending protection until
+/// there's actually been something to watch.
+pub fn is_grace_active(world_season: u32, grace_seasons: u32, grace: &GraceProgress) -> bool {
+    world_season < grace_seasons || !grace.foothold_reached
 }
 
 /// The current world's objective sequence (task 059, GDD §8/§9): worlds pose
@@ -453,8 +455,8 @@ pub fn apply_tick_outcome(
     params: &mut ObjectiveOutcomeParams,
 ) {
     let era_budget = world_params(params.run_progress.world_index, config).era_budget;
-    update_grace_progress(world, &mut params.grace, config.time.era_ticks);
-    let grace_active = is_grace_active(world.era, config.time.grace_eras, &params.grace);
+    update_grace_progress(world, &mut params.grace, config.time.season_pulses);
+    let grace_active = is_grace_active(world.season, config.time.grace_seasons, &params.grace);
     let previous_outcome = params.outcome.0;
     let new_outcome = evaluate_world(
         params.objective.current(),
@@ -576,7 +578,7 @@ mod tests {
             organism: Some(Organism {
                 species,
                 energy: 5.0,
-                born_era: 0,
+                born_season: 0,
             }),
             ..world.cells[idx]
         };

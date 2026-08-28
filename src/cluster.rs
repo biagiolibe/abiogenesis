@@ -287,7 +287,7 @@ mod tests {
         world.cells[idx].organism = Some(Organism {
             species: SpeciesId(species),
             energy: 5.0,
-            born_era: 0,
+            born_season: 0,
         });
     }
 

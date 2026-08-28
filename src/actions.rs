@@ -41,7 +41,7 @@ pub fn attempt_seed(
         return None;
     }
     let index = world.index(x, y);
-    let era = world.era;
+    let season = world.season;
     let cell = world.get_mut(x, y);
     if cell.organism.is_some() {
         return None;
@@ -49,7 +49,7 @@ pub fn attempt_seed(
     cell.organism = Some(Organism {
         species,
         energy: config.energy.seed_energy,
-        born_era: era,
+        born_season: season,
     });
     budget.points_remaining -= config.time.action_costs.seed;
     Some(index)

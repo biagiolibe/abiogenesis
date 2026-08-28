@@ -16,7 +16,7 @@ use abiogenesis::objectives::{
 #[cfg(test)]
 use abiogenesis::objectives::{FailureReason, WorldOutcome};
 use abiogenesis::run::RunProgress;
-use abiogenesis::sim::{ActionBudget, EraProgress};
+use abiogenesis::sim::{ActionBudget, SeasonProgress};
 use abiogenesis::state::EraState;
 use abiogenesis::world::{SimWorld, SpeciesId};
 use abiogenesis::worldgen::build_world;
@@ -74,7 +74,7 @@ pub fn start_world(
     seed: u64,
     config: &SimConfig,
     bonus_available_species: u32,
-    era_progress: &mut EraProgress,
+    season_progress: &mut SeasonProgress,
     era_next_state: &mut NextState<EraState>,
     reset: &mut WorldResetParams,
 ) {
@@ -82,7 +82,7 @@ pub fn start_world(
         build_world(seed, world_index, config, bonus_available_species);
     *world = new_world;
 
-    era_progress.cancel();
+    season_progress.cancel();
     era_next_state.set(EraState::Observing);
 
     *reset.knowledge = MatrixKnowledge::new(
@@ -95,7 +95,7 @@ pub fn start_world(
     );
     *reset.seen_relations = SeenRelations::new(world.active_tags.len());
     reset.log.entries.clear();
-    reset.budget.refill(config.time.point_budget_per_era);
+    reset.budget.refill(config.time.point_budget_per_season);
     reset.selected.0 = SpeciesId(0);
     *reset.splice_draft = SpliceDraft::default();
     reset.placed.0.clear();
@@ -131,7 +131,7 @@ pub fn advance_to_next_world(
     world: &mut SimWorld,
     run_progress: &mut RunProgress,
     config: &SimConfig,
-    era_progress: &mut EraProgress,
+    season_progress: &mut SeasonProgress,
     era_next_state: &mut NextState<EraState>,
     reset: &mut WorldResetParams,
 ) {
@@ -143,7 +143,7 @@ pub fn advance_to_next_world(
         next_seed,
         config,
         run_progress.unlocks.bonus_available_species,
-        era_progress,
+        season_progress,
         era_next_state,
         reset,
     );
@@ -163,7 +163,7 @@ pub fn retry_world(
     world: &mut SimWorld,
     run_progress: &RunProgress,
     config: &SimConfig,
-    era_progress: &mut EraProgress,
+    season_progress: &mut SeasonProgress,
     era_next_state: &mut NextState<EraState>,
     reset: &mut WorldResetParams,
 ) {
@@ -173,7 +173,7 @@ pub fn retry_world(
         run_progress.world_seed,
         config,
         run_progress.unlocks.bonus_available_species,
-        era_progress,
+        season_progress,
         era_next_state,
         reset,
     );
@@ -236,7 +236,7 @@ mod tests {
             unlocks: Default::default(),
             energy: 0.0,
         };
-        let mut era_progress = EraProgress::default();
+        let mut season_progress = SeasonProgress::default();
         let mut era_next_state = NextState::default();
         let mut ecs_world = resource_world(
             objectives,
@@ -256,7 +256,7 @@ mod tests {
             &mut world,
             &mut run_progress,
             &config,
-            &mut era_progress,
+            &mut season_progress,
             &mut era_next_state,
             &mut reset,
         );
@@ -290,7 +290,7 @@ mod tests {
             &mut world,
             &mut run_progress,
             &config,
-            &mut era_progress,
+            &mut season_progress,
             &mut era_next_state,
             &mut reset,
         );
@@ -319,7 +319,7 @@ mod tests {
             unlocks: Default::default(),
             energy: 0.0,
         };
-        let mut era_progress = EraProgress::default();
+        let mut season_progress = SeasonProgress::default();
         let mut era_next_state = NextState::default();
         let mut ecs_world = resource_world(
             objectives,
@@ -334,7 +334,7 @@ mod tests {
             &mut world,
             &mut run_progress,
             &config,
-            &mut era_progress,
+            &mut season_progress,
             &mut era_next_state,
             &mut reset,
         );
@@ -357,7 +357,7 @@ mod tests {
             unlocks: Default::default(),
             energy: 0.0,
         };
-        let mut era_progress = EraProgress::default();
+        let mut season_progress = SeasonProgress::default();
         let mut era_next_state = NextState::default();
         let mut ecs_world = resource_world(
             objectives,
@@ -372,7 +372,7 @@ mod tests {
             &mut world,
             &mut run_progress,
             &config,
-            &mut era_progress,
+            &mut season_progress,
             &mut era_next_state,
             &mut reset,
         );
@@ -397,7 +397,7 @@ mod tests {
             unlocks: Default::default(),
             energy: 0.0,
         };
-        let mut era_progress = EraProgress::default();
+        let mut season_progress = SeasonProgress::default();
         let mut era_next_state = NextState::default();
         let mut ecs_world = resource_world(
             objectives,
@@ -413,7 +413,7 @@ mod tests {
             &mut world,
             &mut run_progress,
             &config,
-            &mut era_progress,
+            &mut season_progress,
             &mut era_next_state,
             &mut reset,
         );
@@ -436,7 +436,7 @@ mod tests {
             unlocks: Default::default(),
             energy: 0.0,
         };
-        let mut era_progress = EraProgress::default();
+        let mut season_progress = SeasonProgress::default();
         let mut era_next_state = NextState::default();
         let mut ecs_world = resource_world(
             objectives,
@@ -450,7 +450,7 @@ mod tests {
             &mut world,
             &mut run_progress,
             &config,
-            &mut era_progress,
+            &mut season_progress,
             &mut era_next_state,
             &mut reset,
         );
@@ -481,7 +481,7 @@ mod tests {
             unlocks: Default::default(),
             energy: 0.0,
         };
-        let mut era_progress = EraProgress::default();
+        let mut season_progress = SeasonProgress::default();
         let mut era_next_state = NextState::default();
         let mut ecs_world = resource_world(
             objectives,
@@ -500,7 +500,7 @@ mod tests {
             &mut world,
             &run_progress,
             &config,
-            &mut era_progress,
+            &mut season_progress,
             &mut era_next_state,
             &mut reset,
         );
@@ -533,7 +533,7 @@ mod tests {
             unlocks: Default::default(),
             energy: 4.0,
         };
-        let mut era_progress = EraProgress::default();
+        let mut season_progress = SeasonProgress::default();
         let mut era_next_state = NextState::default();
         let mut ecs_world = resource_world(
             objectives,
@@ -547,7 +547,7 @@ mod tests {
             &mut world,
             &mut run_progress,
             &config,
-            &mut era_progress,
+            &mut season_progress,
             &mut era_next_state,
             &mut reset,
         );

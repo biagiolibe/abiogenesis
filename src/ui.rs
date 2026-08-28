@@ -16,33 +16,33 @@ use abiogenesis::objectives::{
     is_grace_active, CurrentObjective, GraceProgress, Objective, ObjectiveProgress,
 };
 use abiogenesis::run::RunProgress;
-use abiogenesis::sim::{ActionBudget, EraCompleted, EraProgress, OrganismDied};
+use abiogenesis::sim::{ActionBudget, EraCompleted, OrganismDied, SeasonProgress};
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{SimWorld, SpeciesId, TagSlot};
-use abiogenesis::worldgen::era_ticks_for;
+use abiogenesis::worldgen::season_pulses_for;
 
 /// Task 055's guided first-isolation hint: the message to show (isolated vs.
 /// clustered first placement), the `SimWorld::tick` it was set at, and how
-/// long it stays up — the tick counter the HUD's own "Era X · tick Y"
-/// readout already exposes, not a wall-clock timer. Written once, by
+/// long it stays up — the tick counter the HUD's own "Era X · Season Y ·
+/// tick Z" readout already exposes, not a wall-clock timer. Written once, by
 /// `input.rs`'s `seed_organism_on_click` at the player's first-ever
 /// placement of their first-ever run (gated on
 /// `MetaProgress::seen_isolation_hint`); read here.
 ///
 /// `duration_ticks` (task 092) is computed once at set-time from
-/// `worldgen::era_ticks_for` for whatever era is current *then* — not a
-/// fixed constant, and not re-derived on later frames even if the era
+/// `worldgen::season_pulses_for` for whatever season is current *then* — not
+/// a fixed constant, and not re-derived on later frames even if the season
 /// changes underneath it before the hint dismisses. Before task 092 this was
-/// a fixed `30`, which read as "about one era" back when every era was `25`
-/// ticks; task 082's shortened onboarding eras (`8` ticks each) made that
-/// stale, since the hint kept outliving the era it was shown in and no
-/// longer read as anchored to anything. Pinning the duration to the
-/// *shown-in* era (rather than re-deriving it against whatever era is
+/// a fixed `30`, which read as "about one season" back when every season was
+/// `25` ticks; task 082's shortened onboarding seasons (`8` ticks each) made
+/// that stale, since the hint kept outliving the season it was shown in and
+/// no longer read as anchored to anything. Pinning the duration to the
+/// *shown-in* season (rather than re-deriving it against whatever season is
 /// current each frame) is the deliberate choice here: a hint that started
-/// during an 8-tick onboarding era and is still up when era 4's 25-tick era
-/// begins should still resolve on its own short original schedule, not
-/// suddenly gain 17 more ticks of life because the era around it got
-/// longer.
+/// during an 8-tick onboarding season and is still up when season 4's
+/// 25-tick length begins should still resolve on its own short original
+/// schedule, not suddenly gain 17 more ticks of life because the season
+/// around it got longer.
 #[derive(Resource, Default)]
 pub struct IsolationHint {
     pub text: Option<&'static str>,
@@ -68,7 +68,7 @@ pub struct HudControlIntents {
 
 /// The species the seed action (task 017) places on click. A UI intent, not
 /// simulation state: owned here, read by `input.rs`'s click-to-place system,
-/// same rationale as `EraProgress` living in `sim.rs` but written by
+/// same rationale as `SeasonProgress` living in `sim.rs` but written by
 /// `input.rs` (TECH_DESIGN.md §3.3 — `Ui` writes only intents).
 #[derive(Resource)]
 pub struct SelectedSpecies(pub SpeciesId);
@@ -193,10 +193,10 @@ fn console_row_height(ui: &egui::Ui) -> f32 {
 
 /// Past this many required eras, an objective's progress indicator falls
 /// back from a dot row to a compact "X / Y eras" readout (task 064) — a
-/// row of dots sized to an unbounded `eras_required` would either overflow
+/// row of dots sized to an unbounded `seasons_required` would either overflow
 /// `HUD_WIDTH` or shrink past legibility. Chosen so a dot row still fits
 /// comfortably within the panel width at `DOT_SIZE`/`DOT_GAP`.
-const ERA_PROGRESS_DOT_CAP: u32 = 8;
+const SEASON_PROGRESS_DOT_CAP: u32 = 8;
 
 /// Color for the objective's narrative-quoted line (task 064 §5) — a warm,
 /// slightly desaturated off-white distinct from the panel's neutral-gray
@@ -432,7 +432,7 @@ pub struct ObjectiveReadouts<'w> {
 pub(crate) fn hud_panel(
     mut contexts: EguiContexts,
     world: Res<SimWorld>,
-    era_progress: Res<EraProgress>,
+    season_progress: Res<SeasonProgress>,
     era_state: Res<State<EraState>>,
     mut selected: ResMut<SelectedSpecies>,
     mut selected_action: ResMut<SelectedAction>,
@@ -473,15 +473,20 @@ pub(crate) fn hud_panel(
             }
 
             ui.heading(text::HEADING_TITLE);
-            let (era_current, era_total) = era_readout_values(
+            let (season_current, season_total) = season_readout_values(
                 readouts.run_progress.world_index,
-                world.era,
-                era_progress.remaining(),
+                world.season,
+                season_progress.remaining(),
                 &config,
             );
-            ui.label(text::era_tick_line(world.era, era_current, era_total));
+            ui.label(text::season_tick_line(
+                world.era,
+                world.season,
+                season_current,
+                season_total,
+            ));
             ui.label(text::state_line(era_state.get()));
-            if is_grace_active(world.era, config.time.grace_eras, &readouts.grace) {
+            if is_grace_active(world.season, config.time.grace_seasons, &readouts.grace) {
                 ui.weak(text::GRACE_PERIOD_LINE);
             }
             time_control_row(
@@ -501,7 +506,7 @@ pub(crate) fn hud_panel(
                 *mode,
             );
 
-            let total = config.time.point_budget_per_era;
+            let total = config.time.point_budget_per_season;
             dot_row(ui, budget.points_remaining, total, DotShape::Tick)
                 .on_hover_text(text::BUDGET_HOVER);
             ui.weak(text::budget_bar_text(budget.points_remaining, total));
@@ -586,7 +591,7 @@ pub(crate) fn hud_panel(
                 readouts.objective.index,
                 readouts.objective.total(),
                 &readouts.objective_progress,
-                config.time.era_ticks,
+                config.time.season_pulses,
             );
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
@@ -697,9 +702,9 @@ fn viewport_hint(
 /// italicized, quoted line in the panel's one deliberate non-monospace
 /// accent, followed by a discrete progress indicator instead of a
 /// continuous bar. Formats the concrete numbers/labels here (species name,
-/// era counts) and hands them to `text.rs`'s parametrized templates, since
-/// `text.rs` never reaches into `Objective`/`SimWorld`-derived data on its
-/// own (task 034's constraint).
+/// season counts) and hands them to `text.rs`'s parametrized templates,
+/// since `text.rs` never reaches into `Objective`/`SimWorld`-derived data on
+/// its own (task 034's constraint).
 fn objective_panel(
     ui: &mut egui::Ui,
     world: &SimWorld,
@@ -707,7 +712,7 @@ fn objective_panel(
     index: usize,
     total: usize,
     progress: &ObjectiveProgress,
-    era_ticks: u32,
+    season_pulses: u32,
 ) {
     let Some(objective) = objective else {
         ui.weak(text::NO_OBJECTIVE);
@@ -752,14 +757,17 @@ fn objective_panel(
 
     match *objective {
         Objective::Coexistence { ticks, .. } | Objective::SurviveIn { ticks, .. } => {
-            let (eras_held, eras_required) =
-                eras_progress(progress.consecutive_ticks, ticks, era_ticks);
-            match era_progress_display(eras_required) {
-                EraProgressDisplay::Dots => {
-                    dot_row(ui, eras_held, eras_required, DotShape::Circle);
+            let (seasons_held, seasons_required) =
+                seasons_progress(progress.consecutive_ticks, ticks, season_pulses);
+            match season_progress_display(seasons_required) {
+                SeasonProgressDisplay::Dots => {
+                    dot_row(ui, seasons_held, seasons_required, DotShape::Circle);
                 }
-                EraProgressDisplay::Numeric => {
-                    ui.weak(text::sustained_progress_bar_text(eras_held, eras_required));
+                SeasonProgressDisplay::Numeric => {
+                    ui.weak(text::sustained_progress_bar_text(
+                        seasons_held,
+                        seasons_required,
+                    ));
                 }
             }
         }
@@ -777,40 +785,41 @@ fn objective_panel(
     }
 }
 
-/// Which shape an objective's era-progress indicator takes, given how many
-/// eras it requires — the pure decision behind `objective_panel`'s dots-vs-
-/// text branch, split out so the `ERA_PROGRESS_DOT_CAP` boundary is
-/// unit-testable without an `egui::Ui`.
+/// Which shape an objective's season-progress indicator takes, given how
+/// many seasons it requires — the pure decision behind `objective_panel`'s
+/// dots-vs-text branch, split out so the `SEASON_PROGRESS_DOT_CAP` boundary
+/// is unit-testable without an `egui::Ui`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EraProgressDisplay {
+enum SeasonProgressDisplay {
     Dots,
     Numeric,
 }
 
-/// Past `ERA_PROGRESS_DOT_CAP`, a row of dots would either grow wider than
-/// `HUD_WIDTH` or shrink unreadably small — a compact "X / Y eras" readout
+/// Past `SEASON_PROGRESS_DOT_CAP`, a row of dots would either grow wider than
+/// `HUD_WIDTH` or shrink unreadably small — a compact "X / Y seasons" readout
 /// degrades gracefully instead.
-fn era_progress_display(eras_required: u32) -> EraProgressDisplay {
-    if eras_required <= ERA_PROGRESS_DOT_CAP {
-        EraProgressDisplay::Dots
+fn season_progress_display(seasons_required: u32) -> SeasonProgressDisplay {
+    if seasons_required <= SEASON_PROGRESS_DOT_CAP {
+        SeasonProgressDisplay::Dots
     } else {
-        EraProgressDisplay::Numeric
+        SeasonProgressDisplay::Numeric
     }
 }
 
-/// Converts a sustained objective's tick counts to whole eras for display
-/// (task 049): `eras_held` floors (an era in progress doesn't count until
-/// complete), `eras_required` ceils (a requirement of, say, 70 ticks with a
-/// 25-tick era still genuinely needs 3 full eras, not 2) — chosen so the
+/// Converts a sustained objective's tick counts to whole seasons for display
+/// (task 049, unit moved from era to season by task 135): `seasons_held`
+/// floors (a season in progress doesn't count until complete),
+/// `seasons_required` ceils (a requirement of, say, 70 ticks with a 25-tick
+/// season still genuinely needs 3 full seasons, not 2) — chosen so the
 /// displayed count never claims "done" before `progress.satisfied` actually
 /// flips.
-fn eras_progress(consecutive_ticks: u32, required_ticks: u32, era_ticks: u32) -> (u32, u32) {
-    if era_ticks == 0 {
+fn seasons_progress(consecutive_ticks: u32, required_ticks: u32, season_pulses: u32) -> (u32, u32) {
+    if season_pulses == 0 {
         return (0, 0);
     }
     (
-        consecutive_ticks / era_ticks,
-        required_ticks.div_ceil(era_ticks),
+        consecutive_ticks / season_pulses,
+        required_ticks.div_ceil(season_pulses),
     )
 }
 
@@ -1379,33 +1388,34 @@ fn dominant_cause_with_tiebreak(causes: &[text::DominantDeathCause]) -> text::Do
         .expect("causes is non-empty")
 }
 
-/// `(current, total)` ticks for the era readout (task 117): `total` is this
-/// era's own length (`era_ticks_for`, already accounting for world 0's
-/// shortened onboarding eras, task 082).
+/// `(current, total)` ticks for the season readout (task 117, unit moved
+/// from era to season by task 135): `total` is this season's own length
+/// (`season_pulses_for`, already accounting for world 0's shortened
+/// onboarding seasons, task 082).
 ///
-/// `remaining == 0` is treated as "no progress yet in the era currently
-/// shown," not "this era just finished" — `tick_and_complete_era`
-/// (`sim.rs:991-1006`) increments `world.era` in the *same* call that
+/// `remaining == 0` is treated as "no progress yet in the season currently
+/// shown," not "this season just finished" — `tick_and_complete_season`
+/// (`sim.rs:991-1006`) increments `world.season` in the *same* call that
 /// decrements `remaining` to `0`, atomically, so by the time any frame
-/// renders `remaining == 0`, `world.era` has already moved on to the new
-/// era. There is no observable frame where `remaining == 0` refers to the
-/// era that just completed — every such frame is really "0 ticks played
-/// in the era we're now looking at," whether that's because it hasn't
-/// started (`Observing`, before the next `space`/`n`) or because
-/// `EraProgress` was never started for this world yet. Found live
+/// renders `remaining == 0`, `world.season` has already moved on to the new
+/// season. There is no observable frame where `remaining == 0` refers to
+/// the season that just completed — every such frame is really "0 ticks
+/// played in the season we're now looking at," whether that's because it
+/// hasn't started (`Observing`, before the next `space`/`n`) or because
+/// `SeasonProgress` was never started for this world yet. Found live
 /// 2026-08-13 (twice): an `EraState`-based gate here was wrong in the
 /// *other* direction — it hid real progress made via `n`
 /// (`input.rs::single_tick`), which advances `remaining` while
 /// deliberately staying in `Observing` (no `EraState` transition, by
 /// design, for fine-grained single-tick observation). `EraState` doesn't
 /// distinguish "stale" from "real" here at all; `remaining == 0` does.
-fn era_readout_values(
+fn season_readout_values(
     world_index: u32,
-    era: u32,
+    season: u32,
     remaining: u32,
     config: &SimConfig,
 ) -> (u32, u32) {
-    let total = era_ticks_for(world_index, era, config);
+    let total = season_pulses_for(world_index, season, config);
     let current = if remaining == 0 {
         0
     } else {
@@ -1472,15 +1482,15 @@ fn tally_death_causes(
 mod tests {
     use super::*;
 
-    /// Task 117: at the instant an era starts (`EraProgress::start` sets
-    /// `remaining` to the era's full length), the readout must show
-    /// `0/{total}`, matching the semantics `tick_and_complete_era` already
-    /// gives `remaining == 0` (see `era_readout_values`'s own doc comment).
+    /// Task 117: at the instant an era starts (`SeasonProgress::start` sets
+    /// `remaining` to the season's full length), the readout must show
+    /// `0/{total}`, matching the semantics `tick_and_complete_season` already
+    /// gives `remaining == 0` (see `season_readout_values`'s own doc comment).
     #[test]
-    fn era_readout_values_shows_zero_progress_at_era_start() {
+    fn season_readout_values_shows_zero_progress_at_season_start() {
         let config = SimConfig::default();
-        let total = era_ticks_for(0, 5, &config);
-        let (current, shown_total) = era_readout_values(0, 5, total, &config);
+        let total = season_pulses_for(0, 5, &config);
+        let (current, shown_total) = season_readout_values(0, 5, total, &config);
         assert_eq!(current, 0);
         assert_eq!(shown_total, total);
     }
@@ -1492,54 +1502,54 @@ mod tests {
     /// live 2026-08-13: an earlier version gated on `EraState::Advancing`
     /// and hid real progress made via `n`).
     #[test]
-    fn era_readout_values_counts_up_mid_era() {
+    fn season_readout_values_counts_up_mid_season() {
         let config = SimConfig::default();
-        let total = era_ticks_for(0, 5, &config);
-        let (current, _) = era_readout_values(0, 5, total / 2, &config);
+        let total = season_pulses_for(0, 5, &config);
+        let (current, _) = season_readout_values(0, 5, total / 2, &config);
         assert_eq!(current, total - total / 2);
     }
 
     /// Last tick before completion: `remaining == 1` must show
     /// `total - 1`, not off by one in either direction.
     #[test]
-    fn era_readout_values_is_correct_on_the_last_tick_before_completion() {
+    fn season_readout_values_is_correct_on_the_last_tick_before_completion() {
         let config = SimConfig::default();
-        let total = era_ticks_for(0, 5, &config);
-        let (current, _) = era_readout_values(0, 5, 1, &config);
+        let total = season_pulses_for(0, 5, &config);
+        let (current, _) = season_readout_values(0, 5, 1, &config);
         assert_eq!(current, total - 1);
     }
 
     /// `remaining == 0` always reads as "0 progress in the era currently
-    /// shown," never "the previous era, fully done" — `tick_and_complete_era`
+    /// shown," never "the previous era, fully done" — `tick_and_complete_season`
     /// increments `world.era` atomically in the same call that drives
     /// `remaining` to `0` (`sim.rs:991-1006`), so no observable frame ever
     /// pairs `remaining == 0` with the era number it just finished. Found
     /// live 2026-08-13: without this, a fresh era showed e.g. "Era 2 · tick
     /// 8/8" the instant it began, reusing era 1's fully-depleted `remaining`.
     #[test]
-    fn era_readout_values_shows_zero_progress_when_remaining_is_zero() {
+    fn season_readout_values_shows_zero_progress_when_remaining_is_zero() {
         let config = SimConfig::default();
-        let total = era_ticks_for(0, 5, &config);
-        let (current, shown_total) = era_readout_values(0, 5, 0, &config);
+        let total = season_pulses_for(0, 5, &config);
+        let (current, shown_total) = season_readout_values(0, 5, 0, &config);
         assert_eq!(current, 0);
         assert_eq!(shown_total, total);
     }
 
-    /// The readout composes `era_ticks_for` correctly for both world 0's
+    /// The readout composes `season_pulses_for` correctly for both world 0's
     /// shortened onboarding eras (task 082) and the standard length —
-    /// mirrors `era_ticks_for`'s own coverage, just asserting this
+    /// mirrors `season_pulses_for`'s own coverage, just asserting this
     /// function's composition of it, not re-deriving the thresholds.
     #[test]
-    fn era_readout_values_uses_onboarding_length_for_world_zeros_opening_eras() {
+    fn season_readout_values_uses_onboarding_length_for_world_zeros_opening_seasons() {
         let config = SimConfig::default();
-        let onboarding_total = era_ticks_for(0, 0, &config);
-        let standard_total = era_ticks_for(0, config.time.onboarding_eras, &config);
+        let onboarding_total = season_pulses_for(0, 0, &config);
+        let standard_total = season_pulses_for(0, config.time.onboarding_seasons, &config);
         assert_eq!(
-            era_readout_values(0, 0, onboarding_total, &config).1,
+            season_readout_values(0, 0, onboarding_total, &config).1,
             onboarding_total
         );
         assert_eq!(
-            era_readout_values(0, config.time.onboarding_eras, standard_total, &config).1,
+            season_readout_values(0, config.time.onboarding_seasons, standard_total, &config).1,
             standard_total
         );
         assert_ne!(
@@ -1670,19 +1680,19 @@ mod tests {
     }
 
     #[test]
-    fn era_progress_display_shows_dots_at_and_under_the_cap() {
+    fn season_progress_display_shows_dots_at_and_under_the_cap() {
         assert_eq!(
-            era_progress_display(ERA_PROGRESS_DOT_CAP),
-            EraProgressDisplay::Dots
+            season_progress_display(SEASON_PROGRESS_DOT_CAP),
+            SeasonProgressDisplay::Dots
         );
-        assert_eq!(era_progress_display(1), EraProgressDisplay::Dots);
+        assert_eq!(season_progress_display(1), SeasonProgressDisplay::Dots);
     }
 
     #[test]
-    fn era_progress_display_falls_back_to_numeric_past_the_cap() {
+    fn season_progress_display_falls_back_to_numeric_past_the_cap() {
         assert_eq!(
-            era_progress_display(ERA_PROGRESS_DOT_CAP + 1),
-            EraProgressDisplay::Numeric
+            season_progress_display(SEASON_PROGRESS_DOT_CAP + 1),
+            SeasonProgressDisplay::Numeric
         );
     }
 
@@ -1735,17 +1745,17 @@ mod tests {
     }
 
     #[test]
-    fn eras_progress_floors_held_and_ceils_required() {
+    fn seasons_progress_floors_held_and_ceils_required() {
         // 25-tick eras: 60 ticks held is 2 full eras (the 3rd is
         // incomplete), 75 ticks required is exactly 3, 70 would still need
         // a 3rd era despite not being an exact multiple.
-        assert_eq!(eras_progress(60, 75, 25), (2, 3));
-        assert_eq!(eras_progress(0, 70, 25), (0, 3));
+        assert_eq!(seasons_progress(60, 75, 25), (2, 3));
+        assert_eq!(seasons_progress(0, 70, 25), (0, 3));
     }
 
     #[test]
-    fn eras_progress_handles_a_zero_era_length_without_dividing_by_zero() {
-        assert_eq!(eras_progress(10, 50, 0), (0, 0));
+    fn seasons_progress_handles_a_zero_season_length_without_dividing_by_zero() {
+        assert_eq!(seasons_progress(10, 50, 0), (0, 0));
     }
 
     #[test]

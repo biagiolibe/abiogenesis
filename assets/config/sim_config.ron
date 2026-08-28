@@ -31,10 +31,11 @@
         stress_delta: 0.3,
     ),
     time: (
-        era_ticks: 25,
-        era_budget_early: 60,
-        era_budget_late: 45,
-        point_budget_per_era: 3,
+        season_pulses: 25,
+        seasons_per_era: 4,
+        era_budget_early: 15,
+        era_budget_late: 11,
+        point_budget_per_season: 3,
         action_costs: (
             seed: 1,
             stress: 1,
@@ -43,9 +44,9 @@
             splice_upgraded: 1,
         ),
         era_tick_hz: 8.0,
-        grace_eras: 3,
-        onboarding_eras: 3,
-        onboarding_era_ticks: 8,
+        grace_seasons: 3,
+        onboarding_seasons: 3,
+        onboarding_season_pulses: 8,
     ),
     energy: (
         seed_energy: 5.0,
@@ -206,7 +207,7 @@
         alpine_meadow_temperature_max: 0.45,
     ),
     evolution: (
-        selection_pressure_threshold: 20.0,
+        selection_pressure_threshold: 80.0,
         interaction_harm_weight: 1.0,
         terrain_mismatch_weight: 1.0,
         toxicity_weight: 1.0,

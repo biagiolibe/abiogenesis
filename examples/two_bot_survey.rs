@@ -42,7 +42,7 @@ use abiogenesis::objectives::{
 };
 use abiogenesis::sim::{speciate, step, ActionBudget};
 use abiogenesis::world::{SimWorld, SpeciesId, TagSlot};
-use abiogenesis::worldgen::{build_world, era_ticks_for, world_params};
+use abiogenesis::worldgen::{build_world, season_pulses_for, world_params};
 
 /// Every run is world 0 of a fresh run: the same world the balance work in
 /// task 136 is tuned against, and the one a player actually meets first.
@@ -132,28 +132,31 @@ impl Ledger {
 }
 
 struct RunResult {
-    /// Eras taken to clear every short-term objective — i.e. to reach the
-    /// final `Speciation` entry `worldgen::generate_objectives` always
-    /// appends. `None` if the world ended first.
+    /// Seasons taken to clear every short-term objective (task 135: the
+    /// decision unit, so this stays at season granularity rather than
+    /// coarsening to the now-rare era) — i.e. to reach the final
+    /// `Speciation` entry `worldgen::generate_objectives` always appends.
+    /// `None` if the world ended first.
     ///
-    /// Reported separately from `full_eras` on purpose: `Speciation` fires off
-    /// accumulated selection pressure, which is only weakly under a player's
-    /// control, so the full-sequence time can be dominated by how long until
-    /// *any* lineage crosses the threshold — swamping the strategy difference
-    /// this survey exists to measure. If the signal is anywhere, it is here.
-    short_term_eras: Option<u32>,
-    /// Eras taken to clear the whole sequence, `Speciation` included. `None`
-    /// if the world ended first. This is what a real run feels like.
-    full_eras: Option<u32>,
+    /// Reported separately from `full_seasons` on purpose: `Speciation`
+    /// fires off accumulated selection pressure, which is only weakly under
+    /// a player's control, so the full-sequence time can be dominated by how
+    /// long until *any* lineage crosses the threshold — swamping the
+    /// strategy difference this survey exists to measure. If the signal is
+    /// anywhere, it is here.
+    short_term_seasons: Option<u32>,
+    /// Seasons taken to clear the whole sequence, `Speciation` included.
+    /// `None` if the world ended first. This is what a real run feels like.
+    full_seasons: Option<u32>,
     outcome: WorldOutcome,
     objectives_cleared: u32,
     ledger: Ledger,
     confirmed_pairs: u32,
     confirmable_pairs: u32,
-    /// Highest cell occupancy seen at any era boundary. Sampled per era, not
-    /// only at world end, because an extinct or budget-exhausted world ends
-    /// at (near) zero — the end-state tells nothing about whether the run
-    /// ever reached a working population.
+    /// Highest cell occupancy seen at any season boundary. Sampled per
+    /// season, not only at world end, because an extinct or budget-exhausted
+    /// world ends at (near) zero — the end-state tells nothing about whether
+    /// the run ever reached a working population.
     peak_population: u32,
 }
 
@@ -166,9 +169,10 @@ fn main() {
 
     println!(
         "two-bot survey — world {WORLD_INDEX}, seeds 0..{seed_count}, \
-         era budget {}, era ticks {}",
+         era budget {}, season pulses {}, seasons per era {}",
         world_params(WORLD_INDEX, &config).era_budget,
-        config.time.era_ticks
+        config.time.season_pulses,
+        config.time.seasons_per_era
     );
     println!();
 
@@ -186,8 +190,8 @@ fn main() {
 
 /// One world, one strategy. Replicates the minimal slice of the Bevy schedule
 /// that matters here — tick, accumulate evidence, speciate on a crossed
-/// threshold, evaluate the objective, close the era — rather than reusing the
-/// systems, which need an `App` and a window.
+/// threshold, evaluate the objective, close the season — rather than reusing
+/// the systems, which need an `App` and a window.
 fn play(seed: u64, policy: Policy, config: &SimConfig) -> RunResult {
     let (mut world, objectives) = build_world(seed, WORLD_INDEX, config, 0);
     let params = world_params(WORLD_INDEX, config);
@@ -196,15 +200,15 @@ fn play(seed: u64, policy: Policy, config: &SimConfig) -> RunResult {
         config.notebook.confirmation_threshold,
     );
     let mut budget = ActionBudget {
-        points_remaining: config.time.point_budget_per_era,
+        points_remaining: config.time.point_budget_per_season,
     };
     let mut progress = ObjectiveProgress::default();
     let mut grace = GraceProgress::default();
     let mut objective_index = 0usize;
     let mut outcome = WorldOutcome::Ongoing;
     let mut ledger = Ledger::default();
-    let mut short_term_eras = None;
-    let mut full_eras = None;
+    let mut short_term_seasons = None;
+    let mut full_seasons = None;
     let mut peak_population = 0u32;
     // The bot's own RNG, never `world.rng`: a player's choices are not drawn
     // from the simulation's stream, and borrowing it would make the two arms
@@ -217,7 +221,7 @@ fn play(seed: u64, policy: Policy, config: &SimConfig) -> RunResult {
     let seedable = seedable_species(&world);
 
     'world: while outcome == WorldOutcome::Ongoing {
-        // Observing window: spend the era's points.
+        // Observing window: spend the season's points.
         while budget.points_remaining >= config.time.action_costs.seed {
             let Some((species, x, y, context)) = choose_placement(
                 policy, &world, config, &knowledge, &placeable, &seedable, &mut rng,
@@ -231,7 +235,7 @@ fn play(seed: u64, policy: Policy, config: &SimConfig) -> RunResult {
             ledger.record(context, cost);
         }
 
-        let ticks = era_ticks_for(WORLD_INDEX, world.era, config);
+        let ticks = season_pulses_for(WORLD_INDEX, world.season, config);
         for _ in 0..ticks {
             let events = step(&mut world, config);
             accumulate_adjacency_evidence(events.adjacencies, config, &mut knowledge);
@@ -239,8 +243,8 @@ fn play(seed: u64, policy: Policy, config: &SimConfig) -> RunResult {
                 speciate(&mut world, config, crossed);
             }
 
-            update_grace_progress(&world, &mut grace, config.time.era_ticks);
-            let grace_active = is_grace_active(world.era, config.time.grace_eras, &grace);
+            update_grace_progress(&world, &mut grace, config.time.season_pulses);
+            let grace_active = is_grace_active(world.season, config.time.grace_seasons, &grace);
             let tick_outcome = evaluate_world(
                 objectives.get(objective_index),
                 &world,
@@ -259,10 +263,10 @@ fn play(seed: u64, policy: Policy, config: &SimConfig) -> RunResult {
                     // (`worldgen::generate_objectives`), so crossing into it
                     // is exactly "every short-term objective is done".
                     if objectives.get(objective_index + 1) == Some(&Objective::Speciation) {
-                        short_term_eras.get_or_insert(world.era);
+                        short_term_seasons.get_or_insert(world.season);
                     }
                     if objective_index + 1 >= objectives.len() {
-                        full_eras = Some(world.era);
+                        full_seasons = Some(world.season);
                         outcome = WorldOutcome::Cleared;
                         objective_index += 1;
                         break 'world;
@@ -280,13 +284,16 @@ fn play(seed: u64, policy: Policy, config: &SimConfig) -> RunResult {
             .count() as u32;
         peak_population = peak_population.max(population);
 
-        world.era += 1;
-        budget.refill(config.time.point_budget_per_era);
+        world.season += 1;
+        if world.season.is_multiple_of(config.time.seasons_per_era) {
+            world.era += 1;
+        }
+        budget.refill(config.time.point_budget_per_season);
     }
 
     RunResult {
-        short_term_eras,
-        full_eras,
+        short_term_seasons,
+        full_seasons,
         outcome,
         objectives_cleared: objective_index as u32,
         ledger,
@@ -543,13 +550,16 @@ fn report(policy: Policy, results: &[RunResult]) {
         results.len()
     );
     print_distribution(
-        "  short-term eras    ",
-        results.iter().filter_map(|r| r.short_term_eras).collect(),
+        "  short-term seasons ",
+        results
+            .iter()
+            .filter_map(|r| r.short_term_seasons)
+            .collect(),
         results.len(),
     );
     print_distribution(
-        "  full-sequence eras ",
-        results.iter().filter_map(|r| r.full_eras).collect(),
+        "  full-sequence seasons ",
+        results.iter().filter_map(|r| r.full_seasons).collect(),
         results.len(),
     );
     print_distribution(
@@ -623,7 +633,7 @@ fn verdict(exploiter: &[RunResult], explorer: &[RunResult]) {
     let mut tied = 0;
     let mut compared = 0;
     for (a, b) in exploiter.iter().zip(explorer) {
-        match (a.short_term_eras, b.short_term_eras) {
+        match (a.short_term_seasons, b.short_term_seasons) {
             (Some(x), Some(y)) => {
                 compared += 1;
                 match x.cmp(&y) {

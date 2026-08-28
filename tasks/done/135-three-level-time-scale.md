@@ -30,29 +30,29 @@ Design source: `redesign/processed/abiogenesis-time-scale-reveal.md` §1, §2, �
 
 ## 📋 Acceptance Criteria
 
-- [ ] `TimeConfig` gains a season length (in pulses) and expresses the era in
+- [x] `TimeConfig` gains a season length (in pulses) and expresses the era in
       **seasons**, not directly in pulses. `era_ticks` stops being the primary
       knob.
-- [ ] The action point budget refills **per season**, not per era
+- [x] The action point budget refills **per season**, not per era
       (`point_budget_per_era` → per-season equivalent). The number of decisions
       per world stays in the same order of magnitude as today.
-- [ ] The per-world era budget is lowered accordingly. Doc's starting point: if
+- [x] The per-world era budget is lowered accordingly. Doc's starting point: if
       an era is ~4 seasons, the current `era_budget_early`/`era_budget_late`
       of `60`/`45` become roughly `15`/`11`. Total run length in pulses stays
       comparable — the rhythm changes, not the duration.
-- [ ] `EvolutionConfig::selection_pressure_threshold` is **retuned** for the
+- [x] `EvolutionConfig::selection_pressure_threshold` is **retuned** for the
       longer era. Left at `20.0` (tuned against a 25-pulse era) speciations
       would fire many times per era, trivialising both the `Speciation`
       objective and (later) Emersione.
-- [ ] Objective durations currently expressed in eras are re-expressed in
+- [x] Objective durations currently expressed in eras are re-expressed in
       seasons where that is the natural unit — case by case, not a mechanical
       conversion. (Full objective rework is task 154; here only the unit.)
-- [ ] `assets/sim_config.ron` updated in the same commit for every new/renamed
+- [x] `assets/sim_config.ron` updated in the same commit for every new/renamed
       field — `tests/config_ron_sync.rs` fails otherwise.
-- [ ] Tests that assume `era_ticks = 25` or era-multiple tick counts are
+- [x] Tests that assume `era_ticks = 25` or era-multiple tick counts are
       updated, not deleted (see `config.rs:613` and the era-relative time
       readout from task 117).
-- [ ] `cargo test` and `cargo clippy -- -D warnings` clean.
+- [x] `cargo test` and `cargo clippy -- -D warnings` clean.
 
 ---
 
@@ -117,6 +117,60 @@ total-extinction failure, never era-budget exhaustion.
 - **Blocks**: 136, 140, 154
 
 ---
+
+## ✅ Resolution (2026-08-28)
+
+**Numeric choice.** `season_pulses = 25` (identical to the old `era_ticks`)
+and `seasons_per_era = 4` (the design doc's own suggested ratio), so
+`era_ticks() = 100`. Keeping the season's length equal to the old era's meant
+every duration already tuned against the 25-pulse era (`grace_eras`,
+`onboarding_era_ticks`, the objective tick bases `100`/`75` = 4/3 "eras")
+carries over unchanged onto the season, which now plays the role the era used
+to. Only what's genuinely narrative moved to the new, rarer era: the world's
+`era_budget` (`60/45` → `15/11`, matching the 4:1 ratio) and the per-species
+notebook log cadence (`EraCompleted` now fires every 4 seasons).
+
+**Mechanism.** `SimWorld` gained a `season: u32` field alongside `era`.
+`tick_and_complete_season` (renamed from `tick_and_complete_era`) advances
+`world.season` and refills `ActionBudget` every `season_pulses` ticks, and
+only increments `world.era`/fires `EraCompleted` every `seasons_per_era`
+seasons. Everything that gates the player's actual decision cadence moved
+from era to season: `SeasonProgress` (renamed from `EraProgress`), the
+onboarding shortening (`onboarding_seasons`/`onboarding_season_pulses`), the
+grace period (`grace_seasons`, checked against `world.season`), and
+reproduction eligibility (`Organism::born_season < world.season` — previously
+`born_era < world.era`, which would otherwise have quietly made newborns wait
+4x longer to reproduce, an unintended balance change disguised as a unit
+rename). Purely narrative bookkeeping (`species_seeded_era`,
+`species_origin_era`, the Notebook's log entries) stayed on `world.era`.
+
+**`selection_pressure_threshold` retune.** Measured `SelectionThresholdCrossed`
+crossings per (new, 100-tick) era across 12 greedily-seeded world-0 seeds, 15
+eras each, at several candidate thresholds:
+
+```text
+threshold   20.0: 180 era-windows, mean 0.71/era, 104/180 eras with 0, max 5
+threshold   40.0: 180 era-windows, mean 0.43/era, 123/180 eras with 0, max 3
+threshold   60.0: 180 era-windows, mean 0.33/era, 129/180 eras with 0, max 3
+threshold   80.0: 180 era-windows, mean 0.25/era, 135/180 eras with 0, max 1
+threshold  100.0: 180 era-windows, mean 0.22/era, 141/180 eras with 0, max 2
+```
+
+Left at `20.0`, an era regularly bundles 2-5 speciation events (a burst, not a
+beat). `80.0` was chosen: mean 0.25/era, max 1 in the sample, 75% of eras with
+none at all — a speciation reads as a rare, single, notable event again,
+matching the doc's "epocale, non di routine" framing.
+
+**HUD.** `era_tick_line` → `season_tick_line`: `"Era {era} · Season {season} ·
+pulse {current}/{total}"`. The sustained-objective progress indicator
+(`objective_panel`) now reads in seasons (`eras_progress` → `seasons_progress`,
+`ERA_PROGRESS_DOT_CAP` → `SEASON_PROGRESS_DOT_CAP`).
+
+**Not done here (by design):** the end-of-era reveal beat (task 140), the
+full objective unit rework (task 154), and `two_bot_survey.rs`'s harness now
+tracks `short_term_seasons`/`full_seasons` instead of the old era-keyed
+fields — an incidental but necessary fix, since the survey re-implements the
+tick loop by hand rather than reusing `sim.rs`'s systems.
 
 ## 🤖 How to delegate this task to Claude CLI
 

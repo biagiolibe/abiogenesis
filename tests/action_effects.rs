@@ -24,7 +24,7 @@ fn place_starting_organisms(world: &mut SimWorld, config: &SimConfig) {
         world.cells[idx].organism = Some(Organism {
             species: SpeciesId(i as u8),
             energy: config.energy.seed_energy,
-            born_era: 0,
+            born_season: 0,
         });
     }
 }
@@ -47,32 +47,32 @@ fn species_zero_energy(world: &SimWorld) -> Option<f32> {
 fn stress_action_measurably_hurts_the_stressed_organism() {
     let config = SimConfig::default();
 
-    // Baseline: nominal starting palette, one era untouched.
+    // Baseline: nominal starting palette, one season untouched.
     let mut baseline = SimWorld::new(42, &config);
     generate_starting_palette(&mut baseline, &config);
     place_starting_organisms(&mut baseline, &config);
-    for _ in 0..config.time.era_ticks {
+    for _ in 0..config.time.season_pulses {
         step(&mut baseline, &config);
     }
     let baseline_energy = species_zero_energy(&baseline).expect(
         "the nominal starting-palette scenario (tests/balance.rs's own baseline) should never \
-         lose species 0 within a single era",
+         lose species 0 within a single season",
     );
 
     // Stressed: same seed, but species 0's cell (left edge, cold optimum,
     // task 013) gets the same temperature bump `input::stress_on_click`
     // applies, spent to the full action budget (task 022: 3 points at cost
-    // 1 each) before the era runs.
+    // 1 each) before the season runs.
     let mut stressed = SimWorld::new(42, &config);
     generate_starting_palette(&mut stressed, &config);
     place_starting_organisms(&mut stressed, &config);
     let idx = stressed.index(0, 0);
-    let uses = config.time.point_budget_per_era / config.time.action_costs.stress;
+    let uses = config.time.point_budget_per_season / config.time.action_costs.stress;
     for _ in 0..uses {
         stressed.cells[idx].temperature =
             (stressed.cells[idx].temperature + config.environment.stress_delta).clamp(0.0, 1.0);
     }
-    for _ in 0..config.time.era_ticks {
+    for _ in 0..config.time.season_pulses {
         step(&mut stressed, &config);
     }
     let stressed_energy = species_zero_energy(&stressed);
@@ -84,7 +84,7 @@ fn stress_action_measurably_hurts_the_stressed_organism() {
         Some(stressed_avg) => assert!(
             stressed_avg < baseline_energy - 1.0,
             "stressing the organism's temperature away from its optimum should measurably \
-             reduce its energy within one era, got baseline={baseline_energy} stressed={stressed_avg}"
+             reduce its energy within one season, got baseline={baseline_energy} stressed={stressed_avg}"
         ),
     }
 }

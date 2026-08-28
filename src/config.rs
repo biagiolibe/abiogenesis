@@ -195,49 +195,81 @@ impl Default for EnvironmentConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeConfig {
-    /// Ticks per era (GDD §5.9).
-    pub era_ticks: u32,
-    /// Era budget for the world at the start of the run (GDD §5.9).
+    /// Pulses per season (task 135, `redesign/processed/abiogenesis-time-scale-reveal.md`
+    /// §1) — the player's unit of decision. Replaces the old `era_ticks` as
+    /// the primary knob: the era is now derived from this, not stored
+    /// directly (see `era_ticks`).
+    pub season_pulses: u32,
+    /// Seasons per era (task 135, same doc §1-2). The era is the unit of
+    /// narration — much longer and rarer than the season, and derived from
+    /// it (`era_ticks`) rather than an independent length.
+    pub seasons_per_era: u32,
+    /// Era budget for the world at the start of the run (GDD §5.9). Counted
+    /// in eras, so task 135 divided it by roughly `seasons_per_era` to keep
+    /// the run's total pulse count in the same order as before the split.
     pub era_budget_early: u32,
-    /// Era budget for the world at the end of the run (GDD §5.9).
+    /// Era budget for the world at the end of the run (GDD §5.9). See
+    /// `era_budget_early`.
     pub era_budget_late: u32,
-    /// Action points granted per era (GDD §5.9).
-    pub point_budget_per_era: u32,
+    /// Action points granted per season (task 135; GDD §5.9 originally
+    /// specified this per era — the season is now the refill boundary so the
+    /// number of decisions per world stays in the same order of magnitude).
+    pub point_budget_per_season: u32,
     pub action_costs: ActionCosts,
-    /// Ticks per second during era animation (GDD §4). Presentation only —
-    /// changing it must never change simulation outcomes (invariant 1); it
-    /// only changes how fast the same `era_ticks` play back.
+    /// Ticks per second during season animation (GDD §4). Presentation
+    /// only — changing it must never change simulation outcomes (invariant
+    /// 1); it only changes how fast the same `season_pulses` play back.
     pub era_tick_hz: f32,
-    /// Onboarding grace period (task 079, GDD §8): total-extinction failure
-    /// is suppressed while `world.era < grace_eras`, and adaptively extended
-    /// past that until the player has kept a population alive for a full
-    /// era at least once — see `objectives::is_grace_active`. Deliberately
-    /// far smaller than `era_budget_early`/`era_budget_late`, since it only
-    /// ever gates total-extinction, never era-budget exhaustion.
-    pub grace_eras: u32,
-    /// Onboarding pacing (task 082): world 0's eras `0..onboarding_eras` use
-    /// `onboarding_era_ticks` instead of `era_ticks`, shortening the wait
-    /// between checkpoints while the player is still learning the system.
-    /// Every other era (any era in any other world, or world 0 past this
-    /// threshold) keeps the standard `era_ticks`.
-    pub onboarding_eras: u32,
-    /// Shortened tick count for world 0's opening eras (task 082). See
-    /// `onboarding_eras`.
-    pub onboarding_era_ticks: u32,
+    /// Onboarding grace period (task 079, GDD §8; unit moved to seasons by
+    /// task 135, since the season is the granularity the player actually
+    /// experiences): total-extinction failure is suppressed while
+    /// `world.season < grace_seasons`, and adaptively extended past that
+    /// until the player has kept a population alive for a full season at
+    /// least once — see `objectives::is_grace_active`. Deliberately far
+    /// smaller than the era budgets, since it only ever gates
+    /// total-extinction, never era-budget exhaustion.
+    pub grace_seasons: u32,
+    /// Onboarding pacing (task 082, unit moved to seasons by task 135):
+    /// world 0's seasons `0..onboarding_seasons` use
+    /// `onboarding_season_pulses` instead of `season_pulses`, shortening the
+    /// wait between checkpoints while the player is still learning the
+    /// system. Every other season (any season in any other world, or world 0
+    /// past this threshold) keeps the standard `season_pulses`.
+    pub onboarding_seasons: u32,
+    /// Shortened tick count for world 0's opening seasons (task 082). See
+    /// `onboarding_seasons`.
+    pub onboarding_season_pulses: u32,
+}
+
+impl TimeConfig {
+    /// The era's length in pulses, derived from `season_pulses *
+    /// seasons_per_era` (task 135) rather than stored directly — the era
+    /// stopped being an independently-tunable length once the season became
+    /// the unit of decision.
+    pub fn era_ticks(&self) -> u32 {
+        self.season_pulses * self.seasons_per_era
+    }
 }
 
 impl Default for TimeConfig {
     fn default() -> Self {
         Self {
-            era_ticks: 25,
-            era_budget_early: 60,
-            era_budget_late: 45,
-            point_budget_per_era: 3,
+            // Kept equal to the pre-135 `era_ticks` (25): every duration
+            // tuned against the old era (grace, onboarding, objective tick
+            // bases) carries over unchanged onto the season, which now plays
+            // the role the era used to.
+            season_pulses: 25,
+            // GDD's own suggested ratio (redesign doc §2): "if an era is
+            // ~4 seasons".
+            seasons_per_era: 4,
+            era_budget_early: 15,
+            era_budget_late: 11,
+            point_budget_per_season: 3,
             action_costs: ActionCosts::default(),
             era_tick_hz: 8.0,
-            grace_eras: 3,
-            onboarding_eras: 3,
-            onboarding_era_ticks: 8,
+            grace_seasons: 3,
+            onboarding_seasons: 3,
+            onboarding_season_pulses: 8,
         }
     }
 }
@@ -412,7 +444,15 @@ impl Default for TagConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EvolutionConfig {
     /// Total accumulated pressure (sum of all three weighted stimuli) needed
-    /// to fire `SelectionThresholdCrossed` for a species.
+    /// to fire `SelectionThresholdCrossed` for a species. Retuned from `20.0`
+    /// by task 135: at the old value, measuring `SelectionThresholdCrossed`
+    /// events per (now 4x longer) era across 12 greedily-seeded worlds gave a
+    /// mean of 0.71 crossings/era with bursts up to 5 in a single era —
+    /// several speciations landing in one narrative beat, trivializing both
+    /// the `Speciation` objective and the eventual end-of-era reveal (task
+    /// 140). `80.0` brings that to a mean of 0.25/era, max 1 in the same
+    /// sample, with 75% of eras seeing none at all — speciation reads as a
+    /// notable event again, not a per-era routine.
     pub selection_pressure_threshold: f32,
     /// Weight applied to a tick's harmful (negative) `interaction_delta`
     /// share before accumulating.
@@ -436,7 +476,7 @@ pub struct EvolutionConfig {
 impl Default for EvolutionConfig {
     fn default() -> Self {
         Self {
-            selection_pressure_threshold: 20.0,
+            selection_pressure_threshold: 80.0,
             interaction_harm_weight: 1.0,
             terrain_mismatch_weight: 1.0,
             toxicity_weight: 1.0,
@@ -609,16 +649,16 @@ impl Default for WorldgenConfig {
 ///
 /// `coexistence_ticks_base`/`survive_in_ticks_base` (task 049, 2026-08-06
 /// playtest): GDD §8's original worked example read "50 ticks" literally,
-/// but the player's actual unit of interaction is the era (`space` advances
-/// one `TimeConfig::era_ticks`, `25` by default) — 50 ticks cleared in 2
-/// era-presses or less, with no real decision space in between. Both bases
-/// are now exact multiples of `era_ticks` (`100` = 4 eras, `75` = 3 eras) —
-/// intentionally exact, not a coincidence, so the HUD's era-formatted
-/// progress (`ui.rs::eras_progress`) never shows an odd fractional-looking
-/// requirement at `objective_severity == 1.0`. Scaling by severity (up to
-/// `2.0`, see `DifficultyConfig`) can still land on a non-exact era count
-/// for intermediate severities — expected, `eras_progress` ceils the
-/// requirement rather than truncating it.
+/// but the player's actual unit of interaction is the season (task 135;
+/// `space` advances one `TimeConfig::season_pulses`, `25` by default) — 50
+/// ticks cleared in 2 season-presses or less, with no real decision space in
+/// between. Both bases are now exact multiples of `season_pulses` (`100` = 4
+/// seasons, `75` = 3 seasons) — intentionally exact, not a coincidence, so
+/// the HUD's season-formatted progress (`ui.rs::seasons_progress`) never
+/// shows an odd fractional-looking requirement at `objective_severity ==
+/// 1.0`. Scaling by severity (up to `2.0`, see `DifficultyConfig`) can still
+/// land on a non-exact season count for intermediate severities — expected,
+/// `seasons_progress` ceils the requirement rather than truncating it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectiveConfig {
     /// `Objective::Coexistence`'s `min_species` at severity 1.0.

@@ -131,7 +131,7 @@ fn parse_or_generate_seed(input: &str) -> u64 {
 /// `GameState::Playing`'s systems expect to already exist — the equivalent
 /// of the old `Startup`-time `spawn_world`, now triggered by the player
 /// instead of the process booting. Unlike `run_flow::start_world` (task
-/// 045, used for every *later* world), this doesn't touch `EraProgress`/
+/// 045, used for every *later* world), this doesn't touch `SeasonProgress`/
 /// `EraState`: those are substates of `Playing`, which hasn't been entered
 /// yet, so they're already at their fresh `Default` the moment it is.
 /// `MatrixKnowledge` still needs an explicit fresh instance sized to this
@@ -170,7 +170,7 @@ fn start_run(commands: &mut Commands, config: &SimConfig, meta: &MetaProgress, r
     commands.insert_resource(NotebookHasUnseenConfirmation::default());
     commands.insert_resource(IsolationHint::default());
     commands.insert_resource(ActionBudget {
-        points_remaining: config.time.point_budget_per_era,
+        points_remaining: config.time.point_budget_per_season,
     });
     commands.insert_resource(SelectedSpecies(SpeciesId(0)));
     commands.insert_resource(SpliceDraft::default());

@@ -105,7 +105,7 @@ fn place_starting_organisms(world: &mut SimWorld, config: &SimConfig) {
         world.cells[idx].organism = Some(Organism {
             species: SpeciesId(i as u8),
             energy: config.energy.seed_energy,
-            born_era: 0,
+            born_season: 0,
         });
     }
 }
@@ -309,7 +309,7 @@ fn chemolithotroph_survives_reasonably_in_its_toxic_zone_across_seeds() {
         world.cells[idx].organism = Some(Organism {
             species: species_id,
             energy: config.energy.seed_energy,
-            born_era: 0,
+            born_season: 0,
         });
 
         for _ in 0..RUN_TICKS {

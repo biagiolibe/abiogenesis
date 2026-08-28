@@ -518,7 +518,7 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
     // starting era for the initial roster regardless of when the player
     // actually seeds one). Set once, the first tick this species' pre-tick
     // population is observed positive; `world.era` hasn't advanced yet this
-    // tick (that only happens in `tick_and_complete_era`, after `step`
+    // tick (that only happens in `tick_and_complete_season`, after `step`
     // returns), so this is the era the player was actually looking at when
     // they placed it. Unlike `ever_populated` above, wild populations do
     // count here — the catalog row only needs to know when the species
@@ -816,7 +816,7 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
         // collected from the snapshot in index order, so the RNG draw is
         // reproducible; the scratch buffer is re-checked to resolve
         // contention between two parents claiming the same cell this tick.
-        if new_energy >= species.repro_threshold && organism.born_era < world.era {
+        if new_energy >= species.repro_threshold && organism.born_season < world.season {
             // Cloned rather than borrowed: `world.rng_mut()` below needs
             // `&mut world` as a whole (it's a method, so the borrow checker
             // can't see that it's disjoint from `world.species`), which
@@ -837,7 +837,7 @@ pub fn step(world: &mut SimWorld, config: &SimConfig) -> TickEvents {
                     world.scratch[target].organism = Some(Organism {
                         species: organism.species,
                         energy: energy.repro_cost,
-                        born_era: world.era,
+                        born_season: world.season,
                     });
                     world.scratch[idx].organism = Some(Organism {
                         energy: new_energy - energy.repro_cost,
@@ -884,13 +884,15 @@ pub enum SimSet {
     Advance,
 }
 
-/// Ticks left in the era currently being animated (TECH_DESIGN.md §3.4).
+/// Ticks left in the season currently being animated (TECH_DESIGN.md §3.4;
+/// renamed from `EraProgress` by task 135 — this tracks the season, the
+/// decision-cadence unit, not the era).
 #[derive(Resource, Default)]
-pub struct EraProgress {
+pub struct SeasonProgress {
     pub(crate) remaining: u32,
 }
 
-impl EraProgress {
+impl SeasonProgress {
     pub fn start(&mut self, ticks: u32) {
         self.remaining = ticks;
     }
@@ -899,7 +901,7 @@ impl EraProgress {
         self.remaining
     }
 
-    /// Used by the `r` key (world reset) to cancel any era in progress.
+    /// Used by the `r` key (world reset) to cancel any season in progress.
     pub fn cancel(&mut self) {
         self.remaining = 0;
     }
@@ -907,9 +909,10 @@ impl EraProgress {
 
 /// The player's action points for the current `EraState::Observing` window
 /// (GDD §6): `Seed` and, from tasks 023-025, Stress/Cull/Splice each spend
-/// from this pool. Refilled to `config.time.point_budget_per_era` whenever
-/// an era finishes (`advance_tick`'s "era just ended" branch) and by the
-/// `r` key alongside every other piece of fresh-world state.
+/// from this pool. Refilled to `config.time.point_budget_per_season`
+/// whenever a season finishes (`advance_tick`'s "season just ended" branch,
+/// task 135) and by the `r` key alongside every other piece of fresh-world
+/// state.
 #[derive(Resource, Default)]
 pub struct ActionBudget {
     pub points_remaining: u32,
@@ -939,14 +942,14 @@ impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
         let config = app.world().resource::<SimConfig>();
         let era_tick_hz = config.time.era_tick_hz as f64;
-        let point_budget_per_era = config.time.point_budget_per_era;
+        let point_budget_per_season = config.time.point_budget_per_season;
         app.insert_resource(Time::<Fixed>::from_hz(era_tick_hz));
-        app.init_resource::<EraProgress>();
+        app.init_resource::<SeasonProgress>();
         // `init_resource` alone would leave `points_remaining = 0` (the
-        // `Default` impl) until the first era finishes — the very first
+        // `Default` impl) until the first season finishes — the very first
         // `Observing` window needs a full budget too.
         app.insert_resource(ActionBudget {
-            points_remaining: point_budget_per_era,
+            points_remaining: point_budget_per_season,
         });
         app.add_message::<OrganismDied>();
         app.add_message::<SpeciesExtinct>();
@@ -981,32 +984,37 @@ impl Plugin for SimPlugin {
     }
 }
 
-/// Advances one tick of the currently-animating era, then transitions back
-/// to `Observing` once `era_ticks` have been played out. Guards against a
-/// stray extra `FixedUpdate` execution landing before the state transition
-/// takes effect, which would otherwise run one tick too many.
+/// Advances one tick of the currently-animating season, then transitions
+/// back to `Observing` once `season_pulses` have been played out. Guards
+/// against a stray extra `FixedUpdate` execution landing before the state
+/// transition takes effect, which would otherwise run one tick too many.
 ///
 /// Each parameter is a distinct Bevy resource/writer this system needs, not
 /// incidental complexity — splitting it wouldn't reduce the coupling, only
 /// hide it, so the arg count is allowed rather than fought.
-/// Runs one tick and, if it was the era's last tick, performs the
-/// era-completion bookkeeping (`world.era` advance, budget refill,
-/// `EraCompleted`). Shared by `advance_tick`'s auto-play and `single_tick`'s
-/// manual step (`input.rs`) so an era is exactly `era_ticks` ticks — and
-/// completes identically — regardless of which key triggered them.
-pub fn tick_and_complete_era(
+/// Runs one tick and, if it was the season's last tick, performs the
+/// season-completion bookkeeping (`world.season` advance, budget refill)
+/// plus, every `seasons_per_era` seasons, the era-completion bookkeeping
+/// (`world.era` advance, `EraCompleted` — task 135 moved the season/era
+/// split here). Shared by `advance_tick`'s auto-play and `single_tick`'s
+/// manual step (`input.rs`) so a season is exactly `season_pulses` ticks —
+/// and completes identically — regardless of which key triggered them.
+pub fn tick_and_complete_season(
     world: &mut SimWorld,
     config: &SimConfig,
-    progress: &mut EraProgress,
+    progress: &mut SeasonProgress,
     budget: &mut ActionBudget,
     era_completed: &mut MessageWriter<EraCompleted>,
 ) -> TickEvents {
     let events = step(world, config);
     progress.remaining -= 1;
     if progress.remaining() == 0 {
-        world.era += 1;
-        budget.refill(config.time.point_budget_per_era);
-        era_completed.write(EraCompleted { era: world.era });
+        world.season += 1;
+        budget.refill(config.time.point_budget_per_season);
+        if world.season.is_multiple_of(config.time.seasons_per_era) {
+            world.era += 1;
+            era_completed.write(EraCompleted { era: world.era });
+        }
     }
     events
 }
@@ -1014,7 +1022,7 @@ pub fn tick_and_complete_era(
 fn advance_tick(
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
-    mut progress: ResMut<EraProgress>,
+    mut progress: ResMut<SeasonProgress>,
     mut next_state: ResMut<NextState<EraState>>,
     mut budget: ResMut<ActionBudget>,
     mut era_completed: MessageWriter<EraCompleted>,
@@ -1023,7 +1031,7 @@ fn advance_tick(
     if progress.remaining() == 0 {
         return;
     }
-    let events = tick_and_complete_era(
+    let events = tick_and_complete_season(
         &mut world,
         &config,
         &mut progress,
@@ -1092,7 +1100,7 @@ mod tests {
             organism: Some(Organism {
                 species: SpeciesId(0),
                 energy,
-                born_era: 0,
+                born_season: 0,
             }),
             ..world.cells[idx]
         };
@@ -1127,7 +1135,7 @@ mod tests {
             world.cells[idx].organism = Some(Organism {
                 species: SpeciesId(0),
                 energy: 1.0,
-                born_era: 0,
+                born_season: 0,
             });
         }
         let target = neighbours[0];
@@ -1145,24 +1153,25 @@ mod tests {
         );
     }
 
-    /// Task 083: an organism born this era must not reproduce even with
-    /// energy above `repro_threshold` — it has to survive into a later era
-    /// first (`born_era < world.era`).
+    /// Task 083 (moved from era to season by task 135): an organism born
+    /// this season must not reproduce even with energy above
+    /// `repro_threshold` — it has to survive into a later season first
+    /// (`born_season < world.season`).
     #[test]
-    fn newborn_cannot_reproduce_until_a_later_era() {
+    fn newborn_cannot_reproduce_until_a_later_season() {
         let (mut world, config) = world_with_one_organism(0.7, 0.5, 15.0);
 
         let events = step(&mut world, &config);
         assert!(
             events.births.is_empty(),
-            "an organism born this era (born_era == world.era) must not reproduce yet"
+            "an organism born this season (born_season == world.season) must not reproduce yet"
         );
 
-        world.era += 1;
+        world.season += 1;
         let events = step(&mut world, &config);
         assert!(
             !events.births.is_empty(),
-            "once world.era has advanced past born_era, reproduction may proceed"
+            "once world.season has advanced past born_season, reproduction may proceed"
         );
     }
 
@@ -1178,7 +1187,7 @@ mod tests {
             world.cells[idx].organism = Some(Organism {
                 species: SpeciesId(0),
                 energy: 1.0,
-                born_era: 0,
+                born_season: 0,
             });
         }
 
@@ -1279,7 +1288,7 @@ mod tests {
         world.cells[target].organism = Some(Organism {
             species: SpeciesId(1),
             energy: config.energy.seed_energy,
-            born_era: world.era,
+            born_season: world.era,
         });
         step(&mut world, &config);
         assert_eq!(
@@ -1311,7 +1320,7 @@ mod tests {
     /// counting/guard logic from schedule timing, which task 007 requires to
     /// be exact regardless of frame-rate hitches.
     #[test]
-    fn era_advances_exactly_era_ticks_then_stops_at_observing() {
+    fn season_advances_exactly_season_pulses_then_stops_at_observing() {
         let config = SimConfig::default();
         let (world, _) = world_with_one_organism(0.7, 0.5, 5.0);
 
@@ -1322,7 +1331,7 @@ mod tests {
         app.insert_resource(world);
         app.init_state::<GameState>();
         app.add_sub_state::<EraState>();
-        app.init_resource::<EraProgress>();
+        app.init_resource::<SeasonProgress>();
         app.init_resource::<ActionBudget>();
         app.add_message::<OrganismDied>();
         app.add_message::<SpeciesExtinct>();
@@ -1347,27 +1356,31 @@ mod tests {
             .points_remaining = 0;
 
         app.world_mut()
-            .resource_mut::<EraProgress>()
-            .start(config.time.era_ticks);
+            .resource_mut::<SeasonProgress>()
+            .start(config.time.season_pulses);
         app.world_mut()
             .resource_mut::<NextState<EraState>>()
             .set(EraState::Advancing);
 
-        for _ in 0..config.time.era_ticks + 10 {
+        for _ in 0..config.time.season_pulses + 10 {
             app.update();
         }
 
         let sim_world = app.world().resource::<SimWorld>();
-        assert_eq!(sim_world.tick, config.time.era_ticks as u64);
-        assert_eq!(sim_world.era, 1);
+        assert_eq!(sim_world.tick, config.time.season_pulses as u64);
+        assert_eq!(sim_world.season, 1);
+        assert_eq!(
+            sim_world.era, 0,
+            "one season should not close an era on its own (seasons_per_era > 1)"
+        );
         assert_eq!(
             *app.world().resource::<State<EraState>>().get(),
             EraState::Observing
         );
         assert_eq!(
             app.world().resource::<ActionBudget>().points_remaining,
-            config.time.point_budget_per_era,
-            "the budget should refill when the era ends"
+            config.time.point_budget_per_season,
+            "the budget should refill when the season ends"
         );
 
         for _ in 0..10 {
@@ -1375,8 +1388,8 @@ mod tests {
         }
         let sim_world = app.world().resource::<SimWorld>();
         assert_eq!(
-            sim_world.tick, config.time.era_ticks as u64,
-            "no extra ticks should run once the era has ended"
+            sim_world.tick, config.time.season_pulses as u64,
+            "no extra ticks should run once the season has ended"
         );
     }
 
@@ -1416,7 +1429,7 @@ mod tests {
                 organism: Some(Organism {
                     species,
                     energy,
-                    born_era: 0,
+                    born_season: 0,
                 }),
                 ..world.cells[idx]
             };
@@ -1526,7 +1539,7 @@ mod tests {
                 organism: Some(Organism {
                     species,
                     energy,
-                    born_era: 0,
+                    born_season: 0,
                 }),
                 ..world.cells[idx]
             };
@@ -1816,7 +1829,7 @@ mod tests {
             organism: Some(Organism {
                 species: SpeciesId(0),
                 energy,
-                born_era: 0,
+                born_season: 0,
             }),
             ..world.cells[idx]
         };
@@ -1905,7 +1918,7 @@ mod tests {
                 organism: Some(Organism {
                     species,
                     energy,
-                    born_era: 0,
+                    born_season: 0,
                 }),
                 ..world.cells[idx]
             };
@@ -1937,7 +1950,7 @@ mod tests {
             organism: Some(Organism {
                 species: SpeciesId(0),
                 energy,
-                born_era: 0,
+                born_season: 0,
             }),
             ..world.cells[idx]
         };
@@ -1984,7 +1997,7 @@ mod tests {
             world.cells[idx].organism = Some(Organism {
                 species: SpeciesId(1),
                 energy: 20.0,
-                born_era: 0,
+                born_season: 0,
             });
         }
 
@@ -2031,7 +2044,7 @@ mod tests {
             organism: Some(Organism {
                 species: SpeciesId(1),
                 energy: 20.0,
-                born_era: 0,
+                born_season: 0,
             }),
             ..world.cells[prey_idx]
         };
@@ -2043,7 +2056,7 @@ mod tests {
                 organism: Some(Organism {
                     species: SpeciesId(0),
                     energy: 5.0,
-                    born_era: 0,
+                    born_season: 0,
                 }),
                 ..world.cells[idx]
             };
@@ -2094,7 +2107,7 @@ mod tests {
             organism: Some(Organism {
                 species: SpeciesId(0),
                 energy,
-                born_era: 0,
+                born_season: 0,
             }),
             ..world.cells[idx]
         };
@@ -2226,7 +2239,7 @@ mod tests {
             organism: Some(Organism {
                 species: SpeciesId(0),
                 energy,
-                born_era: 0,
+                born_season: 0,
             }),
             ..world.cells[idx]
         };
@@ -2348,7 +2361,7 @@ mod tests {
                 organism: Some(Organism {
                     species: SpeciesId(0),
                     energy: 5.0,
-                    born_era: 0,
+                    born_season: 0,
                 }),
                 ..world.cells[idx]
             };
@@ -2407,7 +2420,7 @@ mod tests {
             organism: Some(Organism {
                 species: SpeciesId(0),
                 energy: 0.05,
-                born_era: 0,
+                born_season: 0,
             }),
             ..world.cells[dying_idx]
         };
@@ -2419,7 +2432,7 @@ mod tests {
             organism: Some(Organism {
                 species: SpeciesId(0),
                 energy: 5.0,
-                born_era: 0,
+                born_season: 0,
             }),
             ..world.cells[surviving_idx]
         };
@@ -2562,7 +2575,7 @@ mod tests {
                 organism: Some(Organism {
                     species,
                     energy: 5.0,
-                    born_era: 0,
+                    born_season: 0,
                 }),
                 ..world.cells[idx]
             };
@@ -2872,7 +2885,7 @@ mod tests {
         world.cells[idx].organism = Some(Organism {
             species: SpeciesId(0),
             energy: 5.0,
-            born_era: 0,
+            born_season: 0,
         });
         (world, config, idx)
     }

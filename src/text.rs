@@ -128,12 +128,15 @@ pub fn unlocks_summary(bonus_available_species: u32) -> String {
 
 pub const HEADING_TITLE: &str = "Abiogenesis";
 
-/// `current`/`total` are ticks elapsed / total ticks in the era **currently
-/// being played** (task 117) — not `SimWorld::tick`, the run-wide counter
-/// that never resets between eras and stops being readable at a glance
-/// after a couple of eras.
-pub fn era_tick_line(era: u32, current: u32, total: u32) -> String {
-    format!("Era {era}  ·  pulse {current}/{total}")
+/// `current`/`total` are ticks elapsed / total ticks in the season
+/// **currently being played** (task 117; moved from era to season by task
+/// 135, since the season is now the unit the player actually advances
+/// through) — not `SimWorld::tick`, the run-wide counter that never resets
+/// between seasons and stops being readable at a glance after a couple of
+/// them. `era` is still shown alongside it: rare and narrative now, but
+/// still the number the end-of-era reveal (task 140) will refer to.
+pub fn season_tick_line(era: u32, season: u32, current: u32, total: u32) -> String {
+    format!("Era {era}  ·  Season {season}  ·  pulse {current}/{total}")
 }
 
 pub fn seed_line(seed: u64) -> String {

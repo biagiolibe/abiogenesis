@@ -129,10 +129,12 @@ pub struct Species {
 pub struct Organism {
     pub species: SpeciesId,
     pub energy: f32,
-    /// The era this organism was born in (task 083). Reproduction requires
-    /// `born_era < world.era` — an organism must survive into a later era
-    /// than its own birth before it can reproduce.
-    pub born_era: u32,
+    /// The season this organism was born in (task 083; moved from era to
+    /// season by task 135, since this gates decision-cadence timing, not
+    /// narration). Reproduction requires `born_season < world.season` — an
+    /// organism must survive into a later season than its own birth before
+    /// it can reproduce.
+    pub born_season: u32,
 }
 
 /// A cell's elevation band (task 066, `redesign/abiogenesis-terrain-map.md`):
@@ -418,7 +420,18 @@ pub struct SimWorld {
     pub cells: Vec<Cell>,
     pub species: Vec<Species>,
     pub tick: u64,
+    /// The rare, narrative time unit (task 135): advances once every
+    /// `TimeConfig::seasons_per_era` seasons. Gates the world's era budget
+    /// (`WorldParams::era_budget`) and the per-species curated notebook
+    /// entries (`EraCompleted`) — not decision-cadence mechanics, which key
+    /// off `season` instead.
     pub era: u32,
+    /// The player's unit of decision (task 135): advances every
+    /// `TimeConfig::season_pulses` ticks, refills `ActionBudget`, and gates
+    /// reproduction eligibility (`Organism::born_season`) and the onboarding
+    /// grace period — everything that used to key off `era` before the
+    /// season/era split.
+    pub season: u32,
     pub seed: u64,
     /// The world's active tag subset (GDD §5.5): `active_tags[slot.0 as usize]`
     /// is the `TagId` a given `TagSlot` refers to in this world. Drawn
@@ -579,6 +592,7 @@ impl SimWorld {
             species: Vec::new(),
             tick: 0,
             era: 0,
+            season: 0,
             seed,
             active_tags,
             matrix,
@@ -2919,6 +2933,7 @@ mod tests {
         assert_eq!(a.species, b.species);
         assert_eq!(a.tick, b.tick);
         assert_eq!(a.era, b.era);
+        assert_eq!(a.season, b.season);
         assert_eq!(a.seed, b.seed);
         assert_eq!(a.rng_mut().random::<u64>(), b.rng_mut().random::<u64>());
     }

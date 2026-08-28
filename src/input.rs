@@ -16,7 +16,7 @@ use abiogenesis::objectives::{
 };
 use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::{
-    tick_and_complete_era, ActionBudget, EraCompleted, EraProgress, TickEventWriters,
+    tick_and_complete_season, ActionBudget, EraCompleted, SeasonProgress, TickEventWriters,
 };
 #[cfg(test)]
 use abiogenesis::sim::{
@@ -25,7 +25,7 @@ use abiogenesis::sim::{
 };
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{draw_species_name, net_self_interaction, SimWorld};
-use abiogenesis::worldgen::era_ticks_for;
+use abiogenesis::worldgen::season_pulses_for;
 
 use crate::notebook::{
     EverSeeded, LogEntry, NotebookWindowOpen, ObservationLog, PlayerPlacedCells,
@@ -113,18 +113,18 @@ fn clicked_cell(
 
 /// `space` (or the HUD's Era button, task 094 — `HudControlIntents::
 /// advance_era`, consumed here so the button and the shortcut share this one
-/// implementation): starts (or resumes auto-playing) an era, unless one is
+/// implementation): starts (or resumes auto-playing) a season, unless one is
 /// already advancing (acceptance criterion: advancement inputs are ignored
-/// during `Advancing`). Only resets `EraProgress` to a full `era_ticks` if no
-/// era is currently in flight — if the player already stepped some ticks
-/// manually via `n` (`single_tick`), `space` auto-plays whatever ticks
-/// remain rather than discarding that progress and restarting the era from
-/// zero.
+/// during `Advancing`). Only resets `SeasonProgress` to a full `season_pulses`
+/// if no season is currently in flight — if the player already stepped some
+/// ticks manually via `n` (`single_tick`), `space` auto-plays whatever ticks
+/// remain rather than discarding that progress and restarting the season
+/// from zero.
 #[allow(clippy::too_many_arguments)]
 fn start_era(
     keys: Res<ButtonInput<KeyCode>>,
     era_state: Res<State<EraState>>,
-    mut progress: ResMut<EraProgress>,
+    mut progress: ResMut<SeasonProgress>,
     mut next_state: ResMut<NextState<EraState>>,
     config: Res<SimConfig>,
     run_progress: Res<RunProgress>,
@@ -138,7 +138,11 @@ fn start_era(
     intents.advance_era = false;
     if triggered {
         if progress.remaining() == 0 {
-            progress.start(era_ticks_for(run_progress.world_index, world.era, &config));
+            progress.start(season_pulses_for(
+                run_progress.world_index,
+                world.season,
+                &config,
+            ));
         }
         next_state.set(EraState::Advancing);
     }
@@ -148,9 +152,9 @@ fn start_era(
 /// advance_tick`, consumed here so the button and the shortcut share this
 /// one implementation): advances a single tick directly, with no `EraState`
 /// transition — useful for fine observation and debugging (GDD §11). Starts
-/// a fresh era (`EraProgress`) if none is in flight, and shares
+/// a fresh era (`SeasonProgress`) if none is in flight, and shares
 /// `advance_tick`'s era-completion bookkeeping and objective evaluation via
-/// `tick_and_complete_era`/`apply_tick_outcome` — a player who only ever
+/// `tick_and_complete_season`/`apply_tick_outcome` — a player who only ever
 /// presses `n` must still see eras complete, the action budget refill, and
 /// objectives/failure conditions evaluate exactly as they would under
 /// `space`, since both paths advance the same ticks. Bound to `n` rather
@@ -161,7 +165,7 @@ fn single_tick(
     era_state: Res<State<EraState>>,
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
-    mut progress: ResMut<EraProgress>,
+    mut progress: ResMut<SeasonProgress>,
     mut budget: ResMut<ActionBudget>,
     mut era_completed: MessageWriter<EraCompleted>,
     mut writers: TickEventWriters,
@@ -177,13 +181,13 @@ fn single_tick(
         return;
     }
     if progress.remaining() == 0 {
-        progress.start(era_ticks_for(
+        progress.start(season_pulses_for(
             objective_outcome.run_progress.world_index,
-            world.era,
+            world.season,
             &config,
         ));
     }
-    let events = tick_and_complete_era(
+    let events = tick_and_complete_season(
         &mut world,
         &config,
         &mut progress,
@@ -215,7 +219,7 @@ fn reseed_world(
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
     mut run_progress: ResMut<RunProgress>,
-    mut progress: ResMut<EraProgress>,
+    mut progress: ResMut<SeasonProgress>,
     mut next_state: ResMut<NextState<EraState>>,
     mut reset: WorldResetParams,
 ) {
@@ -337,12 +341,12 @@ fn seed_organism_on_click(
             text::HINT_CLUSTERED_FIRST_PLACEMENT
         });
         hint_params.isolation_hint.shown_at_tick = world.tick;
-        // Task 092: pinned to the era length *at the moment the hint is
+        // Task 092: pinned to the season length *at the moment the hint is
         // shown*, not re-derived later — see `IsolationHint`'s own doc
-        // comment for why a later, longer era shouldn't retroactively
+        // comment for why a later, longer season shouldn't retroactively
         // extend an already-showing hint's lifetime.
         hint_params.isolation_hint.duration_ticks =
-            era_ticks_for(hint_params.run_progress.world_index, world.era, &config) as u64;
+            season_pulses_for(hint_params.run_progress.world_index, world.season, &config) as u64;
         hint_params.meta.seen_isolation_hint = true;
     }
     ever_seeded.0 = true;
@@ -1161,7 +1165,7 @@ mod tests {
         app.insert_resource(config);
         app.insert_resource(world);
         app.insert_resource(keys);
-        app.insert_resource(EraProgress::default());
+        app.insert_resource(SeasonProgress::default());
         app.insert_resource(NextState::<EraState>::default());
         app.insert_resource(abiogenesis::knowledge::MatrixKnowledge::new(5, 3.0));
         app.insert_resource(crate::notebook::TerrainKnowledge::new(5, 3.0));
@@ -1209,13 +1213,12 @@ mod tests {
     }
 
     /// A player who only ever presses `s` (never `space`) must still see
-    /// eras complete: `world.era` advances, the action budget refills, and
-    /// `EraCompleted` fires — the bug this test guards against had all three
-    /// silently never happening because `single_tick` called `step()`
-    /// directly, bypassing `advance_tick`'s era-boundary bookkeeping
-    /// entirely.
+    /// seasons complete: `world.season` advances and the action budget
+    /// refills — the bug this test guards against had both silently never
+    /// happening because `single_tick` called `step()` directly, bypassing
+    /// `advance_tick`'s season-boundary bookkeeping entirely.
     #[test]
-    fn repeated_single_ticks_alone_complete_an_era_and_refill_the_budget() {
+    fn repeated_single_ticks_alone_complete_a_season_and_refill_the_budget() {
         let config = SimConfig::default();
         let world = SimWorld::new(42, &config);
 
@@ -1224,7 +1227,7 @@ mod tests {
         app.insert_resource(world);
         app.insert_resource(ButtonInput::<KeyCode>::default());
         app.insert_resource(State::new(EraState::Observing));
-        app.insert_resource(EraProgress::default());
+        app.insert_resource(SeasonProgress::default());
         app.insert_resource(ActionBudget {
             points_remaining: 0,
         });
@@ -1243,9 +1246,9 @@ mod tests {
         app.insert_resource(CurrentWorldOutcome::default());
         app.insert_resource(GraceProgress::default());
         // world_index: 1, not the default 0 — this test exercises
-        // single_tick's generic era-completion bookkeeping, not task 082's
-        // world-0 onboarding pacing exception, so it must use the standard
-        // `era_ticks` length.
+        // single_tick's generic season-completion bookkeeping, not task
+        // 082's world-0 onboarding pacing exception, so it must use the
+        // standard `season_pulses` length.
         app.insert_resource(RunProgress {
             world_index: 1,
             ..RunProgress::default()
@@ -1255,7 +1258,7 @@ mod tests {
         app.init_resource::<HudControlIntents>();
         app.add_systems(Update, single_tick);
 
-        for _ in 0..config.time.era_ticks {
+        for _ in 0..config.time.season_pulses {
             app.world_mut()
                 .resource_mut::<ButtonInput<KeyCode>>()
                 .press(KeyCode::KeyN);
@@ -1267,13 +1270,13 @@ mod tests {
 
         let world = app.world().resource::<SimWorld>();
         assert_eq!(
-            world.era, 1,
-            "era_ticks worth of manual single-ticks must complete the era"
+            world.season, 1,
+            "season_pulses worth of manual single-ticks must complete the season"
         );
         let budget = app.world().resource::<ActionBudget>();
         assert_eq!(
-            budget.points_remaining, config.time.point_budget_per_era,
-            "the action budget must refill on a manually-completed era, same as an auto-played one"
+            budget.points_remaining, config.time.point_budget_per_season,
+            "the action budget must refill on a manually-completed season, same as an auto-played one"
         );
     }
 
@@ -1291,7 +1294,7 @@ mod tests {
         world.get_mut(6, 5).organism = Some(Organism {
             species: SpeciesId(0),
             energy: 1.0,
-            born_era: 0,
+            born_season: 0,
         });
         assert!(!is_isolated_placement(&world, 5, 5));
     }

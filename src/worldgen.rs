@@ -103,17 +103,18 @@ pub fn world_params(world_index: u32, config: &SimConfig) -> WorldParams {
     }
 }
 
-/// Era tick count for a given `(world_index, era)` (task 082): world 0's
-/// opening eras (`era < config.time.onboarding_eras`) run shorter, so a
-/// player still learning the system hits checkpoints sooner. Every other
-/// era — any era in any other world, or world 0 past the threshold — uses
-/// the standard `config.time.era_ticks`.
-pub fn era_ticks_for(world_index: u32, era: u32, config: &SimConfig) -> u32 {
+/// Season tick count for a given `(world_index, season)` (task 082, moved
+/// from era to season granularity by task 135): world 0's opening seasons
+/// (`season < config.time.onboarding_seasons`) run shorter, so a player
+/// still learning the system hits checkpoints sooner. Every other season —
+/// any season in any other world, or world 0 past the threshold — uses the
+/// standard `config.time.season_pulses`.
+pub fn season_pulses_for(world_index: u32, season: u32, config: &SimConfig) -> u32 {
     let time = &config.time;
-    if world_index == 0 && era < time.onboarding_eras {
-        time.onboarding_era_ticks
+    if world_index == 0 && season < time.onboarding_seasons {
+        time.onboarding_season_pulses
     } else {
-        time.era_ticks
+        time.season_pulses
     }
 }
 
@@ -369,7 +370,7 @@ fn place_wild_species(world: &mut SimWorld, config: &SimConfig) {
         world.cells[idx].organism = Some(Organism {
             species: species_id,
             energy: config.energy.seed_energy,
-            born_era: world.era,
+            born_season: world.season,
         });
     }
 }
@@ -540,37 +541,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn era_ticks_for_shortens_world_zeros_opening_eras() {
+    fn season_pulses_for_shortens_world_zeros_opening_seasons() {
         let config = SimConfig::default();
 
-        for era in 0..config.time.onboarding_eras {
+        for season in 0..config.time.onboarding_seasons {
             assert_eq!(
-                era_ticks_for(0, era, &config),
-                config.time.onboarding_era_ticks
+                season_pulses_for(0, season, &config),
+                config.time.onboarding_season_pulses
             );
         }
     }
 
     #[test]
-    fn era_ticks_for_uses_standard_length_past_the_onboarding_threshold() {
+    fn season_pulses_for_uses_standard_length_past_the_onboarding_threshold() {
         let config = SimConfig::default();
 
         assert_eq!(
-            era_ticks_for(0, config.time.onboarding_eras, &config),
-            config.time.era_ticks
+            season_pulses_for(0, config.time.onboarding_seasons, &config),
+            config.time.season_pulses
         );
         assert_eq!(
-            era_ticks_for(0, config.time.onboarding_eras + 5, &config),
-            config.time.era_ticks
+            season_pulses_for(0, config.time.onboarding_seasons + 5, &config),
+            config.time.season_pulses
         );
     }
 
     #[test]
-    fn era_ticks_for_uses_standard_length_for_other_worlds_at_any_era() {
+    fn season_pulses_for_uses_standard_length_for_other_worlds_at_any_season() {
         let config = SimConfig::default();
 
-        assert_eq!(era_ticks_for(1, 0, &config), config.time.era_ticks);
-        assert_eq!(era_ticks_for(2, 1, &config), config.time.era_ticks);
+        assert_eq!(season_pulses_for(1, 0, &config), config.time.season_pulses);
+        assert_eq!(season_pulses_for(2, 1, &config), config.time.season_pulses);
     }
 
     #[test]
@@ -954,24 +955,25 @@ mod tests {
         }
     }
 
-    /// Task 049: the HUD displays sustained-objective progress in whole
-    /// eras (`ui.rs::eras_progress`), so the base tick counts at severity
-    /// 1.0 must land exactly on an era boundary — otherwise the very first
+    /// Task 049 (unit moved from era to season by task 135): the HUD
+    /// displays sustained-objective progress in whole seasons
+    /// (`ui.rs::seasons_progress`), so the base tick counts at severity 1.0
+    /// must land exactly on a season boundary — otherwise the very first
     /// world a player sees would show an odd fractional-looking requirement
-    /// (e.g. "3.2 eras") that isn't a rounding artifact of severity scaling,
-    /// but baked into the defaults themselves.
+    /// (e.g. "3.2 seasons") that isn't a rounding artifact of severity
+    /// scaling, but baked into the defaults themselves.
     #[test]
-    fn objective_tick_bases_are_exact_era_multiples_at_base_severity() {
+    fn objective_tick_bases_are_exact_season_multiples_at_base_severity() {
         let config = SimConfig::default();
         assert_eq!(
-            config.objectives.coexistence_ticks_base % config.time.era_ticks,
+            config.objectives.coexistence_ticks_base % config.time.season_pulses,
             0,
-            "coexistence_ticks_base should be an exact multiple of era_ticks"
+            "coexistence_ticks_base should be an exact multiple of season_pulses"
         );
         assert_eq!(
-            config.objectives.survive_in_ticks_base % config.time.era_ticks,
+            config.objectives.survive_in_ticks_base % config.time.season_pulses,
             0,
-            "survive_in_ticks_base should be an exact multiple of era_ticks"
+            "survive_in_ticks_base should be an exact multiple of season_pulses"
         );
     }
 

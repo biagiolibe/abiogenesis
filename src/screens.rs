@@ -12,7 +12,7 @@ use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::run::{MetaProgress, RunProgress};
-use abiogenesis::sim::EraProgress;
+use abiogenesis::sim::SeasonProgress;
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::SimWorld;
 
@@ -86,7 +86,7 @@ fn world_cleared_screen_ui(
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
     mut run_progress: ResMut<RunProgress>,
-    mut era_progress: ResMut<EraProgress>,
+    mut season_progress: ResMut<SeasonProgress>,
     mut era_next_state: ResMut<NextState<EraState>>,
     mut reset: WorldResetParams,
     mut next_state: ResMut<NextState<GameState>>,
@@ -100,7 +100,7 @@ fn world_cleared_screen_ui(
                 &mut world,
                 &mut run_progress,
                 &config,
-                &mut era_progress,
+                &mut season_progress,
                 &mut era_next_state,
                 &mut reset,
             );
@@ -120,7 +120,7 @@ fn world_failed_screen_ui(
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
     run_progress: Res<RunProgress>,
-    mut era_progress: ResMut<EraProgress>,
+    mut season_progress: ResMut<SeasonProgress>,
     mut era_next_state: ResMut<NextState<EraState>>,
     mut reset: WorldResetParams,
     mut next_state: ResMut<NextState<GameState>>,
@@ -134,7 +134,7 @@ fn world_failed_screen_ui(
                 &mut world,
                 &run_progress,
                 &config,
-                &mut era_progress,
+                &mut season_progress,
                 &mut era_next_state,
                 &mut reset,
             );
