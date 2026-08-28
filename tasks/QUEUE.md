@@ -143,7 +143,7 @@ ideally with a real playtester — not yet done.
 |-------|----|--------|-----|
 | `[x]` | 145 | Stress on three selectable axes + gradual decay | `actions` — [145](done/145-stress-three-axes-gradual-decay.md) |
 | `[x]` | 146 | Cull emits a tracked notebook observation | `actions` — [146](done/146-cull-emits-tracked-observation.md) |
-| `[ ]` | 147 | Splice restricted to confirmed traits + growing genome bank + "synthesised" origin | `actions`, `hud-notebook` — [147](147-splice-confirmed-traits-genome-bank.md) |
+| `[x]` | 147 | Splice restricted to confirmed traits + growing genome bank + "synthesised" origin | `actions`, `hud-notebook` — [147](done/147-splice-confirmed-traits-genome-bank.md) |
 | `[ ]` | 149 | Inspection tool: hover tooltip + per-neighbour energy breakdown card | `inspect-tool` — [149](149-inspection-tool.md) |
 | `[ ]` | 150 | Full control scheme + `Esc` cascade + pause menu + protected `R` | `controls` — [150](150-control-scheme-pause-menu.md) |
 | `[ ]` | 151 | Pixel-grain visual register across map, HUD and notebook | `population-model-aesthetic`, `ui-redesign` — [151](151-pixel-grain-visual-register.md) |
@@ -293,6 +293,24 @@ proposal (`PROJECT_PLAN.md` §1), not available to pick up yet.
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) beyond what's already expanded into task files here.
 
 ---
+
+*Last updated: 2026-08-29 (147, Splice restricted to confirmed traits +
+growing genome bank + "synthesised" origin — implemented and archived to
+`tasks/done/`. New `MatrixKnowledge::is_tag_confirmed` (a tag counts as
+confirmed if it appears in at least one confirmed pair, as exerter or
+receiver — a judgment call the task file flags explicitly, since
+confirmation is stored per-pair, not per-tag); `splice_panel`'s SwapTag/AddTag
+tag lists now filter through it, sourced from `world.active_tags` (a guard
+structurally exclusive of any future xenotrait pool, task 168, as long as
+that pool stays out of `active_tags`). New `SimWorld::spliced_species`
+(mirrors `wild_species`) + `species_origin` resolving Seeded/Indigenous/
+Synthesised, populated by `apply_splice` alongside `push_species`. Origin
+surfaced in the Catalog (`text::species_origin_label`) and as a `⚗` marker
+in the Seed Palette row. `hud_panel` hit Bevy's 16-parameter ceiling again
+adding `MatrixKnowledge` — bundled into a new `SpliceReadouts` SystemParam
+with `SpliceDraft`, same pattern as `ObjectiveReadouts` (task 109). Origin
+era (doc's other open question) confirmed already shipped, no work needed.
+`cargo test`/`clippy -D warnings`/`fmt` clean.)*
 
 *Last updated: 2026-08-29 (146, Cull emits a tracked notebook observation —
 implemented and archived to `tasks/done/`. Extracted the tick loop's

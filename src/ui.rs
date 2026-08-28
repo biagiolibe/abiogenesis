@@ -12,6 +12,7 @@ use crate::notebook::{
 use crate::render::{metabolism_glyph, species_color, species_label, GridCamera, MapViewMode};
 use crate::text;
 use abiogenesis::config::SimConfig;
+use abiogenesis::knowledge::MatrixKnowledge;
 use abiogenesis::objectives::{
     is_grace_active, CurrentObjective, GraceProgress, Objective, ObjectiveProgress,
 };
@@ -20,7 +21,7 @@ use abiogenesis::sim::{
     any_evolution_maturing, ActionBudget, EraCompleted, OrganismDied, SeasonProgress,
 };
 use abiogenesis::state::{EraState, GameState};
-use abiogenesis::world::{SimWorld, SpeciesId, StressAxis, TagSlot};
+use abiogenesis::world::{SimWorld, SpeciesId, SpeciesOrigin, StressAxis, TagSlot};
 use abiogenesis::worldgen::season_pulses_for;
 
 /// Task 055's guided first-isolation hint: the message to show (isolated vs.
@@ -476,6 +477,16 @@ pub struct ObjectiveReadouts<'w> {
     pub grace: Res<'w, GraceProgress>,
 }
 
+/// `Splice` editor state bundled into one `SystemParam` (task 147, same
+/// rationale as `ObjectiveReadouts` above): adding `MatrixKnowledge` as
+/// `hud_panel`'s own parameter (the confirmed-tag filter `splice_panel`
+/// needs) pushed it back past Bevy's 16-parameter ceiling.
+#[derive(SystemParam)]
+pub struct SpliceReadouts<'w> {
+    pub draft: ResMut<'w, SpliceDraft>,
+    pub knowledge: Res<'w, MatrixKnowledge>,
+}
+
 #[allow(clippy::too_many_arguments)]
 /// `pub(crate)` (task 091) so `notebook.rs` can order its stray-focus-clear
 /// system `.after(hud_panel)` — the sidebar action buttons this draws are
@@ -489,7 +500,7 @@ pub(crate) fn hud_panel(
     mut selected: ResMut<SelectedSpecies>,
     mut selected_action: ResMut<SelectedAction>,
     mut selected_stress_axis: ResMut<SelectedStressAxis>,
-    mut splice_draft: ResMut<SpliceDraft>,
+    mut splice: SpliceReadouts,
     budget: Res<ActionBudget>,
     config: Res<SimConfig>,
     readouts: ObjectiveReadouts,
@@ -572,7 +583,7 @@ pub(crate) fn hud_panel(
 
             if selected_action.0 == ActionMode::Splice {
                 ui.indent("splice_panel", |ui| {
-                    splice_panel(ui, &world, &mut splice_draft);
+                    splice_panel(ui, &world, &mut splice.draft, &splice.knowledge);
                 });
             }
 
@@ -1010,11 +1021,23 @@ fn dot_row(ui: &mut egui::Ui, filled: u32, total: u32, shape: DotShape) -> egui:
 /// notebook's species catalog, which a fresh player hasn't opened yet at
 /// their first placement. Clicking sets `SelectedSpecies`, same behavior as
 /// the old chip/radio list.
+/// Marks a `Splice`-synthesised species in the Seed Palette (task 147) —
+/// visible without opening the notebook, per the design doc's own framing
+/// ("the HUD must anticipate this"). Only the glyph lives here (task 034:
+/// player-facing copy belongs in `text.rs`, the origin *word* is
+/// `text::species_origin_label`, used by the Catalog instead).
+const SYNTHESISED_MARKER: &str = "⚗";
+
 fn species_row(ui: &mut egui::Ui, species: SpeciesId, world: &SimWorld, selected: &mut SpeciesId) {
     let is_selected = *selected == species;
     let metabolism = world.species[species.0 as usize].metabolism;
+    let marker = if world.species_origin(species) == SpeciesOrigin::Synthesised {
+        format!("{SYNTHESISED_MARKER} ")
+    } else {
+        String::new()
+    };
     let text = egui::RichText::new(format!(
-        "{} {}",
+        "{marker}{} {}",
         metabolism_glyph(metabolism),
         species_label(world, species)
     ))
@@ -1183,7 +1206,12 @@ fn action_cost(mode: ActionMode, config: &SimConfig, run_progress: &RunProgress)
 /// staged in `SpliceDraft` until "Apply" is pressed. Read-only against
 /// `SimWorld`, same as `hud_panel` — the actual mutation happens in
 /// `input.rs`'s `apply_splice`, reading `apply_requested` as an intent.
-fn splice_panel(ui: &mut egui::Ui, world: &SimWorld, draft: &mut SpliceDraft) {
+fn splice_panel(
+    ui: &mut egui::Ui,
+    world: &SimWorld,
+    draft: &mut SpliceDraft,
+    knowledge: &MatrixKnowledge,
+) {
     ui.label(text::SPLICE_SOURCE_LABEL);
     for i in 0..world.species.len() as u8 {
         ui.radio_value(
@@ -1234,8 +1262,19 @@ fn splice_panel(ui: &mut egui::Ui, world: &SimWorld, draft: &mut SpliceDraft) {
                     ui.radio_value(old, Some(slot), text::tag_option_label(tag_glyph(tag)));
                 }
                 ui.label(text::ADD_TAG_LABEL);
+                // Task 147: only tags the player has already confirmed in
+                // this world's matrix are offered — "you can't synthesise
+                // what you haven't decoded." Sourced from `world.active_tags`
+                // (this run's drawn subset), which structurally excludes any
+                // future xenotrait pool (task 168) as long as that pool
+                // stays a separate list `active_tags` never draws from — the
+                // guard task 168 must respect, not a runtime check against a
+                // pool that doesn't exist yet.
                 for (i, &tag) in world.active_tags.iter().enumerate() {
                     let slot = TagSlot(i as u8);
+                    if !knowledge.is_tag_confirmed(slot) {
+                        continue;
+                    }
                     ui.radio_value(new, Some(slot), text::tag_option_label(tag_glyph(tag)));
                 }
             } else {
@@ -1246,9 +1285,10 @@ fn splice_panel(ui: &mut egui::Ui, world: &SimWorld, draft: &mut SpliceDraft) {
             if let Some(source) = draft.source {
                 let species = &world.species[source.0 as usize];
                 ui.label(text::ADD_TAG_LABEL);
+                // Same confirmed-only filter as the SwapTag arm above.
                 for (i, &candidate) in world.active_tags.iter().enumerate() {
                     let slot = TagSlot(i as u8);
-                    if species.tags.contains(&slot) {
+                    if species.tags.contains(&slot) || !knowledge.is_tag_confirmed(slot) {
                         continue;
                     }
                     ui.radio_value(

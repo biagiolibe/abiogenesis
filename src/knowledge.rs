@@ -71,6 +71,20 @@ impl MatrixKnowledge {
         self.threshold
     }
 
+    /// Whether `tag` participates in at least one confirmed pair, as either
+    /// exerter or receiver, against any other active tag (task 147: the
+    /// per-tag reading `Splice`'s trait filter needs). Confirmation is
+    /// stored per-*pair*, not per-tag — this is a judgment call, not a
+    /// spec: "confirmed" here means "you've decoded *something* about this
+    /// trait," the simplest reading consistent with the design doc, not
+    /// "confirmed against every other active tag."
+    pub fn is_tag_confirmed(&self, tag: TagSlot) -> bool {
+        (0..self.size as u8).any(|other| {
+            let other = TagSlot(other);
+            self.is_confirmed(tag, other) || self.is_confirmed(other, tag)
+        })
+    }
+
     /// The real matrix value for a confirmed pair, `None` if not yet
     /// confirmed. Reads through `world.matrix`, not a stored snapshot.
     pub fn revealed_value(
@@ -179,6 +193,22 @@ mod tests {
         assert!(
             clean > confounded,
             "clean {clean} should outweigh confounded {confounded}"
+        );
+    }
+
+    /// Task 147: `Splice`'s trait filter reads `is_tag_confirmed`, not
+    /// `is_confirmed` directly — a tag counts as confirmed if it appears in
+    /// at least one confirmed pair, as either exerter or receiver.
+    #[test]
+    fn is_tag_confirmed_true_for_either_side_of_a_confirmed_pair() {
+        let mut knowledge = MatrixKnowledge::new(3, THRESHOLD);
+        knowledge.record(TagSlot(0), TagSlot(1), THRESHOLD);
+
+        assert!(knowledge.is_tag_confirmed(TagSlot(0)), "exerter side");
+        assert!(knowledge.is_tag_confirmed(TagSlot(1)), "receiver side");
+        assert!(
+            !knowledge.is_tag_confirmed(TagSlot(2)),
+            "tag 2 has no evidence at all"
         );
     }
 

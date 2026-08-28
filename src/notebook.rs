@@ -1239,6 +1239,7 @@ fn catalog_panel(
                     .wrap(),
                 );
                 ui.weak(text::species_population_line(population, seeded_era));
+                ui.weak(text::species_origin_label(world.species_origin(species_id)));
                 // Tags moved onto their own wrapped row (was appended to
                 // the outer horizontal row, same overflow bug as above,
                 // worse per extra tag) — `horizontal_wrapped` here can flow

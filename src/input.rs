@@ -585,6 +585,7 @@ fn apply_splice(
         return;
     }
     let new_species_id = world.push_species(new_species);
+    world.spliced_species.push(new_species_id);
     log.entries.push(LogEntry {
         era: world.era,
         species: Some(new_species_id),

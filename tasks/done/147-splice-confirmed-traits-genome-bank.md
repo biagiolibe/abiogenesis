@@ -83,36 +83,36 @@ see below).
 
 ## 📋 Acceptance Criteria
 
-- [ ] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
-- [ ] `splice_panel`'s `SwapTag`/`AddTag` tag lists (`ui.rs:1192-1227`) only
+- [x] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
+- [x] `splice_panel`'s `SwapTag`/`AddTag` tag lists (`ui.rs:1192-1227`) only
       offer tags confirmed per the definition above — computed from
       `MatrixKnowledge`, passed into `splice_panel` (currently reads only
       `world`/`draft`, no knowledge parameter).
-- [ ] A tag with zero confirmed pairs is simply absent from both lists (not
+- [x] A tag with zero confirmed pairs is simply absent from both lists (not
       shown-disabled) — consistent with "you can't yet synthesise what you
       haven't decoded," and avoids a UI state (disabled-but-listed) nobody
       asked for.
-- [ ] Assignable-tag filtering is structurally exclusive of any future
+- [x] Assignable-tag filtering is structurally exclusive of any future
       xenotrait pool (e.g. sourced from `world.active_tags` intersected with
       an explicit non-xeno set, not "all tags minus a xeno blocklist" that a
       later addition could bypass by omission). Add a doc comment recording
       this as the guard task 168 must respect.
-- [ ] New `SimWorld` origin tracking: a `spliced_species: Vec<SpeciesId>`
+- [x] New `SimWorld` origin tracking: a `spliced_species: Vec<SpeciesId>`
       alongside the existing `wild_species: Vec<SpeciesId>` (same shape,
       same rationale — see `world.rs:566-573`'s doc comment), populated in
       `apply_splice` at the same point it calls `push_species`.
-- [ ] A `species_origin`-style helper (mirrors `is_wild`) resolving
+- [x] A `species_origin`-style helper (mirrors `is_wild`) resolving
       seeded / indigenous / synthesised from `wild_species` /
       `spliced_species` / neither, single source of truth for both the
       Catalog and the Seed Palette.
-- [ ] Catalog (`notebook.rs::catalog_panel`) shows the origin label per
+- [x] Catalog (`notebook.rs::catalog_panel`) shows the origin label per
       species (new `text::` string(s), no magic literals inline).
-- [ ] Seed Palette (`ui.rs::species_row` / the loop at `611-629`) visually
+- [x] Seed Palette (`ui.rs::species_row` / the loop at `611-629`) visually
       distinguishes a synthesised species from an original one — reuse the
       Catalog's origin label or a lighter marker (glyph/color), player's
       choice of exact treatment, but it must be visible without opening the
       notebook (doc's own framing: "the HUD must anticipate this").
-- [ ] Test coverage: a pair-confirmed tag appears in the Splice lists, an
+- [x] Test coverage: a pair-confirmed tag appears in the Splice lists, an
       unconfirmed one doesn't; a spliced species reports `synthesised`
       origin and appears correctly marked in both Catalog and Seed Palette.
 

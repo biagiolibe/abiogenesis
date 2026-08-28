@@ -571,6 +571,12 @@ pub struct SimWorld {
     /// codebase; tiny (`WorldgenConfig::wild_species_count` entries), so a
     /// `Vec` scan (`is_wild`) is fine, no `HashMap` needed.
     pub wild_species: Vec<SpeciesId>,
+    /// `SpeciesId`s created by a `Splice` edit (task 147) — same shape as
+    /// `wild_species` above, and for the same reason. Populated by
+    /// `apply_splice` alongside its `push_species` call. `species_origin`
+    /// reads this and `wild_species` together to resolve the Catalog's
+    /// seeded/indigenous/synthesised label.
+    pub spliced_species: Vec<SpeciesId>,
     /// `SpeciesId`s granted tolerance to `Sea` cells by a speciation event
     /// (task 107, "toxicity"-dominant stimulus edit) — a small side list,
     /// same shape as `wild_species` above and for the same reason (avoid
@@ -667,6 +673,14 @@ pub struct StressDecay {
 /// `abiogenesis-actions.md`). Lives in `world.rs`, not `ui.rs`, so
 /// `SimWorld::apply_stress` can take it directly without `sim`/`world`
 /// depending on the UI crate boundary the other way around.
+/// Where a species came from (task 147). See `SimWorld::species_origin`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpeciesOrigin {
+    Seeded,
+    Indigenous,
+    Synthesised,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StressAxis {
     #[default]
@@ -725,6 +739,7 @@ impl SimWorld {
             sea_distance: Vec::new(),
             ever_populated: false,
             wild_species: Vec::new(),
+            spliced_species: Vec::new(),
             sea_tolerant_species: Vec::new(),
             terrain_occupancy: Vec::new(),
             selection_pressure: Vec::new(),
@@ -2363,6 +2378,24 @@ impl SimWorld {
     /// populations (task 098) rather than a player-seedable one.
     pub fn is_wild(&self, species: SpeciesId) -> bool {
         self.wild_species.contains(&species)
+    }
+
+    /// Where `species` came from (task 147, Catalog + Seed Palette origin
+    /// label): a wild, pre-existing population (`Indigenous`); one the
+    /// player synthesised via `Splice` (`Synthesised`); or, by elimination,
+    /// one of the run's ordinary seedable roster (`Seeded`). The two lists
+    /// are mutually exclusive by construction — `wild_species` is set once
+    /// at generation, `spliced_species` only ever grows via `apply_splice` —
+    /// so checking `spliced_species` first is a tie-break that never
+    /// actually breaks a tie.
+    pub fn species_origin(&self, species: SpeciesId) -> SpeciesOrigin {
+        if self.spliced_species.contains(&species) {
+            SpeciesOrigin::Synthesised
+        } else if self.is_wild(species) {
+            SpeciesOrigin::Indigenous
+        } else {
+            SpeciesOrigin::Seeded
+        }
     }
 
     /// Pushes `species` onto `self.species` and records the current `era`
@@ -4981,6 +5014,36 @@ mod tests {
         assert_eq!(
             world.stress_decay[idx].light, None,
             "the decay target must clear once baseline is reached"
+        );
+    }
+
+    /// Task 147: `species_origin` must resolve all three values correctly,
+    /// and `wild_species`/`spliced_species` stay mutually exclusive sources
+    /// rather than one silently shadowing the other.
+    #[test]
+    fn species_origin_resolves_seeded_indigenous_and_synthesised() {
+        let config = test_config();
+        let mut world = SimWorld::new(1, &config);
+        let make_species = || Species {
+            name: "Test".to_string(),
+            metabolism: Metabolism::Photolithic,
+            temp_optimum: 0.5,
+            temp_tolerance: config.energy.default_temp_tolerance,
+            repro_threshold: config.energy.repro_threshold,
+            tags: Vec::new(),
+        };
+
+        let seeded = world.push_species(make_species());
+        let indigenous = world.push_species(make_species());
+        world.wild_species.push(indigenous);
+        let synthesised = world.push_species(make_species());
+        world.spliced_species.push(synthesised);
+
+        assert_eq!(world.species_origin(seeded), SpeciesOrigin::Seeded);
+        assert_eq!(world.species_origin(indigenous), SpeciesOrigin::Indigenous);
+        assert_eq!(
+            world.species_origin(synthesised),
+            SpeciesOrigin::Synthesised
         );
     }
 }

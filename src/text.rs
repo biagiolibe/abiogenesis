@@ -12,7 +12,7 @@
 use crate::ui::ActionMode;
 use abiogenesis::objectives::ZoneKind;
 use abiogenesis::sim::{DominantStimulus, RevealTier};
-use abiogenesis::world::{Metabolism, Mode, StressAxis, TerrainKind};
+use abiogenesis::world::{Metabolism, Mode, SpeciesOrigin, StressAxis, TerrainKind};
 
 // --- Main menu (`menu.rs::main_menu_ui`) ---
 
@@ -806,6 +806,17 @@ pub fn species_population_line(population: usize, origin_era: Option<u32>) -> St
     match origin_era {
         Some(era) => format!("Population {population} · seeded era {era}"),
         None => format!("Population {population}"),
+    }
+}
+
+/// The Catalog's origin label per species (task 147): seeded (this run's
+/// ordinary roster), indigenous (a wild, pre-existing population), or
+/// synthesised (created via `Splice`).
+pub fn species_origin_label(origin: SpeciesOrigin) -> &'static str {
+    match origin {
+        SpeciesOrigin::Seeded => "Seeded",
+        SpeciesOrigin::Indigenous => "Indigenous",
+        SpeciesOrigin::Synthesised => "Synthesised",
     }
 }
 
