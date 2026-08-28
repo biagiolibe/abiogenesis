@@ -61,6 +61,17 @@ const CANDIDATE_SAMPLE: usize = 256;
 /// strategy — `gain = light * metabolism_gain * env_fit` can't clear upkeep.
 /// Both policies filter on it, so neither wins by simply placing better.
 const MIN_VIABLE_FIT: f32 = 0.6;
+/// Ceiling on how much the information dimension can move a placement score,
+/// relative to `viability`'s own 0..1 range: a tie-breaker between
+/// comparably-good cells, never enough to make a mediocre cell in a
+/// favoured context beat a genuinely better one in a disfavoured context.
+/// That inversion — bucket beats fitness — is what kept the pre-134b bots
+/// from ever chasing the population scale a real player (or the greedy
+/// diagnostic) reaches.
+const INFO_WEIGHT: f32 = 0.15;
+/// Scales `known_sum` (a raw sum of matrix values, `TagConfig`'s range) down
+/// into the same tie-breaker band as `INFO_WEIGHT`.
+const KNOWN_SUM_SCALE: f32 = 0.05;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Policy {
@@ -138,6 +149,12 @@ struct RunResult {
     objectives_cleared: u32,
     ledger: Ledger,
     confirmed_pairs: u32,
+    confirmable_pairs: u32,
+    /// Highest cell occupancy seen at any era boundary. Sampled per era, not
+    /// only at world end, because an extinct or budget-exhausted world ends
+    /// at (near) zero — the end-state tells nothing about whether the run
+    /// ever reached a working population.
+    peak_population: u32,
 }
 
 fn main() {
@@ -188,6 +205,7 @@ fn play(seed: u64, policy: Policy, config: &SimConfig) -> RunResult {
     let mut ledger = Ledger::default();
     let mut short_term_eras = None;
     let mut full_eras = None;
+    let mut peak_population = 0u32;
     // The bot's own RNG, never `world.rng`: a player's choices are not drawn
     // from the simulation's stream, and borrowing it would make the two arms
     // diverge for a reason that has nothing to do with their strategies.
@@ -255,6 +273,13 @@ fn play(seed: u64, policy: Policy, config: &SimConfig) -> RunResult {
             }
         }
 
+        let population = world
+            .cells
+            .iter()
+            .filter(|cell| cell.organism.is_some())
+            .count() as u32;
+        peak_population = peak_population.max(population);
+
         world.era += 1;
         budget.refill(config.time.point_budget_per_era);
     }
@@ -265,7 +290,9 @@ fn play(seed: u64, policy: Policy, config: &SimConfig) -> RunResult {
         outcome,
         objectives_cleared: objective_index as u32,
         ledger,
-        confirmed_pairs: confirmed_pairs(&knowledge, world.active_tags.len()),
+        confirmed_pairs: confirmed_pairs(&knowledge, &world),
+        confirmable_pairs: confirmable_pairs(&world),
+        peak_population,
     }
 }
 
@@ -306,29 +333,42 @@ fn choose_placement(
 
         let pairs = pair_set(world, species, x, y);
         let context = classify(&pairs, knowledge);
-        let score = match policy {
-            // Acts only on what it has established: a placement next to
-            // confirmed relations, valued by their known sum, beats a safe
-            // isolated one, which in turn beats gambling on unknown pairs.
-            Policy::Exploiter => match context {
-                Context::Known => 2.0 + known_sum(world, knowledge, &pairs) + viability,
-                Context::Isolated => 1.0 + viability,
-                Context::Unknown => viability - 1.0,
-            },
-            // Buys information first: the fewer already-confirmed pairs come
-            // along for the ride, the cleaner the resulting observation and
-            // the more the point is worth. Falls back to the exploiter's own
-            // ordering once there is nothing left to learn here.
-            Policy::Explorer => match context {
-                Context::Unknown => {
-                    let unknown = unknown_count(&pairs, knowledge) as f32;
-                    let confounders = (pairs.len() as f32 - unknown).max(0.0);
-                    3.0 + 1.0 / (1.0 + confounders) + viability
-                }
-                Context::Known => 1.0 + known_sum(world, knowledge, &pairs) + viability,
-                Context::Isolated => 2.0 + viability,
-            },
-        };
+        // `viability` (0..1, the environmental fitness) is the growth term
+        // both policies share: a real player chases population first and
+        // foremost, so it must be able to outweigh the information dimension
+        // below rather than being drowned out by it. `INFO_WEIGHT` and
+        // `KNOWN_SUM_SCALE` keep the info terms as tie-breakers within
+        // viability's own range — never a categorical override — which is
+        // what let the pre-134b scoring strand both bots on whichever
+        // adjacency bucket their identity favoured regardless of how good the
+        // cell actually was.
+        let score = viability
+            + match policy {
+                // Acts only on what it has established: a placement next to
+                // confirmed relations, valued by their known sum, beats a
+                // safe isolated one, which in turn beats gambling on unknown
+                // pairs — but only among cells of comparable viability.
+                Policy::Exploiter => match context {
+                    Context::Known => {
+                        INFO_WEIGHT + known_sum(world, knowledge, &pairs) * KNOWN_SUM_SCALE
+                    }
+                    Context::Isolated => INFO_WEIGHT * 0.5,
+                    Context::Unknown => 0.0,
+                },
+                // Buys information first: the fewer already-confirmed pairs
+                // come along for the ride, the cleaner the resulting
+                // observation and the more the point is worth. Falls back to
+                // exploiting once there is nothing left to learn here.
+                Policy::Explorer => match context {
+                    Context::Unknown => {
+                        let unknown = unknown_count(&pairs, knowledge) as f32;
+                        let confounders = (pairs.len() as f32 - unknown).max(0.0);
+                        INFO_WEIGHT * (1.0 + 1.0 / (1.0 + confounders))
+                    }
+                    Context::Known => known_sum(world, knowledge, &pairs) * KNOWN_SUM_SCALE,
+                    Context::Isolated => INFO_WEIGHT * 0.5,
+                },
+            };
         if best.is_none_or(|(b, ..)| score > b) {
             best = Some((score, species, x, y, context));
         }
@@ -445,16 +485,41 @@ fn seedable_species(world: &SimWorld) -> Vec<SpeciesId> {
         .collect()
 }
 
-fn confirmed_pairs(knowledge: &MatrixKnowledge, tag_count: usize) -> u32 {
+/// Ordered off-diagonal `(exerter, receiver)` pairs confirmed so far. The
+/// diagonal is excluded because `world::generate_matrix` always leaves it at
+/// `0` (a tag never affects itself) — it is neither hidden nor confirmable,
+/// so counting it would inflate both the numerator and (if it were ever
+/// added there too) the denominator with pairs nobody needed to learn.
+fn confirmed_pairs(knowledge: &MatrixKnowledge, world: &SimWorld) -> u32 {
+    let tag_count = world.active_tags.len() as u8;
     let mut confirmed = 0;
-    for exerter in 0..tag_count as u8 {
-        for receiver in 0..tag_count as u8 {
-            if knowledge.is_confirmed(TagSlot(exerter), TagSlot(receiver)) {
+    for exerter in 0..tag_count {
+        for receiver in 0..tag_count {
+            if exerter != receiver && knowledge.is_confirmed(TagSlot(exerter), TagSlot(receiver)) {
                 confirmed += 1;
             }
         }
     }
     confirmed
+}
+
+/// Ordered off-diagonal pairs whose matrix value is nonzero — the only pairs
+/// `confirmation_threshold` evidence can ever confirm. `matrix_density` (0.4
+/// by default) plus the forced negative 3-cycle leave roughly half of the 20
+/// off-diagonal pairs (for a 5-tag world) at exactly `0`; those are silent by
+/// construction and can never cross the threshold, so reporting confirmed
+/// pairs against all of them understates performance by about 2x.
+fn confirmable_pairs(world: &SimWorld) -> u32 {
+    let tag_count = world.active_tags.len() as u8;
+    let mut confirmable = 0;
+    for exerter in 0..tag_count {
+        for receiver in 0..tag_count {
+            if exerter != receiver && world.matrix.get(TagSlot(exerter), TagSlot(receiver)) != 0 {
+                confirmable += 1;
+            }
+        }
+    }
+    confirmable
 }
 
 fn report(policy: Policy, results: &[RunResult]) {
@@ -487,6 +552,11 @@ fn report(policy: Policy, results: &[RunResult]) {
         results.iter().filter_map(|r| r.full_eras).collect(),
         results.len(),
     );
+    print_distribution(
+        "  peak population    ",
+        results.iter().map(|r| r.peak_population).collect(),
+        results.len(),
+    );
 
     // Reported as a spend *split* plus one overall efficiency, deliberately
     // not as an efficiency per bucket. Dividing total objectives by one
@@ -513,9 +583,14 @@ fn report(policy: Policy, results: &[RunResult]) {
             objectives as f32 / points as f32
         );
     }
+    let confirmed: u32 = results.iter().map(|r| r.confirmed_pairs).sum();
+    let confirmable: u32 = results.iter().map(|r| r.confirmable_pairs).sum();
     println!(
-        "  pairs confirmed     {:.2} per world",
-        results.iter().map(|r| r.confirmed_pairs).sum::<u32>() as f32 / n
+        "  pairs confirmed     {:.2} per world ({}/{} confirmable, {:.1}%)",
+        confirmed as f32 / n,
+        confirmed,
+        confirmable,
+        100.0 * confirmed as f32 / confirmable as f32
     );
     println!();
 }
