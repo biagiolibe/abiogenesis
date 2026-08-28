@@ -1181,13 +1181,18 @@ fn spawn_camera(mut commands: Commands, config: Res<SimConfig>) {
         Camera2d,
         GridCamera,
         Projection::Orthographic(OrthographicProjection {
-            // Never smaller than the grid, so it never clips on resize; a
-            // wider/taller window just shows more letterboxed space. Zoom
-            // (task 075) multiplies on top of this via `scale`, `1.0` being
-            // exactly this whole-grid framing (`CameraConfig::zoom_max`).
-            scaling_mode: ScalingMode::AutoMin {
-                min_width: width,
-                min_height: height,
+            // Never bigger than the grid, so the viewport is always fully
+            // covered — a wider/taller window than the grid's own aspect
+            // ratio crops a sliver off the longer axis instead of leaving
+            // empty letterboxed bands (`AutoMin`, used until 2026-08-29,
+            // did the opposite: never crops, but shows blank space beyond
+            // the grid on a mismatched aspect ratio — reported live as
+            // distracting). Zoom (task 075) multiplies on top of this via
+            // `scale`, `1.0` being exactly this whole-grid framing
+            // (`CameraConfig::zoom_max`).
+            scaling_mode: ScalingMode::AutoMax {
+                max_width: width,
+                max_height: height,
             },
             ..OrthographicProjection::default_2d()
         }),
