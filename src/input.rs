@@ -13,6 +13,7 @@ use abiogenesis::objectives::{apply_tick_outcome, ObjectiveOutcomeParams, WorldO
 #[cfg(test)]
 use abiogenesis::objectives::{
     CurrentObjective, CurrentWorldOutcome, GraceProgress, ObjectiveAdvanced, ObjectiveProgress,
+    WorldVictory,
 };
 use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::{
@@ -35,9 +36,10 @@ use crate::render::{species_label, world_to_cell, GridCamera, MapViewMode, Place
 use crate::run_flow::{start_world, WorldResetParams};
 use crate::text;
 use crate::ui::{
-    cursor_over_hud_panel, ActionMode, ConfirmationKind, ContinuousAdvance, HoveredCell,
-    HudControlIntents, IsolationHint, PauseMenuOpen, PendingConfirmation, SelectedAction,
-    SelectedCell, SelectedSpecies, SelectedStressAxis, SpliceDraft, SpliceEditChoice, WorldTouched,
+    cursor_over_hud_panel, ActionMode, ConfirmationKind, ContinuousAdvance,
+    ContinuousAdvancePulseCounter, HoveredCell, HudControlIntents, IsolationHint, PauseMenuOpen,
+    PendingConfirmation, SelectedAction, SelectedCell, SelectedSpecies, SelectedStressAxis,
+    SpliceDraft, SpliceEditChoice, WorldTouched,
 };
 
 pub struct InputPlugin;
@@ -412,22 +414,26 @@ fn toggle_continuous_advance(
 }
 
 /// Drives continuous advancement one pulse at a time (task 152), scheduled
-/// on `FixedUpdate` alongside `sim::advance_tick` so it reuses
-/// `TimeConfig::era_tick_hz`'s existing `Time<Fixed>` pacing rather than a
-/// new rate — a presentation-layer cadence, not a simulation coefficient
-/// (TECH_DESIGN.md invariant 1: advancing wall-clock speed must never
-/// change simulation outcomes). Shares `single_tick`'s own per-pulse body
-/// (`tick_and_complete_season`/`apply_tick_outcome`) instead of duplicating
-/// it. Gated to `EraState::Observing`, so it can never race a `space`-
-/// triggered `Advancing` block (mutually exclusive states) or tick during
-/// the reveal card; turns itself off the instant either an era boundary or
-/// a non-`Ongoing` objective outcome needs the player's attention, rather
-/// than silently resuming the moment that screen is dismissed.
+/// on `FixedUpdate` alongside `sim::advance_tick`. Ticks at
+/// `TimeConfig::continuous_advance_tick_hz` (task 176) rather than every
+/// `FixedUpdate` step (`era_tick_hz`) — `ContinuousAdvancePulseCounter`
+/// skips most steps so the shared `Time<Fixed>` rate the manual controls
+/// also use stays untouched; a presentation-layer cadence, not a simulation
+/// coefficient (TECH_DESIGN.md invariant 1: advancing wall-clock speed must
+/// never change simulation outcomes). Shares `single_tick`'s own per-pulse
+/// body (`tick_and_complete_season`/`apply_tick_outcome`) instead of
+/// duplicating it. Gated to `EraState::Observing`, so it can never race a
+/// `space`-triggered `Advancing` block (mutually exclusive states) or tick
+/// during the reveal card; turns itself off the instant either an era
+/// boundary or a non-`Ongoing` objective outcome needs the player's
+/// attention, rather than silently resuming the moment that screen is
+/// dismissed.
 #[allow(clippy::too_many_arguments)]
 fn continuous_advance(
     era_state: Res<State<EraState>>,
     mut era_next_state: ResMut<NextState<EraState>>,
     mut continuous: ResMut<ContinuousAdvance>,
+    mut pulse_counter: ResMut<ContinuousAdvancePulseCounter>,
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
     mut progress: ResMut<SeasonProgress>,
@@ -438,8 +444,17 @@ fn continuous_advance(
     mut objective_outcome: ObjectiveOutcomeParams,
 ) {
     if !continuous.0 || *era_state.get() != EraState::Observing {
+        pulse_counter.0 = 0;
         return;
     }
+    let steps_per_pulse = (config.time.era_tick_hz / config.time.continuous_advance_tick_hz)
+        .round()
+        .max(1.0) as u32;
+    pulse_counter.0 += 1;
+    if pulse_counter.0 < steps_per_pulse {
+        return;
+    }
+    pulse_counter.0 = 0;
     if progress.remaining() == 0 {
         progress.start(season_pulses_for(
             objective_outcome.run_progress.world_index,
@@ -1513,6 +1528,7 @@ mod tests {
         app.insert_resource(ObservationLog::default());
         app.insert_resource(ActionBudget::default());
         app.insert_resource(SelectedSpecies(SpeciesId(5)));
+        app.insert_resource(SelectedAction(None));
         app.insert_resource(SpliceDraft {
             source: Some(SpeciesId(5)),
             ..SpliceDraft::default()
@@ -1524,6 +1540,7 @@ mod tests {
         app.insert_resource(CurrentObjective::default());
         app.insert_resource(ObjectiveProgress::default());
         app.insert_resource(CurrentWorldOutcome::default());
+        app.insert_resource(WorldVictory::default());
         app.insert_resource(GraceProgress::default());
         app.insert_resource(crate::ui::PopulationTrends::default());
         app.insert_resource(crate::ui::DeathCauseTally::default());
@@ -1585,6 +1602,7 @@ mod tests {
         app.insert_resource(ObservationLog::default());
         app.insert_resource(ActionBudget::default());
         app.insert_resource(SelectedSpecies(SpeciesId(2)));
+        app.insert_resource(SelectedAction(None));
         app.insert_resource(SpliceDraft::default());
         app.insert_resource(PlayerPlacedCells::default());
         app.insert_resource(NotebookHasUnseenConfirmation::default());
@@ -1593,6 +1611,7 @@ mod tests {
         app.insert_resource(CurrentObjective::default());
         app.insert_resource(ObjectiveProgress::default());
         app.insert_resource(CurrentWorldOutcome::default());
+        app.insert_resource(WorldVictory::default());
         app.insert_resource(GraceProgress::default());
         app.insert_resource(crate::ui::PopulationTrends::default());
         app.insert_resource(crate::ui::DeathCauseTally::default());
@@ -1669,6 +1688,7 @@ mod tests {
         app.insert_resource(CurrentObjective::default());
         app.insert_resource(ObjectiveProgress::default());
         app.insert_resource(CurrentWorldOutcome::default());
+        app.insert_resource(WorldVictory::default());
         app.insert_resource(GraceProgress::default());
         // world_index: 1, not the default 0 — this test exercises
         // single_tick's generic season-completion bookkeeping, not task

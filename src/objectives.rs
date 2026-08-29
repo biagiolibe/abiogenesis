@@ -10,9 +10,9 @@ use bevy::prelude::*;
 
 use crate::config::SimConfig;
 use crate::run::{MetaProgress, RunProgress};
-use crate::sim::SimSet;
+use crate::sim::{build_era_reveal, SimSet};
 use crate::state::{EraState, GameState};
-use crate::world::{Biome, SimWorld, SpeciesId};
+use crate::world::{Biome, SimWorld, SpeciesId, TerrainKind};
 use crate::worldgen::world_params;
 
 /// A region of the grid an objective can reference. Currently only
@@ -30,11 +30,18 @@ pub enum ZoneKind {
 /// occupancy) — never a hidden-matrix cell, or satisfying the objective
 /// would leak information the notebook is supposed to make the player earn
 /// (GDD §11).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Objective {
-    /// "Achieve a biosphere with `min_species` coexisting species for
-    /// `ticks` consecutive ticks."
-    Coexistence { min_species: u32, ticks: u32 },
+    /// "Achieve a biosphere with `min_species` coexisting species, each
+    /// holding at least `min_population` individuals, for `ticks`
+    /// consecutive ticks." `min_population` (task 178,
+    /// `playtest_outcome.md` issue I.6) closes the pre-178 loophole where
+    /// mere *presence* (any count > 0) satisfied this objective.
+    Coexistence {
+        min_species: u32,
+        min_population: u32,
+        ticks: u32,
+    },
     /// "Grow a species that survives in `zone` for `ticks` consecutive
     /// ticks."
     SurviveIn {
@@ -60,11 +67,58 @@ pub enum Objective {
     /// the short-term draw loop), making it the real world-clear trigger —
     /// existing short-term objectives keep their current in-place-advance
     /// behavior regardless of how many precede it. A one-shot triggering
-    /// event like `TriggerBloom`, not a sustained condition: checks
-    /// `SimWorld::has_speciated`, set once by `sim::speciate` on a
-    /// successful descendant creation and never cleared for the rest of
-    /// that world's life.
+    /// event like `TriggerBloom`, not a sustained condition: clears once
+    /// `SimWorld::species_parent` (one entry per successful `sim::speciate`
+    /// call) has grown past the count it held when this objective became
+    /// current (task 154's activation-snapshot correction — the snapshot
+    /// itself lives in `ObjectiveProgress::speciation_snapshot`).
     Speciation,
+    /// "Hold `species`' average energy inside `[min_mean_energy,
+    /// max_mean_energy]` for `ticks` consecutive ticks" (task 179). Mean
+    /// energy is the species' pooled `Population::energy` divided by its
+    /// pooled `count`, aggregated across every cell it occupies — the same
+    /// aggregation `count_coexisting_species` already uses for population,
+    /// applied to the energy scalar instead. Unlike every other variant,
+    /// this is the only one that rewards active correction (stay balanced)
+    /// rather than diversity, endurance, or growth.
+    Homeostasis {
+        species: SpeciesId,
+        min_mean_energy: f32,
+        max_mean_energy: f32,
+        ticks: u32,
+    },
+    /// "Grow a species that survives in `zone` for `ticks` consecutive
+    /// ticks" (task 179) — mechanically identical to `SurviveIn` (same
+    /// `species_present_in_zone` check against `ZoneKind`), differing only
+    /// in name and generation-pool membership: the GDD's "keep a species
+    /// alive in a high-toxicity zone" reads as a distinct, harder-tier
+    /// requirement even though the underlying condition is the same one
+    /// `SurviveIn` already checks.
+    Tolerance {
+        species: SpeciesId,
+        zone: ZoneKind,
+        ticks: u32,
+    },
+    /// "Keep `wild_species` (task 098, `SimWorld::is_wild`) alive at or
+    /// above `min_population`, alongside at least one living player-seeded
+    /// species, for `ticks` consecutive ticks" (task 179) — gives wild
+    /// species a role past first contact, per the GDD.
+    WildCoexistence {
+        wild_species: SpeciesId,
+        min_population: u32,
+        ticks: u32,
+    },
+    /// "Keep `species` alive specifically on `terrain` for `ticks`
+    /// consecutive ticks" (task 179) — `terrain` is chosen at generation
+    /// time to be the terrain a conditional trait `species` actually
+    /// carries is tied to (`SimWorld::conditional_tags`, GDD §5.5), so
+    /// clearing it means keeping the species rooted where its own trait
+    /// pays off, not an arbitrary terrain pick.
+    Rootedness {
+        species: SpeciesId,
+        terrain: TerrainKind,
+        ticks: u32,
+    },
 }
 
 /// Why a world's outcome became `WorldOutcome::Failed` (GDD §8): the two
@@ -100,6 +154,33 @@ pub enum WorldOutcome {
 pub struct ObjectiveProgress {
     pub consecutive_ticks: u32,
     pub satisfied: bool,
+    /// `Objective::Speciation`'s activation-snapshot baseline (task 154a):
+    /// `SimWorld::species_parent.len()` at the moment this objective became
+    /// current. A dedicated field, not a repurposing of `consecutive_ticks`
+    /// (task 178 review caught the collision — item 3 below reworks that
+    /// counter's own unit, which would have silently broken the snapshot).
+    pub speciation_snapshot: u32,
+    /// `Objective::Speciation`'s narrowed target (task 179): once
+    /// `speciation_snapshot > 0` (at least one speciation predates
+    /// activation), the objective narrows from "any speciation" to "this
+    /// specific species speciates." `None` while unnarrowed, or while a
+    /// narrowed objective hasn't picked a target yet. A field here rather
+    /// than a new `Resource` — see the task's note on the test-site
+    /// registration trap (three `insert_resource` call sites already touched
+    /// twice by 154/178).
+    pub speciation_target: Option<SpeciesId>,
+    /// Minimum living population a species needs to be eligible as
+    /// `Objective::Speciation`'s narrowed target (task 179) — snapshotted
+    /// from `SimConfig::ObjectiveConfig::speciation_target_min_population`
+    /// at activation, mirroring how `speciation_snapshot` is captured at the
+    /// same point, so `evaluate`'s signature never needs `&SimConfig`.
+    pub speciation_target_min_population: u32,
+    /// Bumped every time `Objective::Speciation`'s narrowed target is
+    /// (re)selected, including the first pick — salts the deterministic,
+    /// seed-derived selection (`select_speciation_target`) so a
+    /// re-selection after the previous target's extinction doesn't
+    /// deterministically land on the exact same species again.
+    pub speciation_reselect_count: u32,
 }
 
 /// Onboarding grace period (task 079, GDD §8; unit moved from era to season
@@ -165,15 +246,15 @@ impl CurrentObjective {
     }
 
     /// The objective currently being evaluated, `None` once every objective
-    /// in the sequence has cleared (shouldn't normally be observed — the
-    /// world transitions to `WorldCleared` the same tick the last one does —
+    /// in the sequence has cleared (shouldn't normally be observed — `index`
+    /// never advances past the last objective, task 154's victory flag,
     /// but kept total rather than panicking on an out-of-range index).
     pub fn current(&self) -> Option<&Objective> {
         self.objectives.get(self.index)
     }
 
     /// Whether `index` points at the last objective in the sequence — the
-    /// only one whose clearing should end the world instead of advancing.
+    /// only one whose clearing flags victory instead of advancing.
     pub fn is_last(&self) -> bool {
         self.index + 1 >= self.objectives.len()
     }
@@ -201,6 +282,17 @@ pub struct ObjectiveAdvanced {
 #[derive(Resource, Debug, Clone, Copy, Default)]
 pub struct CurrentWorldOutcome(pub WorldOutcome);
 
+/// Set once the sequence's last objective clears (task 154: victory as a
+/// flag, not a forced world end `[DECIDED]`) — the world keeps simulating
+/// under its existing failure conditions (extinction, era-budget
+/// exhaustion) instead of forcing `GameState::WorldCleared` the instant it
+/// clears. A UI affordance (`screens::victory_banner_ui`) surfaces this and
+/// offers a player-triggered "advance to next world" action reusing
+/// `run_flow::advance_to_next_world`. Reset to `false` on every world
+/// (re)start (`run_flow::WorldResetParams`).
+#[derive(Resource, Debug, Clone, Copy, Default)]
+pub struct WorldVictory(pub bool);
+
 /// Checks `objective` against `world`'s current state and updates
 /// `progress` accordingly. Pure function of its arguments — no RNG, no
 /// `SimWorld` mutation, no Bevy dependency — so it's callable from a plain
@@ -216,8 +308,12 @@ pub fn evaluate(
     }
 
     match *objective {
-        Objective::Coexistence { min_species, ticks } => {
-            let holds = count_coexisting_species(world) >= min_species;
+        Objective::Coexistence {
+            min_species,
+            min_population,
+            ticks,
+        } => {
+            let holds = count_coexisting_species(world, min_population) >= min_species;
             evaluate_sustained(holds, ticks, progress)
         }
         Objective::SurviveIn {
@@ -239,13 +335,94 @@ pub fn evaluate(
                 WorldOutcome::Ongoing
             }
         }
+        // Task 154's snapshot-at-activation correction: `progress
+        // .speciation_snapshot` records `world.species_parent.len()` at
+        // activation — see `apply_tick_outcome`'s advance-in-place arm,
+        // where that snapshot is taken. Clears only once a speciation
+        // happens *after* activation, not on a pre-existing one this
+        // objective had no part in (the pre-154 bug: `world.has_speciated`
+        // is a sticky flag set by the *first ever* speciation in the
+        // world's life, so an unrelated one before this objective even
+        // became current would clear it instantly).
         Objective::Speciation => {
-            if world.has_speciated {
-                progress.satisfied = true;
-                WorldOutcome::Cleared
+            if progress.speciation_snapshot == 0 {
+                if world.species_parent.len() as u32 > progress.speciation_snapshot {
+                    progress.satisfied = true;
+                    WorldOutcome::Cleared
+                } else {
+                    WorldOutcome::Ongoing
+                }
             } else {
-                WorldOutcome::Ongoing
+                // Task 179's narrowing: at least one speciation predates
+                // activation, so the objective targets one specific species
+                // rather than accepting any speciation. Re-pick whenever
+                // there's no target yet, or the current one has gone
+                // extinct — `select_speciation_target` is deterministic
+                // given `world.seed` and the reselect salt, so replaying the
+                // same tick sequence always reselects the same species.
+                let target_alive = progress
+                    .speciation_target
+                    .is_some_and(|target| population_of(world, target) > 0);
+                if !target_alive {
+                    progress.speciation_reselect_count += 1;
+                    progress.speciation_target = select_speciation_target(
+                        world,
+                        progress.speciation_target_min_population,
+                        progress.speciation_reselect_count,
+                    );
+                }
+                let cleared = progress.speciation_target.is_some_and(|target| {
+                    world
+                        .species_parent
+                        .iter()
+                        .any(|&(_, parent)| parent == target)
+                });
+                if cleared {
+                    progress.satisfied = true;
+                    WorldOutcome::Cleared
+                } else {
+                    WorldOutcome::Ongoing
+                }
             }
+        }
+        Objective::Homeostasis {
+            species,
+            min_mean_energy,
+            max_mean_energy,
+            ticks,
+        } => {
+            let holds = mean_energy_of(world, species)
+                .is_some_and(|mean| mean >= min_mean_energy && mean <= max_mean_energy);
+            evaluate_sustained(holds, ticks, progress)
+        }
+        Objective::Tolerance {
+            species,
+            zone,
+            ticks,
+        } => {
+            let holds = species_present_in_zone(world, species, zone);
+            evaluate_sustained(holds, ticks, progress)
+        }
+        Objective::WildCoexistence {
+            wild_species,
+            min_population,
+            ticks,
+        } => {
+            let wild_alive = population_of(world, wild_species) >= min_population;
+            let player_alive = world
+                .cells
+                .iter()
+                .filter_map(|cell| cell.population)
+                .any(|population| !world.is_wild(population.species));
+            evaluate_sustained(wild_alive && player_alive, ticks, progress)
+        }
+        Objective::Rootedness {
+            species,
+            terrain,
+            ticks,
+        } => {
+            let holds = species_present_on_terrain(world, species, terrain);
+            evaluate_sustained(holds, ticks, progress)
         }
     }
 }
@@ -340,13 +517,15 @@ fn evaluate_sustained(
     }
 }
 
-/// Number of distinct species with at least one living organism on the
-/// grid right now.
-fn count_coexisting_species(world: &SimWorld) -> u32 {
+/// Number of distinct species whose total living population (summed across
+/// every cell they occupy, task 137's per-cell counts — task 178 caught
+/// this previously summing *occupied cells*, not individuals) is at least
+/// `min_population` right now.
+fn count_coexisting_species(world: &SimWorld, min_population: u32) -> u32 {
     let mut population = vec![0u32; world.species.len()];
     for cell in &world.cells {
         if let Some(occupant) = cell.population {
-            population[occupant.species.0 as usize] += 1;
+            population[occupant.species.0 as usize] += occupant.count;
         }
     }
     // Wild populations (task 098) don't count toward `Coexistence`: they're
@@ -356,7 +535,7 @@ fn count_coexisting_species(world: &SimWorld) -> u32 {
     population
         .iter()
         .enumerate()
-        .filter(|&(idx, &count)| count > 0 && !world.is_wild(SpeciesId(idx as u8)))
+        .filter(|&(idx, &count)| count >= min_population && !world.is_wild(SpeciesId(idx as u8)))
         .count() as u32
 }
 
@@ -383,6 +562,83 @@ fn cell_in_zone(world: &SimWorld, x: usize, y: usize, zone: ZoneKind) -> bool {
     }
 }
 
+/// `species`' mean energy per individual right now (task 179's
+/// `Homeostasis`): pooled `Population::energy` divided by pooled `count`,
+/// summed across every cell the species occupies — mirrors
+/// `count_coexisting_species`'s population aggregation, applied to the
+/// energy scalar. `None` while the species holds no living population
+/// anywhere (an extinct target can't be "in band").
+fn mean_energy_of(world: &SimWorld, species: SpeciesId) -> Option<f32> {
+    let (total_energy, total_count) = world
+        .cells
+        .iter()
+        .filter_map(|cell| cell.population)
+        .filter(|population| population.species == species)
+        .fold((0.0, 0u32), |(energy, count), population| {
+            (energy + population.energy, count + population.count)
+        });
+    if total_count == 0 {
+        None
+    } else {
+        Some(total_energy / total_count as f32)
+    }
+}
+
+/// Whether any living organism of `species` currently occupies a cell whose
+/// `TerrainKind` is `terrain` (task 179's `Rootedness`) — checked against
+/// `Cell::terrain`, the fixed-at-generation landform, not a live scalar, the
+/// same reasoning `species_present_in_zone` documents for `Cell::biome`.
+fn species_present_on_terrain(world: &SimWorld, species: SpeciesId, terrain: TerrainKind) -> bool {
+    world.cells.iter().any(|cell| {
+        cell.population
+            .is_some_and(|population| population.species == species)
+            && cell.terrain == terrain
+    })
+}
+
+/// Deterministic, seed-derived pick for `Objective::Speciation`'s narrowed
+/// target (task 179): among species with living population `>=
+/// min_population`, excluding wild species (task 098) and any species that
+/// has already speciated (already appears as a parent in
+/// `world.species_parent`), picks one by hashing `world.seed` with `salt`
+/// (`ObjectiveProgress::speciation_reselect_count`) — no `SimWorld::rng`
+/// draw, since `evaluate` only ever gets `&SimWorld`. Returns `None` when no
+/// species qualifies (e.g. everything eligible has already speciated or
+/// died out); the caller leaves the objective unsatisfiable until a future
+/// tick makes a candidate eligible again.
+fn select_speciation_target(world: &SimWorld, min_population: u32, salt: u32) -> Option<SpeciesId> {
+    let mut population = vec![0u32; world.species.len()];
+    for cell in &world.cells {
+        if let Some(occupant) = cell.population {
+            population[occupant.species.0 as usize] += occupant.count;
+        }
+    }
+    let already_speciated: Vec<SpeciesId> = world
+        .species_parent
+        .iter()
+        .map(|&(_, parent)| parent)
+        .collect();
+    let eligible: Vec<SpeciesId> = population
+        .iter()
+        .enumerate()
+        .filter(|&(idx, &count)| {
+            let species = SpeciesId(idx as u8);
+            count >= min_population
+                && !world.is_wild(species)
+                && !already_speciated.contains(&species)
+        })
+        .map(|(idx, _)| SpeciesId(idx as u8))
+        .collect();
+    if eligible.is_empty() {
+        return None;
+    }
+    let hash = world
+        .seed
+        .wrapping_add(salt as u64)
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    Some(eligible[(hash % eligible.len() as u64) as usize])
+}
+
 /// Living population of `species` across the whole grid — task 137: the sum
 /// of individuals across every cell that species occupies, not the number of
 /// cells, now that a cell can hold more than one individual.
@@ -404,12 +660,28 @@ impl Plugin for ObjectivesPlugin {
             .init_resource::<ObjectiveProgress>()
             .init_resource::<CurrentWorldOutcome>()
             .init_resource::<GraceProgress>()
+            .init_resource::<WorldVictory>()
             .add_message::<ObjectiveAdvanced>()
             .add_systems(
                 FixedUpdate,
                 evaluate_current_objective
                     .after(SimSet::Advance)
                     .run_if(in_state(EraState::Advancing)),
+            )
+            // Task 154/playtest gameplay #17: `has_speciated` (and any
+            // matured evolution) becomes true during `build_era_reveal`
+            // (`OnEnter(EraState::Reveal)`), but the `FixedUpdate` system
+            // above never runs in `Reveal` — without this, a `Speciation`
+            // objective that just cleared only gets noticed on the *next*
+            // `Advancing` tick, one full season-advance after the reveal
+            // that showed it. Runs exactly once per era close (`OnEnter`
+            // fires once per transition), after the reveal is built, so it
+            // never double-counts a sustained objective's consecutive-tick
+            // progress against real elapsed time the way running it every
+            // `Reveal`-state frame would.
+            .add_systems(
+                OnEnter(EraState::Reveal),
+                evaluate_current_objective.after(build_era_reveal),
             );
     }
 }
@@ -448,6 +720,7 @@ pub struct ObjectiveOutcomeParams<'w> {
     pub next_game_state: ResMut<'w, NextState<GameState>>,
     pub advanced: MessageWriter<'w, ObjectiveAdvanced>,
     pub grace: ResMut<'w, GraceProgress>,
+    pub victory: ResMut<'w, WorldVictory>,
 }
 
 pub fn apply_tick_outcome(
@@ -459,23 +732,41 @@ pub fn apply_tick_outcome(
     update_grace_progress(world, &mut params.grace, config.time.season_pulses);
     let grace_active = is_grace_active(world.season, config.time.grace_seasons, &params.grace);
     let previous_outcome = params.outcome.0;
-    let new_outcome = evaluate_world(
+    let mut new_outcome = evaluate_world(
         params.objective.current(),
         world,
         &mut params.progress,
         era_budget,
         grace_active,
     );
+
+    // Task 154: once victory is flagged, the world keeps simulating past
+    // its last objective clearing — `evaluate_world` itself never re-checks
+    // era-budget exhaustion once `Cleared` (the sequence's `progress.satisfied`
+    // is sticky), since that short-circuit is what lets an in-sequence
+    // advance skip a redundant budget check. Re-derive it here for the one
+    // case that matters post-victory: re-check on every tick once
+    // `victory.0` is already set (never on the clearing tick itself, so
+    // clearing on the exact tick the budget would otherwise expire still
+    // reads as a win, not a loss — same tie-break the pre-154 code had).
+    if new_outcome == WorldOutcome::Cleared
+        && params.victory.0
+        && is_era_budget_exhausted(world, era_budget)
+    {
+        new_outcome = WorldOutcome::Failed(FailureReason::EraBudgetExhausted);
+    }
     params.outcome.0 = new_outcome;
 
-    // Only act on the `Ongoing -> {Failed, Cleared}` edge, not every tick
-    // the world spends already concluded. `FixedUpdate` can run this system
-    // more than once in a single frame (timestep catch-up after a hitch);
-    // without this guard, a frame that both crosses the `Failed` threshold
-    // *and* catches up an extra tick would call `meta.absorb` twice for the
-    // same run (`evaluate_world` doesn't short-circuit `Failed` the way it
-    // does `Cleared`, so this can't rely on that alone).
-    if previous_outcome != WorldOutcome::Ongoing {
+    // Only act on an outcome edge (previous != new), not every tick the
+    // world spends already settled into the same outcome. `FixedUpdate` can
+    // run this system more than once in a single frame (timestep catch-up
+    // after a hitch); without this guard, a frame that both crosses the
+    // `Failed` threshold *and* catches up an extra tick would call
+    // `meta.absorb` twice for the same run. Comparing the two outcomes
+    // (rather than just "previous wasn't Ongoing", pre-154) is what lets
+    // the post-victory `Cleared -> Failed(EraBudgetExhausted)` transition
+    // above still get processed below.
+    if previous_outcome == new_outcome {
         return;
     }
     // Task 109: every objective clear grants an energy reward, short- or
@@ -501,24 +792,39 @@ pub fn apply_tick_outcome(
             params.meta.absorb(params.run_progress.worlds_cleared);
             params.next_game_state.set(GameState::Defeat);
         }
-        // Clearing the *last* objective in the sequence ends the world, same
-        // as before task 059. Clearing an earlier one (task 059) advances to
-        // the next objective with fresh progress instead, and resets
-        // `outcome` back to `Ongoing` so the `previous_outcome` guard above
-        // can still catch the *next* Ongoing -> {Failed, Cleared} edge —
-        // without this the world would look permanently "already concluded"
-        // and the final objective's own clearing would never fire.
+        // Clearing the *last* objective in the sequence flags victory
+        // instead of forcing the world to end (task 154, "victory as a
+        // flag"): the world keeps running under its existing failure
+        // conditions (the era-budget re-check above, extinction still
+        // unconditional at the top of `evaluate_world`) until the player
+        // chooses to advance (`screens::victory_banner_ui` ->
+        // `run_flow::advance_to_next_world`). Clearing an earlier objective
+        // (task 059) advances to the next one with fresh progress instead,
+        // and resets `outcome` back to `Ongoing` so the guard above can
+        // still catch the *next* edge.
         WorldOutcome::Cleared if params.objective.is_last() => {
-            params.next_game_state.set(GameState::WorldCleared);
+            params.victory.0 = true;
         }
         WorldOutcome::Cleared => {
             params.objective.index += 1;
             *params.progress = ObjectiveProgress::default();
             params.outcome.0 = WorldOutcome::Ongoing;
             let index = params.objective.index;
+            let new_objective = params.objective.objectives[index];
+            // Task 154: activation-snapshot for `Speciation` — record how
+            // many speciations have already happened *before* this
+            // objective became current, so a pre-existing one (from
+            // earlier in this same world, e.g. while a `Coexistence`/
+            // `SurviveIn` objective ran long enough for one to fire first)
+            // doesn't instantly clear it.
+            if new_objective == Objective::Speciation {
+                params.progress.speciation_snapshot = world.species_parent.len() as u32;
+                params.progress.speciation_target_min_population =
+                    config.objectives.speciation_target_min_population;
+            }
             params.advanced.write(ObjectiveAdvanced {
                 index,
-                objective: params.objective.objectives[index],
+                objective: new_objective,
             });
         }
         WorldOutcome::Ongoing => {}
@@ -553,6 +859,7 @@ mod tests {
         ecs_world.insert_resource(MetaProgress::default());
         ecs_world.insert_resource(NextState::<GameState>::default());
         ecs_world.insert_resource(GraceProgress::default());
+        ecs_world.insert_resource(WorldVictory::default());
         ecs_world.insert_resource(Messages::<ObjectiveAdvanced>::default());
         ecs_world
     }
@@ -600,6 +907,7 @@ mod tests {
 
         let objective = Objective::Coexistence {
             min_species: 3,
+            min_population: 1,
             ticks: 1,
         };
         let mut progress = ObjectiveProgress::default();
@@ -617,6 +925,46 @@ mod tests {
     }
 
     #[test]
+    fn coexistence_requires_the_configured_population_not_mere_presence() {
+        // Task 178, `playtest_outcome.md` issue I.6: a single straggler
+        // individual per species must not satisfy `Coexistence` — each
+        // counted species needs `min_population` individuals, summed
+        // across every cell it occupies.
+        let mut world = world_with_species(2);
+        place(&mut world, 0, 0, SpeciesId(0));
+        place(&mut world, 1, 0, SpeciesId(1));
+
+        let objective = Objective::Coexistence {
+            min_species: 2,
+            min_population: 2,
+            ticks: 1,
+        };
+        let mut progress = ObjectiveProgress::default();
+
+        assert_eq!(
+            evaluate(&objective, &world, &mut progress),
+            WorldOutcome::Ongoing,
+            "1 individual per species must not satisfy a min_population of 2"
+        );
+
+        // A second cell for species 1 brings its total to 2 — still short
+        // for species 0.
+        place(&mut world, 2, 0, SpeciesId(1));
+        assert_eq!(
+            evaluate(&objective, &world, &mut progress),
+            WorldOutcome::Ongoing,
+            "species 0 still holds only 1 individual"
+        );
+
+        place(&mut world, 3, 0, SpeciesId(0));
+        assert_eq!(
+            evaluate(&objective, &world, &mut progress),
+            WorldOutcome::Cleared,
+            "both species now hold at least 2 individuals each"
+        );
+    }
+
+    #[test]
     fn coexistence_resets_the_consecutive_count_on_interruption_not_decrements() {
         let mut world = world_with_species(3);
         place(&mut world, 0, 0, SpeciesId(0));
@@ -625,6 +973,7 @@ mod tests {
 
         let objective = Objective::Coexistence {
             min_species: 3,
+            min_population: 1,
             ticks: 5,
         };
         let mut progress = ObjectiveProgress::default();
@@ -835,10 +1184,247 @@ mod tests {
             WorldOutcome::Ongoing
         );
 
-        world.has_speciated = true;
+        world.species_parent.push((SpeciesId(1), SpeciesId(0)));
         assert_eq!(
             evaluate(&Objective::Speciation, &world, &mut progress),
             WorldOutcome::Cleared
+        );
+    }
+
+    #[test]
+    fn speciation_objective_does_not_clear_on_a_speciation_that_predates_activation() {
+        // Task 154: the activation-snapshot correction — a speciation that
+        // already happened before this objective became current (e.g.
+        // while an earlier objective in the sequence was still running)
+        // must not instantly clear it. With only one species in the world,
+        // task 179's narrowing has no eligible target (the only species
+        // already speciated) — it stays ongoing regardless of further
+        // speciation from that same, excluded species.
+        let mut world = world_with_species(1);
+        world.species_parent.push((SpeciesId(1), SpeciesId(0)));
+        let mut progress = ObjectiveProgress {
+            speciation_snapshot: world.species_parent.len() as u32,
+            ..ObjectiveProgress::default()
+        };
+
+        assert_eq!(
+            evaluate(&Objective::Speciation, &world, &mut progress),
+            WorldOutcome::Ongoing,
+            "the pre-existing speciation must not count toward this objective"
+        );
+
+        world.species_parent.push((SpeciesId(2), SpeciesId(0)));
+        assert_eq!(
+            evaluate(&Objective::Speciation, &world, &mut progress),
+            WorldOutcome::Ongoing,
+            "species 0 already speciated pre-activation, so it can never become the narrowed \
+             target — with no other species in the world, nothing can clear this"
+        );
+    }
+
+    #[test]
+    fn speciation_objective_narrows_to_a_deterministic_target_once_a_prior_speciation_exists() {
+        // Task 179: once at least one speciation predates activation
+        // (`speciation_snapshot > 0`), the objective narrows to a specific
+        // target species rather than clearing on any speciation.
+        let mut world = world_with_species(2);
+        world.species_parent.push((SpeciesId(1), SpeciesId(0)));
+        place(&mut world, 0, 0, SpeciesId(1));
+        let mut progress = ObjectiveProgress {
+            speciation_snapshot: world.species_parent.len() as u32,
+            speciation_target_min_population: 1,
+            ..ObjectiveProgress::default()
+        };
+
+        assert_eq!(
+            evaluate(&Objective::Speciation, &world, &mut progress),
+            WorldOutcome::Ongoing
+        );
+        assert_eq!(
+            progress.speciation_target,
+            Some(SpeciesId(1)),
+            "species 1 is the only eligible target — species 0 already speciated"
+        );
+
+        // A speciation from a species *other* than the narrowed target must
+        // not clear it.
+        world.species_parent.push((SpeciesId(0), SpeciesId(0)));
+        assert_eq!(
+            evaluate(&Objective::Speciation, &world, &mut progress),
+            WorldOutcome::Ongoing,
+            "a speciation from a non-target species must not satisfy the narrowed objective"
+        );
+
+        world.species_parent.push((SpeciesId(2), SpeciesId(1)));
+        assert_eq!(
+            evaluate(&Objective::Speciation, &world, &mut progress),
+            WorldOutcome::Cleared,
+            "the narrowed target itself speciating must clear it"
+        );
+    }
+
+    #[test]
+    fn speciation_target_reselects_deterministically_after_the_targets_extinction() {
+        // Task 179: if the narrowed target goes extinct before speciating,
+        // the system re-targets so the objective stays solvable.
+        let mut world = world_with_species(3);
+        world.species_parent.push((SpeciesId(1), SpeciesId(0)));
+        place(&mut world, 0, 0, SpeciesId(1));
+        let mut progress = ObjectiveProgress {
+            speciation_snapshot: world.species_parent.len() as u32,
+            speciation_target_min_population: 1,
+            ..ObjectiveProgress::default()
+        };
+
+        evaluate(&Objective::Speciation, &world, &mut progress);
+        assert_eq!(progress.speciation_target, Some(SpeciesId(1)));
+
+        // The target goes extinct; species 2 becomes the only other
+        // eligible candidate.
+        let idx = world.index(0, 0);
+        world.cells[idx].population = None;
+        place(&mut world, 1, 0, SpeciesId(2));
+        assert_eq!(
+            evaluate(&Objective::Speciation, &world, &mut progress),
+            WorldOutcome::Ongoing
+        );
+        assert_eq!(
+            progress.speciation_target,
+            Some(SpeciesId(2)),
+            "extinction of the previous target must trigger a deterministic reselection"
+        );
+
+        world.species_parent.push((SpeciesId(3), SpeciesId(2)));
+        assert_eq!(
+            evaluate(&Objective::Speciation, &world, &mut progress),
+            WorldOutcome::Cleared,
+            "the newly-selected target speciating must clear it"
+        );
+    }
+
+    #[test]
+    fn homeostasis_requires_sustained_mean_energy_within_the_band() {
+        let mut world = world_with_species(1);
+        let idx = world.index(0, 0);
+        world.cells[idx] = Cell {
+            population: Some(Population {
+                species: SpeciesId(0),
+                count: 1,
+                energy: 5.0,
+                born_season: 0,
+                blocked: false,
+            }),
+            ..world.cells[idx]
+        };
+        world.ever_populated = true;
+
+        let objective = Objective::Homeostasis {
+            species: SpeciesId(0),
+            min_mean_energy: 4.0,
+            max_mean_energy: 6.0,
+            ticks: 2,
+        };
+        let mut progress = ObjectiveProgress::default();
+
+        assert_eq!(
+            evaluate(&objective, &world, &mut progress),
+            WorldOutcome::Ongoing
+        );
+
+        // Mean energy drifts out of band: the streak must reset.
+        world.cells[idx].population.as_mut().unwrap().energy = 20.0;
+        assert_eq!(
+            evaluate(&objective, &world, &mut progress),
+            WorldOutcome::Ongoing
+        );
+        assert_eq!(progress.consecutive_ticks, 0);
+
+        world.cells[idx].population.as_mut().unwrap().energy = 5.0;
+        assert_eq!(
+            evaluate(&objective, &world, &mut progress),
+            WorldOutcome::Ongoing
+        );
+        assert_eq!(
+            evaluate(&objective, &world, &mut progress),
+            WorldOutcome::Cleared
+        );
+    }
+
+    #[test]
+    fn tolerance_behaves_like_survive_in_against_the_same_zone_mechanism() {
+        let mut world = world_with_species(1);
+        let idx = world.index(0, 0);
+        world.cells[idx].biome = Biome::Swamp;
+        place(&mut world, 0, 0, SpeciesId(0));
+
+        let objective = Objective::Tolerance {
+            species: SpeciesId(0),
+            zone: ZoneKind::Toxic,
+            ticks: 1,
+        };
+        let mut progress = ObjectiveProgress::default();
+
+        assert_eq!(
+            evaluate(&objective, &world, &mut progress),
+            WorldOutcome::Cleared
+        );
+    }
+
+    #[test]
+    fn wild_coexistence_requires_both_the_wild_and_a_player_species_alive() {
+        let mut world = world_with_species(2);
+        world.wild_species.push(SpeciesId(0));
+        place(&mut world, 0, 0, SpeciesId(0));
+
+        let objective = Objective::WildCoexistence {
+            wild_species: SpeciesId(0),
+            min_population: 1,
+            ticks: 1,
+        };
+        let mut progress = ObjectiveProgress::default();
+
+        assert_eq!(
+            evaluate(&objective, &world, &mut progress),
+            WorldOutcome::Ongoing,
+            "the wild species is alive but no player-seeded species is"
+        );
+
+        place(&mut world, 1, 0, SpeciesId(1));
+        assert_eq!(
+            evaluate(&objective, &world, &mut progress),
+            WorldOutcome::Cleared,
+            "both the wild and a player-seeded species are now alive"
+        );
+    }
+
+    #[test]
+    fn rootedness_requires_the_species_on_the_tied_terrain() {
+        let mut world = world_with_species(1);
+        let idx = world.index(0, 0);
+        world.cells[idx].terrain = TerrainKind::Mountain;
+        place(&mut world, 0, 0, SpeciesId(0));
+
+        let objective = Objective::Rootedness {
+            species: SpeciesId(0),
+            terrain: TerrainKind::Mountain,
+            ticks: 1,
+        };
+        let mut progress = ObjectiveProgress::default();
+        assert_eq!(
+            evaluate(&objective, &world, &mut progress),
+            WorldOutcome::Cleared
+        );
+
+        let other = Objective::Rootedness {
+            species: SpeciesId(0),
+            terrain: TerrainKind::Hill,
+            ticks: 1,
+        };
+        let mut other_progress = ObjectiveProgress::default();
+        assert_eq!(
+            evaluate(&other, &world, &mut other_progress),
+            WorldOutcome::Ongoing,
+            "the species is on Mountain, not Hill"
         );
     }
 
@@ -878,6 +1464,7 @@ mod tests {
 
         let objective = Objective::Coexistence {
             min_species: 2, // never satisfied: only 1 species is placed.
+            min_population: 1,
             ticks: 1,
         };
         let mut progress = ObjectiveProgress::default();
@@ -896,6 +1483,7 @@ mod tests {
 
         let objective = Objective::Coexistence {
             min_species: 2,
+            min_population: 1,
             ticks: 1,
         };
         let mut progress = ObjectiveProgress::default();
@@ -915,6 +1503,7 @@ mod tests {
 
         let objective = Objective::Coexistence {
             min_species: 2,
+            min_population: 1,
             ticks: 1,
         };
         let mut progress = ObjectiveProgress::default();
@@ -932,6 +1521,7 @@ mod tests {
         place(&mut world, 0, 0, SpeciesId(0));
         let objective = Objective::Coexistence {
             min_species: 1,
+            min_population: 1,
             ticks: 1,
         };
         let mut progress = ObjectiveProgress::default();
@@ -1041,6 +1631,7 @@ mod tests {
         place(&mut world, 1, 0, SpeciesId(1));
         let objective = Objective::Coexistence {
             min_species: 2,
+            min_population: 1,
             ticks: 1,
         };
         let mut progress = ObjectiveProgress::default();
@@ -1235,10 +1826,10 @@ mod tests {
     }
 
     #[test]
-    fn clearing_the_final_long_term_objective_grants_energy_and_ends_the_world() {
+    fn clearing_the_final_long_term_objective_grants_energy_and_flags_victory() {
         let config = SimConfig::default();
         let mut world = world_with_species(1);
-        world.has_speciated = true;
+        world.species_parent.push((SpeciesId(1), SpeciesId(0)));
         let objectives = vec![Objective::Speciation];
         let mut ecs_world = objective_outcome_world(objectives);
         let mut state = SystemState::<ObjectiveOutcomeParams>::new(&mut ecs_world);
@@ -1250,9 +1841,41 @@ mod tests {
             params.run_progress.energy,
             config.objectives.objective_clear_energy_reward
         );
+        // Task 154: victory as a flag — the world does not force-transition
+        // `GameState`, it keeps running (`params.victory.0` is what
+        // `screens::victory_banner_ui` reads).
+        assert!(params.victory.0);
+        assert!(matches!(*params.next_game_state, NextState::Unchanged));
+    }
+
+    #[test]
+    fn era_budget_exhaustion_still_fails_the_world_after_victory() {
+        let config = SimConfig::default();
+        let mut world = world_with_species(1);
+        world.species_parent.push((SpeciesId(1), SpeciesId(0)));
+        let objectives = vec![Objective::Speciation];
+        let mut ecs_world = objective_outcome_world(objectives);
+        let mut state = SystemState::<ObjectiveOutcomeParams>::new(&mut ecs_world);
+        let mut params = state.get_mut(&mut ecs_world).unwrap();
+
+        // First tick: clears and flags victory — same-tick era-budget
+        // exhaustion must still read as a win (pre-154 tie-break), so use a
+        // generous budget here...
+        apply_tick_outcome(&world, &config, &mut params);
+        assert!(params.victory.0);
+        assert_eq!(params.outcome.0, WorldOutcome::Cleared);
+
+        // ...then push the world well past *any* era budget on a later
+        // tick: post-victory, the world must still be failable.
+        world.era = u32::MAX;
+        apply_tick_outcome(&world, &config, &mut params);
+        assert_eq!(
+            params.outcome.0,
+            WorldOutcome::Failed(FailureReason::EraBudgetExhausted)
+        );
         assert!(matches!(
             *params.next_game_state,
-            NextState::Pending(GameState::WorldCleared)
+            NextState::Pending(GameState::Defeat)
         ));
     }
 }

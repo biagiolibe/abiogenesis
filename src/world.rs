@@ -370,6 +370,15 @@ pub struct SelectionPressure {
     pub terrain_mismatch: [f32; TERRAIN_KIND_COUNT],
     /// Accumulated `Cell::toxicity` exposure.
     pub toxicity: f32,
+    /// Cell of the most recent tick that added to `interaction_harm` (task
+    /// 175) — used to place a descendant near where that stimulus actually
+    /// accrued, instead of an arbitrary "whichever tick tipped the tally
+    /// over" cell.
+    pub interaction_harm_cell: usize,
+    /// Same idea as `interaction_harm_cell`, per `TerrainKind` bucket.
+    pub terrain_mismatch_cell: [usize; TERRAIN_KIND_COUNT],
+    /// Same idea as `interaction_harm_cell`, for `toxicity`.
+    pub toxicity_cell: usize,
     /// Set once this species' total pressure has crossed
     /// `EvolutionConfig::selection_pressure_threshold` — mirrors
     /// `MatrixKnowledge::record`'s `was_confirmed` guard: once true, this

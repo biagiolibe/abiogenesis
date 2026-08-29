@@ -260,10 +260,24 @@ playtest checkpoint before this phase deliberately skipped and still owed)
 **Phase 2 — legibility**: 145 Stress on three axes, 146 Cull emits an
 observation, 147 Splice restricted to confirmed traits + growing genome bank,
 149 inspection tool, 150 full control scheme + pause menu, 151 pixel-grain
-visual register, 152 HUD/sidebar, 153 notebook + Chronicle, 154 objectives,
-170 speciation genome before/after diff, 171 causal-legibility playtest gate
-(bot-vs-bot necessity check + human playtest protocol, informally gates the
-start of Phase 3).
+visual register, 152 HUD/sidebar, 153 notebook + Chronicle, `[x]` 154
+objectives correctness pass (victory as a flag, Speciation activation
+snapshot), 170 speciation genome before/after diff, 171 causal-legibility
+playtest gate (bot-vs-bot necessity check + human playtest protocol,
+informally gates the start of Phase 3).
+
+**Phase 2 — playtest fixes** (opened 2026-08-29, from the first human
+playtest, `playtest_outcome.md`): `[x]` 172 inspection tool UX fixes, 173 sidebar
+list width, 174 toxicity label/tint + population tooltip clarity, `[x]` 175
+speciation placement near accrued pressure, `[x]` 176 continuous-advance
+dedicated cadence, `[x]` 177 no armed action at world start + wheel-drag pan,
+`[x]` 178 objectives tuning (Coexistence population floor + durations in
+seasons — split off 154 after an advisor review found the original
+"already covered by 154" note here was wrong), `[x]` 179 objectives: 4 new
+types + Speciation target-species narrowing (178's own remainder;
+FirstConfirmation deferred — needs `MatrixKnowledge`, not reachable from
+`evaluate`'s `&SimWorld`).
+Independent of the redesign corpus and of the 171 Phase-3 gate.
 
 **Phase 3 — content**: 155 trait archetypes, 156 dominant family bias, 157
 narrative generation.

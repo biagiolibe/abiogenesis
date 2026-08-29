@@ -1,11 +1,47 @@
-# Task 154 — Objectives: activation snapshot, 5 new types, durations in seasons, victory as a flag
+# Task 154 (154a) — Objectives correctness pass: victory as a flag, Speciation snapshot, immediate re-check
 
 > **ID**: `154`
-> **Category**: Feature
+> **Category**: Feature / Bug fix
 > **Priority**: 🟡 P2 (Phase 2 — legibility)
-> **Estimate**: ~3-4h (largest single task in Phase 2 — four largely independent sub-changes; consider splitting into 154a/b/c if picked up piecemeal)
+> **Estimate**: ~3-4h originally scoped; ~1.5h actually delivered as 154a (split per advisor review, 2026-08-29)
 > **Assigned to**: Claude CLI
 > **Session**: 2026-08-29
+
+---
+
+## ✅ Split note (2026-08-29)
+
+Split into **154a** (this file — delivered) and **[178](178-objectives-tuning-new-types-durations.md)**
+(remaining scope, not started): the correctness-critical half (victory as a
+flag, the `Speciation` activation-snapshot bug, and a related bug the first
+playtest surfaced — `evaluate_current_objective` never running during
+`EraState::Reveal`, so a `Speciation` clear from the reveal card wasn't
+observed until the *next* season advance, `playtest_outcome.md` gameplay
+#17) landed here. The additive half (5 new objective types, durations
+expressed in seasons) and the `Speciation` snapshot's full
+"narrows to a specific target species" behavior (implemented here as a
+simpler count-based snapshot instead — see Delivered-vs-deferred below) —
+plus a genuinely new finding, the `Coexistence` objective's missing
+population floor (`playtest_outcome.md` issue I.6, **not** actually covered
+by this task's original scope, corrected in `tasks/QUEUE.md`) — moved to
+178.
+
+### Delivered vs. deferred on AC item 1 (Speciation snapshot)
+
+Delivered: `Objective::Speciation` now clears only on a speciation that
+happens *after* it becomes the current objective (tracked via
+`SimWorld::species_parent.len()`, snapshotted into
+`ObjectiveProgress::consecutive_ticks` at activation) — the literal
+correctness bug (an unrelated pre-activation speciation instantly clearing
+it) is fixed.
+
+Deferred to 178: the doc's fuller special case — narrowing to a specific,
+named **target species** once a speciation has already happened before
+activation, with deterministic seed-derived selection, a minimum-population
+floor, exclusion of already-speciated species, re-selection on the target's
+extinction, and naming it in objective text — was not implemented. The
+simpler "any new speciation after activation clears it" behavior is
+correct but less informative than the doc's target-species design.
 
 ---
 
@@ -57,22 +93,18 @@ Design source: `redesign/processed/abiogenesis-objectives.md` in full.
 
 ## 📋 Acceptance Criteria
 
-- [ ] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
-- [ ] **Snapshot correction**: `Objective::Speciation` records which species
-      have already speciated (or simply the count of `has_speciated`-style
-      events, or a species-set snapshot) at activation time and only clears
-      on a *new* speciation after that point, whose resulting species
-      survives at least one full era (per the doc's "more substantial than
-      a bare event" note) — not the current unconditional
-      `world.has_speciated` read. Add the doc's special case: once at least
-      one speciation has already happened in the world before `Speciation`
-      activates, the objective narrows to a **specific target species**
-      (deterministic, seed-derived selection among currently-eligible
-      living species above a minimum-population floor, excluding species
-      that have already speciated), with re-selection on the target's
-      extinction. Objective text must name the species (existing
-      name/icon plumbing — Catalog/HUD/genome bank), never a bare ID.
-- [ ] **5 new `Objective` variants** added, each reading real per-world data
+- [x] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
+- [x] **Snapshot correction (simpler variant — see split note above)**:
+      `Objective::Speciation` now clears only on a speciation after
+      activation, via `SimWorld::species_parent.len()` snapshotted into
+      `ObjectiveProgress::consecutive_ticks`. The target-species-narrowing
+      special case is **not** implemented — moved to 178.
+- [x] **Playtest-surfaced timing bug, added to this task's scope**:
+      `evaluate_current_objective` also now runs once on
+      `OnEnter(EraState::Reveal)` (after `build_era_reveal`), so a
+      `Speciation` clear is observed the same tick the reveal card shows it,
+      not one season-advance later (`playtest_outcome.md` gameplay #17).
+- [ ] **5 new `Objective` variants** — moved to 178. Each reading real per-world data
       to parametrize itself (mirrors `SurviveIn`'s existing "pick a zone
       that's actually present" and `TriggerBloom`'s "pick a seedable
       species" pattern in `worldgen.rs`) — not generic/fixed parameters:
@@ -91,44 +123,33 @@ Design source: `redesign/processed/abiogenesis-objectives.md` in full.
   - Objective text states only *what* it measures, never *why* that
     parameter was picked for this world (no family-bias or trait-sign
     leaks) — same rule already applied to trait naming.
-- [ ] **Durations in seasons**: `Coexistence`/`SurviveIn` (and the 5 new
-      sustained-condition types) express their duration as a season count
-      internally, converted to ticks only where `evaluate_sustained`'s
-      per-tick counter needs it (or `evaluate_sustained` itself is reworked
-      to count seasons/eras where that's more natural — doc explicitly
-      allows era-scale for event-matured types, case by case, not a
-      mechanical find-replace). `ObjectiveConfig`'s `*_ticks_base` fields
-      renamed/reworked to match; `sim_config.ron` kept in sync
-      (`tests/config_ron_sync.rs`).
-- [ ] **Victory as a flag**: `objectives.rs:511-513`'s
+- [ ] **Durations in seasons** — moved to 178.
+- [x] **Victory as a flag**: `objectives.rs`'s
       `WorldOutcome::Cleared if params.objective.is_last()` arm no longer
-      force-transitions `GameState`. New state (e.g. a `victory: bool` on
-      `CurrentWorldOutcome` or a dedicated `WorldVictory` marker resource)
-      set instead; the world keeps simulating under its existing
-      failure conditions (extinction, era-budget exhaustion — both must
-      still apply post-victory, per the doc's "same budget as before, the
-      player just isn't kicked out"). A UI affordance (HUD badge/banner,
-      not a blocking screen) surfaces the flag and offers a
-      player-triggered "advance to next world" action — reusing
-      `start_world`/`WorldResetParams` (`run_flow.rs`), the existing
-      mechanism `screens.rs`'s forced transition already drives.
-      `WorldResetParams`/`start_world` reset the new victory state on
-      every (re)start.
-- [ ] Explicit completion-effect question from the doc ("small narrative
-      reinforcement anchored to real data" vs. "no side effect") is **not**
-      decided by this task — doc leaves it open; default to no side effect
-      unless a follow-up decision is made, and don't block this task on it.
-- [ ] Tests: `Speciation`'s corrected snapshot behaviour (activates after an
-      unrelated pre-activation speciation → does not clear immediately);
-      target-species selection determinism and extinction-fallback
-      reselection; each new objective type's evaluate logic against a
-      hand-built `SimWorld` (mirrors existing `evaluate`/`evaluate_world`
-      unit tests, no Bevy `App` needed); victory-flag world continues
-      simulating (doesn't force a state transition) and still fails
-      correctly on era-budget exhaustion after victory.
-- [ ] GDD §8 updated to match: victory-as-flag noted `[DECIDED]` (already
-      marked so in the design doc; sync into the GDD itself), 5 new
-      objective types listed, snapshot-at-activation rule stated generally.
+      force-transitions `GameState` — it sets `WorldVictory` (a dedicated
+      marker resource) instead. The world keeps simulating: era-budget
+      exhaustion is explicitly re-derived post-victory in
+      `apply_tick_outcome` (since `evaluate_world` itself stops re-checking
+      it once `Cleared` is sticky), and extinction was already unconditional
+      at the top of `evaluate_world` regardless. A UI affordance
+      (`screens::victory_banner_ui`, a small non-blocking `egui::Area`, not
+      `world_cleared_screen_ui`'s full interstitial) surfaces the flag and
+      offers a player-triggered "advance to next world" action reusing
+      `run_flow::advance_to_next_world`/`WorldResetParams`.
+      `WorldResetParams`/`start_world` reset `WorldVictory` on every
+      (re)start.
+- [ ] Explicit completion-effect question from the doc — still open, no
+      side effect implemented, unchanged from the original scope.
+- [x] Tests (for the delivered scope): `Speciation`'s corrected snapshot
+      behaviour (activates after an unrelated pre-activation speciation →
+      does not clear immediately, then does clear on a post-activation one
+      — `objectives.rs`); victory-flag world continues simulating and still
+      fails correctly on era-budget exhaustion after victory
+      (`era_budget_exhaustion_still_fails_the_world_after_victory`).
+      Target-species selection tests and new-objective-type tests moved to
+      178 along with the features themselves.
+- [ ] GDD §8 sync — moved to 178 (bundle with the new types/durations so
+      the doc is updated once, not twice).
 
 ---
 

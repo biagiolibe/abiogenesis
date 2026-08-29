@@ -11,6 +11,7 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
 use abiogenesis::config::SimConfig;
+use abiogenesis::objectives::WorldVictory;
 use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::{EraReveal, RevealTier, SeasonProgress};
 use abiogenesis::state::{EraState, GameState};
@@ -29,6 +30,7 @@ impl Plugin for ScreensPlugin {
             EguiPrimaryContextPass,
             (
                 intro_screen_ui.run_if(in_state(GameState::Intro)),
+                victory_banner_ui.run_if(in_state(GameState::Playing)),
                 world_cleared_screen_ui.run_if(in_state(GameState::WorldCleared)),
                 world_failed_screen_ui.run_if(in_state(GameState::WorldFailed)),
                 defeat_screen_ui.run_if(in_state(GameState::Defeat)),
@@ -76,6 +78,51 @@ fn intro_screen_ui(
             next_state.set(GameState::Playing);
         }
     });
+    Ok(())
+}
+
+/// Task 154's victory-as-flag UI affordance: a small, non-blocking banner
+/// (not `world_cleared_screen_ui`'s full interstitial) shown for the rest of
+/// the world's life once its last objective clears — the world keeps
+/// simulating underneath (extinction/era-budget failure still apply, see
+/// `objectives::apply_tick_outcome`) until the player chooses to advance,
+/// same effect `world_cleared_screen_ui`'s "Continue" button has, just not
+/// forced the instant it clears.
+#[allow(clippy::too_many_arguments)]
+fn victory_banner_ui(
+    mut contexts: EguiContexts,
+    victory: Res<WorldVictory>,
+    mut world: ResMut<SimWorld>,
+    config: Res<SimConfig>,
+    mut run_progress: ResMut<RunProgress>,
+    mut season_progress: ResMut<SeasonProgress>,
+    mut era_next_state: ResMut<NextState<EraState>>,
+    mut reset: WorldResetParams,
+) -> Result {
+    if !victory.0 {
+        return Ok(());
+    }
+    let ctx = contexts.ctx_mut()?;
+    egui::Area::new("victory_banner".into())
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 8.0))
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(text::WORLD_CLEARED_TITLE);
+                    if ui.button(text::CONTINUE_BUTTON).clicked() {
+                        advance_to_next_world(
+                            &mut world,
+                            &mut run_progress,
+                            &config,
+                            &mut season_progress,
+                            &mut era_next_state,
+                            &mut reset,
+                        );
+                    }
+                });
+            });
+        });
     Ok(())
 }
 

@@ -192,6 +192,15 @@ pub struct TimeConfig {
     /// only — changing it must never change simulation outcomes (invariant
     /// 1); it only changes how fast the same `season_pulses` play back.
     pub era_tick_hz: f32,
+    /// Ticks per second while `ContinuousAdvance` is driving playback (task
+    /// 176) — deliberately lower than `era_tick_hz`, since a player who
+    /// never touches the manual controls found the shared rate felt like
+    /// racing past events rather than a followable drift
+    /// (`playtest_outcome.md` issue I.11). Presentation only, same
+    /// invariant as `era_tick_hz`: never changes simulation outcomes, only
+    /// how often `input.rs::continuous_advance` actually advances a pulse
+    /// per `Time<Fixed>` step.
+    pub continuous_advance_tick_hz: f32,
     /// Onboarding grace period (task 079, GDD §8; unit moved to seasons by
     /// task 135, since the season is the granularity the player actually
     /// experiences): total-extinction failure is suppressed while
@@ -239,6 +248,7 @@ impl Default for TimeConfig {
             point_budget_per_season: 3,
             action_costs: ActionCosts::default(),
             era_tick_hz: 8.0,
+            continuous_advance_tick_hz: 3.0,
             grace_seasons: 3,
             onboarding_seasons: 3,
             onboarding_season_pulses: 8,
@@ -718,28 +728,74 @@ impl Default for WorldgenConfig {
 /// `WorldgenConfig`'s default species count (2 + 1 = 3) makes
 /// `coexistence_min_species_base` achievable.
 ///
-/// `coexistence_ticks_base`/`survive_in_ticks_base` (task 049, 2026-08-06
-/// playtest): GDD §8's original worked example read "50 ticks" literally,
-/// but the player's actual unit of interaction is the season (task 135;
-/// `space` advances one `TimeConfig::season_pulses`, `25` by default) — 50
-/// ticks cleared in 2 season-presses or less, with no real decision space in
-/// between. Both bases are now exact multiples of `season_pulses` (`100` = 4
-/// seasons, `75` = 3 seasons) — intentionally exact, not a coincidence, so
-/// the HUD's season-formatted progress (`ui.rs::seasons_progress`) never
-/// shows an odd fractional-looking requirement at `objective_severity ==
-/// 1.0`. Scaling by severity (up to `2.0`, see `DifficultyConfig`) can still
-/// land on a non-exact season count for intermediate severities — expected,
-/// `seasons_progress` ceils the requirement rather than truncating it.
+/// `coexistence_seasons_base`/`survive_in_seasons_base` (task 049, 2026-08-06
+/// playtest; re-expressed in seasons rather than ticks by task 178): GDD
+/// §8's original worked example read "50 ticks" literally, but the player's
+/// actual unit of interaction is the season (task 135; `space` advances one
+/// `TimeConfig::season_pulses`, `25` by default) — 50 ticks cleared in 2
+/// season-presses or less, with no real decision space in between.
+/// `worldgen::generate_one_objective`/`opening_world_objective` multiply
+/// the severity-scaled season count by `season_pulses` to get the tick
+/// count `objectives::evaluate_sustained` actually counts against — the
+/// season unit lives at the tuning/generation layer, not inside `evaluate`
+/// itself, which stays a narrow, config-independent pure function.
+/// Severity scaling (up to `2.0`, see `DifficultyConfig`) can land on a
+/// non-exact season count at intermediate severities — expected,
+/// `ui.rs::seasons_progress` ceils the requirement rather than truncating
+/// it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectiveConfig {
     /// `Objective::Coexistence`'s `min_species` at severity 1.0.
     pub coexistence_min_species_base: u32,
-    /// `Objective::Coexistence`'s `ticks` at severity 1.0 — 4 eras.
-    pub coexistence_ticks_base: u32,
-    /// `Objective::SurviveIn`'s `ticks` at severity 1.0 — 3 eras.
-    pub survive_in_ticks_base: u32,
+    /// `Objective::Coexistence`'s `min_population` (per counted species) at
+    /// severity 1.0 (task 178, `playtest_outcome.md` issue I.6 — the
+    /// pre-178 objective only required *presence* (≥1 individual), so
+    /// "2 or 3 individuals" cleared it trivially; this floor requires each
+    /// coexisting species to actually hold a real population, not a
+    /// leftover straggler).
+    pub coexistence_min_population_base: u32,
+    /// `Objective::Coexistence`'s duration at severity 1.0, in **seasons**
+    /// (task 178 — was `coexistence_ticks_base`; worldgen multiplies by
+    /// `TimeConfig::season_pulses` to get the tick count
+    /// `evaluate_sustained` actually counts against). 4 seasons = 1 era.
+    pub coexistence_seasons_base: u32,
+    /// `Objective::SurviveIn`'s duration at severity 1.0, in **seasons**
+    /// (task 178 — was `survive_in_ticks_base`, same seasons->ticks
+    /// conversion as `coexistence_seasons_base`). 3 seasons.
+    pub survive_in_seasons_base: u32,
     /// `Objective::TriggerBloom`'s `population_threshold` at severity 1.0.
     pub trigger_bloom_population_threshold_base: u32,
+    /// `Objective::Homeostasis`'s energy band center, as a fraction of the
+    /// target species' `repro_threshold` (task 179).
+    pub homeostasis_center_fraction: f32,
+    /// `Objective::Homeostasis`'s full band width, as a fraction of the
+    /// target species' `repro_threshold` (task 179) — the band spans
+    /// `center ± width/2`.
+    pub homeostasis_band_width_fraction: f32,
+    /// `Objective::Homeostasis`'s duration at severity 1.0, in seasons (task
+    /// 179, same seasons->ticks conversion as `coexistence_seasons_base`).
+    pub homeostasis_seasons_base: u32,
+    /// `Objective::Tolerance`'s duration at severity 1.0, in seasons (task
+    /// 179) — tuned separately from `survive_in_seasons_base` even though
+    /// the two share a mechanism (`ZoneKind::Toxic` presence), since
+    /// `Tolerance` is drawn from a harder-tier pool.
+    pub tolerance_seasons_base: u32,
+    /// `Objective::WildCoexistence`'s minimum living population for the wild
+    /// species at severity 1.0 (task 179).
+    pub wild_coexistence_min_population_base: u32,
+    /// `Objective::WildCoexistence`'s duration at severity 1.0, in seasons
+    /// (task 179).
+    pub wild_coexistence_seasons_base: u32,
+    /// `Objective::Rootedness`'s duration at severity 1.0, in seasons (task
+    /// 179).
+    pub rootedness_seasons_base: u32,
+    /// Minimum living population a species must hold to be eligible as
+    /// `Objective::Speciation`'s narrowed target once narrowing activates
+    /// (task 179, `ObjectiveProgress::speciation_target`) — not
+    /// severity-scaled, unlike the thresholds above: it gates *eligibility*
+    /// for a deterministic pick, not the difficulty of a sustained
+    /// condition.
+    pub speciation_target_min_population: u32,
     /// Energy granted to `RunProgress::energy` when any objective clears —
     /// short- or long-term tier alike (task 109,
     /// `redesign/abiogenesis-progression-pacing.md`). First-pass tunable
@@ -757,9 +813,18 @@ impl Default for ObjectiveConfig {
     fn default() -> Self {
         Self {
             coexistence_min_species_base: 3,
-            coexistence_ticks_base: 100,
-            survive_in_ticks_base: 75,
+            coexistence_min_population_base: 3,
+            coexistence_seasons_base: 4,
+            survive_in_seasons_base: 3,
             trigger_bloom_population_threshold_base: 8,
+            homeostasis_center_fraction: 0.5,
+            homeostasis_band_width_fraction: 0.4,
+            homeostasis_seasons_base: 3,
+            tolerance_seasons_base: 4,
+            wild_coexistence_min_population_base: 2,
+            wild_coexistence_seasons_base: 3,
+            rootedness_seasons_base: 3,
+            speciation_target_min_population: 2,
             objective_clear_energy_reward: 1.0,
             // 3 objective clears' worth of energy at the default reward —
             // reachable within a single world's short-term sequence plus

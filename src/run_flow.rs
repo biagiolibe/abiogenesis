@@ -11,7 +11,7 @@
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::objectives::{
-    CurrentObjective, CurrentWorldOutcome, GraceProgress, ObjectiveProgress,
+    CurrentObjective, CurrentWorldOutcome, GraceProgress, ObjectiveProgress, WorldVictory,
 };
 #[cfg(test)]
 use abiogenesis::objectives::{FailureReason, WorldOutcome};
@@ -30,7 +30,7 @@ use crate::notebook::{
 use crate::render::{BlockedIndicatorSeen, SeenRelations};
 use crate::ui::{
     DeathCauseTally, IsolationHint, PauseMenuOpen, PendingConfirmation, PopulationTrends,
-    SelectedSpecies, SpliceDraft, StallHint, WorldTouched,
+    SelectedAction, SelectedSpecies, SpliceDraft, StallHint, WorldTouched,
 };
 use abiogenesis::knowledge::MatrixKnowledge;
 
@@ -48,6 +48,10 @@ pub struct WorldResetParams<'w> {
     pub log: ResMut<'w, ObservationLog>,
     pub budget: ResMut<'w, ActionBudget>,
     pub selected: ResMut<'w, SelectedSpecies>,
+    /// Task 177: a new/reset world must start with nothing armed, same
+    /// reasoning as `budget`/`selected` — an action left over from the
+    /// world just left (or the app-boot default) must not carry over.
+    pub selected_action: ResMut<'w, SelectedAction>,
     pub splice_draft: ResMut<'w, SpliceDraft>,
     pub placed: ResMut<'w, PlayerPlacedCells>,
     pub unseen_confirmation: ResMut<'w, NotebookHasUnseenConfirmation>,
@@ -56,6 +60,9 @@ pub struct WorldResetParams<'w> {
     pub objective: ResMut<'w, CurrentObjective>,
     pub objective_progress: ResMut<'w, ObjectiveProgress>,
     pub outcome: ResMut<'w, CurrentWorldOutcome>,
+    /// Task 154: a new/reset world starts un-victorious, same reasoning as
+    /// `outcome`/`objective_progress`.
+    pub victory: ResMut<'w, WorldVictory>,
     pub grace: ResMut<'w, GraceProgress>,
     pub population_trends: ResMut<'w, PopulationTrends>,
     pub death_cause_tally: ResMut<'w, DeathCauseTally>,
@@ -114,6 +121,7 @@ pub fn start_world(
     reset.log.entries.clear();
     reset.budget.refill(config.time.point_budget_per_season);
     reset.selected.0 = SpeciesId(0);
+    reset.selected_action.0 = None;
     *reset.splice_draft = SpliceDraft::default();
     reset.placed.0.clear();
     reset.unseen_confirmation.0 = false;
@@ -131,6 +139,7 @@ pub fn start_world(
     *reset.objective = CurrentObjective::new(new_objectives);
     *reset.objective_progress = ObjectiveProgress::default();
     *reset.outcome = CurrentWorldOutcome::default();
+    *reset.victory = WorldVictory::default();
     *reset.grace = GraceProgress::default();
     // Both keyed by `SpeciesId`, which the new world's species registry
     // restarts from 0 with entirely different species — without this reset,
@@ -239,6 +248,7 @@ mod tests {
         ecs_world.insert_resource(ObservationLog::default());
         ecs_world.insert_resource(ActionBudget::default());
         ecs_world.insert_resource(SelectedSpecies(SpeciesId(0)));
+        ecs_world.insert_resource(SelectedAction(None));
         ecs_world.insert_resource(SpliceDraft::default());
         ecs_world.insert_resource(PlayerPlacedCells::default());
         ecs_world.insert_resource(NotebookHasUnseenConfirmation::default());
@@ -246,6 +256,7 @@ mod tests {
         ecs_world.insert_resource(CurrentObjective::new(objectives));
         ecs_world.insert_resource(objective_progress);
         ecs_world.insert_resource(outcome);
+        ecs_world.insert_resource(WorldVictory::default());
         ecs_world.insert_resource(GraceProgress::default());
         ecs_world.insert_resource(PopulationTrends::default());
         ecs_world.insert_resource(DeathCauseTally::default());
@@ -533,6 +544,7 @@ mod tests {
             ObjectiveProgress {
                 consecutive_ticks: 7,
                 satisfied: false,
+                ..ObjectiveProgress::default()
             },
             CurrentWorldOutcome(WorldOutcome::Failed(FailureReason::TotalExtinction)),
         );

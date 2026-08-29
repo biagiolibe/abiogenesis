@@ -192,10 +192,19 @@ pub struct TerrainGateObserved {
 #[derive(Debug, Clone, Copy, Message)]
 pub struct SelectionThresholdCrossed {
     pub species: SpeciesId,
-    /// Cell of the organism whose tick pushed this species' tally over the
-    /// threshold — a representative location, not necessarily where the
-    /// pressure was mostly accrued.
+    /// Cell most recently associated with whichever stimulus turned out to
+    /// be dominant (task 175) — not simply the organism whose tick pushed
+    /// the tally over the threshold, which for a multi-biome species could
+    /// be anywhere it occupies, unrelated to where the pressure actually
+    /// built up.
     pub cell: usize,
+    /// Cell of the organism whose tick actually pushed the tally over the
+    /// threshold (task 175's fallback) — `cell` above can be a tick older
+    /// than the crossing itself, so by the time `speciate` runs (deferred to
+    /// era end, `PendingEvolutions`) it's more likely to no longer hold the
+    /// species than this one is; `speciate` tries `cell` first, falling back
+    /// to this one before giving up and founding at population 0.
+    pub crossing_cell: usize,
     /// This species' accumulated harm from negative `interaction_delta`, at
     /// the moment of crossing.
     pub interaction_harm: f32,
@@ -655,10 +664,25 @@ fn accumulate_selection_pressure(
         return None;
     }
 
-    pressure.interaction_harm += (-interaction_delta).max(0.0) * evolution.interaction_harm_weight;
-    pressure.terrain_mismatch[terrain.index()] +=
+    let interaction_contribution =
+        (-interaction_delta).max(0.0) * evolution.interaction_harm_weight;
+    pressure.interaction_harm += interaction_contribution;
+    if interaction_contribution > 0.0 {
+        pressure.interaction_harm_cell = cell;
+    }
+
+    let terrain_contribution =
         (1.0 - fit) * evolution.terrain_mismatch_weight + extra_terrain_mismatch;
-    pressure.toxicity += toxicity * evolution.toxicity_weight;
+    pressure.terrain_mismatch[terrain.index()] += terrain_contribution;
+    if terrain_contribution > 0.0 {
+        pressure.terrain_mismatch_cell[terrain.index()] = cell;
+    }
+
+    let toxicity_contribution = toxicity * evolution.toxicity_weight;
+    pressure.toxicity += toxicity_contribution;
+    if toxicity_contribution > 0.0 {
+        pressure.toxicity_cell = cell;
+    }
 
     if pressure.total() < evolution.selection_pressure_threshold {
         return None;
@@ -673,11 +697,26 @@ fn accumulate_selection_pressure(
         .map(|(idx, _)| idx)
         .expect("terrain_mismatch is a fixed non-empty array");
 
+    let terrain_mismatch_total = pressure.terrain_mismatch.iter().sum::<f32>();
+    // Task 175: place the descendant at the cell most responsible for
+    // whichever stimulus is dominant, mirroring `dominant_stimulus`'s own
+    // tie-break order (interaction, then terrain, then toxicity).
+    let dominant_cell = if pressure.interaction_harm >= terrain_mismatch_total
+        && pressure.interaction_harm >= pressure.toxicity
+    {
+        pressure.interaction_harm_cell
+    } else if terrain_mismatch_total >= pressure.toxicity {
+        pressure.terrain_mismatch_cell[dominant_terrain_idx]
+    } else {
+        pressure.toxicity_cell
+    };
+
     Some(SelectionThresholdCrossed {
         species: species_id,
-        cell,
+        cell: dominant_cell,
+        crossing_cell: cell,
         interaction_harm: pressure.interaction_harm,
-        terrain_mismatch: pressure.terrain_mismatch.iter().sum(),
+        terrain_mismatch: terrain_mismatch_total,
         dominant_terrain: TerrainKind::from_index(dominant_terrain_idx),
         toxicity: pressure.toxicity,
     })
@@ -745,13 +784,14 @@ const MAX_TAGS_PER_SPECIES: usize = 3;
 /// active tag or is already at the cap; or the resulting tag set would
 /// self-interact (mirrors `apply_splice`'s `net_self_interaction` guard).
 ///
-/// **Founder placement**: per this task's own documented choice (the
-/// simpler of two options the source doc left open), the triggering
-/// organism's cell is reassigned to the new species — no new placement
-/// logic. If that organism is no longer there by the time this runs (e.g.
-/// it died in between the crossing and this system running), the
-/// descendant is still created — it just starts at population 0, exactly
-/// like a player `Splice` output before the player seeds one.
+/// **Founder placement**: `event.cell` (the cell most responsible for the
+/// dominant stimulus, task 175 — previously an arbitrary "whichever tick
+/// tipped the tally over" cell) is reassigned to the new species — no
+/// separate placement search. If that cell's organism is no longer there by
+/// the time this runs (e.g. it died in between the crossing and this system
+/// running), the descendant is still created — it just starts at
+/// population 0, exactly like a player `Splice` output before the player
+/// seeds one.
 pub fn speciate(
     world: &mut SimWorld,
     config: &SimConfig,
@@ -801,7 +841,18 @@ pub fn speciate(
     if grants_sea_tolerance {
         world.sea_tolerant_species.push(new_species_id);
     }
-    if let Some(population) = world.cells[event.cell].population.as_mut() {
+    // Task 175: prefer the dominant-stimulus cell; fall back to the
+    // crossing-tick cell if the species has since moved on/died there
+    // (see `SelectionThresholdCrossed::crossing_cell`'s doc comment).
+    let founder_cell = if matches!(
+        world.cells[event.cell].population,
+        Some(population) if population.species == event.species
+    ) {
+        event.cell
+    } else {
+        event.crossing_cell
+    };
+    if let Some(population) = world.cells[founder_cell].population.as_mut() {
         if population.species == event.species {
             population.species = new_species_id;
         }
@@ -958,7 +1009,7 @@ fn species_still_extant(world: &SimWorld, species: SpeciesId) -> bool {
 /// this era's `EraTally`. Runs once per era, on `OnEnter(EraState::Reveal)`
 /// (`SimPlugin::build`) — by construction that's exactly once, since
 /// `EraState` only transitions there when an era actually just closed.
-fn build_era_reveal(
+pub(crate) fn build_era_reveal(
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
     mut pending: ResMut<PendingEvolutions>,
@@ -4072,6 +4123,46 @@ mod tests {
     }
 
     #[test]
+    fn selection_threshold_crossed_cell_follows_dominant_stimulus_not_last_call() {
+        let evolution = test_evolution_config(10.0);
+        let mut pressures = Vec::new();
+
+        // Small terrain mismatch accrued at cell 7 (a different biome from
+        // where the harm below happens).
+        accumulate_selection_pressure(
+            &mut pressures,
+            &evolution,
+            1,
+            SpeciesId(0),
+            7,
+            0.0,
+            0.9,
+            TerrainKind::Hill,
+            0.0,
+            0.0,
+        );
+
+        // Interaction harm crosses the threshold at cell 99 — this call is
+        // both the crossing tick and the dominant stimulus, so the event
+        // must report cell 99, not 7 (task 175: no longer "whichever tick
+        // tipped the tally over").
+        let crossed = accumulate_selection_pressure(
+            &mut pressures,
+            &evolution,
+            1,
+            SpeciesId(0),
+            99,
+            -11.0,
+            1.0,
+            TerrainKind::Plain,
+            0.0,
+            0.0,
+        )
+        .expect("threshold crossed this call");
+        assert_eq!(crossed.cell, 99, "dominant stimulus (interaction harm) accrued at cell 99, not the terrain mismatch at cell 7");
+    }
+
+    #[test]
     fn selection_pressure_does_not_refire_after_crossing() {
         let evolution = test_evolution_config(5.0);
         let mut pressures = Vec::new();
@@ -4233,6 +4324,7 @@ mod tests {
         SelectionThresholdCrossed {
             species,
             cell,
+            crossing_cell: cell,
             interaction_harm: 0.0,
             terrain_mismatch: 0.0,
             dominant_terrain: TerrainKind::Plain,
@@ -4247,6 +4339,7 @@ mod tests {
         SelectionThresholdCrossed {
             species,
             cell,
+            crossing_cell: cell,
             interaction_harm: 5.0,
             terrain_mismatch: 0.0,
             dominant_terrain: TerrainKind::Plain,

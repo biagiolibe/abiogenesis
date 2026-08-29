@@ -518,8 +518,10 @@ pub fn zone_label(zone: ZoneKind) -> &'static str {
     }
 }
 
-pub fn coexistence_objective_line(min_species: u32) -> String {
-    format!("Sustain {min_species} coexisting species")
+pub fn coexistence_objective_line(min_species: u32, min_population: u32) -> String {
+    format!(
+        "Sustain {min_species} coexisting species, each with at least {min_population} individuals"
+    )
 }
 
 pub fn survive_in_objective_line(species_label: &str, zone_label: &str) -> String {
@@ -531,9 +533,46 @@ pub fn trigger_bloom_objective_line(species_label: &str, population_threshold: u
 }
 
 /// `Objective::Speciation`'s narrative line (task 109): the long-term
-/// objective tier, always the sequence's final entry.
-pub fn speciation_objective_line() -> String {
-    "A species evolves through natural selection".to_string()
+/// objective tier, always the sequence's final entry. Once narrowed to a
+/// target (task 179, `ObjectiveProgress::speciation_target`), names the
+/// species rather than staying generic — `target_label` is `None` while
+/// unnarrowed or before a target has been picked yet.
+pub fn speciation_objective_line(target_label: Option<String>) -> String {
+    match target_label {
+        Some(label) => format!("{label} evolves through natural selection"),
+        None => "A species evolves through natural selection".to_string(),
+    }
+}
+
+/// `Objective::Homeostasis`'s narrative line (task 179) — states only what
+/// is measured (a stable energy band), never why this band or species was
+/// picked for this world.
+pub fn homeostasis_objective_line(
+    species_label: &str,
+    min_mean_energy: f32,
+    max_mean_energy: f32,
+) -> String {
+    format!(
+        "{species_label} holds a stable average energy between {min_mean_energy:.1} and \
+         {max_mean_energy:.1}"
+    )
+}
+
+/// `Objective::Tolerance`'s narrative line (task 179) — deliberately
+/// distinct phrasing from `survive_in_objective_line` even though the two
+/// share a mechanism, so the two objective kinds don't read as duplicates.
+pub fn tolerance_objective_line(species_label: &str, zone_label: &str) -> String {
+    format!("{species_label} tolerates the {zone_label}")
+}
+
+/// `Objective::WildCoexistence`'s narrative line (task 179).
+pub fn wild_coexistence_objective_line(wild_species_label: &str) -> String {
+    format!("A wild {wild_species_label} population survives alongside a seeded species")
+}
+
+/// `Objective::Rootedness`'s narrative line (task 179).
+pub fn rootedness_objective_line(species_label: &str, terrain_label: &str) -> String {
+    format!("{species_label} takes root in the {terrain_label}")
 }
 
 /// Within-run energy readout (task 109), shown alongside the seed line —

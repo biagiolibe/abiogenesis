@@ -2,7 +2,7 @@ use bevy::asset::RenderAssetUsages;
 use bevy::camera::ScalingMode;
 use bevy::color::Mix;
 use bevy::image::Image;
-use bevy::input::mouse::MouseWheel;
+use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy_egui::egui;
@@ -215,8 +215,11 @@ impl Plugin for GridRenderPlugin {
                     pan_camera
                         .after(zoom_camera)
                         .run_if(in_state(GameState::Playing)),
-                    update_map_view_mode
+                    wheel_drag_pan
                         .after(pan_camera)
+                        .run_if(in_state(GameState::Playing)),
+                    update_map_view_mode
+                        .after(wheel_drag_pan)
                         .run_if(in_state(GameState::Playing)),
                     sync_grid_colors
                         .after(update_map_view_mode)
@@ -1361,6 +1364,73 @@ fn pan_camera(
     let speed = config.camera.pan_speed * CELL_SIZE * ortho.scale;
     let translation =
         transform.translation.truncate() + direction.normalize() * speed * time.delta_secs();
+
+    let unscaled_area = ortho.area.size() / ortho.scale;
+    let clamped = clamp_camera_pan(
+        translation,
+        ortho.scale,
+        unscaled_area,
+        grid_extent(&config),
+    );
+
+    transform.translation.x = clamped.x;
+    transform.translation.y = clamped.y;
+}
+
+/// Middle-mouse-button-held drag pan (task 177,
+/// `playtest_outcome.md` feature F.1), complementing `pan_camera`'s
+/// keyboard pan with a direct drag — held rather than click-drag so it
+/// never conflicts with `select_cell_on_click`'s left-click seeding/inspect
+/// path. Screen-space cursor motion converts to world-space translation via
+/// `ortho.scale` (a screen pixel covers `scale` world units, same relation
+/// `zoom_camera` uses), inverted so the world appears to follow the cursor
+/// under the mouse. Clamped through `clamp_camera_pan`, identical to
+/// `pan_camera`/`zoom_camera`'s edge-of-grid guarantee.
+#[allow(clippy::too_many_arguments)]
+fn wheel_drag_pan(
+    buttons: Res<ButtonInput<MouseButton>>,
+    mut motion: MessageReader<MouseMotion>,
+    windows: Query<&Window>,
+    config: Res<SimConfig>,
+    egui_wants_input: Res<EguiWantsInput>,
+    notebook_open: Res<NotebookWindowOpen>,
+    mut cameras: Query<(&Projection, &mut Transform), With<GridCamera>>,
+) {
+    if !buttons.pressed(MouseButton::Middle) {
+        motion.clear();
+        return;
+    }
+    let delta: Vec2 = motion.read().map(|event| event.delta).sum();
+    if delta == Vec2::ZERO {
+        return;
+    }
+    // Same guards `zoom_camera` uses (tasks 091/115/116): a middle-drag
+    // starting over the HUD or notebook panel must not pan the map
+    // underneath either.
+    if egui_wants_input.wants_pointer_input() {
+        return;
+    }
+    if let Ok(window) = windows.single() {
+        if let Some(cursor) = window.cursor_position() {
+            if cursor_over_hud_panel(cursor, window.width())
+                || cursor_over_notebook_panel(cursor, notebook_open.0)
+            {
+                return;
+            }
+        }
+    }
+
+    let Ok((projection, mut transform)) = cameras.single_mut() else {
+        return;
+    };
+    let Projection::Orthographic(ortho) = projection else {
+        return;
+    };
+
+    // Screen `y` grows downward, world `y` grows upward — negate both axes
+    // so dragging right/down moves the view (not the cursor's world point)
+    // right/down, matching standard drag-to-pan feel.
+    let translation = transform.translation.truncate() + Vec2::new(-delta.x, delta.y) * ortho.scale;
 
     let unscaled_area = ortho.area.size() / ortho.scale;
     let clamped = clamp_camera_pan(

@@ -11,7 +11,7 @@ use crate::config::SimConfig;
 use crate::objectives::{Objective, ZoneKind};
 use crate::world::{
     draw_species_name, draw_species_tags, Biome, Metabolism, Population, SimWorld, Species,
-    SpeciesId,
+    SpeciesId, TerrainKind,
 };
 
 /// Concrete generation parameters for one world, derived from its position
@@ -286,6 +286,10 @@ enum ObjectiveKind {
     Coexistence,
     SurviveIn,
     TriggerBloom,
+    Homeostasis,
+    Tolerance,
+    WildCoexistence,
+    Rootedness,
 }
 
 /// Scales an `ObjectiveConfig` base value by this world's severity (task
@@ -294,6 +298,15 @@ enum ObjectiveKind {
 /// be satisfied instantly, which isn't a requirement at all.
 fn scale_severity(base: u32, severity: f32) -> u32 {
     ((base as f32 * severity).round() as u32).max(1)
+}
+
+/// Converts a severity-scaled season count into the tick count
+/// `objectives::evaluate_sustained` actually counts against (task 178) —
+/// the season unit lives here, at the generation layer, not inside
+/// `evaluate` itself, which stays a narrow, config-independent pure
+/// function.
+fn seasons_to_ticks(seasons: u32, season_pulses: u32) -> u32 {
+    seasons * season_pulses
 }
 
 /// Builds one full world of a run — grid, species, matrix, environment
@@ -468,16 +481,20 @@ pub fn generate_objectives(
 /// The forced opening objective for `world_index == 0` (task 079): a gentle
 /// 2-species `Coexistence`, deterministic (no RNG draw) so it's identical
 /// across every seed's very first world. `ticks` still scales with
-/// `objective_severity` like any other objective — only `min_species` is
-/// hardcoded, overriding the usual `scale_severity(...).clamp(2,
-/// species_count)` which can reach 3 at world 0's own severity/species pool.
+/// `objective_severity` like any other objective — only `min_species` and
+/// `min_population` (task 178) are hardcoded to their gentlest values,
+/// overriding the usual severity scaling that applies to every other world.
 fn opening_world_objective(params: &WorldParams, config: &SimConfig) -> (Objective, ObjectiveKind) {
     (
         Objective::Coexistence {
             min_species: 2,
-            ticks: scale_severity(
-                config.objectives.coexistence_ticks_base,
-                params.objective_severity,
+            min_population: 1,
+            ticks: seasons_to_ticks(
+                scale_severity(
+                    config.objectives.coexistence_seasons_base,
+                    params.objective_severity,
+                ),
+                config.time.season_pulses,
             ),
         },
         ObjectiveKind::Coexistence,
@@ -503,13 +520,22 @@ fn generate_one_objective(
     let severity = params.objective_severity;
     let species_count = world.species.len() as u32;
     let has_swamp = world.cells.iter().any(|cell| cell.biome == Biome::Swamp);
+    let has_wild = config.worldgen.wild_species_count > 0;
+    let rooted_candidates = rooted_species_candidates(world);
 
-    let mut candidates = vec![ObjectiveKind::TriggerBloom];
+    let mut candidates = vec![ObjectiveKind::TriggerBloom, ObjectiveKind::Homeostasis];
     if species_count >= 2 {
         candidates.push(ObjectiveKind::Coexistence);
     }
     if has_swamp {
         candidates.push(ObjectiveKind::SurviveIn);
+        candidates.push(ObjectiveKind::Tolerance);
+    }
+    if has_wild {
+        candidates.push(ObjectiveKind::WildCoexistence);
+    }
+    if !rooted_candidates.is_empty() {
+        candidates.push(ObjectiveKind::Rootedness);
     }
     if candidates.len() > 1 {
         candidates.retain(|&kind| Some(kind) != exclude);
@@ -521,12 +547,19 @@ fn generate_one_objective(
         ObjectiveKind::Coexistence => Objective::Coexistence {
             min_species: scale_severity(obj.coexistence_min_species_base, severity)
                 .clamp(2, species_count),
-            ticks: scale_severity(obj.coexistence_ticks_base, severity),
+            min_population: scale_severity(obj.coexistence_min_population_base, severity),
+            ticks: seasons_to_ticks(
+                scale_severity(obj.coexistence_seasons_base, severity),
+                config.time.season_pulses,
+            ),
         },
         ObjectiveKind::SurviveIn => Objective::SurviveIn {
             species: SpeciesId(world.rng_mut().random_range(0..species_count) as u8),
             zone: ZoneKind::Toxic,
-            ticks: scale_severity(obj.survive_in_ticks_base, severity),
+            ticks: seasons_to_ticks(
+                scale_severity(obj.survive_in_seasons_base, severity),
+                config.time.season_pulses,
+            ),
         },
         ObjectiveKind::TriggerBloom => Objective::TriggerBloom {
             species: SpeciesId(world.rng_mut().random_range(0..species_count) as u8),
@@ -535,8 +568,81 @@ fn generate_one_objective(
                 severity,
             ),
         },
+        ObjectiveKind::Homeostasis => {
+            let species = SpeciesId(world.rng_mut().random_range(0..species_count) as u8);
+            let repro_threshold = world.species[species.0 as usize].repro_threshold;
+            let center = repro_threshold * obj.homeostasis_center_fraction;
+            let half_width = repro_threshold * obj.homeostasis_band_width_fraction / 2.0;
+            Objective::Homeostasis {
+                species,
+                min_mean_energy: center - half_width,
+                max_mean_energy: center + half_width,
+                ticks: seasons_to_ticks(
+                    scale_severity(obj.homeostasis_seasons_base, severity),
+                    config.time.season_pulses,
+                ),
+            }
+        }
+        ObjectiveKind::Tolerance => Objective::Tolerance {
+            species: SpeciesId(world.rng_mut().random_range(0..species_count) as u8),
+            zone: ZoneKind::Toxic,
+            ticks: seasons_to_ticks(
+                scale_severity(obj.tolerance_seasons_base, severity),
+                config.time.season_pulses,
+            ),
+        },
+        // `generate_objectives` runs before `place_wild_species` (see
+        // `build_world`), so no wild species exists on `world.species` yet —
+        // but its `SpeciesId` is still predictable: `place_wild_species`
+        // pushes its wild species in order starting right after every
+        // species that already exists, so the first one it places always
+        // lands at exactly the species count this world had at generation
+        // time.
+        ObjectiveKind::WildCoexistence => Objective::WildCoexistence {
+            wild_species: SpeciesId(species_count as u8),
+            min_population: scale_severity(obj.wild_coexistence_min_population_base, severity),
+            ticks: seasons_to_ticks(
+                scale_severity(obj.wild_coexistence_seasons_base, severity),
+                config.time.season_pulses,
+            ),
+        },
+        ObjectiveKind::Rootedness => {
+            let (species, terrain) =
+                rooted_candidates[world.rng_mut().random_range(0..rooted_candidates.len())];
+            Objective::Rootedness {
+                species,
+                terrain,
+                ticks: seasons_to_ticks(
+                    scale_severity(obj.rootedness_seasons_base, severity),
+                    config.time.season_pulses,
+                ),
+            }
+        }
     };
     (objective, pick)
+}
+
+/// Every `(species, terrain)` pair for which `species` actively carries a
+/// tag this world's `SimWorld::conditional_tags` ties to `terrain` (GDD
+/// §5.5) — the candidate pool for `Objective::Rootedness` (task 179). Skips
+/// wild species (task 098): they're not part of the player-seedable
+/// objective pool, mirroring every other objective kind's exclusion.
+fn rooted_species_candidates(world: &SimWorld) -> Vec<(SpeciesId, TerrainKind)> {
+    let mut candidates = Vec::new();
+    for (idx, species) in world.species.iter().enumerate() {
+        let species_id = SpeciesId(idx as u8);
+        if world.is_wild(species_id) {
+            continue;
+        }
+        for &slot in &species.tags {
+            let tag_id = world.active_tags[slot.0 as usize];
+            if let Some(conditional) = world.conditional_tags.iter().find(|c| c.tag == tag_id) {
+                candidates.push((species_id, conditional.terrain));
+                break;
+            }
+        }
+    }
+    candidates
 }
 
 #[cfg(test)]
@@ -958,35 +1064,43 @@ mod tests {
         }
     }
 
-    /// Task 049 (unit moved from era to season by task 135): the HUD
-    /// displays sustained-objective progress in whole seasons
-    /// (`ui.rs::seasons_progress`), so the base tick counts at severity 1.0
-    /// must land exactly on a season boundary — otherwise the very first
-    /// world a player sees would show an odd fractional-looking requirement
-    /// (e.g. "3.2 seasons") that isn't a rounding artifact of severity
-    /// scaling, but baked into the defaults themselves.
+    /// Task 049 (unit moved from era to season by task 135; durations
+    /// re-expressed in seasons by task 178): the HUD displays
+    /// sustained-objective progress in whole seasons
+    /// (`ui.rs::seasons_progress`), so the generated tick counts at
+    /// severity 1.0 must land exactly on a season boundary. `*_seasons_base`
+    /// is already season-native by construction, so this is really a
+    /// regression guard on `seasons_to_ticks`'s multiplication, not on the
+    /// config values themselves.
     #[test]
     fn objective_tick_bases_are_exact_season_multiples_at_base_severity() {
         let config = SimConfig::default();
-        assert_eq!(
-            config.objectives.coexistence_ticks_base % config.time.season_pulses,
-            0,
-            "coexistence_ticks_base should be an exact multiple of season_pulses"
+        let generated_coexistence_ticks = seasons_to_ticks(
+            scale_severity(config.objectives.coexistence_seasons_base, 1.0),
+            config.time.season_pulses,
         );
-        assert_eq!(
-            config.objectives.survive_in_ticks_base % config.time.season_pulses,
-            0,
-            "survive_in_ticks_base should be an exact multiple of season_pulses"
+        assert_eq!(generated_coexistence_ticks % config.time.season_pulses, 0);
+        let generated_survive_in_ticks = seasons_to_ticks(
+            scale_severity(config.objectives.survive_in_seasons_base, 1.0),
+            config.time.season_pulses,
         );
+        assert_eq!(generated_survive_in_ticks % config.time.season_pulses, 0);
     }
 
     #[test]
     fn objective_thresholds_grow_with_world_severity() {
-        let config = SimConfig::default();
+        let mut config = SimConfig::default();
+        // No wild species configured (task 179: `WildCoexistence` would
+        // otherwise always be a live candidate regardless of world state)
+        // and no tags on the lone species (task 179: keeps `Rootedness` out
+        // of the pool too).
+        config.worldgen.wild_species_count = 0;
 
-        // A single species and no Swamp cell leaves `TriggerBloom` as the
-        // only possible candidate, so the comparison below isn't confounded
-        // by which variant the RNG happened to draw.
+        // A single species, no Swamp cell, and `Homeostasis` excluded (task
+        // 179: it's an unconditional candidate like `TriggerBloom`, same as
+        // the anti-repeat exclusion any other slot would apply) leaves
+        // `TriggerBloom` as the only possible candidate, so the comparison
+        // below isn't confounded by which variant the RNG happened to draw.
         let build = |severity: f32| {
             let mut world = SimWorld::new(42, &config);
             for cell in world.cells.iter_mut() {
@@ -1004,7 +1118,13 @@ mod tests {
             });
             let mut params = world_params(0, &config);
             params.objective_severity = severity;
-            generate_one_objective(&mut world, &params, &config, None).0
+            generate_one_objective(
+                &mut world,
+                &params,
+                &config,
+                Some(ObjectiveKind::Homeostasis),
+            )
+            .0
         };
 
         let early = build(config.difficulty.objective_severity_early);
@@ -1081,6 +1201,11 @@ mod tests {
     /// ~34% (17/50) at `world_index == 0` — asserting a much lower floor
     /// here so this stays a regression guard against the search or the
     /// exclusion logic silently breaking, not a tight balance assertion.
+    /// Task 179 widened the candidate pool (`Homeostasis`/`WildCoexistence`
+    /// unconditionally, `Tolerance` alongside `SurviveIn` whenever Swamp is
+    /// present), diluting `SurviveIn`'s own draw odds further — the floor
+    /// below is lowered accordingly, still well above 0 as a regression
+    /// guard.
     #[test]
     fn survive_in_toxic_zone_is_offered_across_a_real_fraction_of_seeds() {
         let config = SimConfig::default();
@@ -1098,8 +1223,8 @@ mod tests {
             }
         }
         assert!(
-            offered * 5 >= n_seeds,
-            "expected SurviveIn to be offered in at least 20% of {n_seeds} seeds, got {offered}"
+            offered * 10 >= n_seeds,
+            "expected SurviveIn to be offered in at least 10% of {n_seeds} seeds, got {offered}"
         );
     }
 
@@ -1115,10 +1240,24 @@ mod tests {
             for objective in generate_objectives(&mut world, &params, &config, 0) {
                 match objective {
                     Objective::SurviveIn { species, .. }
-                    | Objective::TriggerBloom { species, .. } => {
+                    | Objective::TriggerBloom { species, .. }
+                    | Objective::Homeostasis { species, .. }
+                    | Objective::Tolerance { species, .. }
+                    | Objective::Rootedness { species, .. } => {
                         assert!(
                             (species.0 as u32) < species_count,
                             "seed {seed}: species {species:?} out of bounds for pool of {species_count}"
+                        );
+                    }
+                    // The predicted wild species doesn't exist in the pool
+                    // yet at generation time (see `ObjectiveKind::WildCoexistence`'s
+                    // doc comment) — it's expected to sit exactly one past
+                    // the current pool.
+                    Objective::WildCoexistence { wild_species, .. } => {
+                        assert_eq!(
+                            wild_species.0 as u32, species_count,
+                            "seed {seed}: predicted wild species id must equal the pool size \
+                             at generation time"
                         );
                     }
                     Objective::Coexistence { .. } | Objective::Speciation => {}
@@ -1133,9 +1272,12 @@ mod tests {
     #[test]
     fn world_zero_first_objective_is_always_gentle_coexistence() {
         let config = SimConfig::default();
-        let expected_ticks = scale_severity(
-            config.objectives.coexistence_ticks_base,
-            config.difficulty.objective_severity_early,
+        let expected_ticks = seasons_to_ticks(
+            scale_severity(
+                config.objectives.coexistence_seasons_base,
+                config.difficulty.objective_severity_early,
+            ),
+            config.time.season_pulses,
         );
 
         for seed in 0..30u64 {
@@ -1144,6 +1286,7 @@ mod tests {
                 objectives[0],
                 Objective::Coexistence {
                     min_species: 2,
+                    min_population: 1,
                     ticks: expected_ticks,
                 },
                 "seed {seed}: world 0's first objective must always be a gentle 2-species coexistence"

@@ -118,10 +118,11 @@ pub enum ActionMode {
 /// The currently-selected click action, or `None` if no action is armed
 /// (task 149's minimal seam for task 150's full Esc-cascade/action-armed
 /// scheme: clicking the already-selected action's button again deselects
-/// it, which is the only way to reach `None` today — this task only needs
-/// *some* entry point into it so the click-inspect path has one). Defaults
-/// to `Some(Seed)` so existing click behavior is unchanged for anyone who
-/// never touches the new selector.
+/// it). Defaults to `None` (task 177) — a fresh world starts with nothing
+/// armed, so a player's first instinct to click a cell and look at it goes
+/// to the click-inspect card (`select_cell_on_click`'s "no action armed"
+/// path) instead of accidentally seeding a species
+/// (`playtest_outcome.md` issue I.2).
 #[derive(Resource)]
 pub struct SelectedAction(pub Option<ActionMode>);
 
@@ -190,6 +191,15 @@ pub struct PendingConfirmation {
 /// acts on it; `p` and this module's HUD button both flip it.
 #[derive(Resource, Default)]
 pub struct ContinuousAdvance(pub bool);
+
+/// Task 176: `Time<Fixed>` steps at `TimeConfig::era_tick_hz`, but
+/// continuous-advance should play back slower
+/// (`TimeConfig::continuous_advance_tick_hz`) — this counts elapsed
+/// `FixedUpdate` steps since the last pulse so `input.rs::continuous_advance`
+/// can skip most of them instead of advancing on every one, without
+/// touching the shared `Time<Fixed>` rate the manual controls also use.
+#[derive(Resource, Default)]
+pub struct ContinuousAdvancePulseCounter(pub u32);
 
 /// Which axis `Stress` targets (task 145) — a UI intent read by both this
 /// module (the axis sub-selector, shown only while `Stress` is the active
@@ -338,7 +348,7 @@ impl Plugin for UiPlugin {
             .resource_mut::<EguiGlobalSettings>()
             .auto_create_primary_context = false;
         app.insert_resource(SelectedSpecies(SpeciesId(0)))
-            .insert_resource(SelectedAction(Some(ActionMode::Seed)))
+            .insert_resource(SelectedAction(None))
             .init_resource::<SelectedStressAxis>()
             .init_resource::<SpliceDraft>()
             .init_resource::<IsolationHint>()
@@ -352,6 +362,7 @@ impl Plugin for UiPlugin {
             .init_resource::<WorldTouched>()
             .init_resource::<PendingConfirmation>()
             .init_resource::<ContinuousAdvance>()
+            .init_resource::<ContinuousAdvancePulseCounter>()
             .add_systems(Startup, spawn_hud_camera)
             .add_systems(
                 Update,
@@ -957,6 +968,14 @@ fn hover_tooltip(
         .interactable(false)
         .fixed_pos(cursor_pos + egui::vec2(16.0, 16.0))
         .show(ctx, |ui| {
+            // Task 172: a shared Area id is fine (and keeps the position/size
+            // memory stable frame-to-frame) as long as text can never wrap —
+            // `Extend` disables wrapping outright, which is the actual fix;
+            // switching to a per-cell id here previously "fixed" the 1-char
+            // wrap by giving every newly-hovered cell a freshly-sized (and
+            // therefore *un*-cached) Area, at the cost of minting a new
+            // egui id per grid cell every frame.
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.label(cell.biome.label());
                 if let Some(population) = cell.population {
@@ -996,6 +1015,7 @@ fn inspect_card(
     egui::Window::new("Inspect")
         .resizable(false)
         .collapsible(false)
+        .default_pos(egui::pos2(HUD_WIDTH + 24.0, 80.0))
         .show(ctx, |ui| match cell.population {
             Some(population) => populated_cell_card(ui, &world, &config, idx, population),
             None => empty_cell_card(ui, &config, &cell),
@@ -1018,6 +1038,9 @@ fn populated_cell_card(
 ) {
     let species = &world.species[population.species.0 as usize];
     ui.heading(species_label(world, population.species));
+    ui.label(format!("Biome: {}", world.cells[idx].biome.label()));
+    biome_env_lines(ui, config, &world.cells[idx]);
+    hairline(ui);
     ui.label(format!(
         "Origin: {}",
         text::species_origin_label(world.species_origin(population.species))
@@ -1064,8 +1087,23 @@ fn populated_cell_card(
 /// task calls out: the card must never leak whether a terrain-conditional
 /// tag gate exists on this biome.
 fn empty_cell_card(ui: &mut egui::Ui, config: &SimConfig, cell: &Cell) {
-    let env = &config.environment;
     ui.heading(cell.biome.label());
+    biome_env_lines(ui, config, cell);
+    let habitable = config.energy.is_habitable(cell.biome.index());
+    ui.label(if habitable {
+        text::HABITABLE_LABEL
+    } else {
+        text::NOT_HABITABLE_LABEL
+    });
+}
+
+/// Biome/temperature/light/toxicity band lines shared by both `inspect_card`
+/// bodies (task 172) — a populated cell lost this context entirely before,
+/// since `populated_cell_card`/`empty_cell_card` were mutually exclusive.
+/// Deliberately never touches `world.conditional_tags`/tag data, same
+/// constraint `empty_cell_card` already followed.
+fn biome_env_lines(ui: &mut egui::Ui, config: &SimConfig, cell: &Cell) {
+    let env = &config.environment;
     ui.label(format!(
         "Temperature: {}",
         text::band_label(
@@ -1093,12 +1131,6 @@ fn empty_cell_card(ui: &mut egui::Ui, config: &SimConfig, cell: &Cell) {
             ["low", "moderate", "high"],
         )
     ));
-    let habitable = config.energy.is_habitable(cell.biome.index());
-    ui.label(if habitable {
-        text::HABITABLE_LABEL
-    } else {
-        text::NOT_HABITABLE_LABEL
-    });
 }
 
 /// Alert color for the pause menu's "Abandon without saving" item (task
@@ -1217,7 +1249,11 @@ fn objective_panel(
     }
 
     let description = match *objective {
-        Objective::Coexistence { min_species, .. } => text::coexistence_objective_line(min_species),
+        Objective::Coexistence {
+            min_species,
+            min_population,
+            ..
+        } => text::coexistence_objective_line(min_species, min_population),
         Objective::SurviveIn { species, zone, .. } => {
             text::survive_in_objective_line(&species_label(world, species), text::zone_label(zone))
         }
@@ -1227,7 +1263,33 @@ fn objective_panel(
         } => {
             text::trigger_bloom_objective_line(&species_label(world, species), population_threshold)
         }
-        Objective::Speciation => text::speciation_objective_line(),
+        Objective::Speciation => text::speciation_objective_line(
+            progress
+                .speciation_target
+                .map(|target| species_label(world, target)),
+        ),
+        Objective::Homeostasis {
+            species,
+            min_mean_energy,
+            max_mean_energy,
+            ..
+        } => text::homeostasis_objective_line(
+            &species_label(world, species),
+            min_mean_energy,
+            max_mean_energy,
+        ),
+        Objective::Tolerance { species, zone, .. } => {
+            text::tolerance_objective_line(&species_label(world, species), text::zone_label(zone))
+        }
+        Objective::WildCoexistence { wild_species, .. } => {
+            text::wild_coexistence_objective_line(&species_label(world, wild_species))
+        }
+        Objective::Rootedness {
+            species, terrain, ..
+        } => text::rootedness_objective_line(
+            &species_label(world, species),
+            text::terrain_label(terrain),
+        ),
     };
     // The redesign's one deliberate break from the panel-wide monospace
     // style (task 064 §5, "da usare con parsimonia" — used sparingly,
@@ -1249,7 +1311,12 @@ fn objective_panel(
     }
 
     match *objective {
-        Objective::Coexistence { ticks, .. } | Objective::SurviveIn { ticks, .. } => {
+        Objective::Coexistence { ticks, .. }
+        | Objective::SurviveIn { ticks, .. }
+        | Objective::Homeostasis { ticks, .. }
+        | Objective::Tolerance { ticks, .. }
+        | Objective::WildCoexistence { ticks, .. }
+        | Objective::Rootedness { ticks, .. } => {
             let (seasons_held, seasons_required) =
                 seasons_progress(progress.consecutive_ticks, ticks, season_pulses);
             match season_progress_display(seasons_required) {

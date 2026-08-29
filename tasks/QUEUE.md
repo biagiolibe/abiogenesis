@@ -149,7 +149,9 @@ ideally with a real playtester — not yet done.
 | `[x]` | 151 | Pixel-grain visual register across map, HUD and notebook | `population-model-aesthetic`, `ui-redesign` — [151](done/151-pixel-grain-visual-register.md) |
 | `[x]` | 152 | HUD: auto-advance toggle, mutation-tier badge, species subtext (title corrected — `sidebar-redesign` already shipped as 064/065, this is `hud-notebook`'s residual gap) | `hud-notebook` — [152](done/152-hud-sidebar-diegetic-redesign.md) |
 | `[x]` | 153 | Notebook: Chronicle section + "descends from" (node graph already shipped, see file) | `notebook-cronaca` — [153](done/153-notebook-node-graph-chronicle.md) |
-| `[ ]` | 154 | Objectives: activation snapshot, 5 new types, durations in seasons, victory as a flag | `objectives` — [154](154-objectives-activation-victory-flag.md) |
+| `[x]` | 154 | Objectives correctness pass (154a): victory as a flag, Speciation activation snapshot, immediate re-check during Reveal | `objectives` — [154](done/154-objectives-activation-victory-flag.md) |
+| `[x]` | 178 | Objectives tuning: Coexistence population floor + durations in seasons | `objectives`, `playtest_outcome.md` I.6 — [178](done/178-objectives-tuning-new-types-durations.md) |
+| `[x]` | 179 | Objectives: 4 new types (Homeostasis/Tolerance/WildCoexistence/Rootedness), Speciation target-species narrowing (FirstConfirmation deferred, needs `MatrixKnowledge`) | `objectives` — [179](done/179-objectives-new-types-target-species.md) |
 | `[ ]` | 170 | Speciation cause readability: surface dominant pressure stimulus + genome before/after diff | GDD §5.11 — [170](170-speciation-cause-readability.md) |
 | `[ ]` | 171 | Causal-legibility playtest gate: bot-vs-bot necessity check + human playtest protocol, gates Phase 3 | GDD §5.8/§5.9 — [171](171-causal-legibility-playtest-gate.md) |
 
@@ -167,8 +169,9 @@ strict requirement, but avoids rework):
    (inspection tool) also soft-depends on 150 for the click-to-inspect vs.
    armed-action conflict.
 4. **153** (notebook Chronicle) — independent, can run anywhere after 145.
-5. **154** (objectives) — independent but the largest (~3-4h); consider
-   splitting if picked up piecemeal (flagged in the file itself).
+5. **154** (objectives) — independent but the largest (~3-4h); split into
+   154 (delivered, `tasks/done/`) and 178 (remainder, not yet started) on
+   2026-08-29, per the file itself's own suggestion.
 6. **151** (pixel-grain restyle) — deliberately **last**: restyles whatever
    UI surface 149/150/152/153 add, per the aesthetic doc's own phase-split
    rationale.
@@ -191,6 +194,43 @@ Phase 0).
 Not planned: **Isola/Quarantena** as a fifth action — only its attachment point
 in the pipeline (task 138, phase 3). **Sposta** — the document itself does not
 recommend it. Both stay deferred.
+
+## Phase 2 — playtest fixes (opened 2026-08-29)
+
+First human playtest run, logged in `playtest_outcome.md` (kept at repo
+root, not moved — source evidence for these tasks). Not part of the
+`redesign/processed/` corpus rollout; independent bug/UX fixes the run
+surfaced, verified against the current code before filing. **Correction
+(post advisor-review, 2026-08-29): the original note here claiming two
+playtest findings were already covered by task 154's own scope was wrong**
+— 154's AC never touched `Coexistence`'s missing population floor
+(issue I.6), and 154's `Speciation`-snapshot fix was a different bug from
+the evolution-reveal-timing one (gameplay #17). #17 was folded into 154's
+delivered scope (154a, `tasks/done/154-*.md`); I.6 landed in 178
+(`tasks/done/178-*.md`, population floor + durations in seasons); the
+5-new-types/target-species-narrowing remainder moved on to
+[179](179-objectives-new-types-target-species.md).
+None of Phase 2's playtest-fix tasks gate task 171's Phase-3 gate, but
+172/174/175 are worth doing before running 171's human playtest protocol
+since they affect what a fresh player notices/attributes correctly.
+
+| Status | ID | Title | Doc |
+|-------|----|--------|-----|
+| `[x]` | 172 | Inspection tool UX fixes: stable tooltip sizing, cursor-positioned card, biome info when populated | `playtest_outcome.md` I.1 — [172](done/172-inspection-tool-ux-fixes.md) |
+| `[ ]` | 173 | Sidebar species/biosphere lists don't fill panel width | `playtest_outcome.md` I.3 — [173](173-sidebar-list-width-fix.md) |
+| `[ ]` | 174 | Align toxicity label thresholds to visual tint; clarify population tooltip scope | `playtest_outcome.md` I.7 — [174](174-toxicity-label-population-tooltip-clarity.md) |
+| `[x]` | 175 | New species from speciation should place near where pressure actually accrued | `playtest_outcome.md` #10 — [175](done/175-speciation-placement-near-parent.md) |
+| `[x]` | 176 | Continuous-advance needs its own, slower cadence | `playtest_outcome.md` I.11 — [176](done/176-continuous-advance-dedicated-cadence.md) |
+| `[x]` | 177 | No armed action at world start; pan with wheel held down | `playtest_outcome.md` I.2, F.1 — [177](done/177-start-default-action-and-wheel-pan.md) |
+
+Not filed as a task — a GDD/balance discussion, not a code task yet: whether
+an isolated species with no matrix stimulus should trend flat/negative
+instead of growing on base metabolism gain alone (`playtest_outcome.md`
+gameplay note #16). Current behavior (`src/sim.rs:1241-1266,1924-1942`) is
+deliberate — a comment there explicitly notes base gain is kept
+neighbour-independent so isolated organisms don't starve from drift alone.
+Revisit in GDD §5.6/§5.9 before scoping a task, if the balance question
+still stands after Phase 2 lands.
 
 ## Phase 3 — content and variety
 
