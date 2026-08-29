@@ -284,9 +284,9 @@ Explicitly post-MVP, not in this backlog: declared-and-refuted hypotheses
 
 # 🧱 Pre-redesign work still open
 
-Everything below predates the Culture Shock redesign rollout above. Only two
-items are still open here (114, blocked; 084, excluded) — the rest is history
-kept for the rationale behind past phases.
+Everything below predates the Culture Shock redesign rollout above. Only one
+item is still open here (114, blocked) — the rest is history kept for the
+rationale behind past phases.
 
 The "Two-tier map view" phase (075-078) is fully closed and archived in
 `tasks/QUEUE_ARCHIVE.md` — 078, the last open item (a same-day playtest
@@ -323,12 +323,11 @@ The "Worldgen pipeline reassessment — credibility follow-ups" phase
 `tasks/QUEUE_ARCHIVE.md`, alongside task 132 (`[DECISION]` on
 `Cell.slope`/`Cell.water_distance` ordering, found mid-phase).
 
-084 (guaranteed "first light" relation in world 0's matrix, from the
-"Onboarding & engagement rollout" phase, 080-083, fully closed and archived
-to `QUEUE_ARCHIVE.md`) is scoped
-(`tasks/084-first-light-guaranteed-relation-world0.md`) but deliberately
-**excluded from this queue** — blocked on the "Meta-progression persistence"
-proposal (`PROJECT_PLAN.md` §1), not available to pick up yet.
+| `[x]` | 084 | Guaranteed "first light" relation in world 0's matrix — unblocked and implemented 2026-08-29 (was blocked on "Meta-progression persistence", `PROJECT_PLAN.md` §1; applies to every `world_index == 0` instead, per user decision following the first human playtest's engagement findings, `playtest_outcome.md`) | 011, 013 | [084](done/084-first-light-guaranteed-relation-world0.md) |
+
+084 is from the "Onboarding & engagement rollout" phase (080-083, fully
+closed and archived to `QUEUE_ARCHIVE.md`) — the last item of that phase to
+land, since it wasn't available to pick up until 2026-08-29.
 
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) beyond what's already expanded into task files here.
 
@@ -660,8 +659,12 @@ shipped, implemented the same day (`Objective::Speciation` long-term
 objective + within-run energy economy) — full phase now closed and
 archived to `QUEUE_ARCHIVE.md`. 088-089, self-interaction balance bug fix, completed and
 archived to `QUEUE_ARCHIVE.md`. 082 and 083, tuned jointly, completed and
-archived to `tasks/done/`. 084 stays intentionally out of the queue as
-blocked. 078 done (see recent commits). 081, toxic-zone pulse + diffusion
+archived to `tasks/done/`. 084 stayed intentionally out of the queue as
+blocked until 2026-08-29, when it was unblocked and implemented the same
+day (see its row above) — the persistence dependency was traded for
+applying the guarantee to every `world_index == 0` instead of only a
+player's true first world.
+078 done (see recent commits). 081, toxic-zone pulse + diffusion
 drift check, completed and archived to `tasks/done/`. 085-086, "Environment as sources," fully
 closed and archived to `QUEUE_ARCHIVE.md`. 090, terrain island-band
 retune, completed and archived. 091-095, the bugfixing/UX batch, fully

@@ -102,6 +102,15 @@ impl TagMatrix {
         assert_eq!(values.len(), size * size, "matrix values must be size*size");
         Self { size, values }
     }
+
+    /// Force-sets one directed tag-pair entry, bypassing the
+    /// density/cyclicity generation path entirely (task 084's world-0
+    /// "first light" guarantee is the only caller today). The caller is
+    /// responsible for any invariant it needs to preserve — e.g. not
+    /// perturbing a species' own net-zero self-interaction.
+    pub(crate) fn set(&mut self, exerter: TagSlot, receiver: TagSlot, value: i8) {
+        self.values[exerter.0 as usize * self.size + receiver.0 as usize] = value;
+    }
 }
 
 /// A species' genome (GDD §5.3): metabolism and environmental range are

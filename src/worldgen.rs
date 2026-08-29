@@ -11,7 +11,7 @@ use crate::config::SimConfig;
 use crate::objectives::{Objective, ZoneKind};
 use crate::world::{
     draw_species_name, draw_species_tags, Biome, Metabolism, Population, SimWorld, Species,
-    SpeciesId, TerrainKind,
+    SpeciesId, TagSlot, TerrainKind,
 };
 
 /// Concrete generation parameters for one world, derived from its position
@@ -309,9 +309,122 @@ fn seasons_to_ticks(seasons: u32, season_pulses: u32) -> u32 {
     seasons * season_pulses
 }
 
+/// World 0's "first light" guarantee (task 084, from
+/// `redesign/processed/abiogenesis-engagement-design.md` proposal 1.B): a
+/// brand-new player might otherwise not see any strong, legible matrix
+/// relation for several eras — this ensures at least one `±
+/// effect_intensity_max` relation exists between two tags actually carried
+/// by the starting palette (`generate_starting_palette`, task 013), so
+/// whichever two starting species the player seeds adjacent to each other,
+/// they have a real chance of seeing an effect immediately. Applied to
+/// every `world_index == 0`, not gated on a true first-ever-world
+/// distinction (that would need real meta-progression persistence, still
+/// undecided) — a deliberate trade-off accepted 2026-08-29 following the
+/// first human playtest's engagement findings (`playtest_outcome.md`), see
+/// the task file's decision note.
+///
+/// Only ever picks a tag pair that never co-occurs within a single
+/// species' own `tags` — forcing an entry there would perturb
+/// `draw_species_tags`'s net-zero self-interaction invariant (task
+/// 048/088), which was already satisfied against the matrix as it stood
+/// when that species' tags were drawn. This restriction also matches the
+/// guarantee's actual intent: a relation discoverable by placing two
+/// *different* starting species next to each other, not a species next to
+/// itself.
+fn ensure_first_light_relation(world: &mut SimWorld, config: &SimConfig) {
+    let self_pairs: Vec<(TagSlot, TagSlot)> = world
+        .species
+        .iter()
+        .flat_map(|species| {
+            species.tags.iter().flat_map(|&a| {
+                species
+                    .tags
+                    .iter()
+                    .filter(move |&&b| b != a)
+                    .map(move |&b| (a, b))
+            })
+        })
+        .collect();
+
+    let mut palette_slots: Vec<TagSlot> = world
+        .species
+        .iter()
+        .flat_map(|species| species.tags.iter().copied())
+        .collect();
+    palette_slots.sort_by_key(|slot| slot.0);
+    palette_slots.dedup();
+    if palette_slots.is_empty() {
+        return;
+    }
+
+    // Tier 1 (preferred): both ends already carried by the palette — the
+    // player sees the effect the moment they seed the two species that
+    // between them carry `exerter`/`receiver`. Excludes any pair that
+    // co-occurs within a single species' own tag set: forcing it would
+    // perturb `net_self_interaction`'s zero-sum invariant for that species
+    // (task 048/088's self-adjacency bug), which was already satisfied
+    // against the matrix as it stood when its tags were drawn.
+    let mut candidates: Vec<(TagSlot, TagSlot)> = Vec::new();
+    for &a in &palette_slots {
+        for &b in &palette_slots {
+            if a != b && !self_pairs.contains(&(a, b)) {
+                candidates.push((a, b));
+            }
+        }
+    }
+
+    if candidates.is_empty() {
+        // Tier 2 fallback: a single starting species can monopolize every
+        // distinct tag the whole palette carries (e.g. one species drawing
+        // 3 of `active_tags_early`'s 5 tags, with every other species
+        // repeating a subset of those same 3) — tier 1 then has no safe
+        // pair at all. Pair a palette tag with a currently-*unused* active
+        // tag instead: no species carries it, so it can never be anyone's
+        // self-pair. Half-visible immediately (one end is already seedable
+        // today), fully visible once any future species — bonus pool,
+        // splice, evolution — picks up the other end.
+        let unused_slots: Vec<TagSlot> = (0..world.active_tags.len() as u8)
+            .map(TagSlot)
+            .filter(|slot| !palette_slots.contains(slot))
+            .collect();
+        for &a in &palette_slots {
+            for &b in &unused_slots {
+                candidates.push((a, b));
+            }
+        }
+    }
+
+    // Both active tags this world has are already fully monopolized by one
+    // species with no unused tag left over — structurally impossible at
+    // world 0's default tag/species counts (a species can carry at most
+    // `tags_per_species_max`, always short of `active_tags_early`), kept as
+    // a defensive no-op rather than a panic for any future config that
+    // narrows that margin.
+    if candidates.is_empty() {
+        return;
+    }
+
+    let max = config.tags.effect_intensity_max;
+    let already_strong = candidates
+        .iter()
+        .any(|&(a, b)| world.matrix.get(a, b).abs() >= max);
+    if already_strong {
+        return;
+    }
+
+    let (exerter, receiver) = candidates[world.rng_mut().random_range(0..candidates.len())];
+    let value = if world.rng_mut().random_bool(0.5) {
+        max
+    } else {
+        -max
+    };
+    world.matrix.set(exerter, receiver, value);
+}
+
 /// Builds one full world of a run — grid, species, matrix, environment
-/// (`SimWorld::new_for_world`), starting palette (`generate_starting_palette`),
-/// `bonus_available_species` extra species earned via meta-progression
+/// (`SimWorld::new_for_world`), starting palette (`generate_starting_palette`,
+/// with world 0's `ensure_first_light_relation` guarantee applied right after
+/// it), `bonus_available_species` extra species earned via meta-progression
 /// (`add_bonus_species`, task 046), and its objective sequence
 /// (`generate_objectives`) — in the one order each step requires (bonus
 /// species join the pool objective generation can pick from; objective
@@ -327,6 +440,9 @@ pub fn build_world(
 ) -> (SimWorld, Vec<Objective>) {
     let mut world = SimWorld::new_for_world(seed, world_index, config);
     generate_starting_palette(&mut world, config);
+    if world_index == 0 {
+        ensure_first_light_relation(&mut world, config);
+    }
     add_bonus_species(&mut world, config, bonus_available_species);
     let params = world_params(world_index, config);
     let objectives = generate_objectives(&mut world, &params, config, world_index);
@@ -917,6 +1033,62 @@ mod tests {
         assert!(
             !world.species.is_empty(),
             "species must still be generated, just not placed"
+        );
+    }
+
+    /// Whether at least one strong (`±effect_intensity_max`) matrix entry
+    /// exists between a palette-carried tag and *any* of the world's active
+    /// tags — matches `ensure_first_light_relation`'s actual guarantee,
+    /// tier 1 (both ends palette-carried) or tier 2 (one end palette-
+    /// carried, one end a currently-unused active tag) alike.
+    fn palette_has_a_strong_relation(world: &SimWorld, config: &SimConfig) -> bool {
+        let mut palette_slots: Vec<TagSlot> = world
+            .species
+            .iter()
+            .flat_map(|species| species.tags.iter().copied())
+            .collect();
+        palette_slots.sort_by_key(|slot| slot.0);
+        palette_slots.dedup();
+        let max = config.tags.effect_intensity_max;
+        palette_slots.iter().any(|&a| {
+            (0..world.active_tags.len() as u8)
+                .map(TagSlot)
+                .any(|b| a != b && world.matrix.get(a, b).abs() >= max)
+        })
+    }
+
+    #[test]
+    fn ensure_first_light_relation_guarantees_a_strong_palette_relation_across_seeds() {
+        let config = SimConfig::default();
+        for seed in 0..30u64 {
+            let mut world = SimWorld::new_for_world(seed, 0, &config);
+            generate_starting_palette(&mut world, &config);
+            ensure_first_light_relation(&mut world, &config);
+            assert!(
+                palette_has_a_strong_relation(&world, &config),
+                "seed {seed}: world 0's starting palette must always have a strong relation"
+            );
+        }
+    }
+
+    /// Task 084's own AC: the guarantee must not silently apply beyond
+    /// `world_index == 0` — `build_world` only calls
+    /// `ensure_first_light_relation` for world 0, so at world_index 1 the
+    /// matrix is exactly as randomly generated as before this task.
+    #[test]
+    fn build_world_does_not_apply_the_first_light_guarantee_past_world_zero() {
+        let config = SimConfig::default();
+        let seeds_missing_a_strong_relation = (0..30u64)
+            .filter(|&seed| {
+                let (world, _) = build_world(seed, 1, &config, 0);
+                !palette_has_a_strong_relation(&world, &config)
+            })
+            .count();
+        assert!(
+            seeds_missing_a_strong_relation > 0,
+            "expected at least one of 30 seeds at world_index 1 to lack a strong palette \
+             relation — otherwise this test can't tell the guarantee apart from ordinary \
+             random matrix density"
         );
     }
 
