@@ -35,9 +35,9 @@ use crate::render::{species_label, world_to_cell, GridCamera, MapViewMode, Place
 use crate::run_flow::{start_world, WorldResetParams};
 use crate::text;
 use crate::ui::{
-    cursor_over_hud_panel, ActionMode, ConfirmationKind, HoveredCell, HudControlIntents,
-    IsolationHint, PauseMenuOpen, PendingConfirmation, SelectedAction, SelectedCell,
-    SelectedSpecies, SelectedStressAxis, SpliceDraft, SpliceEditChoice, WorldTouched,
+    cursor_over_hud_panel, ActionMode, ConfirmationKind, ContinuousAdvance, HoveredCell,
+    HudControlIntents, IsolationHint, PauseMenuOpen, PendingConfirmation, SelectedAction,
+    SelectedCell, SelectedSpecies, SelectedStressAxis, SpliceDraft, SpliceEditChoice, WorldTouched,
 };
 
 pub struct InputPlugin;
@@ -59,8 +59,13 @@ impl Plugin for InputPlugin {
                 disarm_action_on_right_click,
                 advance_full_era,
                 resolve_abandon_confirmation,
+                toggle_continuous_advance,
             )
                 .run_if(in_state(GameState::Playing)),
+        )
+        .add_systems(
+            FixedUpdate,
+            continuous_advance.run_if(in_state(GameState::Playing)),
         )
         .add_systems(Update, escape_cascade.run_if(in_state(GameState::Playing)))
         .add_systems(Update, quit_from_menu.run_if(in_state(GameState::MainMenu)));
@@ -138,8 +143,14 @@ fn start_era(
     run_progress: Res<RunProgress>,
     world: Res<SimWorld>,
     mut intents: ResMut<HudControlIntents>,
+    continuous: Res<ContinuousAdvance>,
 ) {
     if *era_state.get() != EraState::Observing {
+        return;
+    }
+    // Task 152: "one in-flight advance mechanism at a time" — continuous
+    // advance owns `Observing` while it's on.
+    if continuous.0 {
         return;
     }
     let triggered = keys.just_pressed(KeyCode::Space) || intents.advance_era;
@@ -185,8 +196,12 @@ fn single_tick(
     mut writers: TickEventWriters,
     mut objective_outcome: ObjectiveOutcomeParams,
     mut intents: ResMut<HudControlIntents>,
+    continuous: Res<ContinuousAdvance>,
 ) {
     if *era_state.get() != EraState::Observing {
+        return;
+    }
+    if continuous.0 {
         return;
     }
     let triggered = keys.just_pressed(KeyCode::KeyN) || intents.advance_tick;
@@ -344,11 +359,12 @@ fn advance_full_era(
     mut writers: TickEventWriters,
     mut objective_outcome: ObjectiveOutcomeParams,
     pause_menu_open: Res<PauseMenuOpen>,
+    continuous: Res<ContinuousAdvance>,
 ) {
     if *era_state.get() != EraState::Observing {
         return;
     }
-    if pause_menu_open.0 {
+    if pause_menu_open.0 || continuous.0 {
         return;
     }
     let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
@@ -380,6 +396,73 @@ fn advance_full_era(
     }
     if world.era != era_before {
         era_next_state.set(EraState::Reveal);
+    }
+}
+
+/// `p`: toggles continuous pulse advancement (task 152, GDD §11). The HUD's
+/// `time_control_row` button (`ui.rs`) flips the same `ContinuousAdvance`
+/// resource, so both share this one piece of state.
+fn toggle_continuous_advance(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut continuous: ResMut<ContinuousAdvance>,
+) {
+    if keys.just_pressed(KeyCode::KeyP) {
+        continuous.0 = !continuous.0;
+    }
+}
+
+/// Drives continuous advancement one pulse at a time (task 152), scheduled
+/// on `FixedUpdate` alongside `sim::advance_tick` so it reuses
+/// `TimeConfig::era_tick_hz`'s existing `Time<Fixed>` pacing rather than a
+/// new rate — a presentation-layer cadence, not a simulation coefficient
+/// (TECH_DESIGN.md invariant 1: advancing wall-clock speed must never
+/// change simulation outcomes). Shares `single_tick`'s own per-pulse body
+/// (`tick_and_complete_season`/`apply_tick_outcome`) instead of duplicating
+/// it. Gated to `EraState::Observing`, so it can never race a `space`-
+/// triggered `Advancing` block (mutually exclusive states) or tick during
+/// the reveal card; turns itself off the instant either an era boundary or
+/// a non-`Ongoing` objective outcome needs the player's attention, rather
+/// than silently resuming the moment that screen is dismissed.
+#[allow(clippy::too_many_arguments)]
+fn continuous_advance(
+    era_state: Res<State<EraState>>,
+    mut era_next_state: ResMut<NextState<EraState>>,
+    mut continuous: ResMut<ContinuousAdvance>,
+    mut world: ResMut<SimWorld>,
+    config: Res<SimConfig>,
+    mut progress: ResMut<SeasonProgress>,
+    mut budget: ResMut<ActionBudget>,
+    mut era_completed: MessageWriter<EraCompleted>,
+    mut tally: ResMut<EraTally>,
+    mut writers: TickEventWriters,
+    mut objective_outcome: ObjectiveOutcomeParams,
+) {
+    if !continuous.0 || *era_state.get() != EraState::Observing {
+        return;
+    }
+    if progress.remaining() == 0 {
+        progress.start(season_pulses_for(
+            objective_outcome.run_progress.world_index,
+            world.season,
+            &config,
+        ));
+    }
+    let era_before = world.era;
+    let events = tick_and_complete_season(
+        &mut world,
+        &config,
+        &mut progress,
+        &mut budget,
+        &mut era_completed,
+        &mut tally,
+    );
+    writers.write_all(events);
+    apply_tick_outcome(&world, &config, &mut objective_outcome);
+    if world.era != era_before {
+        era_next_state.set(EraState::Reveal);
+        continuous.0 = false;
+    } else if objective_outcome.outcome.0 != WorldOutcome::Ongoing {
+        continuous.0 = false;
     }
 }
 
@@ -1596,6 +1679,7 @@ mod tests {
         app.insert_resource(MetaProgress::default());
         app.insert_resource(NextState::<GameState>::default());
         app.init_resource::<HudControlIntents>();
+        app.init_resource::<ContinuousAdvance>();
         app.add_systems(Update, single_tick);
 
         for _ in 0..config.time.season_pulses {
@@ -1689,6 +1773,45 @@ mod tests {
         assert!(
             app.world().resource::<PauseMenuOpen>().0,
             "with nothing else open/armed, Esc opens the pause menu"
+        );
+    }
+
+    /// Task 152: `p` toggles `ContinuousAdvance`, and `space` becomes a
+    /// no-op while it's on — "one in-flight advance mechanism at a time".
+    #[test]
+    fn continuous_advance_toggles_on_p_and_blocks_start_era() {
+        let config = SimConfig::default();
+        let world = SimWorld::new(42, &config);
+
+        let mut app = App::new();
+        app.insert_resource(config);
+        app.insert_resource(world);
+        app.insert_resource(ButtonInput::<KeyCode>::default());
+        app.insert_resource(State::new(EraState::Observing));
+        app.insert_resource(NextState::<EraState>::default());
+        app.insert_resource(SeasonProgress::default());
+        app.insert_resource(RunProgress::default());
+        app.insert_resource(HudControlIntents::default());
+        app.insert_resource(ContinuousAdvance::default());
+        app.add_systems(Update, (toggle_continuous_advance, start_era));
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::KeyP);
+        app.update();
+        assert!(app.world().resource::<ContinuousAdvance>().0);
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .release(KeyCode::KeyP);
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::Space);
+        app.update();
+        assert_eq!(
+            app.world().resource::<SeasonProgress>().remaining(),
+            0,
+            "space must not start a season while continuous advance is on"
         );
     }
 }

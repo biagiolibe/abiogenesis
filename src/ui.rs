@@ -84,6 +84,19 @@ pub struct HudControlIntents {
     pub toggle_notebook: bool,
 }
 
+/// `HudControlIntents` bundled with `ContinuousAdvance` (task 152) — folded
+/// into one `SystemParam` purely to keep `hud_panel` under Bevy's
+/// per-system parameter ceiling (it was already at 16), the same rationale
+/// `SpliceReadouts`/`ObjectiveReadouts` give for their own bundling.
+/// `ContinuousAdvance` doesn't share `HudControlIntents`' one-shot
+/// "consumed and reset every frame" contract — it's a persisting toggle —
+/// so it stays a distinct field rather than a fourth intent flag.
+#[derive(SystemParam)]
+pub struct AdvanceControls<'w> {
+    pub intents: ResMut<'w, HudControlIntents>,
+    pub continuous: ResMut<'w, ContinuousAdvance>,
+}
+
 /// The species the seed action (task 017) places on click. A UI intent, not
 /// simulation state: owned here, read by `input.rs`'s click-to-place system,
 /// same rationale as `SeasonProgress` living in `sim.rs` but written by
@@ -165,6 +178,18 @@ pub struct PendingConfirmation {
     pub kind: Option<ConfirmationKind>,
     pub confirmed: bool,
 }
+
+/// Continuous pulse advancement (task 152, GDD §11's `p` keybind) — a third
+/// advance mechanism alongside the manual `n`/`space`/`shift+space`
+/// controls (`input.rs`), mutually exclusive with them while active.
+/// Deliberately reuses `TimeConfig::era_tick_hz`'s existing `Time<Fixed>`
+/// pacing (`sim.rs::SimPlugin`) rather than a new rate — this is a
+/// presentation-layer cadence, not a simulation coefficient (advancing
+/// wall-clock speed must never change simulation outcomes, TECH_DESIGN.md
+/// invariant 1). `input.rs::continuous_advance` is the only reader that
+/// acts on it; `p` and this module's HUD button both flip it.
+#[derive(Resource, Default)]
+pub struct ContinuousAdvance(pub bool);
 
 /// Which axis `Stress` targets (task 145) — a UI intent read by both this
 /// module (the axis sub-selector, shown only while `Stress` is the active
@@ -326,6 +351,7 @@ impl Plugin for UiPlugin {
             .init_resource::<PauseMenuOpen>()
             .init_resource::<WorldTouched>()
             .init_resource::<PendingConfirmation>()
+            .init_resource::<ContinuousAdvance>()
             .add_systems(Startup, spawn_hud_camera)
             .add_systems(
                 Update,
@@ -581,7 +607,7 @@ pub(crate) fn hud_panel(
     unseen_confirmation: Res<NotebookHasUnseenConfirmation>,
     biosphere: BiosphereReadouts,
     mode: Res<MapViewMode>,
-    mut intents: ResMut<HudControlIntents>,
+    mut controls: AdvanceControls,
     notebook_open: Res<NotebookWindowOpen>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
@@ -632,19 +658,27 @@ pub(crate) fn hud_panel(
             }
             time_control_row(
                 ui,
-                &mut intents,
+                &mut controls.intents,
                 *era_state.get() == EraState::Advancing,
                 notebook_open.0,
+                &mut controls.continuous,
             );
 
             hairline(ui);
             ui.strong(text::HEADING_ACTION);
+            let splice_confirmed_tags = world
+                .active_tags
+                .iter()
+                .enumerate()
+                .filter(|&(i, _)| splice.knowledge.is_tag_confirmed(TagSlot(i as u8)))
+                .count();
             action_icon_row(
                 ui,
                 &mut selected_action,
                 &config,
                 &readouts.run_progress,
                 *mode,
+                splice_confirmed_tags,
             );
             if selected_action.0 == Some(ActionMode::Stress) {
                 stress_axis_row(ui, &mut selected_stress_axis);
@@ -719,7 +753,7 @@ pub(crate) fn hud_panel(
                         if world.is_wild(SpeciesId(i)) {
                             continue;
                         }
-                        species_row(ui, SpeciesId(i), &world, &mut selected.0);
+                        species_row(ui, SpeciesId(i), &world, &config, &mut selected.0);
                     }
                 });
             if world.species.len() > SPECIES_VISIBLE_ROWS {
@@ -1360,9 +1394,16 @@ fn dot_row(ui: &mut egui::Ui, filled: u32, total: u32, shape: DotShape) -> egui:
 /// `text::species_origin_label`, used by the Catalog instead).
 const SYNTHESISED_MARKER: &str = "⚗";
 
-fn species_row(ui: &mut egui::Ui, species: SpeciesId, world: &SimWorld, selected: &mut SpeciesId) {
+fn species_row(
+    ui: &mut egui::Ui,
+    species: SpeciesId,
+    world: &SimWorld,
+    config: &SimConfig,
+    selected: &mut SpeciesId,
+) {
     let is_selected = *selected == species;
-    let metabolism = world.species[species.0 as usize].metabolism;
+    let source = &world.species[species.0 as usize];
+    let metabolism = source.metabolism;
     let marker = if world.species_origin(species) == SpeciesOrigin::Synthesised {
         format!("{SYNTHESISED_MARKER} ")
     } else {
@@ -1377,6 +1418,17 @@ fn species_row(ui: &mut egui::Ui, species: SpeciesId, world: &SimWorld, selected
     if ui.selectable_label(is_selected, text).clicked() {
         *selected = species;
     }
+    // Task 152: an abbreviated metabolism/temperature-fit preview so the
+    // player can judge a species' fit without opening the notebook —
+    // reuses `notebook::temperature_label`'s own band thresholds
+    // (`text::band_label`) rather than re-deriving them.
+    let temp_label = text::band_label(
+        source.temp_optimum,
+        config.environment.ambient_temperature,
+        config.environment.source_temperature,
+        ["cold", "temperate", "hot"],
+    );
+    ui.weak(text::species_row_subtext(metabolism, temp_label));
 }
 
 /// On-screen equivalents of the tick/era/notebook keyboard shortcuts (task
@@ -1394,10 +1446,16 @@ fn time_control_row(
     intents: &mut HudControlIntents,
     advancing: bool,
     notebook_open: bool,
+    continuous: &mut ContinuousAdvance,
 ) {
+    // Task 152: continuous advance and the manual controls are mutually
+    // exclusive — "one in-flight advance mechanism at a time", same rule
+    // `advancing` (a `space`-triggered era block) already enforces on its
+    // own.
+    let blocked = advancing || continuous.0;
     ui.horizontal(|ui| {
         let tick_response = ui
-            .add_enabled_ui(!advancing, |ui| ui.button(text::TICK_BUTTON_LABEL))
+            .add_enabled_ui(!blocked, |ui| ui.button(text::TICK_BUTTON_LABEL))
             .inner;
         if tick_response.clicked() {
             intents.advance_tick = true;
@@ -1408,12 +1466,18 @@ fn time_control_row(
                 text::TICK_BUTTON_TOOLTIP,
                 text::ADVANCING_DISABLED_HINT
             )
+        } else if continuous.0 {
+            format!(
+                "{}{}",
+                text::TICK_BUTTON_TOOLTIP,
+                text::CONTINUOUS_ADVANCING_DISABLED_HINT
+            )
         } else {
             text::TICK_BUTTON_TOOLTIP.to_string()
         });
 
         let era_response = ui
-            .add_enabled_ui(!advancing, |ui| ui.button(text::ERA_BUTTON_LABEL))
+            .add_enabled_ui(!blocked, |ui| ui.button(text::ERA_BUTTON_LABEL))
             .inner;
         if era_response.clicked() {
             intents.advance_era = true;
@@ -1424,9 +1488,28 @@ fn time_control_row(
                 text::ERA_BUTTON_TOOLTIP,
                 text::ADVANCING_DISABLED_HINT
             )
+        } else if continuous.0 {
+            format!(
+                "{}{}",
+                text::ERA_BUTTON_TOOLTIP,
+                text::CONTINUOUS_ADVANCING_DISABLED_HINT
+            )
         } else {
             text::ERA_BUTTON_TOOLTIP.to_string()
         });
+
+        // `selectable_label`, not a plain button (task 152's own explicit
+        // requirement): a distinct fill while active, not just a glyph
+        // swap — same idiom the notebook button already uses below.
+        let continuous_response = ui
+            .add_enabled_ui(!advancing, |ui| {
+                ui.selectable_label(continuous.0, text::CONTINUOUS_ADVANCE_BUTTON_LABEL)
+            })
+            .inner;
+        if continuous_response.clicked() {
+            continuous.0 = !continuous.0;
+        }
+        continuous_response.on_hover_text(text::CONTINUOUS_ADVANCE_BUTTON_TOOLTIP);
 
         let notebook_response = ui.selectable_label(notebook_open, text::NOTEBOOK_BUTTON_LABEL);
         if notebook_response.clicked() {
@@ -1458,6 +1541,7 @@ fn action_icon_row(
     config: &SimConfig,
     run_progress: &RunProgress,
     view_mode: MapViewMode,
+    splice_confirmed_tags: usize,
 ) {
     ui.horizontal(|ui| {
         for (action_mode, glyph) in ACTION_GLYPHS {
@@ -1489,7 +1573,7 @@ fn action_icon_row(
                     Some(action_mode)
                 };
             }
-            let tooltip = if enabled {
+            let mut tooltip = if enabled {
                 text::action_tooltip(action_mode, cost)
             } else {
                 format!(
@@ -1498,6 +1582,24 @@ fn action_icon_row(
                     text::DETAIL_MODE_ONLY_HINT
                 )
             };
+            // Task 152's mutation-level badge: a small corner marker on
+            // Splice reflecting how many of this world's tags are actually
+            // usable in `splice_panel` today (only confirmed ones are
+            // offered, task 147) — the real restriction, not an invented
+            // placeholder tier. Painted directly on the button rect rather
+            // than as a separate row item, so it reads as a badge on the
+            // icon, not a fifth control.
+            if action_mode == ActionMode::Splice {
+                let unlocked = splice_confirmed_tags > 0;
+                let badge_color = if unlocked {
+                    DOT_FILLED_COLOR
+                } else {
+                    DOT_EMPTY_COLOR
+                };
+                let badge_center = response.rect.right_top() + egui::vec2(-3.0, 3.0);
+                ui.painter().circle_filled(badge_center, 3.0, badge_color);
+                tooltip.push_str(&text::splice_tier_hint(splice_confirmed_tags));
+            }
             response.on_hover_text(tooltip);
         }
     });

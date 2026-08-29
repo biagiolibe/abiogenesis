@@ -254,6 +254,13 @@ pub const ERA_BUTTON_TOOLTIP: &str = "Start/resume this era (Space)";
 pub const NOTEBOOK_BUTTON_TOOLTIP: &str = "Open/close the notebook (Tab)";
 
 pub const ADVANCING_DISABLED_HINT: &str = "\n(era already advancing)";
+/// Task 152: same "why is this not clickable" affordance, for Tick/Era
+/// greyed out by the *other* new advance mechanism instead.
+pub const CONTINUOUS_ADVANCING_DISABLED_HINT: &str = "\n(continuous advance is running)";
+
+pub const CONTINUOUS_ADVANCE_BUTTON_LABEL: &str = "▶ Auto";
+pub const CONTINUOUS_ADVANCE_BUTTON_TOOLTIP: &str =
+    "Toggle continuous pulse advancement, at the same rate era playback uses (P)";
 
 // --- HUD — action group ---
 
@@ -313,6 +320,21 @@ pub fn action_tooltip(mode: ActionMode, cost: u32) -> String {
     let name = action_name(mode);
     let description = action_description(mode);
     format!("{name} · cost {cost}\n{description}")
+}
+
+/// Appended to Splice's tooltip by its capability-tier badge (task 152):
+/// `confirmed_tags` is how many of this world's tags have a confirmed
+/// matrix entry (`MatrixKnowledge::is_tag_confirmed`) — `splice_panel`
+/// only ever offers *those* as swap/add candidates, so zero confirmed
+/// tags means Splice can currently do nothing but shift a thermal
+/// optimum, and this is the one place that real restriction gets a
+/// visible marker.
+pub fn splice_tier_hint(confirmed_tags: usize) -> String {
+    if confirmed_tags == 0 {
+        "\n(no confirmed traits yet — only the thermal shift is available)".to_string()
+    } else {
+        format!("\n({confirmed_tags} confirmed trait(s) available to splice in)")
+    }
 }
 
 // --- HUD — population group ---
@@ -407,8 +429,29 @@ pub const SEED_PALETTE_HOVER: &str = "Click an empty cell to place the selected 
 /// room at `ui::HUD_WIDTH`) rather than relying on `egui`'s label wrap, which
 /// broke mid-word ("t/l temp/light · E" / "quit") instead of at a natural
 /// boundary once the combined text got too long.
-pub const KEYBOARD_HINT_PRIMARY: &str = "space era · n pulse · r reseed · wasd pan";
-pub const KEYBOARD_HINT_SECONDARY: &str = "t/l temp/light · Esc quit";
+pub const KEYBOARD_HINT_PRIMARY: &str = "space season · shift+space era · n pulse · p auto";
+pub const KEYBOARD_HINT_SECONDARY: &str = "r reseed · wasd pan · t/l temp/light · Esc menu";
+
+/// Short metabolism abbreviation for `species_row_subtext` (task 152) —
+/// distinct from `metabolism_glyph` (an icon) and `species_catalog_line`'s
+/// `{metabolism:?}` (the full Debug name, too wide for the seed-palette
+/// row); `Predator`/`Decomposer` are already short enough to keep as-is.
+pub fn metabolism_short_label(metabolism: Metabolism) -> &'static str {
+    match metabolism {
+        Metabolism::Photolithic => "photo",
+        Metabolism::Chemolithotroph => "chemo",
+        Metabolism::Predator => "predator",
+        Metabolism::Decomposer => "decomposer",
+    }
+}
+
+/// The seed-palette row's abbreviated preview (task 152, e.g. `photo ·
+/// cold`) — `temp_label` is the same qualitative band
+/// `notebook::temperature_label` computes for the Catalog, passed in rather
+/// than re-derived so both call sites share one threshold implementation.
+pub fn species_row_subtext(metabolism: Metabolism, temp_label: &str) -> String {
+    format!("{} · {temp_label}", metabolism_short_label(metabolism))
+}
 
 // --- Viewport onboarding hints (task 053) ---
 
