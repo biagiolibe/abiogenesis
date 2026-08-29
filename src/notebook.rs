@@ -898,22 +898,18 @@ const EDGE_NEGATIVE_COLOR: egui::Color32 = egui::Color32::from_rgb(220, 96, 96);
 const PARTIAL_EVIDENCE_COLOR: egui::Color32 = egui::Color32::from_gray(130);
 const PARTIAL_EDGE_STROKE: f32 = 1.5;
 
-/// Perpendicular bow distance (task 102) applied to a confirmed/partial edge
-/// when the reverse direction between the same two tags also has something
-/// to draw — the two directions curve apart into two arcs instead of
-/// overlapping straight lines. Tuned by eye against the densest live case
-/// (a 5-6 active-tag world with several confirmed bidirectional pairs):
-/// large enough that the two arcs and their arrowheads/dashes are
-/// unambiguously separate at `NODE_RADIUS`-scale node spacing, small enough
-/// that a curve still reads as "the same short hop, bent" rather than a
-/// wide detour.
+/// Sign-only signal (task 102, repurposed by task 151's pixel-grain
+/// register) telling `stepped_path` which of the pair's two rectangular
+/// corners a confirmed/partial edge should route through when the reverse
+/// direction between the same two tags also has something to draw — the
+/// two directions step apart through *different* corners instead of
+/// overlapping on the identical path. Only its sign matters now (the
+/// former bow-distance magnitude is moot: a stepped path's corner sits
+/// exactly on the two nodes' bounding box, not offset by a tunable
+/// amount) — kept nonzero rather than a plain bool so `0.0` can still mean
+/// "no reverse direction, corner choice doesn't matter" without a third
+/// enum variant threading through `draw_edge`/`draw_dashed_line`.
 const EDGE_BOW: f32 = 16.0;
-
-/// Points sampled along a curved edge to approximate it as short straight
-/// segments for both dashing (`draw_dashed_line`) and arrowhead-tangent
-/// lookup (`draw_edge`) — egui's `Painter` draws bezier shapes directly for
-/// solid strokes, but dashing needs the flattened point list to step along.
-const CURVE_FLATTEN_TOLERANCE: f32 = 0.5;
 
 /// The hypothesis graph (GDD §7, §5.9), replacing task 021's
 /// `active_tags x active_tags` spreadsheet table: `world.active_tags` as
@@ -1066,13 +1062,61 @@ fn hypothesis_grid(
 const EDGE_STROKE_WEAK: f32 = 1.5;
 const EDGE_STROKE_STRONG: f32 = 6.0;
 
-/// Draws one directed edge, straight or bowed (`curvature != 0.0`, task
-/// 102), capped with a small triangular arrowhead at the receiver end.
-/// `value` is the confirmed matrix entry (`±1` or `±2` at the default
-/// config): its magnitude, scaled against `config.tags.effect_intensity_max`
-/// rather than a hardcoded `2`, linearly interpolates the stroke width
-/// between `EDGE_STROKE_WEAK` and `EDGE_STROKE_STRONG` — color (sign) and
-/// thickness (magnitude) are the edge's entire grammar now, no on-grid text.
+/// Builds an axis-aligned (horizontal-then-vertical, or vice versa) path
+/// between two node centers (task 151's pixel-grain register — replaces
+/// the old smooth/diagonal bezier edge with a stepped one). Two node
+/// centers sharing an exact `x` or `y` need no corner at all. Otherwise the
+/// path steps through one of the pair's two rectangular corners, chosen by
+/// `curvature`'s sign against a *canonicalized* pair of points (independent
+/// of which one is `from`/`to`) — the same problem `bow_axis` used to solve
+/// for the old bezier curves (bugfix, reported live 2026-08-12: two edges
+/// for the same pair, one each direction, must land on visibly different
+/// paths, not the identical one) — so the reverse direction between the
+/// same two tags reliably steps through the *other* corner instead of
+/// retracing this one.
+fn stepped_path(from: egui::Pos2, to: egui::Pos2, curvature: f32) -> Vec<egui::Pos2> {
+    if (from.x - to.x).abs() < f32::EPSILON || (from.y - to.y).abs() < f32::EPSILON {
+        return vec![from, to];
+    }
+    let (p1, p2) = if (from.x, from.y) <= (to.x, to.y) {
+        (from, to)
+    } else {
+        (to, from)
+    };
+    let corner = if curvature >= 0.0 {
+        egui::pos2(p2.x, p1.y)
+    } else {
+        egui::pos2(p1.x, p2.y)
+    };
+    vec![from, corner, to]
+}
+
+/// Shortens a path's first/last segments by `trim` at each end (task 151) —
+/// `hypothesis_grid`'s edges start/end at a node's *rim*, not its center,
+/// same role the old single-segment `start`/`end` trim played before the
+/// path could have an interior corner.
+fn trim_path_ends(points: &mut [egui::Pos2], trim: f32) {
+    let Some(&second) = points.get(1) else {
+        return;
+    };
+    let first_dir = (second - points[0]).normalized();
+    points[0] += first_dir * trim;
+    let last = points.len() - 1;
+    let second_to_last = points[last - 1];
+    let last_dir = (points[last] - second_to_last).normalized();
+    points[last] -= last_dir * trim;
+}
+
+/// Draws one directed edge as a stepped path, capped with a small
+/// triangular arrowhead at the receiver end, aligned to the final
+/// segment's own direction (always axis-aligned now, so the arrowhead
+/// always points straight up/down/left/right rather than along a curve's
+/// local tangent). `value` is the confirmed matrix entry (`±1` or `±2` at
+/// the default config): its magnitude, scaled against
+/// `config.tags.effect_intensity_max` rather than a hardcoded `2`,
+/// linearly interpolates the stroke width between `EDGE_STROKE_WEAK` and
+/// `EDGE_STROKE_STRONG` — color (sign) and thickness (magnitude) are the
+/// edge's entire grammar, no on-grid text.
 fn draw_edge(
     painter: &egui::Painter,
     from: egui::Pos2,
@@ -1082,76 +1126,36 @@ fn draw_edge(
     config: &SimConfig,
     curvature: f32,
 ) {
-    let dir = (to - from).normalized();
-    let start = from + dir * NODE_RADIUS;
-    let end = to - dir * NODE_RADIUS;
+    let mut points = stepped_path(from, to, curvature);
+    trim_path_ends(&mut points, NODE_RADIUS);
 
     let intensity_max = (config.tags.effect_intensity_max.max(1)) as f32;
     let t = (value.unsigned_abs() as f32 / intensity_max).clamp(0.0, 1.0);
     let width = EDGE_STROKE_WEAK + (EDGE_STROKE_STRONG - EDGE_STROKE_WEAK) * t;
     let stroke = egui::Stroke::new(width, color);
+    for pair in points.windows(2) {
+        painter.line_segment([pair[0], pair[1]], stroke);
+    }
 
-    // Tangent direction at the endpoint, used for the arrowhead — the
-    // straight chord direction for an uncurved edge, or the curve's local
-    // direction just before `end` once it's bowed (an arrowhead aligned to
-    // the chord instead would visibly point off the curve).
-    let tangent = if curvature.abs() < f32::EPSILON {
-        painter.line_segment([start, end], stroke);
-        dir
-    } else {
-        let control = start.lerp(end, 0.5) + bow_axis(from, to) * curvature;
-        let bezier = egui::epaint::QuadraticBezierShape::from_points_stroke(
-            [start, control, end],
-            false,
-            egui::Color32::TRANSPARENT,
-            stroke,
-        );
-        let near_end = bezier.sample(0.9);
-        painter.add(egui::Shape::QuadraticBezier(bezier));
-        (end - near_end).normalized()
-    };
-
+    let last = points.len() - 1;
+    let tangent = (points[last] - points[last - 1]).normalized();
     let perp_t = perp(tangent);
     painter.add(egui::Shape::convex_polygon(
         vec![
-            end,
-            end - tangent * ARROW_LENGTH + perp_t * ARROW_WIDTH * 0.5,
-            end - tangent * ARROW_LENGTH - perp_t * ARROW_WIDTH * 0.5,
+            points[last],
+            points[last] - tangent * ARROW_LENGTH + perp_t * ARROW_WIDTH * 0.5,
+            points[last] - tangent * ARROW_LENGTH - perp_t * ARROW_WIDTH * 0.5,
         ],
         color,
         egui::Stroke::NONE,
     ));
 }
 
-/// Perpendicular of a normalized direction vector, rotated 90° — the same
-/// "which side does this bow/offset toward" primitive `draw_edge` and
-/// `draw_dashed_line` both need.
+/// Perpendicular of a normalized direction vector, rotated 90° — the arrow-
+/// width offset `draw_edge` needs at the (always axis-aligned) final
+/// segment's tangent.
 fn perp(dir: egui::Vec2) -> egui::Vec2 {
     egui::vec2(-dir.y, dir.x)
-}
-
-/// The bow axis for a curved edge between two node positions, independent
-/// of which one is `from` and which is `to` (bugfix, reported live
-/// 2026-08-12: two arrows for the same pair — one confirmed positive, one
-/// confirmed negative — drew on the exact same curve instead of bowing
-/// apart). `hypothesis_grid` signs `curvature` by tag-index order (`ei <
-/// ri`) so the pair's two directions are meant to bow to opposite sides,
-/// but `draw_edge`/`draw_dashed_line` used to compute their bow axis as
-/// `perp((to - from).normalized())` — and `perp` of a direction flips sign
-/// whenever `from`/`to` swap, which is exactly what happens between a
-/// pair's two directions. That flip silently cancelled the caller's own
-/// sign flip, so both directions ended up adding the *same* absolute
-/// offset to their control point and landed on the identical curve. Tie
-/// break on `from`'s coordinates (not `to`'s or the tag order) is
-/// arbitrary but must be *some* endpoint-order-independent rule — using
-/// `from`/`to` directly, as before, is exactly what was wrong.
-fn bow_axis(from: egui::Pos2, to: egui::Pos2) -> egui::Vec2 {
-    let canonical_dir = if (from.x, from.y) < (to.x, to.y) {
-        (to - from).normalized()
-    } else {
-        (from - to).normalized()
-    };
-    perp(canonical_dir)
 }
 
 /// Whether a tag has zero evidence in *every* direction against every other
@@ -1175,32 +1179,18 @@ fn has_no_evidence(slot: TagSlot, tag_count: usize, knowledge: &MatrixKnowledge)
 const DASH_LENGTH: f32 = 5.0;
 const DASH_GAP: f32 = 4.0;
 
-/// A dashed line (task 102, replacing task 028's lineless dot) marking a
-/// pair with `evidence > 0.0` but not yet confirmed: "a relationship exists
-/// here, details pending." Deliberately no arrowhead and uniform thickness
-/// — sign and magnitude genuinely aren't known pre-confirmation, so there's
-/// nothing for either to encode, and the missing arrowhead keeps a partial
-/// edge from reading as a weaker confirmed one at a glance. Straight when
-/// `curvature == 0.0`, otherwise flattened from the same bow curve
-/// `draw_edge` uses for its bidirectional case, so a confirmed/partial pair
-/// bows apart consistently regardless of which direction is which.
+/// A dashed stepped path (task 102, replacing task 028's lineless dot;
+/// stepped since task 151) marking a pair with `evidence > 0.0` but not yet
+/// confirmed: "a relationship exists here, details pending." Deliberately
+/// no arrowhead and uniform thickness — sign and magnitude genuinely
+/// aren't known pre-confirmation, so there's nothing for either to encode,
+/// and the missing arrowhead keeps a partial edge from reading as a weaker
+/// confirmed one at a glance. Same `stepped_path`/corner-choice as
+/// `draw_edge`, so a confirmed/partial pair steps apart consistently
+/// regardless of which direction is which.
 fn draw_dashed_line(painter: &egui::Painter, from: egui::Pos2, to: egui::Pos2, curvature: f32) {
-    let dir = (to - from).normalized();
-    let start = from + dir * NODE_RADIUS;
-    let end = to - dir * NODE_RADIUS;
-
-    let points = if curvature.abs() < f32::EPSILON {
-        vec![start, end]
-    } else {
-        let control = start.lerp(end, 0.5) + bow_axis(from, to) * curvature;
-        let bezier = egui::epaint::QuadraticBezierShape::from_points_stroke(
-            [start, control, end],
-            false,
-            egui::Color32::TRANSPARENT,
-            egui::Stroke::NONE,
-        );
-        bezier.flatten(Some(CURVE_FLATTEN_TOLERANCE))
-    };
+    let mut points = stepped_path(from, to, curvature);
+    trim_path_ends(&mut points, NODE_RADIUS);
     draw_dashed_polyline(
         painter,
         &points,
@@ -1208,10 +1198,10 @@ fn draw_dashed_line(painter: &egui::Painter, from: egui::Pos2, to: egui::Pos2, c
     );
 }
 
-/// Steps along a polyline (straight, 2 points, or a flattened curve) in
-/// alternating `DASH_LENGTH`/`DASH_GAP` stretches — the shared primitive
-/// behind `draw_dashed_line`, working the same way regardless of whether
-/// the underlying path is straight or curved.
+/// Steps along a polyline (2 points, or a stepped 3-point path with one
+/// corner) in alternating `DASH_LENGTH`/`DASH_GAP` stretches — the shared
+/// primitive behind `draw_dashed_line`, working the same way regardless of
+/// how many segments the path has.
 fn draw_dashed_polyline(painter: &egui::Painter, points: &[egui::Pos2], stroke: egui::Stroke) {
     let mut on = true;
     let mut budget = DASH_LENGTH;
@@ -1561,21 +1551,35 @@ mod tests {
         assert!(line.contains("Thistledown"), "got: {line}");
     }
 
-    /// Bugfix regression (reported live 2026-08-12): a pair with both a
-    /// confirmed positive and a confirmed negative direction must bow the
-    /// two arcs to opposite sides, not draw them on the identical curve.
-    /// `bow_axis` must return the *same* vector regardless of which
-    /// endpoint is `from`/`to` — the caller's own `curvature` sign (keyed
-    /// off tag index order, independent of draw order) is what's supposed
-    /// to separate the two directions; `bow_axis` flipping too (the actual
-    /// bug: it used to derive its axis from the call-local `(to - from)`
-    /// direction, which flips between a pair's two directions) would
-    /// cancel that sign back out.
+    /// Bugfix regression (reported live 2026-08-12, re-verified for task
+    /// 151's stepped paths): a pair with both a confirmed positive and a
+    /// confirmed negative direction must step through opposite corners, not
+    /// draw them on the identical path. `hypothesis_grid` gives the two
+    /// directions opposite `curvature` signs (keyed off tag index order,
+    /// independent of draw order) — `stepped_path` must turn that into two
+    /// *different* corners regardless of which endpoint is `from`/`to` for
+    /// each call, the exact property the old `bow_axis` helper existed to
+    /// guarantee for the bezier curves this replaced.
     #[test]
-    fn bow_axis_is_independent_of_endpoint_order() {
+    fn stepped_path_gives_opposite_corners_for_a_bidirectional_pairs_two_directions() {
         let a = egui::pos2(10.0, 20.0);
         let b = egui::pos2(80.0, 65.0);
-        assert_eq!(bow_axis(a, b), bow_axis(b, a));
+        let a_to_b = stepped_path(a, b, EDGE_BOW);
+        let b_to_a = stepped_path(b, a, -EDGE_BOW);
+
+        assert_ne!(
+            a_to_b[1], b_to_a[1],
+            "the two directions must step through different corners"
+        );
+    }
+
+    /// Two node centers sharing an exact `x` or `y` need no corner — a
+    /// single segment is already axis-aligned.
+    #[test]
+    fn stepped_path_is_a_single_segment_when_already_axis_aligned() {
+        let a = egui::pos2(10.0, 20.0);
+        let b = egui::pos2(10.0, 80.0);
+        assert_eq!(stepped_path(a, b, EDGE_BOW), vec![a, b]);
     }
 
     /// Task 144: the translated form appends every species currently

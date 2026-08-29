@@ -1396,9 +1396,16 @@ fn update_map_view_mode(
 
 /// Side length, in texels, of a generated shape mask (task 032). Independent
 /// of `CELL_SIZE` — `Sprite::custom_size` stretches whatever texture
-/// resolution to the on-screen cell, so this only controls how smooth the
+/// resolution to the on-screen cell, so this only controls how blocky the
 /// shape's edge looks, not its footprint on the grid.
-const SHAPE_TEXTURE_SIZE: u32 = 20;
+const SHAPE_TEXTURE_SIZE: u32 = 24;
+
+/// How many coarse blocks per side a shape's silhouette snaps to (task 151's
+/// pixel-grain register — replaces the old smooth per-texel mask). Divides
+/// `SHAPE_TEXTURE_SIZE` evenly so every block covers exactly
+/// `SHAPE_TEXTURE_SIZE / SHAPE_BLOCK_GRID` texels; "a handful of blocks per
+/// shape," not a curve, per the design source's own framing.
+const SHAPE_BLOCK_GRID: u32 = 6;
 
 /// One procedurally generated shape texture per `Metabolism` variant (task
 /// 032 — a second visual dimension beyond species hue/energy lightness, so a
@@ -1440,13 +1447,23 @@ impl MetabolismShapes {
 /// opaque white where `inside` returns `true`, fully transparent elsewhere.
 /// `Sprite::color`'s existing species/energy tint multiplies this alpha
 /// mask, so the shape carries no color information of its own.
+///
+/// Task 151: `inside` is sampled once per `SHAPE_BLOCK_GRID` block, at that
+/// block's center, rather than once per texel — every texel inside a block
+/// gets the identical sample, so the silhouette steps at block boundaries
+/// instead of curving smoothly. Baked directly into the texture data (not
+/// left to the GPU's sampler/filtering mode), so the blockiness is the same
+/// regardless of how the sprite is later scaled or filtered.
 fn shape_mask_image(inside: impl Fn(f32, f32) -> bool) -> Image {
     let size = SHAPE_TEXTURE_SIZE;
+    let blocks = SHAPE_BLOCK_GRID;
     let mut data = Vec::with_capacity((size * size * 4) as usize);
     for row in 0..size {
         for col in 0..size {
-            let nx = (col as f32 + 0.5) / size as f32 * 2.0 - 1.0;
-            let ny = (row as f32 + 0.5) / size as f32 * 2.0 - 1.0;
+            let block_col = col * blocks / size;
+            let block_row = row * blocks / size;
+            let nx = (block_col as f32 + 0.5) / blocks as f32 * 2.0 - 1.0;
+            let ny = (block_row as f32 + 0.5) / blocks as f32 * 2.0 - 1.0;
             let alpha = if inside(nx, ny) { 255 } else { 0 };
             data.extend_from_slice(&[255, 255, 255, alpha]);
         }
@@ -1695,7 +1712,7 @@ fn cell_color(
         let intensity = (cell.residue / config.energy.residue_on_death).clamp(0.0, 1.0);
         Color::hsl(30.0, 0.2, 0.08 + intensity * 0.22)
     } else {
-        dithered_biome_color(cell.biome, x, y)
+        dithered_biome_color(cell.biome, world.seed, x, y)
     };
 
     let base = toxicity_tint(base, cell.toxicity, elapsed);
@@ -1772,23 +1789,56 @@ fn biome_color(biome: Biome) -> Color {
     }
 }
 
-/// Two-tone checkerboard dithering (task 112, new — `TerrainKind`
-/// rendering never had this): a fixed `(x + y) % 2` pattern, never noise,
-/// and never blended across a biome boundary since each cell's dither
-/// offset is computed from `biome_color(cell.biome)` alone, independent of
-/// its neighbours. Small enough to read as material texture, not a second
-/// color.
+/// Per-step lightness magnitude for `dithered_biome_color`'s noise (task
+/// 112 originally, retuned by task 151 from a fixed two-tone checkerboard
+/// to a multi-level noise texture) — small enough to read as material
+/// texture, not a second color, same rationale as before.
 const DITHER_LIGHTNESS_DELTA: f32 = 0.015;
 
-fn dithered_biome_color(biome: Biome, x: usize, y: usize) -> Color {
+/// How many discrete lightness levels `dithered_biome_color`'s noise steps
+/// through (task 151) — more than the old dither's two, so biomes read as
+/// a textured surface rather than a flat checkerboard, while staying a
+/// small, fixed set of levels (not continuous per-cell noise) so nearby
+/// cells of the same biome still visibly cohere as one surface.
+const BIOME_NOISE_LEVELS: u32 = 4;
+
+/// Deterministic per-cell hash (task 151), mixing the world seed with cell
+/// coordinates into a well-distributed `u32` — no `rand::rng()`
+/// (TECH_DESIGN.md §5, `sim`/`world`/`config` invariant; this is
+/// presentation-only, in `render.rs`, but follows the same rule since it's
+/// still keyed off `SimWorld::seed`, not real randomness). Two cells with
+/// the same `(seed, x, y)` always hash identically; different worlds (a
+/// different seed) get a different-looking texture over the same terrain.
+/// The mixing step is SplitMix64's (public domain) applied to a combined
+/// key — cheap, well-distributed, used only for this cosmetic texture.
+fn cell_noise_hash(seed: u64, x: usize, y: usize) -> u32 {
+    let key = seed
+        ^ (x as u64).wrapping_mul(0x9E3779B97F4A7C15)
+        ^ (y as u64).wrapping_mul(0xBF58476D1CE4E5B9);
+    let mut z = key.wrapping_add(0x9E3779B97F4A7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+    z ^= z >> 31;
+    (z >> 32) as u32
+}
+
+/// Procedural noise texture over each biome's flat fill (task 151, replacing
+/// the old fixed `(x + y) % 2` two-tone checkerboard — never blended across
+/// a biome boundary, since each cell's offset is computed from
+/// `biome_color(cell.biome)` alone, independent of its neighbours' biome).
+/// `seed` is the owning `SimWorld::seed`, so the same terrain looks
+/// differently textured from one world to the next, same as every other
+/// seed-derived visual in this game.
+fn dithered_biome_color(biome: Biome, seed: u64, x: usize, y: usize) -> Color {
     let Color::Hsla(hsla) = biome_color(biome) else {
         return biome_color(biome);
     };
-    let delta = if (x + y).is_multiple_of(2) {
-        DITHER_LIGHTNESS_DELTA
-    } else {
-        -DITHER_LIGHTNESS_DELTA
-    };
+    let level = cell_noise_hash(seed, x, y) % BIOME_NOISE_LEVELS;
+    // Centered on zero and symmetric (e.g. 4 levels -> -1.5, -0.5, 0.5, 1.5
+    // step units) so the average over many cells stays at the biome's own
+    // base lightness, not shifted toward one end.
+    let step = level as f32 - (BIOME_NOISE_LEVELS as f32 - 1.0) / 2.0;
+    let delta = step * DITHER_LIGHTNESS_DELTA;
     Color::hsl(
         hsla.hue,
         hsla.saturation,
@@ -2166,7 +2216,7 @@ mod tests {
         let Color::Hsla(empty) = detail_color(&world, &config, x, y) else {
             panic!("expected an HSL color");
         };
-        assert_eq!(empty, dithered_biome_hsla(Biome::Plain, x, y));
+        assert_eq!(empty, dithered_biome_hsla(Biome::Plain, world.seed, x, y));
         assert!(empty.lightness < residue.lightness);
     }
 
@@ -2188,7 +2238,7 @@ mod tests {
 
         assert_eq!(
             detail_color(&world, &config, x, y),
-            dithered_biome_color(Biome::Plain, x, y)
+            dithered_biome_color(Biome::Plain, world.seed, x, y)
         );
     }
 
@@ -2199,8 +2249,8 @@ mod tests {
         hsla
     }
 
-    fn dithered_biome_hsla(biome: Biome, x: usize, y: usize) -> bevy::color::Hsla {
-        let Color::Hsla(hsla) = dithered_biome_color(biome, x, y) else {
+    fn dithered_biome_hsla(biome: Biome, seed: u64, x: usize, y: usize) -> bevy::color::Hsla {
+        let Color::Hsla(hsla) = dithered_biome_color(biome, seed, x, y) else {
             panic!("expected an HSL color");
         };
         hsla
@@ -2265,22 +2315,40 @@ mod tests {
         );
     }
 
+    /// Task 151: the noise texture varies lightness only, stays within a
+    /// small band of the biome's own base color, is deterministic (same
+    /// seed/coords -> same result), and actually uses more than one of its
+    /// `BIOME_NOISE_LEVELS` discrete steps across a stretch of cells rather
+    /// than degenerating to a single value.
     #[test]
-    fn dithering_alternates_lightness_by_cell_parity_without_changing_hue_or_saturation() {
-        let even = dithered_biome_hsla(Biome::Plain, 0, 0);
-        let odd = dithered_biome_hsla(Biome::Plain, 1, 0);
+    fn biome_noise_varies_lightness_within_a_small_band_deterministically() {
         let base = biome_hsla(Biome::Plain);
+        let seed = 7u64;
+        let samples: Vec<_> = (0..16)
+            .map(|x| dithered_biome_hsla(Biome::Plain, seed, x, 0))
+            .collect();
 
-        assert_eq!(even.hue, base.hue);
-        assert_eq!(odd.hue, base.hue);
-        assert_eq!(even.saturation, base.saturation);
-        assert_eq!(odd.saturation, base.saturation);
-        assert_ne!(
-            even.lightness, odd.lightness,
-            "adjacent-parity cells of the same biome must dither to different lightness"
+        for sample in &samples {
+            assert_eq!(sample.hue, base.hue);
+            assert_eq!(sample.saturation, base.saturation);
+            assert!((sample.lightness - base.lightness).abs() < 0.05);
+        }
+
+        assert_eq!(
+            dithered_biome_hsla(Biome::Plain, seed, 3, 5),
+            dithered_biome_hsla(Biome::Plain, seed, 3, 5),
+            "same seed and coordinates must hash to the same lightness every time"
         );
-        assert!((even.lightness - base.lightness).abs() < 0.05);
-        assert!((odd.lightness - base.lightness).abs() < 0.05);
+
+        let distinct_lightnesses: std::collections::HashSet<_> = samples
+            .iter()
+            .map(|hsla| hsla.lightness.to_bits())
+            .collect();
+        assert!(
+            distinct_lightnesses.len() > 2,
+            "expected more than the old dither's two discrete levels, got {}",
+            distinct_lightnesses.len()
+        );
     }
 
     #[test]

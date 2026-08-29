@@ -416,6 +416,26 @@ fn configure_fonts(mut contexts: EguiContexts, mut done: Local<bool>) -> Result 
             },
         ],
     ));
+    // Task 151's pixel-grain register: egui's default theme rounds window/
+    // menu/widget corners — squared off here, once, globally, rather than
+    // hunting down a `corner_radius` call on every individual panel/button/
+    // window this and other modules (`screens.rs`, `notebook.rs`) build.
+    // Frame-level radii set explicitly elsewhere (e.g. `screens.rs`'s era-
+    // reveal card) are separate calls and unaffected by this default.
+    ctx.all_styles_mut(|style| {
+        let visuals = &mut style.visuals;
+        visuals.window_corner_radius = egui::CornerRadius::ZERO;
+        visuals.menu_corner_radius = egui::CornerRadius::ZERO;
+        for widgets in [
+            &mut visuals.widgets.noninteractive,
+            &mut visuals.widgets.inactive,
+            &mut visuals.widgets.hovered,
+            &mut visuals.widgets.active,
+            &mut visuals.widgets.open,
+        ] {
+            widgets.corner_radius = egui::CornerRadius::ZERO;
+        }
+    });
     *done = true;
     Ok(())
 }
@@ -1313,8 +1333,11 @@ fn hairline(ui: &mut egui::Ui) {
 }
 
 /// Which shape `dot_row` paints per slot — `Tick` for the action budget
-/// (matching the redesign mockup's rounded-rect ticks), `Circle` for
-/// objective era-progress (matching its own mockup's hollow/filled dots).
+/// (task 151: squared off from the redesign mockup's original rounded-rect
+/// ticks, matching the rest of the pixel-grain HUD chrome), `Circle` for
+/// objective era-progress (matching its own mockup's hollow/filled dots —
+/// a deliberately distinct round shape from `Tick`, not chrome rounding,
+/// so left untouched by task 151's corner-squaring).
 /// Two call sites, two mockup-specified shapes, kept as one function rather
 /// than two near-duplicates.
 #[derive(Clone, Copy)]
@@ -1361,7 +1384,7 @@ fn dot_row(ui: &mut egui::Ui, filled: u32, total: u32, shape: DotShape) -> egui:
                 } else {
                     DOT_EMPTY_COLOR
                 };
-                painter.rect_filled(tick_rect, 1.5, color);
+                painter.rect_filled(tick_rect, 0.0, color);
             }
             DotShape::Circle => {
                 let center = egui::pos2(x + DOT_SIZE / 2.0, rect.center().y);

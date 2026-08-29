@@ -212,7 +212,8 @@ fn era_reveal_screen_ui(
         // it doesn't read as bare text floating on the darkened grid.
         egui::Frame::group(ui.style())
             .fill(ui.visuals().panel_fill)
-            .corner_radius(8.0)
+            // Task 151's pixel-grain register: squared off, was 8.0.
+            .corner_radius(0.0)
             .inner_margin(egui::Margin::same(20))
             .show(ui, |ui| {
                 ui.set_max_width(420.0);
