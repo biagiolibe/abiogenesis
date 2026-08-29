@@ -326,10 +326,12 @@ const OBJECTIVE_NARRATIVE_COLOR: egui::Color32 = egui::Color32::from_rgb(180, 17
 pub struct UiPlugin;
 
 /// DejaVu Sans (Bitstream Vera License, see `assets/fonts/DejaVu-LICENSE.txt`)
-/// covers Greek script and the `●` bullet that egui's built-in default font
-/// lacks — those glyphs were rendering as tofu boxes (playtest finding,
-/// task 041 session): `notebook.rs::TAG_LETTERS`/`TAG_GLYPH` and this
-/// module's `SPECIES_GLYPH`. It does not add color-emoji support: egui has
+/// covers the `●` bullet that egui's built-in default font lacks — those
+/// glyphs were rendering as tofu boxes (playtest finding, task 041
+/// session): `notebook.rs::TAG_GLYPH` and this module's `SPECIES_GLYPH`
+/// (task 155 replaced `TAG_LETTERS`'s Greek script with ASCII 3-letter
+/// codes, which no longer need this font's coverage). It does not add
+/// color-emoji support: egui has
 /// no COLR/bitmap glyph rendering path at all, so `ACTION_GLYPHS`' 🌱💀🔬
 /// stay unresolved regardless of font (⚡ happens to have a monochrome
 /// dingbat glyph and already renders).

@@ -56,7 +56,7 @@ Every species has a readable side and a hidden side.
 - **Reproduction threshold** — once an organism has enough energy, it reproduces into an empty neighboring cell. The threshold is the same for every species and shown in the notebook's species catalog (`tab`), alongside metabolism and temperature range. The HUD's Biosphere section instead shows each species' population trend since the last era (▲ rising / ▼ falling / ▬ stable) — actual births are logged as a per-era summary ("Kael: +3 births this era") when they happen.
 
 **Hidden:**
-- **1 to 3 biochemical tags** per species — shown only as nameless glyphs and colors. Tags are the *only* thing that determines how two adjacent species affect each other, and that effect is defined by a secret matrix generated fresh for every world. You never see the matrix directly — you infer it from what happens when tagged organisms sit next to each other.
+- **1 to 3 biochemical tags** per species — shown as named 3-letter codes and colors, but still opaque as to effect. Tags are the *only* thing that determines how two adjacent species affect each other, and that effect is defined by a secret matrix generated fresh for every world. You never see the matrix directly — you infer it from what happens when tagged organisms sit next to each other.
 
 The matrix is **directional**: species A carrying a tag that harms species B's tag doesn't mean B harms A back. Figuring out that asymmetry is usually the first real discovery of a run.
 

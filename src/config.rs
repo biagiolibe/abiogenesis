@@ -503,7 +503,7 @@ pub struct TagConfig {
 impl Default for TagConfig {
     fn default() -> Self {
         Self {
-            global_tag_pool: 10,
+            global_tag_pool: 15,
             active_tags_early: 5,
             active_tags_late: 8,
             tags_per_species_min: 1,

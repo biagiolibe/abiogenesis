@@ -301,10 +301,10 @@ untracked `species_color` swatch violation). 182 is the dependency root for
 183/184's shared color constants.
 Independent of the redesign corpus and of the 171 Phase-3 gate.
 
-**Phase 3 — content**: 155 trait archetypes, 156 dominant family bias
+**Phase 3 — content**: 155 trait archetypes `[x]`, 156 dominant family bias
 (depends on 155), 157 narrative generation (blocking pre-decision inside
 the file: cross-cutting §5, structured fragments vs. strings). Task files
-written 2026-08-29 (scoping only, no implementation) → [155](tasks/155-trait-archetypes.md),
+written 2026-08-29 (scoping only, no implementation) → [155](tasks/done/155-trait-archetypes.md),
 [156](tasks/156-dominant-family-bias.md), [157](tasks/157-narrative-generation.md).
 
 **Phase 4 — session structure**: 158 transitions and end of run, 159 world-summary

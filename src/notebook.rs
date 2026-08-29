@@ -610,33 +610,63 @@ const TAG_GLYPH: &str = "●";
 /// pair, not any one species, so there's no `species_color` to render.
 const CONFIRMATION_GLYPH: &str = "★";
 
-/// Fixed Greek-letter alphabet for `tag_glyph` (task 029): opaque, stable
-/// within a run, deterministic from `TagId` — never a hint at the tag's
-/// effect (GDD §11 "nameless glyphs/colors, learned empirically").
-const TAG_LETTERS: [&str; 24] = [
-    "α", "β", "γ", "δ", "ε", "ζ", "η", "θ", "ι", "κ", "λ", "μ", "ν", "ξ", "ο", "π", "ρ", "σ", "τ",
-    "υ", "φ", "χ", "ψ", "ω",
+/// A named trait archetype (task 155): a real/quasi-real biochemistry term,
+/// grouped into one of 5 families — the family axis is currently pure data,
+/// not surfaced or weighted by any shipped mechanic (task 156 will read it
+/// for matrix-intensity bias).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TraitFamily {
+    Structural,
+    Metabolic,
+    Signalling,
+    Genetic,
+    Storage,
+}
+
+/// 15-entry active pool of trait archetypes (task 155), replacing the
+/// Greek-letter alphabet: opaque as to matrix effect, stable within a run,
+/// deterministic from `TagId` — never a hint at the tag's effect (GDD §11
+/// "nameless glyphs/colors, learned empirically"; the non-negotiable rule
+/// that a trait's name/code never hints at sign). 3 traits per family, in
+/// the order of `redesign/processed/abiogenesis-tag-archetypes.md`'s five
+/// tables; the 10 "riserva futura" traits from that doc are documentation
+/// only and not included here.
+const TAG_ARCHETYPES: [(&str, &str, TraitFamily); 15] = [
+    ("CHT", "Chitinous wall", TraitFamily::Structural),
+    ("POR", "Ionic pore", TraitFamily::Structural),
+    ("LIP", "Lipid membrane", TraitFamily::Structural),
+    ("CHL", "Chelatase", TraitFamily::Metabolic),
+    ("FRM", "Fermentation enzyme", TraitFamily::Metabolic),
+    ("OSM", "Osmoregulator", TraitFamily::Metabolic),
+    ("QRM", "Quorum pheromone", TraitFamily::Signalling),
+    ("FLG", "Chemotactic flagellum", TraitFamily::Signalling),
+    ("REC", "Membrane receptor", TraitFamily::Signalling),
+    ("PRN", "Structural prion", TraitFamily::Genetic),
+    ("PLM", "Mobile plasmid", TraitFamily::Genetic),
+    ("RBZ", "Catalytic ribozyme", TraitFamily::Genetic),
+    ("CRS", "Storage crystal", TraitFamily::Storage),
+    ("SPO", "Dormant endospore", TraitFamily::Storage),
+    ("VAC", "Lipid vacuole", TraitFamily::Storage),
 ];
 
-/// A tag's stable opaque letter, alongside its color, so a player can say
-/// "tag α" instead of pointing at a colored dot — purely a more
+/// A tag's stable opaque 3-letter code, alongside its color, so a player can
+/// say "tag CHT" instead of pointing at a colored dot — purely a more
 /// distinguishable handle, not a hint at meaning (GDD §11).
 pub fn tag_glyph(tag: TagId) -> &'static str {
-    TAG_LETTERS[tag.0 as usize % TAG_LETTERS.len()]
+    TAG_ARCHETYPES[tag.0 as usize % TAG_ARCHETYPES.len()].0
 }
 
 /// Task 143's friction fix would matter equally for `tag_glyph` if the game
-/// ever named traits with opaque codes — it currently only uses single
-/// Greek letters (`TAG_LETTERS`), already less opaque than the design
-/// doc's illustrative three-letter codes, but task 144 still applies the
-/// same principle: for the log's first few observations, the confirmation
-/// message names which species currently carry the glyph, not just the
-/// glyph alone.
+/// ever named traits with opaque codes — since task 155 it does: 3-letter
+/// codes (`TAG_ARCHETYPES`) rather than single Greek letters, but task 144
+/// still applies the same principle: for the log's first few observations,
+/// the confirmation message names which species currently carry the glyph,
+/// not just the glyph alone.
 const FIRST_N_TRANSLATED_OBSERVATIONS: usize = 5;
 
 /// `tag_glyph(tag)`, optionally suffixed with the current roster's species
-/// that carry it — `"α (Halo)"`, `"α (Halo, Rask)"` if more than one, or
-/// plain `"α"` if none do (a tag not yet on any known species, or
+/// that carry it — `"CHT (Halo)"`, `"CHT (Halo, Rask)"` if more than one, or
+/// plain `"CHT"` if none do (a tag not yet on any known species, or
 /// translation not requested). Applied by `accumulate_evidence` only for
 /// the first `FIRST_N_TRANSLATED_OBSERVATIONS` log entries of a run (task
 /// 144, `redesign/processed/culture-shock-friction-fixes.md` Intervento

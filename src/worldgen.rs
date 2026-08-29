@@ -1381,7 +1381,7 @@ mod tests {
     #[test]
     fn survive_in_toxic_zone_is_offered_across_a_real_fraction_of_seeds() {
         let config = SimConfig::default();
-        let n_seeds = 50u64;
+        let n_seeds = 500u64;
         let mut offered = 0;
         for seed in 0..n_seeds {
             let mut world = SimWorld::new(seed, &config);

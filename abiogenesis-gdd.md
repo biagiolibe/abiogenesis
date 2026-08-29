@@ -135,10 +135,10 @@ Metabolisms and environmental ranges are **readable** (anchors for the player). 
 
 Two levels are distinguished, so as not to conflate variety and difficulty:
 
-- **Global tag pool [DECIDED: 10 / PROPOSED: 15]:** ~**10 glyphs** total biochemical tags in the game, to give visual variety between worlds. *A design pass proposes raising this to **15** (a launch pool, with a further 10 documented in reserve). Pool size does **not** affect the difficulty of any single run — only how much two different worlds resemble each other. At 10, a late world with 8 active tags covers 80% of the pool; at 15 it covers ~53%, leaving real room for two late worlds to feel chemically distinct. See the trait-archetypes design document.*
+- **Global tag pool [DECIDED: 15]:** **15** named trait archetypes total in the game (task 155), to give visual variety between worlds; a further 10 are documented in reserve for future expansion but not implemented. Pool size does **not** affect the difficulty of any single run — only how much two different worlds resemble each other. At the earlier pool of 10, a late world with 8 active tags covered 80% of the pool; at 15 it covers ~53%, leaving real room for two late worlds to feel chemically distinct. See the trait-archetypes design document.
 - **Active tags per world [DECIDED]:** only a subset is actually in play in a given world. **Difficulty grows by increasing active tags, not the pool.** Baseline: **5 active tags** in the first worlds, up to **~8** in late worlds. *A design pass proposes **[PROPOSED, to validate in playtest]** softening world 0 to 4, raising the late ceiling to 9, and making the ramp gradual (4→5→6→7→8→9) rather than two steps — but this is the one genuinely tuned difficulty lever in the game, so it warrants more caution than the pool change above.*
 
-**Named trait archetypes [PROPOSED]:** the nameless glyphs can be replaced with real biochemical terms (chitinous wall, ionic pore, quorum pheromone, structural prion, catalytic ribozyme…), each with a three-letter code in the style of real gene/protein abbreviations, grouped into five **families** (structural, metabolic, signalling, genetic, storage). The naming rule is strict: a name describes what something *is or does structurally*, **never** whether its effect is good or bad — the matrix stays independent of the name. Real names carry real-world associations, but that is a feature here rather than a leak: worlds are alien, chemistries differ, and the matrix is re-rolled every world, so a player who assumes a prion behaves as it does on Earth gets corrected by the evidence — reinforcing the game's central epistemic lesson instead of undermining it. See the trait-archetypes design document.
+**Named trait archetypes [DECIDED, task 155]:** the tags are named real biochemical terms (chitinous wall, ionic pore, quorum pheromone, structural prion, catalytic ribozyme…), each with a three-letter code in the style of real gene/protein abbreviations, grouped into five **families** (structural, metabolic, signalling, genetic, storage). The naming rule is strict: a name describes what something *is or does structurally*, **never** whether its effect is good or bad — the matrix stays independent of the name. Real names carry real-world associations, but that is a feature here rather than a leak: worlds are alien, chemistries differ, and the matrix is re-rolled every world, so a player who assumes a prion behaves as it does on Earth gets corrected by the evidence — reinforcing the game's central epistemic lesson instead of undermining it. See the trait-archetypes design document.
 
 **Dominant family per world [PROPOSED]:** each world draws a dominant trait family from its seed, which biases **the intensity distribution of that family's matrix relationships** toward the extremes (`±2` likelier than `±1`) rather than biasing which traits get selected — selection bias loses its grip once a world activates most of the pool, whereas intensity bias reads identically at 5 or 9 active traits. The dominant family is never disclosed; the player infers it from play. It never biases the *sign* of effects, only how sharp they are.
 
@@ -151,7 +151,7 @@ Each species carries 1–3 tags (from those active in the world).
 At the start of each world, a **secret `tag × tag` matrix** is rolled: for each ordered pair of tags, an effect (positive/negative, with intensity) that applies when two organisms carrying those tags are **adjacent**.
 
 - **Directional effects [DECIDED]:** the matrix is **asymmetric** — "A poisons B" doesn't imply "B poisons A." So off-diagonal relationships are ~**T²**: with 5 active tags ≈ **20 relationships** (decodable in one run); with 8 ≈ **56** (too many to decode *all* of them, but that's not needed — the player only needs the part relevant to the objective and the species in play). It's a directional generalization of rock-paper-scissors: who catalyzes whom, who poisons whom.
-- Tags are shown as **nameless alien glyphs/colors**: the player learns their effect only empirically.
+- Tags are shown with **named codes and colors, but still opaque as to effect**: the player learns their effect only empirically — the name describes what the trait *is*, never whether its effect is good or bad.
 - The matrix is **the thing the player decodes** through experiments. It's the mystery of the rules.
 - **Degree of opacity [DECIDED]:** the matrix starts hidden, but **is progressively revealed** as the notebook confirms relationships (see §7). Metabolisms and environmental ranges always remain readable as anchors. The notebook's progressive revelation *is* the solution to the opacity — these aren't two separate mechanics.
 
@@ -255,7 +255,7 @@ Initial values that are mutually coherent (conceptually verified so that a photo
 
 | Constant | Value | Notes |
 |---|---|---|
-| Global tag pool | `10` glyphs | variety across worlds — **[PROPOSED]** `15` launch pool (+10 documented reserve), see §5.5 |
+| Global tag pool | `15` named archetypes | variety across worlds — **[DECIDED, task 155]** (+10 documented reserve), see §5.5 |
 | Active tags / world | `5` (early) → `8` (late) | difficulty lever — **[PROPOSED, validate in playtest]** `4` (world 0) → `9` (late), gradual ramp |
 | Tags per species | `1–3` | |
 | Effect intensity / adjacency | integers in `{−2,−1,0,+1,+2}` | additive (§5.6) |
@@ -450,7 +450,7 @@ Progression *between* runs, deliberately **light**:
 - **Rendering:** 2D window. Grid of cells as colored squares.
   - Occupied cells: color = species/tag; brightness = energy.
   - Empty cells: faint background reflecting the environment (e.g., brightness = `light`).
-- **Alien tags:** nameless glyphs/colors, learned empirically.
+- **Alien tags:** named 3-letter codes and colors, opaque as to effect, learned empirically.
 - **UI panels:** time readout (era + **[PROPOSED]** season + current pulse), populations per species, current objective, action budget, command hints.
 - **Notebook:** dedicated panel (log + relationship view + catalog + **[PROPOSED]** chronicle). The relationship view is dense and interactive: the use case where immediate-mode UI (egui) is clearly better suited than a persistent-widget UI.
 

@@ -250,7 +250,7 @@ still stands after Phase 2 lands.
 
 | Status | ID | Title | Doc |
 |-------|----|--------|-----|
-| `[ ]` | 155 | Trait archetypes: 3-letter codes replacing the Greek glyphs, 5 families, 15-trait active pool | `tag-archetypes` — [155](155-trait-archetypes.md) |
+| `[x]` | 155 | Trait archetypes: 3-letter codes replacing the Greek glyphs, 5 families, 15-trait active pool | `tag-archetypes` — [155](done/155-trait-archetypes.md) |
 | `[ ]` | 156 | Dominant family bias per world (on matrix intensity, not on trait selection) — depends on 155 (needs its `TraitFamily` grouping) | `tag-archetypes` — [156](156-dominant-family-bias.md) |
 | `[ ]` | 157 | Narrative generation: event ranking, fragment grammar, clinical register — blocking pre-decision inside the file (cross-cutting §5: structured fragments vs. strings) | `narrative-generation` — [157](157-narrative-generation.md) |
 
