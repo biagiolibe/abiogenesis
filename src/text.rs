@@ -11,7 +11,7 @@
 
 use crate::ui::ActionMode;
 use abiogenesis::objectives::ZoneKind;
-use abiogenesis::sim::{DominantStimulus, RevealTier};
+use abiogenesis::sim::{DominantStimulus, GenomeEdit, RevealTier};
 use abiogenesis::world::{Metabolism, Mode, SpeciesOrigin, StressAxis, TerrainKind};
 
 // --- Main menu (`menu.rs::main_menu_ui`) ---
@@ -168,6 +168,30 @@ fn dominant_stimulus_clause(stimulus: DominantStimulus) -> &'static str {
             "pushed past its limit by the terrain it was stuck occupying"
         }
         DominantStimulus::Toxicity => "pushed past its limit by prolonged toxic exposure",
+    }
+}
+
+/// The concrete genome edit `speciate` applied (task 170), naming *what*
+/// changed alongside `era_reveal_evolution_line`'s *why* — same clinical,
+/// no-raw-numbers register. `tag_label` is the caller-resolved display name
+/// for `GenomeEdit::TagAdded`'s tag (via `notebook::translated_tag_label` —
+/// this module never reaches into `SimWorld` itself, per its own module
+/// doc, so the lookup happens at the `screens.rs` call site); ignored for
+/// the other two variants.
+pub fn genome_edit_line(edit: GenomeEdit, tag_label: Option<&str>) -> String {
+    match edit {
+        GenomeEdit::TagAdded(_) => {
+            let label = tag_label.unwrap_or("a new trait");
+            format!("Gained a new trait: {label}")
+        }
+        GenomeEdit::ThermalShift { warmer } => {
+            if warmer {
+                "Became better suited to warmer ground".to_string()
+            } else {
+                "Became better suited to colder ground".to_string()
+            }
+        }
+        GenomeEdit::SeaToleranceGranted => "Gained tolerance for the sea".to_string(),
     }
 }
 
@@ -990,6 +1014,7 @@ pub fn metabolism_legend_line(metabolism: Metabolism) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use abiogenesis::world::TagSlot;
 
     /// Task 095, updated by 103's legend consolidation: the line must
     /// actually reflect which metabolism it was given, not a generic
@@ -1025,6 +1050,28 @@ mod tests {
             assert!(
                 line.starts_with("Alpha (1 trait) evolved into Beta (2 traits)"),
                 "got: {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn genome_edit_line_names_the_concrete_edit_per_variant() {
+        let tag_added = genome_edit_line(GenomeEdit::TagAdded(TagSlot(0)), Some("α (Halo)"));
+        assert!(tag_added.contains("α (Halo)"), "got: {tag_added}");
+
+        let warmer = genome_edit_line(GenomeEdit::ThermalShift { warmer: true }, None);
+        let colder = genome_edit_line(GenomeEdit::ThermalShift { warmer: false }, None);
+        assert_ne!(warmer, colder);
+        assert!(warmer.contains("warmer"), "got: {warmer}");
+        assert!(colder.contains("colder"), "got: {colder}");
+
+        let sea = genome_edit_line(GenomeEdit::SeaToleranceGranted, None);
+        assert!(sea.contains("sea"), "got: {sea}");
+
+        for line in [&tag_added, &warmer, &colder, &sea] {
+            assert!(
+                !line.chars().any(|c| c.is_ascii_digit()),
+                "no raw numbers in player-facing text: {line}"
             );
         }
     }

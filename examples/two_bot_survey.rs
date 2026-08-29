@@ -29,11 +29,21 @@
 //! Task 136 lowers the metabolic gains so the hidden matrix, not the
 //! environment, decides growth. Re-run this afterwards and compare against the
 //! baseline recorded in `tasks/134-two-bot-experiment-incentive-harness.md`.
+//!
+//! Task 171 adds a **legibility-gap** comparison alongside the original
+//! exploiter/explorer pair: the same Explorer policy shape run twice, once
+//! restricted to `MatrixKnowledge` (surfaced-only, what a real player sees)
+//! and once allowed to read `world.matrix` directly (oracle, ground truth).
+//! It also gives every policy `Cull` and `Splice` — a small maintenance pass
+//! each season that culls a bot-placed organism whose neighbours are
+//! confirmed (or, for the oracle run, actually) net-harmful, and once splices
+//! a confirmed/real-beneficial tag onto a seedable species — now that both
+//! actions carry usable signal (tasks 146/147).
 
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
-use abiogenesis::actions::attempt_seed;
+use abiogenesis::actions::{attempt_cull, attempt_seed, attempt_splice, SpliceEdit};
 use abiogenesis::config::SimConfig;
 use abiogenesis::knowledge::{accumulate_adjacency_evidence, MatrixKnowledge};
 use abiogenesis::objectives::{
@@ -41,7 +51,7 @@ use abiogenesis::objectives::{
     Objective, ObjectiveProgress, WorldOutcome,
 };
 use abiogenesis::sim::{speciate, step, ActionBudget};
-use abiogenesis::world::{SimWorld, SpeciesId, TagSlot};
+use abiogenesis::world::{net_self_interaction, SimWorld, SpeciesId, TagSlot};
 use abiogenesis::worldgen::{build_world, season_pulses_for, world_params};
 
 /// Every run is world 0 of a fresh run: the same world the balance work in
@@ -72,6 +82,12 @@ const INFO_WEIGHT: f32 = 0.15;
 /// Scales `known_sum` (a raw sum of matrix values, `TagConfig`'s range) down
 /// into the same tie-breaker band as `INFO_WEIGHT`.
 const KNOWN_SUM_SCALE: f32 = 0.05;
+/// Below this summed neighbour-interaction score, a bot-placed organism's
+/// spot is confidently a loser (not a tie-breaker-scale wobble) and worth
+/// the point to `Cull` (task 171) — comfortably past `TagConfig`'s default
+/// single-pair range (`-2..2`), so one merely-mediocre neighbour never
+/// triggers it.
+const CULL_THRESHOLD: f32 = -1.5;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Policy {
@@ -178,21 +194,39 @@ fn main() {
 
     let mut exploiter = Vec::new();
     let mut explorer = Vec::new();
+    let mut oracle = Vec::new();
     for seed in 0..seed_count {
-        exploiter.push(play(seed, Policy::Exploiter, &config));
-        explorer.push(play(seed, Policy::Explorer, &config));
+        exploiter.push(play(seed, Policy::Exploiter, false, &config));
+        explorer.push(play(seed, Policy::Explorer, false, &config));
+        // Task 171: same Explorer policy shape, but every pair read
+        // (`classify`/`known_sum`) bypasses `MatrixKnowledge` and goes
+        // straight to `world.matrix` — the ground-truth counterpart to the
+        // surfaced-only Explorer run above. Explorer rather than Exploiter
+        // as the base shape because under `oracle` every pair is `Known`
+        // (see `classify`), so the two policies' scoring collapses to the
+        // same thing anyway — Explorer is the more complete shape to start
+        // from.
+        oracle.push(play(seed, Policy::Explorer, true, &config));
     }
 
     report(Policy::Exploiter, &exploiter);
     report(Policy::Explorer, &explorer);
+    report_oracle(&oracle);
     verdict(&exploiter, &explorer);
+    legibility_gap(&explorer, &oracle);
 }
 
 /// One world, one strategy. Replicates the minimal slice of the Bevy schedule
 /// that matters here — tick, accumulate evidence, speciate on a crossed
 /// threshold, evaluate the objective, close the season — rather than reusing
 /// the systems, which need an `App` and a window.
-fn play(seed: u64, policy: Policy, config: &SimConfig) -> RunResult {
+///
+/// `oracle` (task 171) switches every pair read inside `choose_placement`
+/// from `MatrixKnowledge` to `world.matrix` directly — see `classify` and
+/// `known_sum`. It does not change what actions cost or how often they run,
+/// only what information the policy is allowed to act on, per this task's
+/// "isolates information, not cost" definition.
+fn play(seed: u64, policy: Policy, oracle: bool, config: &SimConfig) -> RunResult {
     let (mut world, objectives) = build_world(seed, WORLD_INDEX, config, 0);
     let params = world_params(WORLD_INDEX, config);
     let mut knowledge = MatrixKnowledge::new(
@@ -218,21 +252,82 @@ fn play(seed: u64, policy: Policy, config: &SimConfig) -> RunResult {
     let mut rng = StdRng::seed_from_u64(seed);
 
     let placeable = placeable_cells(&world);
-    let seedable = seedable_species(&world);
+    let mut seedable = seedable_species(&world);
+    // Task 171: cells this bot itself seeded, so the `Cull` maintenance pass
+    // below only ever reconsiders its own placements — culling a wild
+    // organism it never chose would be a different (and unmeasured)
+    // decision. Pruned as cells die/are culled/get re-covered.
+    let mut bot_placed: Vec<usize> = Vec::new();
+    // Task 171: whether this run has already spent its one `Splice`
+    // improvement — at most one per world keeps the harness's spend
+    // comparable to 134/134b's baseline (a bounded, deterministic addition,
+    // not an open-ended new spend category).
+    let mut splice_used = false;
 
     'world: while outcome == WorldOutcome::Ongoing {
         // Observing window: spend the season's points.
         while budget.points_remaining >= config.time.action_costs.seed {
             let Some((species, x, y, context)) = choose_placement(
-                policy, &world, config, &knowledge, &placeable, &seedable, &mut rng,
+                policy, &world, config, &knowledge, &placeable, &seedable, oracle, &mut rng,
             ) else {
                 break;
             };
             let cost = config.time.action_costs.seed;
-            if attempt_seed(&mut world, config, &mut budget, species, x, y).is_none() {
+            let Some(index) = attempt_seed(&mut world, config, &mut budget, species, x, y) else {
                 break;
-            }
+            };
+            bot_placed.push(index);
             ledger.record(context, cost);
+        }
+
+        // Task 171: `Cull` maintenance — once per season, if the bot's own
+        // worst-placed organism (by summed neighbour interaction, read
+        // through the same surfaced/oracle boundary as `Seed`'s scoring)
+        // is confidently a loser, remove it. Feeds the knockout observation
+        // (task 146) back into `knowledge`, same as a real player's Cull
+        // would via `AdjacencyObserved`.
+        bot_placed.retain(|&index| world.cells[index].population.is_some());
+        if budget.points_remaining >= config.time.action_costs.cull {
+            if let Some(worst) = bot_placed.iter().copied().min_by(|&a, &b| {
+                neighbour_interaction_score(&world, &knowledge, a, oracle)
+                    .total_cmp(&neighbour_interaction_score(&world, &knowledge, b, oracle))
+            }) {
+                if neighbour_interaction_score(&world, &knowledge, worst, oracle) < CULL_THRESHOLD {
+                    let (wx, wy) = (worst % world.width, worst / world.width);
+                    if let Some(observations) =
+                        attempt_cull(&mut world, config, &mut budget, wx, wy)
+                    {
+                        ledger.record(Context::Known, config.time.action_costs.cull);
+                        accumulate_adjacency_evidence(observations, config, &mut knowledge);
+                        bot_placed.retain(|&i| i != worst);
+                    }
+                }
+            }
+        }
+
+        // Task 171: `Splice` maintenance — once per world, if a
+        // confirmed-beneficial (surfaced) or actually-beneficial (oracle)
+        // tag exists for the first seedable species and the world hasn't
+        // already tried this, splice it in and add the variant to the
+        // seedable pool for future placements. Mirrors task 147's
+        // confirmed-traits gate: a surfaced-only bot may only build with a
+        // tag `MatrixKnowledge::is_tag_confirmed` already vouches for.
+        if !splice_used && budget.points_remaining >= config.time.action_costs.splice {
+            if let Some(&source) = seedable.first() {
+                if let Some(tag) = best_splice_tag(&world, &knowledge, source, oracle) {
+                    if let Some(new_id) = attempt_splice(
+                        &mut world,
+                        config,
+                        &mut budget,
+                        config.time.action_costs.splice,
+                        source,
+                        SpliceEdit::AddTag { tag },
+                    ) {
+                        seedable.push(new_id);
+                    }
+                }
+            }
+            splice_used = true;
         }
 
         let ticks = season_pulses_for(WORLD_INDEX, world.season, config);
@@ -309,6 +404,7 @@ fn play(seed: u64, policy: Policy, config: &SimConfig) -> RunResult {
 /// Both policies share the same viability filter, so neither can win merely by
 /// placing organisms somewhere they survive better — the only difference
 /// between them is what they do with the information dimension.
+#[allow(clippy::too_many_arguments)]
 fn choose_placement(
     policy: Policy,
     world: &SimWorld,
@@ -316,6 +412,7 @@ fn choose_placement(
     knowledge: &MatrixKnowledge,
     placeable: &[usize],
     seedable: &[SpeciesId],
+    oracle: bool,
     rng: &mut StdRng,
 ) -> Option<(SpeciesId, usize, usize, Context)> {
     if seedable.is_empty() || placeable.is_empty() {
@@ -339,7 +436,7 @@ fn choose_placement(
         }
 
         let pairs = pair_set(world, species, x, y);
-        let context = classify(&pairs, knowledge);
+        let context = classify(&pairs, knowledge, oracle);
         // `viability` (0..1, the environmental fitness) is the growth term
         // both policies share: a real player chases population first and
         // foremost, so it must be able to outweigh the information dimension
@@ -357,7 +454,7 @@ fn choose_placement(
                 // pairs — but only among cells of comparable viability.
                 Policy::Exploiter => match context {
                     Context::Known => {
-                        INFO_WEIGHT + known_sum(world, knowledge, &pairs) * KNOWN_SUM_SCALE
+                        INFO_WEIGHT + known_sum(world, knowledge, &pairs, oracle) * KNOWN_SUM_SCALE
                     }
                     Context::Isolated => INFO_WEIGHT * 0.5,
                     Context::Unknown => 0.0,
@@ -372,7 +469,7 @@ fn choose_placement(
                         let confounders = (pairs.len() as f32 - unknown).max(0.0);
                         INFO_WEIGHT * (1.0 + 1.0 / (1.0 + confounders))
                     }
-                    Context::Known => known_sum(world, knowledge, &pairs) * KNOWN_SUM_SCALE,
+                    Context::Known => known_sum(world, knowledge, &pairs, oracle) * KNOWN_SUM_SCALE,
                     Context::Isolated => INFO_WEIGHT * 0.5,
                 },
             };
@@ -409,10 +506,14 @@ fn pair_set(world: &SimWorld, species: SpeciesId, x: usize, y: usize) -> Vec<(Ta
     pairs
 }
 
-fn classify(pairs: &[(TagSlot, TagSlot)], knowledge: &MatrixKnowledge) -> Context {
+/// `oracle` (task 171) is the surfaced/ground-truth switch: every pair
+/// already counts as `Known` when it's on, since an oracle bot has nothing
+/// left to learn — this is exactly what collapses `Policy::Explorer`'s
+/// exploring branch away under `oracle`, per `play`'s doc comment.
+fn classify(pairs: &[(TagSlot, TagSlot)], knowledge: &MatrixKnowledge, oracle: bool) -> Context {
     if pairs.is_empty() {
         Context::Isolated
-    } else if unknown_count(pairs, knowledge) == 0 {
+    } else if oracle || unknown_count(pairs, knowledge) == 0 {
         Context::Known
     } else {
         Context::Unknown
@@ -428,13 +529,108 @@ fn unknown_count(pairs: &[(TagSlot, TagSlot)], knowledge: &MatrixKnowledge) -> u
 
 /// Sum of the matrix values the bot is *entitled* to know — read through
 /// `revealed_value`, which returns `None` for anything unconfirmed, so this
-/// can never leak the hidden matrix into a decision.
-fn known_sum(world: &SimWorld, knowledge: &MatrixKnowledge, pairs: &[(TagSlot, TagSlot)]) -> f32 {
+/// can never leak the hidden matrix into a decision, unless `oracle` (task
+/// 171) explicitly asks for `world.matrix` directly.
+fn known_sum(
+    world: &SimWorld,
+    knowledge: &MatrixKnowledge,
+    pairs: &[(TagSlot, TagSlot)],
+    oracle: bool,
+) -> f32 {
     pairs
         .iter()
-        .filter_map(|(exerter, receiver)| knowledge.revealed_value(*exerter, *receiver, world))
-        .map(|value| value as f32)
+        .map(|(exerter, receiver)| {
+            if oracle {
+                world.matrix.get(*exerter, *receiver) as f32
+            } else {
+                knowledge
+                    .revealed_value(*exerter, *receiver, world)
+                    .map(|value| value as f32)
+                    .unwrap_or(0.0)
+            }
+        })
         .sum()
+}
+
+/// This bot-placed organism's summed neighbour-interaction score (task 171,
+/// `Cull` maintenance): the same `(neighbour tag, own tag)` pair set
+/// `pair_set` builds for a prospective `Seed`, read through the same
+/// surfaced/oracle boundary `known_sum` already enforces. A strongly
+/// negative score names a placement whose neighbours are confirmed (or, for
+/// `oracle`, actually) net-harmful — the exact situation `Cull`'s knockout
+/// observation (task 146) exists to let a player confirm and act on.
+fn neighbour_interaction_score(
+    world: &SimWorld,
+    knowledge: &MatrixKnowledge,
+    index: usize,
+    oracle: bool,
+) -> f32 {
+    let Some(population) = world.cells[index].population else {
+        return 0.0;
+    };
+    let (x, y) = (index % world.width, index / world.width);
+    let pairs = pair_set(world, population.species, x, y);
+    known_sum(world, knowledge, &pairs, oracle)
+}
+
+/// The best tag to `Splice` onto `source` (task 171 `Splice` maintenance):
+/// the active tag, not already on `source` and not already at the 3-tag
+/// cap, whose summed effect to and from every other active tag is highest —
+/// a simple "generally beneficial" heuristic, not a placement-specific
+/// optimisation (the harness doesn't know where the variant will end up
+/// seeded yet). Restricted to `knowledge.is_tag_confirmed` tags unless
+/// `oracle`, mirroring task 147's confirmed-traits gate on the real
+/// `Splice` UI. `None` if no candidate tag both qualifies and keeps the
+/// resulting tag set self-neutral (`net_self_interaction`).
+fn best_splice_tag(
+    world: &SimWorld,
+    knowledge: &MatrixKnowledge,
+    source: SpeciesId,
+    oracle: bool,
+) -> Option<TagSlot> {
+    let current = &world.species[source.0 as usize].tags;
+    if current.len() >= 3 {
+        return None;
+    }
+    let mut best: Option<(TagSlot, f32)> = None;
+    for i in 0..world.active_tags.len() as u8 {
+        let candidate = TagSlot(i);
+        if current.contains(&candidate) {
+            continue;
+        }
+        if !oracle && !knowledge.is_tag_confirmed(candidate) {
+            continue;
+        }
+        let mut trial_tags = current.clone();
+        trial_tags.push(candidate);
+        if net_self_interaction(&world.matrix, &trial_tags) != 0 {
+            continue;
+        }
+        let mut score = 0.0;
+        for j in 0..world.active_tags.len() as u8 {
+            let other = TagSlot(j);
+            if other == candidate {
+                continue;
+            }
+            let value = |a: TagSlot, b: TagSlot| -> f32 {
+                if oracle {
+                    world.matrix.get(a, b) as f32
+                } else {
+                    knowledge
+                        .revealed_value(a, b, world)
+                        .map(|v| v as f32)
+                        .unwrap_or(0.0)
+                }
+            };
+            score += value(candidate, other) + value(other, candidate);
+        }
+        if best.is_none_or(|(_, b)| score > b) {
+            best = Some((candidate, score));
+        }
+    }
+    // Only splice a net-beneficial tag — a confirmed-but-neutral-or-worse
+    // pick would spend the point for nothing.
+    best.filter(|&(_, score)| score > 0.0).map(|(tag, _)| tag)
 }
 
 /// How well `species` would do at `index` on the visible scalars alone —
@@ -529,7 +725,22 @@ fn confirmable_pairs(world: &SimWorld) -> u32 {
     confirmable
 }
 
+/// `report`'s oracle counterpart: same shape, labeled distinctly since
+/// there's no `Policy::Oracle` variant (task 171 runs the ground-truth arm
+/// as `Policy::Explorer` with `oracle: true` — see `play`'s doc comment for
+/// why the choice of base policy doesn't matter once `oracle` is on).
+fn report_oracle(results: &[RunResult]) {
+    report_labeled(
+        "oracle (ground truth, not a real policy — see task 171)",
+        results,
+    );
+}
+
 fn report(policy: Policy, results: &[RunResult]) {
+    report_labeled(policy.label(), results);
+}
+
+fn report_labeled(label: &str, results: &[RunResult]) {
     let n = results.len() as f32;
     let cleared = results
         .iter()
@@ -544,7 +755,7 @@ fn report(policy: Policy, results: &[RunResult]) {
         .filter(|r| r.outcome == WorldOutcome::Failed(FailureReason::EraBudgetExhausted))
         .count();
 
-    println!("## {}", policy.label());
+    println!("## {label}");
     println!(
         "  outcomes            cleared {cleared}, extinct {extinct}, era budget exhausted {exhausted} (of {})",
         results.len()
@@ -666,5 +877,67 @@ fn verdict(exploiter: &[RunResult], explorer: &[RunResult]) {
     println!(
         "  failure criterion: the exploiter winning systematically means the incentives are wrong.\n  \
          The explorer does not need to win — it needs to be competitive."
+    );
+}
+
+/// Task 171's own question: is the surfaced-only Explorer close to the
+/// ground-truth Oracle, seed by seed? A small, stable gap is a pass — the
+/// chain is legible to a mechanical reader restricted to exactly what the
+/// game surfaces (`MatrixKnowledge`, the dominant-stimulus/genome-diff
+/// fields task 170 exposes, `Cull`'s knockout observation). A large or
+/// seed-dependent gap instead names which seeds it's worst on, so a human
+/// investigating can start there rather than guessing.
+fn legibility_gap(surfaced: &[RunResult], oracle: &[RunResult]) {
+    println!("## legibility gap (surfaced Explorer vs. oracle, same seed)");
+    let mut short_gaps: Vec<i64> = Vec::new();
+    let mut full_gaps: Vec<i64> = Vec::new();
+    let mut worst_seed: Option<(u64, i64)> = None;
+    for (seed, (s, o)) in surfaced.iter().zip(oracle).enumerate() {
+        if let (Some(s_seasons), Some(o_seasons)) = (s.short_term_seasons, o.short_term_seasons) {
+            let gap = s_seasons as i64 - o_seasons as i64;
+            short_gaps.push(gap);
+            if worst_seed.is_none_or(|(_, w)| gap.abs() > w.abs()) {
+                worst_seed = Some((seed as u64, gap));
+            }
+        }
+        if let (Some(s_seasons), Some(o_seasons)) = (s.full_seasons, o.full_seasons) {
+            full_gaps.push(s_seasons as i64 - o_seasons as i64);
+        }
+    }
+    if short_gaps.is_empty() {
+        println!("  neither arm ever cleared the short-term objectives — no comparison possible");
+        return;
+    }
+    let mean = |v: &[i64]| v.iter().sum::<i64>() as f32 / v.len() as f32;
+    let variance = |v: &[i64], m: f32| {
+        v.iter().map(|&x| (x as f32 - m).powi(2)).sum::<f32>() / v.len().max(1) as f32
+    };
+    let short_mean = mean(&short_gaps);
+    let short_stddev = variance(&short_gaps, short_mean).sqrt();
+    println!(
+        "  short-term seasons  surfaced - oracle: mean {short_mean:.2}, stddev {short_stddev:.2} (n={})",
+        short_gaps.len()
+    );
+    if !full_gaps.is_empty() {
+        let full_mean = mean(&full_gaps);
+        let full_stddev = variance(&full_gaps, full_mean).sqrt();
+        println!(
+            "  full-sequence seasons  surfaced - oracle: mean {full_mean:.2}, stddev {full_stddev:.2} (n={})",
+            full_gaps.len()
+        );
+    }
+    let confirmed_gap: f32 = surfaced
+        .iter()
+        .zip(oracle)
+        .map(|(s, o)| s.confirmed_pairs as f32 - o.confirmed_pairs as f32)
+        .sum::<f32>()
+        / surfaced.len() as f32;
+    println!("  pairs confirmed  surfaced - oracle: {confirmed_gap:.2} per world (oracle still accumulates evidence passively via `sim::step`, it just never acts on it)");
+    if let Some((seed, gap)) = worst_seed {
+        println!("  worst single-seed short-term gap: seed {seed}, {gap:+} seasons");
+    }
+    println!(
+        "  a small, stable (low-stddev) mean gap here is a pass for this task's bot-vs-bot half —\n  \
+         a large or seed-dependent one names exactly which signal is still effectively hidden."
     );
 }

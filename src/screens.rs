@@ -12,11 +12,11 @@ use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
 use abiogenesis::config::SimConfig;
 use abiogenesis::run::{MetaProgress, RunProgress};
-use abiogenesis::sim::{EraReveal, RevealTier, SeasonProgress};
+use abiogenesis::sim::{EraReveal, GenomeEdit, RevealTier, SeasonProgress};
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::SimWorld;
 
-use crate::notebook::{archive_reveal, ChronicleLog};
+use crate::notebook::{archive_reveal, translated_tag_label, ChronicleLog};
 use crate::render::species_color;
 use crate::run_flow::{advance_to_next_world, retry_world, WorldResetParams};
 use crate::text;
@@ -237,6 +237,7 @@ fn defeat_screen_ui(
 fn era_reveal_screen_ui(
     mut contexts: EguiContexts,
     reveal: Res<EraReveal>,
+    world: Res<SimWorld>,
     mut next_state: ResMut<NextState<EraState>>,
     mut chronicle: ResMut<ChronicleLog>,
 ) -> Result {
@@ -315,6 +316,16 @@ fn era_reveal_screen_ui(
                         &entry.child_name,
                         entry.child_tag_count,
                         entry.dominant_stimulus,
+                    ));
+                    let tag_label = match entry.genome_edit {
+                        GenomeEdit::TagAdded(slot) => {
+                            Some(translated_tag_label(&world, slot, true))
+                        }
+                        _ => None,
+                    };
+                    ui.weak(text::genome_edit_line(
+                        entry.genome_edit,
+                        tag_label.as_deref(),
                     ));
                     ui.add_space(6.0);
                 }

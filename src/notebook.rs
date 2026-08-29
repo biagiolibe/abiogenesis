@@ -644,7 +644,7 @@ const FIRST_N_TRANSLATED_OBSERVATIONS: usize = 5;
 /// species they seeded, so the earliest confirmations spell it out; later
 /// ones drop back to the compact code-only form once that association has
 /// had a chance to form.
-fn translated_tag_label(world: &SimWorld, slot: TagSlot, translate: bool) -> String {
+pub(crate) fn translated_tag_label(world: &SimWorld, slot: TagSlot, translate: bool) -> String {
     let glyph = tag_glyph(world.active_tags[slot.0 as usize]);
     if !translate {
         return glyph.to_string();
@@ -1467,7 +1467,7 @@ mod cursor_over_notebook_panel_tests {
 mod tests {
     use super::*;
     use abiogenesis::config::SimConfig;
-    use abiogenesis::sim::{DominantStimulus, EraEvolutionReveal};
+    use abiogenesis::sim::{DominantStimulus, EraEvolutionReveal, GenomeEdit};
     use abiogenesis::world::SpeciesId;
 
     fn minor_reveal(era: u32) -> EraReveal {
@@ -1535,6 +1535,7 @@ mod tests {
                 child_name: "Thistledown".to_string(),
                 child_tag_count: 2,
                 dominant_stimulus: DominantStimulus::Toxicity,
+                genome_edit: GenomeEdit::SeaToleranceGranted,
             }],
             ..EraReveal::default()
         };

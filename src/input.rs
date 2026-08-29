@@ -17,8 +17,8 @@ use abiogenesis::objectives::{
 };
 use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::{
-    cull_knockout_observations, tick_and_complete_season, ActionBudget, AdjacencyObserved,
-    EraCompleted, EraTally, SeasonProgress, TickEventWriters,
+    tick_and_complete_season, ActionBudget, AdjacencyObserved, EraCompleted, EraTally,
+    SeasonProgress, TickEventWriters,
 };
 #[cfg(test)]
 use abiogenesis::sim::{
@@ -26,7 +26,7 @@ use abiogenesis::sim::{
     TerrainGateObserved, TerrainRevealed,
 };
 use abiogenesis::state::{EraState, GameState};
-use abiogenesis::world::{draw_species_name, net_self_interaction, SimWorld};
+use abiogenesis::world::SimWorld;
 use abiogenesis::worldgen::season_pulses_for;
 
 use crate::notebook::{
@@ -724,17 +724,16 @@ fn cull_on_click(
     };
 
     let index = world.index(x, y);
-    if world.cells[index].population.is_none() {
+    // Task 171: the world-level effect (occupancy/budget checks, the
+    // knockout observation, clearing the cell) now lives in
+    // `actions::attempt_cull` so the headless bot harness can act on `Cull`
+    // too; this system keeps only Bevy-input picking and
+    // `PlayerPlacedCells`/`world_touched` bookkeeping, same split
+    // `seed_organism_on_click` already follows for `Seed`.
+    let Some(observations) = actions::attempt_cull(&mut world, &config, &mut budget, x, y) else {
         return;
-    }
-    if budget.points_remaining < config.time.action_costs.cull {
-        return;
-    }
-    // Task 146: the knockout observation reads the culled organism's still-
-    // living neighbours, so it must run before the cell is cleared below.
-    observed.write_batch(cull_knockout_observations(&world, &config, x, y));
-    world.get_mut(x, y).population = None;
-    budget.points_remaining -= config.time.action_costs.cull;
+    };
+    observed.write_batch(observations);
     placed.0.remove(&index);
     gate.world_touched.0 = true;
 }
@@ -777,62 +776,34 @@ fn apply_splice(
     let Some(source) = draft.source else {
         return;
     };
-    let Some(source_species) = world.species.get(source.0 as usize) else {
-        return;
-    };
-    let mut new_species = source_species.clone();
-    // Task 095: a spliced child draws its own independent name — cloning
-    // `source_species` would otherwise leave it sharing its parent's.
-    new_species.name = draw_species_name(&mut world);
-    match draft.edit {
+    // Task 171: `SpliceEditChoice` (this module's in-progress, possibly
+    // incomplete UI selection) maps onto `actions::SpliceEdit` (the
+    // crate-level, always-complete edit) once any missing pick bails out
+    // here — `attempt_splice` itself now owns every guard past that point
+    // (self-interaction, tag cap, budget), same split `attempt_cull` follows.
+    let edit = match draft.edit {
         SpliceEditChoice::SwapTag {
             old: Some(old),
             new: Some(new),
-        } => {
-            let Some(pos) = new_species.tags.iter().position(|&tag| tag == old) else {
-                return;
-            };
-            new_species.tags[pos] = new;
-            if net_self_interaction(&world.matrix, &new_species.tags) != 0 {
-                return;
-            }
-        }
-        SpliceEditChoice::AddTag { tag: Some(tag) } => {
-            // Defense-in-depth against a stale draft (e.g. picked before
-            // switching to a source that's already at the cap): the UI
-            // gates this too, but a leftover selection must still no-op
-            // here rather than push past GDD §5.3's 3-tag cap.
-            if new_species.tags.len() >= 3 {
-                return;
-            }
-            new_species.tags.push(tag);
-            if net_self_interaction(&world.matrix, &new_species.tags) != 0 {
-                return;
-            }
-        }
+        } => actions::SpliceEdit::SwapTag { old, new },
+        SpliceEditChoice::AddTag { tag: Some(tag) } => actions::SpliceEdit::AddTag { tag },
         SpliceEditChoice::ShiftTempOptimum { warmer } => {
-            let delta = if warmer {
-                config.energy.splice_temp_shift
-            } else {
-                -config.energy.splice_temp_shift
-            };
-            new_species.temp_optimum = (new_species.temp_optimum + delta).clamp(0.0, 1.0);
+            actions::SpliceEdit::ShiftTempOptimum { warmer }
         }
         // Incomplete SwapTag/AddTag selection (missing tag(s)).
         SpliceEditChoice::SwapTag { .. } | SpliceEditChoice::AddTag { tag: None } => return,
-    }
+    };
     let splice_cost = run_progress.splice_cost(&config);
-    if budget.points_remaining < splice_cost {
+    let Some(new_species_id) =
+        actions::attempt_splice(&mut world, &config, &mut budget, splice_cost, source, edit)
+    else {
         return;
-    }
-    let new_species_id = world.push_species(new_species);
-    world.spliced_species.push(new_species_id);
+    };
     log.entries.push(LogEntry {
         era: world.era,
         species: Some(new_species_id),
         text: text::species_created_message(&species_label(&world, new_species_id)),
     });
-    budget.points_remaining -= splice_cost;
     *draft = SpliceDraft::default();
     world_touched.0 = true;
 }

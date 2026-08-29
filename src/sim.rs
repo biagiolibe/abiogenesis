@@ -761,6 +761,22 @@ pub fn dominant_stimulus(event: &SelectionThresholdCrossed) -> DominantStimulus 
     }
 }
 
+/// The concrete edit `speciate` applied, mirroring its three
+/// `DominantStimulus` match arms exactly (task 170) — one variant per arm,
+/// no independent modeling. Discarded before task 170 even though `speciate`
+/// always computed it; now attached to `EraEvolutionReveal` so the reveal
+/// can name the actual change, not just a trait-count delta.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GenomeEdit {
+    /// `InteractionHarm` → the descendant gained this tag.
+    TagAdded(TagSlot),
+    /// `TerrainMismatch` → the descendant's `temp_optimum` shifted toward
+    /// (`true`) or away from (`false`) the dominant cell's temperature.
+    ThermalShift { warmer: bool },
+    /// `Toxicity` → the descendant gained `Sea` placement tolerance.
+    SeaToleranceGranted,
+}
+
 /// GDD §5.3's tags-per-species cap, mirrored from `apply_splice`
 /// (`input.rs`'s `AddTag` handling) rather than read from
 /// `TagConfig::tags_per_species_max` — `apply_splice` itself hardcodes `3`
@@ -796,7 +812,7 @@ pub fn speciate(
     world: &mut SimWorld,
     config: &SimConfig,
     event: &SelectionThresholdCrossed,
-) -> Option<SpeciesId> {
+) -> Option<(SpeciesId, GenomeEdit)> {
     if world.species.len() >= config.evolution.max_species {
         return None;
     }
@@ -804,7 +820,7 @@ pub fn speciate(
     let mut new_species = source_species.clone();
     new_species.name = draw_species_name(world);
 
-    let grants_sea_tolerance = match dominant_stimulus(event) {
+    let (grants_sea_tolerance, genome_edit) = match dominant_stimulus(event) {
         DominantStimulus::InteractionHarm => {
             if new_species.tags.len() >= MAX_TAGS_PER_SPECIES {
                 return None;
@@ -818,7 +834,7 @@ pub fn speciate(
             if net_self_interaction(&world.matrix, &new_species.tags) != 0 {
                 return None;
             }
-            false
+            (false, GenomeEdit::TagAdded(slot))
         }
         DominantStimulus::TerrainMismatch => {
             let warmer = world.cells[event.cell].temperature > new_species.temp_optimum;
@@ -828,9 +844,9 @@ pub fn speciate(
                 -config.energy.splice_temp_shift
             };
             new_species.temp_optimum = (new_species.temp_optimum + delta).clamp(0.0, 1.0);
-            false
+            (false, GenomeEdit::ThermalShift { warmer })
         }
-        DominantStimulus::Toxicity => true,
+        DominantStimulus::Toxicity => (true, GenomeEdit::SeaToleranceGranted),
     };
 
     let new_species_id = world.push_species(new_species);
@@ -860,7 +876,7 @@ pub fn speciate(
     // Task 109: backs `Objective::Speciation`, the long-term objective's
     // default content.
     world.has_speciated = true;
-    Some(new_species_id)
+    Some((new_species_id, genome_edit))
 }
 
 /// Task 140: `SelectionThresholdCrossed` events accumulated during the
@@ -919,6 +935,10 @@ pub struct EraEvolutionReveal {
     /// generated cause clause and the actual edit `speciate` applied can
     /// never disagree.
     pub dominant_stimulus: DominantStimulus,
+    /// Task 170: the concrete edit `speciate` applied for this evolution —
+    /// same non-duplication guarantee as `dominant_stimulus`, read from the
+    /// same `speciate` call rather than re-derived.
+    pub genome_edit: GenomeEdit,
 }
 
 /// The end-of-era reveal's full content (task 140), built exactly once per
@@ -1028,7 +1048,7 @@ pub(crate) fn build_era_reveal(
         let parent_name = world.species[event.species.0 as usize].name.clone();
         let parent_tag_count = world.species[event.species.0 as usize].tags.len();
         let stimulus = dominant_stimulus(&event);
-        if let Some(child) = speciate(&mut world, &config, &event) {
+        if let Some((child, genome_edit)) = speciate(&mut world, &config, &event) {
             evolutions.push(EraEvolutionReveal {
                 parent: event.species,
                 parent_name,
@@ -1037,6 +1057,7 @@ pub(crate) fn build_era_reveal(
                 child_name: world.species[child.0 as usize].name.clone(),
                 child_tag_count: world.species[child.0 as usize].tags.len(),
                 dominant_stimulus: stimulus,
+                genome_edit,
             });
             evolved.write(SpeciesEvolved { species: child });
         }
@@ -4353,10 +4374,11 @@ mod tests {
         let source_before = world.species[0].clone();
         let event = toxicity_dominant_event(SpeciesId(0), idx);
 
-        let new_id = speciate(&mut world, &config, &event).expect("qualifying crossing");
+        let (new_id, edit) = speciate(&mut world, &config, &event).expect("qualifying crossing");
 
         assert_eq!(world.species.len(), 2);
         assert_eq!(new_id, SpeciesId(1));
+        assert_eq!(edit, GenomeEdit::SeaToleranceGranted);
         assert_eq!(
             world.species[0], source_before,
             "the source species must never be mutated in place"
@@ -4376,7 +4398,7 @@ mod tests {
         let (mut world, config, idx) = world_for_speciation();
         let event = interaction_harm_dominant_event(SpeciesId(0), idx);
 
-        let new_id = speciate(&mut world, &config, &event).expect("qualifying crossing");
+        let (new_id, edit) = speciate(&mut world, &config, &event).expect("qualifying crossing");
 
         let descendant = &world.species[new_id.0 as usize];
         assert!(descendant.tags.len() > world.species[0].tags.len());
@@ -4386,6 +4408,7 @@ mod tests {
                 "descendant tag {slot:?} is outside world.active_tags"
             );
         }
+        assert!(matches!(edit, GenomeEdit::TagAdded(_)));
     }
 
     #[test]
@@ -4456,7 +4479,7 @@ mod tests {
         }
         let event = crossed.expect("sustained toxicity exposure should cross the threshold");
 
-        let new_id = speciate(&mut world, &config, &event).expect("qualifying crossing");
+        let (new_id, _edit) = speciate(&mut world, &config, &event).expect("qualifying crossing");
 
         assert_eq!(world.species.len(), 2);
         assert_ne!(

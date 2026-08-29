@@ -152,8 +152,8 @@ ideally with a real playtester — not yet done.
 | `[x]` | 154 | Objectives correctness pass (154a): victory as a flag, Speciation activation snapshot, immediate re-check during Reveal | `objectives` — [154](done/154-objectives-activation-victory-flag.md) |
 | `[x]` | 178 | Objectives tuning: Coexistence population floor + durations in seasons | `objectives`, `playtest_outcome.md` I.6 — [178](done/178-objectives-tuning-new-types-durations.md) |
 | `[x]` | 179 | Objectives: 4 new types (Homeostasis/Tolerance/WildCoexistence/Rootedness), Speciation target-species narrowing (FirstConfirmation deferred, needs `MatrixKnowledge`) | `objectives` — [179](done/179-objectives-new-types-target-species.md) |
-| `[ ]` | 170 | Speciation cause readability: surface dominant pressure stimulus + genome before/after diff | GDD §5.11 — [170](170-speciation-cause-readability.md) |
-| `[ ]` | 171 | Causal-legibility playtest gate: bot-vs-bot necessity check + human playtest protocol, gates Phase 3 | GDD §5.8/§5.9 — [171](171-causal-legibility-playtest-gate.md) |
+| `[x]` | 170 | Speciation cause readability: surface dominant pressure stimulus + genome before/after diff | GDD §5.11 — [170](done/170-speciation-cause-readability.md) |
+| `[/]` | 171 | Causal-legibility playtest gate: bot-vs-bot necessity check (done, pass) + human playtest protocol (written, **not yet run**), gates Phase 3 | GDD §5.8/§5.9 — [171](171-causal-legibility-playtest-gate.md), [results](171-results.md) |
 
 **All 10 Phase 2 task files now exist (2026-08-29).** Suggested execution
 order, from cross-task dependencies each file's own scoping surfaced (not a
@@ -186,6 +186,14 @@ strict requirement, but avoids rework):
 ⚠️ **Gate before Phase 3**: task 171 formalizes a bot-vs-bot necessity check and
 a human playtest protocol. Don't start Phase 3 content work casually before
 running it — see task file for rationale.
+
+**171 status (2026-08-29): bot-vs-bot half done, verdict pass** (see
+[`171-results.md`](171-results.md) §1) — no evidence the surfaced data is
+insufficient. **Human playtest half still owed**: the protocol is written
+and handoff-ready (§2 of the results file) but no real playtester was
+available this session, mirroring how Phase 1's own skipped checkpoint was
+tracked. 171 stays `[/]`, and Phase 3 stays informally gated, until a real
+playtest run happens and its findings are appended to the results file.
 
 Already done, do not redo: tick→pulse rename (118), Biosphere numeric delta
 (120), era-relative time readout (117), Splice-creates-a-new-species (see
