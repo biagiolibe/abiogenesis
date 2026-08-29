@@ -276,11 +276,36 @@ seasons — split off 154 after an advisor review found the original
 "already covered by 154" note here was wrong), `[x]` 179 objectives: 4 new
 types + Speciation target-species narrowing (178's own remainder;
 FirstConfirmation deferred — needs `MatrixKnowledge`, not reachable from
-`evaluate`'s `&SimWorld`).
+`evaluate`'s `&SimWorld`), 180/181 pixel-grain chrome fidelity (151 shipped
+only a subset of its own `pixel-full-scene.svg`/`pixel-notebook.svg`
+reference; user directive 2026-08-29 — the redesign must cover the whole
+interface: backgrounds, control positions, text/button style, icon shapes.
+Split by surface: 180 HUD/sidebar — `ui.rs`, action-button block icons
+replacing broken emoji, box chrome, neutral-icon Biosphere rows; 181
+notebook — `notebook.rs`, neutral relationship-graph nodes, Catalog
+block-pattern icons, log-marker semantics. Governing rule extracted from the
+mockups: color encodes state, never identity — species/tag identity is
+text+shape only. Tree-glyph terrain overlay explicitly stays untouched per
+direct user instruction; neutral organism ink on the map itself was already
+scoped into 180's predecessor draft and stays in 180). `VISUAL_STYLE_GUIDE.md`
+written 2026-08-29 as the canonical palette/chrome/icon spec (transcribes the
+16-biome palette from `biome-reference-sheet.svg` for the first time, states
+the "color=state never identity" rule explicitly). A full audit against it (2
+Explore agents) found every remaining UI surface outside the HUD/notebook was
+never restyled, opening 182 (interstitial screens + main menu chrome, shared
+exact-hex state-color constants), 183 (pause menu + confirmation dialog
+chrome, state-colored Confirm/Cancel), 184 (floating overlays — inspect card,
+hover tooltip, contextual hints; fixes a real state-color-inversion bug on
+the saturation warning, not just cosmetic drift), 185 (era-reveal card's
+untracked `species_color` swatch violation). 182 is the dependency root for
+183/184's shared color constants.
 Independent of the redesign corpus and of the 171 Phase-3 gate.
 
-**Phase 3 — content**: 155 trait archetypes, 156 dominant family bias, 157
-narrative generation.
+**Phase 3 — content**: 155 trait archetypes, 156 dominant family bias
+(depends on 155), 157 narrative generation (blocking pre-decision inside
+the file: cross-cutting §5, structured fragments vs. strings). Task files
+written 2026-08-29 (scoping only, no implementation) → [155](tasks/155-trait-archetypes.md),
+[156](tasks/156-dominant-family-bias.md), [157](tasks/157-narrative-generation.md).
 
 **Phase 4 — session structure**: 158 transitions and end of run, 159 world-summary
 export, 160 menu and onboarding, 161 save.

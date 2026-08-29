@@ -230,6 +230,12 @@ since they affect what a fresh player notices/attributes correctly.
 | `[x]` | 175 | New species from speciation should place near where pressure actually accrued | `playtest_outcome.md` #10 — [175](done/175-speciation-placement-near-parent.md) |
 | `[x]` | 176 | Continuous-advance needs its own, slower cadence | `playtest_outcome.md` I.11 — [176](done/176-continuous-advance-dedicated-cadence.md) |
 | `[x]` | 177 | No armed action at world start; pan with wheel held down | `playtest_outcome.md` I.2, F.1 — [177](done/177-start-default-action-and-wheel-pan.md) |
+| `[ ]` | 180 | HUD chrome fidelity: action-button block icons (replacing broken emoji), box chrome, neutral-icon Biosphere rows, section-label style — governing rule: color = state, never identity | `population-model-aesthetic` — [180](180-pixel-grain-corrections.md) |
+| `[ ]` | 181 | Notebook chrome fidelity: neutral relationship-graph nodes (amber stroke, not tag-colored), Catalog block-pattern icons, Observation-log marker semantics | `population-model-aesthetic` — [181](181-notebook-chrome-fidelity.md) |
+| `[ ]` | 182 | Interstitial screens + main menu chrome, plus shared exact-hex state-color constants (`ALERT_COLOR`/`DOT_FILLED_COLOR`/`trend_color` are 3 independent approximations today) | `VISUAL_STYLE_GUIDE.md` — [182](182-interstitial-screens-menu-chrome.md) |
+| `[ ]` | 183 | Pause menu + confirmation dialog: chrome, and Confirm/Cancel state-colored | `VISUAL_STYLE_GUIDE.md` — [183](183-pause-menu-confirmation-chrome.md) |
+| `[ ]` | 184 | Floating overlays (inspect card, hover tooltip, contextual hints): chrome + fixes a state-color inversion bug (saturation warning painted positive-green) + Unicode trend glyph | `VISUAL_STYLE_GUIDE.md` — [184](184-floating-overlays-chrome.md) |
+| `[ ]` | 185 | Era-reveal card: remove `species_color` identity swatch from genome-diff rows (found by code audit, not in original 180/181 scope) | `VISUAL_STYLE_GUIDE.md` — [185](185-era-reveal-species-color.md) |
 
 Not filed as a task — a GDD/balance discussion, not a code task yet: whether
 an isolated species with no matrix stimulus should trend flat/negative
@@ -244,9 +250,9 @@ still stands after Phase 2 lands.
 
 | Status | ID | Title | Doc |
 |-------|----|--------|-----|
-| `[ ]` | 155 | Trait archetypes: 3-letter codes replacing the Greek glyphs, 5 families, 15-trait active pool | `tag-archetypes` |
-| `[ ]` | 156 | Dominant family bias per world (on matrix intensity, not on trait selection) | `tag-archetypes` |
-| `[ ]` | 157 | Narrative generation: event ranking, fragment grammar, clinical register | `narrative-generation` |
+| `[ ]` | 155 | Trait archetypes: 3-letter codes replacing the Greek glyphs, 5 families, 15-trait active pool | `tag-archetypes` — [155](155-trait-archetypes.md) |
+| `[ ]` | 156 | Dominant family bias per world (on matrix intensity, not on trait selection) — depends on 155 (needs its `TraitFamily` grouping) | `tag-archetypes` — [156](156-dominant-family-bias.md) |
+| `[ ]` | 157 | Narrative generation: event ranking, fragment grammar, clinical register — blocking pre-decision inside the file (cross-cutting §5: structured fragments vs. strings) | `narrative-generation` — [157](157-narrative-generation.md) |
 
 ⚠️ **Before 157**, decide whether text fragments are structured data rather than
 concatenated strings (`cross-cutting` §5). Deciding later means rewriting the pool.
@@ -340,6 +346,28 @@ land, since it wasn't available to pick up until 2026-08-29.
 Final tuning phase still lives as backlog in [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) beyond what's already expanded into task files here.
 
 ---
+
+*Last updated: 2026-08-29 (Phase 3 scoped — task files written for 155/156/157,
+no implementation done, mirroring how Phase 2 was scoped whole before being
+built. 155: single choke point found (`notebook::tag_glyph`,
+`src/notebook.rs:613-626`, fed by `TagConfig::global_tag_pool`), scope is
+raising the 10-tag pool to 15 and replacing `TAG_LETTERS` with a
+code/name/family table; flagged as an RNG-stream-affecting change (shifts
+seeded outcomes downstream) and four GDD/player_guide locations needing a
+docs update. 156: confirmed via grep that no `TraitFamily` concept exists
+anywhere in the codebase yet, so it hard-depends on 155 landing first;
+scoped the bias as applying only to matrix intensity magnitude
+(`generate_matrix`, `src/world.rs:3041-3086`), never to sign or trait
+selection, per the design doc. 157: the QUEUE's own blocking pre-decision
+(structured fragment data vs. plain strings, `cross-cutting` §5) is
+surfaced as a mandatory Step 0 in the task file rather than resolved by the
+scoping pass; event scoring reuses the notebook's existing confounder-weight
+formula instead of a second causal-attribution system. None of the three
+files pick a design decision the source docs left open — open questions are
+recorded as caveats for whoever picks the task up. Phase 3 remains
+informally gated on 171's human playtest half per the note above; scoping
+ahead of the gate follows the same precedent as Phase 2's own scoping
+session.)*
 
 *Last updated: 2026-08-29 (147, Splice restricted to confirmed traits +
 growing genome bank + "synthesised" origin — implemented and archived to

@@ -20,6 +20,7 @@ cargo fmt
 | [`tasks/QUEUE.md`](tasks/QUEUE.md) | **What to do now.** |
 | [`player_guide.md`](player_guide.md) | **Player-facing manual.** What the game is, controls, loop, mechanics — also surfaced in-game via the main menu's "How to play" panel. |
 | [`VISION.md`](VISION.md) | **Long-term roadmap — aspirational, not committed.** Ecosystem depth, pacing, evolution, biochemistry flavor. Ideas here graduate into `PROJECT_PLAN.md` + a task file when prioritized. |
+| [`VISUAL_STYLE_GUIDE.md`](VISUAL_STYLE_GUIDE.md) | **Visual spec — palette, iconography, chrome, typography.** Written 2026-08-29 after task 151 shipped a narrower interpretation of its own reference mockups than intended. Check here before writing any rendering/UI code — it's the transcribed, citable version of what used to live only in `redesign/processed/*.svg` coordinates. |
 
 ### `redesign/processed/` — do not read
 
