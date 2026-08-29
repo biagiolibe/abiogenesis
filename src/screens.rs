@@ -16,6 +16,7 @@ use abiogenesis::sim::{EraReveal, RevealTier, SeasonProgress};
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::SimWorld;
 
+use crate::notebook::{archive_reveal, ChronicleLog};
 use crate::render::species_color;
 use crate::run_flow::{advance_to_next_world, retry_world, WorldResetParams};
 use crate::text;
@@ -192,6 +193,7 @@ fn era_reveal_screen_ui(
     mut contexts: EguiContexts,
     reveal: Res<EraReveal>,
     mut next_state: ResMut<NextState<EraState>>,
+    mut chronicle: ResMut<ChronicleLog>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     // Unlike `WorldCleared`/`WorldFailed`/`Defeat` (different top-level
@@ -286,6 +288,11 @@ fn era_reveal_screen_ui(
 
                 ui.add_space(16.0);
                 if ui.button(text::ERA_REVEAL_CONTINUE_BUTTON).clicked() {
+                    // Task 153: archived here, right before dismissal —
+                    // `build_era_reveal` overwrites `EraReveal` the instant
+                    // the *next* era closes, so this is the last point this
+                    // era's reveal content still exists to be archived.
+                    archive_reveal(&mut chronicle, &reveal);
                     next_state.set(EraState::Observing);
                 }
             });

@@ -794,6 +794,10 @@ pub fn speciate(
     };
 
     let new_species_id = world.push_species(new_species);
+    // Task 153: one hop back, recorded once at creation — see
+    // `SimWorld::species_parent`'s own doc comment for why this lives here
+    // rather than on `Species` itself.
+    world.species_parent.push((new_species_id, event.species));
     if grants_sea_tolerance {
         world.sea_tolerant_species.push(new_species_id);
     }

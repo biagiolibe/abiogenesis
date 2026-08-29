@@ -622,6 +622,14 @@ pub struct SimWorld {
     /// later). Peaks are never bypassed — that's a structural
     /// impassability, not a hazard-tolerance question.
     pub sea_tolerant_species: Vec<SpeciesId>,
+    /// `(child, parent)` pairs (task 153), one entry per species created by
+    /// `sim::speciate` — same shape as `wild_species`/`spliced_species`
+    /// above and for the same reason (avoid touching every `Species { .. }`
+    /// literal in the codebase for a field only a handful of species will
+    /// ever carry). One hop back only, no full lineage tree — the Catalog's
+    /// "descends from" field and the Chronicle's speciation lines both read
+    /// this via `parent_of`.
+    pub species_parent: Vec<(SpeciesId, SpeciesId)>,
     /// Per-`SpeciesId` terrain-occupancy history (task 099), indexed by
     /// `SpeciesId.0`, grown lazily as `species` grows — see
     /// `TerrainOccupancy`'s own doc comment for why this is shaped
@@ -767,6 +775,7 @@ impl SimWorld {
             wild_species: Vec::new(),
             spliced_species: Vec::new(),
             sea_tolerant_species: Vec::new(),
+            species_parent: Vec::new(),
             terrain_occupancy: Vec::new(),
             selection_pressure: Vec::new(),
             species_origin_era: Vec::new(),
@@ -2422,6 +2431,17 @@ impl SimWorld {
         } else {
             SpeciesOrigin::Seeded
         }
+    }
+
+    /// One hop back: the species `speciate` created `species` from, if any
+    /// (task 153) — `None` for anything seeded, indigenous, or synthesised
+    /// via `Splice`. See `species_parent`'s own doc comment for why this is
+    /// a small side list rather than a `Species` field.
+    pub fn parent_of(&self, species: SpeciesId) -> Option<SpeciesId> {
+        self.species_parent
+            .iter()
+            .find(|&&(child, _)| child == species)
+            .map(|&(_, parent)| parent)
     }
 
     /// Pushes `species` onto `self.species` and records the current `era`

@@ -908,6 +908,28 @@ pub fn species_origin_label(origin: SpeciesOrigin) -> &'static str {
     }
 }
 
+/// The Catalog's "descends from" line (task 153) — shown only when
+/// `SimWorld::parent_of` returns `Some`, omitted otherwise.
+pub fn descends_from_line(parent_name: &str) -> String {
+    format!("descends from: {parent_name}")
+}
+
+// --- Notebook — Chronicle (`notebook.rs`, task 153) ---
+
+pub const HEADING_CHRONICLE: &str = "Chronicle";
+pub const NO_CHRONICLE_YET: &str =
+    "Nothing archived yet — dismiss an era's reveal to add to the Chronicle.";
+
+/// One compressed row for a run of consecutive quiet (`RevealTier::Minor`)
+/// eras (task 153) — a single line regardless of how many eras it spans.
+pub fn chronicle_quiet_line(era_start: u32, era_end: u32) -> String {
+    if era_start == era_end {
+        format!("Era {era_start}: quiet")
+    } else {
+        format!("Eras {era_start}-{era_end}: quiet")
+    }
+}
+
 /// One line per metabolism kind, shown once in the catalog's legend section
 /// rather than repeated on every species row sharing that metabolism (task
 /// 103 — a live screenshot review found the old per-row

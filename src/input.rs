@@ -1537,6 +1537,7 @@ mod tests {
         app.insert_resource(WorldTouched::default());
         app.insert_resource(PauseMenuOpen::default());
         app.insert_resource(PendingConfirmation::default());
+        app.insert_resource(crate::notebook::ChronicleLog::default());
         app.add_systems(Update, reseed_world);
         app.update();
 
@@ -1605,6 +1606,7 @@ mod tests {
         app.insert_resource(WorldTouched(true));
         app.insert_resource(PauseMenuOpen::default());
         app.insert_resource(PendingConfirmation::default());
+        app.insert_resource(crate::notebook::ChronicleLog::default());
         app.add_systems(Update, reseed_world);
         app.update();
 

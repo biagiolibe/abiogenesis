@@ -24,7 +24,8 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 use crate::notebook::{
-    BirthTally, NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells, TerrainKnowledge,
+    BirthTally, ChronicleLog, NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells,
+    TerrainKnowledge,
 };
 use crate::render::{BlockedIndicatorSeen, SeenRelations};
 use crate::ui::{
@@ -70,6 +71,8 @@ pub struct WorldResetParams<'w> {
     pub world_touched: ResMut<'w, WorldTouched>,
     pub pause_menu_open: ResMut<'w, PauseMenuOpen>,
     pub pending_confirmation: ResMut<'w, PendingConfirmation>,
+    /// Task 153: same lifecycle as `log` (`ObservationLog`) above.
+    pub chronicle: ResMut<'w, ChronicleLog>,
 }
 
 /// Rebuilds `world` in place as world `world_index` seeded with `seed`
@@ -150,6 +153,7 @@ pub fn start_world(
     *reset.world_touched = WorldTouched::default();
     reset.pause_menu_open.0 = false;
     *reset.pending_confirmation = PendingConfirmation::default();
+    reset.chronicle.entries.clear();
 }
 
 /// The concrete effect of "World cleared → Continue" (task 045): advances
@@ -255,6 +259,7 @@ mod tests {
         ecs_world.insert_resource(WorldTouched::default());
         ecs_world.insert_resource(PauseMenuOpen::default());
         ecs_world.insert_resource(PendingConfirmation::default());
+        ecs_world.insert_resource(ChronicleLog::default());
         ecs_world
     }
 

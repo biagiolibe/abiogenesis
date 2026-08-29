@@ -148,7 +148,7 @@ ideally with a real playtester — not yet done.
 | `[x]` | 150 | Full control scheme + `Esc` cascade + pause menu + protected `R` | `controls` — [150](done/150-control-scheme-pause-menu.md) |
 | `[ ]` | 151 | Pixel-grain visual register across map, HUD and notebook | `population-model-aesthetic`, `ui-redesign` — [151](151-pixel-grain-visual-register.md) |
 | `[x]` | 152 | HUD: auto-advance toggle, mutation-tier badge, species subtext (title corrected — `sidebar-redesign` already shipped as 064/065, this is `hud-notebook`'s residual gap) | `hud-notebook` — [152](done/152-hud-sidebar-diegetic-redesign.md) |
-| `[ ]` | 153 | Notebook: Chronicle section + "descends from" (node graph already shipped, see file) | `notebook-cronaca` — [153](153-notebook-node-graph-chronicle.md) |
+| `[x]` | 153 | Notebook: Chronicle section + "descends from" (node graph already shipped, see file) | `notebook-cronaca` — [153](done/153-notebook-node-graph-chronicle.md) |
 | `[ ]` | 154 | Objectives: activation snapshot, 5 new types, durations in seasons, victory as a flag | `objectives` — [154](154-objectives-activation-victory-flag.md) |
 | `[ ]` | 170 | Speciation cause readability: surface dominant pressure stimulus + genome before/after diff | GDD §5.11 — [170](170-speciation-cause-readability.md) |
 | `[ ]` | 171 | Causal-legibility playtest gate: bot-vs-bot necessity check + human playtest protocol, gates Phase 3 | GDD §5.8/§5.9 — [171](171-causal-legibility-playtest-gate.md) |

@@ -11,7 +11,8 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
 use crate::notebook::{
-    NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells, TerrainKnowledge,
+    ChronicleLog, NotebookHasUnseenConfirmation, ObservationLog, PlayerPlacedCells,
+    TerrainKnowledge,
 };
 use crate::render::SeenRelations;
 use crate::text;
@@ -186,4 +187,5 @@ fn start_run(commands: &mut Commands, config: &SimConfig, meta: &MetaProgress, r
     commands.insert_resource(WorldTouched::default());
     commands.insert_resource(PauseMenuOpen::default());
     commands.insert_resource(PendingConfirmation::default());
+    commands.insert_resource(ChronicleLog::default());
 }

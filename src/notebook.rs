@@ -12,8 +12,8 @@ use abiogenesis::config::SimConfig;
 use abiogenesis::knowledge::{accumulate_adjacency_evidence, MatrixKnowledge};
 use abiogenesis::objectives::ObjectiveAdvanced;
 use abiogenesis::sim::{
-    AdjacencyObserved, EraCompleted, OrganismBorn, OrganismDied, SpeciesEvolved, SpeciesExtinct,
-    TerrainGateObserved, TerrainRevealed,
+    AdjacencyObserved, EraCompleted, EraReveal, OrganismBorn, OrganismDied, RevealTier,
+    SpeciesEvolved, SpeciesExtinct, TerrainGateObserved, TerrainRevealed,
 };
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{
@@ -43,6 +43,97 @@ pub struct LogEntry {
 #[derive(Resource, Default)]
 pub struct ObservationLog {
     pub entries: Vec<LogEntry>,
+}
+
+/// One archived era-reveal card (task 153) — narrated history, distinct
+/// from `ObservationLog`'s raw scientific data. Reuses the exact strings/
+/// `SpeciesId`s the reveal card already computed (archived by
+/// `archive_reveal`, called from `screens::era_reveal_screen_ui` right
+/// before it dismisses `EraReveal`) — no second text-generation pass.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ChronicleEntry {
+    /// One or more consecutive `RevealTier::Minor` eras compressed into a
+    /// single row — an era counts as quiet exactly when
+    /// `sim::build_era_reveal` already classified it `Minor`, no second
+    /// definition of "quiet" invented here.
+    Quiet { era_start: u32, era_end: u32 },
+    /// A `Notable`/`Epochal` era, archived verbatim.
+    Event {
+        era: u32,
+        tier: RevealTier,
+        title: String,
+        /// One line per evolution this era: `(parent, child, line)`. The
+        /// `SpeciesId` pair lets the Chronicle draw the same color swatch
+        /// the reveal card did; `line` is `text::era_reveal_evolution_line`'s
+        /// output, which already names both species — the same "descends
+        /// from" fact the Catalog's own field shows, sourced from the same
+        /// data rather than a second implementation (task 153's own
+        /// instruction).
+        evolutions: Vec<(SpeciesId, SpeciesId, String)>,
+        lost_line: Option<String>,
+        summary_line: String,
+    },
+}
+
+/// Ordered (oldest first), one entry per dismissed `EraReveal` (task 153).
+#[derive(Resource, Default)]
+pub struct ChronicleLog {
+    pub entries: Vec<ChronicleEntry>,
+}
+
+/// Archives `reveal` into `log` (task 153) — called once per dismissed
+/// `EraReveal`, before `sim::build_era_reveal` next overwrites it. Merges
+/// into the previous row instead of appending a new one exactly when both
+/// this era and the log's last entry are quiet *and* contiguous, so a long
+/// quiet stretch reads as one line instead of one per era.
+pub fn archive_reveal(log: &mut ChronicleLog, reveal: &EraReveal) {
+    if reveal.tier == RevealTier::Minor {
+        let extended = match log.entries.last_mut() {
+            Some(ChronicleEntry::Quiet { era_end, .. }) if *era_end + 1 == reveal.era => {
+                *era_end = reveal.era;
+                true
+            }
+            _ => false,
+        };
+        if !extended {
+            log.entries.push(ChronicleEntry::Quiet {
+                era_start: reveal.era,
+                era_end: reveal.era,
+            });
+        }
+        return;
+    }
+    let evolutions = reveal
+        .evolutions
+        .iter()
+        .map(|entry| {
+            (
+                entry.parent,
+                entry.child,
+                text::era_reveal_evolution_line(
+                    &entry.parent_name,
+                    entry.parent_tag_count,
+                    &entry.child_name,
+                    entry.child_tag_count,
+                    entry.dominant_stimulus,
+                ),
+            )
+        })
+        .collect();
+    let lost_line = (reveal.evolutions_lost > 0)
+        .then(|| text::era_reveal_evolutions_lost_line(reveal.evolutions_lost));
+    log.entries.push(ChronicleEntry::Event {
+        era: reveal.era,
+        tier: reveal.tier,
+        title: text::era_reveal_title(reveal.era, reveal.tier),
+        evolutions,
+        lost_line,
+        summary_line: text::era_reveal_summary_line(
+            reveal.births,
+            reveal.deaths,
+            reveal.extinctions,
+        ),
+    });
 }
 
 /// Whether the notebook window is currently shown. A plain UI toggle, not
@@ -183,6 +274,7 @@ impl Plugin for NotebookPlugin {
         app.insert_resource(knowledge)
             .insert_resource(terrain_knowledge)
             .init_resource::<ObservationLog>()
+            .init_resource::<ChronicleLog>()
             .init_resource::<NotebookWindowOpen>()
             .init_resource::<NotebookEverOpened>()
             .init_resource::<PlayerPlacedCells>()
@@ -628,10 +720,12 @@ pub(crate) fn cursor_over_notebook_panel(cursor: Vec2, notebook_open: bool) -> b
 /// keeps living while you observe it" reading of §9's dimmed-not-paused
 /// backdrop, and matches today's actual (previously undocumented) behavior,
 /// per this task's own suggested default.
+#[allow(clippy::too_many_arguments)]
 fn notebook_window(
     mut contexts: EguiContexts,
     mut open: ResMut<NotebookWindowOpen>,
     log: Res<ObservationLog>,
+    chronicle: Res<ChronicleLog>,
     world: Res<SimWorld>,
     knowledge: Res<MatrixKnowledge>,
     terrain_knowledge: Res<TerrainKnowledge>,
@@ -722,8 +816,70 @@ fn notebook_window(
             ui.separator();
             ui.heading(text::HEADING_CATALOG);
             catalog_panel(ui, &world, &config, &terrain_knowledge);
+
+            ui.separator();
+            ui.heading(text::HEADING_CHRONICLE);
+            chronicle_panel(ui, &chronicle);
         });
     Ok(())
+}
+
+/// Chronicle section (task 153): the narrated history of the world,
+/// most-recent-first, each `Event`'s title sized by `RevealTier` the same
+/// way `screens::era_reveal_screen_ui` sizes the reveal card's own heading
+/// — reusing that weight convention rather than inventing a second one.
+fn chronicle_panel(ui: &mut egui::Ui, chronicle: &ChronicleLog) {
+    if chronicle.entries.is_empty() {
+        ui.weak(text::NO_CHRONICLE_YET);
+        return;
+    }
+    for entry in chronicle.entries.iter().rev() {
+        match entry {
+            ChronicleEntry::Quiet { era_start, era_end } => {
+                ui.weak(text::chronicle_quiet_line(*era_start, *era_end));
+            }
+            ChronicleEntry::Event {
+                tier,
+                title,
+                evolutions,
+                lost_line,
+                summary_line,
+                ..
+            } => {
+                match tier {
+                    RevealTier::Epochal => {
+                        ui.heading(egui::RichText::new(title).size(20.0));
+                    }
+                    RevealTier::Notable => {
+                        ui.strong(title);
+                    }
+                    RevealTier::Minor => {
+                        // `build_era_reveal` only assigns `Minor` when
+                        // nothing else about the era was notable — handled
+                        // above as `Quiet`, never reaches this arm.
+                        ui.weak(title);
+                    }
+                }
+                for (parent, child, line) in evolutions {
+                    ui.horizontal(|ui| {
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
+                        ui.painter().rect_filled(rect, 2.0, species_color(*parent));
+                        ui.label("→");
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
+                        ui.painter().rect_filled(rect, 2.0, species_color(*child));
+                        ui.label(line);
+                    });
+                }
+                if let Some(lost_line) = lost_line {
+                    ui.weak(lost_line);
+                }
+                ui.weak(summary_line);
+            }
+        }
+        ui.add_space(4.0);
+    }
 }
 
 /// Node radius for the hypothesis graph (task 031), in points.
@@ -1236,6 +1392,9 @@ fn catalog_panel(
                 );
                 ui.weak(text::species_population_line(population, seeded_era));
                 ui.weak(text::species_origin_label(world.species_origin(species_id)));
+                if let Some(parent) = world.parent_of(species_id) {
+                    ui.weak(text::descends_from_line(&species_label(world, parent)));
+                }
                 // Tags moved onto their own wrapped row (was appended to
                 // the outer horizontal row, same overflow bug as above,
                 // worse per extra tag) — `horizontal_wrapped` here can flow
@@ -1318,7 +1477,89 @@ mod cursor_over_notebook_panel_tests {
 mod tests {
     use super::*;
     use abiogenesis::config::SimConfig;
+    use abiogenesis::sim::{DominantStimulus, EraEvolutionReveal};
     use abiogenesis::world::SpeciesId;
+
+    fn minor_reveal(era: u32) -> EraReveal {
+        EraReveal {
+            era,
+            tier: RevealTier::Minor,
+            ..EraReveal::default()
+        }
+    }
+
+    /// Task 153: N consecutive quiet eras produce one compressed row, not N.
+    #[test]
+    fn archive_reveal_compresses_consecutive_quiet_eras_into_one_row() {
+        let mut log = ChronicleLog::default();
+        for era in 3..=7 {
+            archive_reveal(&mut log, &minor_reveal(era));
+        }
+        assert_eq!(log.entries.len(), 1, "got {:?}", log.entries);
+        assert_eq!(
+            log.entries[0],
+            ChronicleEntry::Quiet {
+                era_start: 3,
+                era_end: 7
+            }
+        );
+    }
+
+    /// A gap in era numbers (a non-quiet era sitting between two quiet
+    /// stretches) must not merge across it.
+    #[test]
+    fn archive_reveal_does_not_merge_non_contiguous_quiet_eras() {
+        let mut log = ChronicleLog::default();
+        archive_reveal(&mut log, &minor_reveal(1));
+        archive_reveal(&mut log, &minor_reveal(2));
+        archive_reveal(&mut log, &minor_reveal(5));
+        assert_eq!(
+            log.entries,
+            vec![
+                ChronicleEntry::Quiet {
+                    era_start: 1,
+                    era_end: 2
+                },
+                ChronicleEntry::Quiet {
+                    era_start: 5,
+                    era_end: 5
+                },
+            ]
+        );
+    }
+
+    /// A speciation reveal's Chronicle entry names both the parent and the
+    /// child species — the same "descends from" fact the Catalog field
+    /// shows, sourced from the same data.
+    #[test]
+    fn archive_reveal_speciation_entry_names_parent_and_child() {
+        let mut log = ChronicleLog::default();
+        let reveal = EraReveal {
+            era: 4,
+            tier: RevealTier::Epochal,
+            evolutions: vec![EraEvolutionReveal {
+                parent: SpeciesId(0),
+                parent_name: "Marrow".to_string(),
+                parent_tag_count: 1,
+                child: SpeciesId(3),
+                child_name: "Thistledown".to_string(),
+                child_tag_count: 2,
+                dominant_stimulus: DominantStimulus::Toxicity,
+            }],
+            ..EraReveal::default()
+        };
+        archive_reveal(&mut log, &reveal);
+
+        let ChronicleEntry::Event { evolutions, .. } = &log.entries[0] else {
+            panic!("expected an Event entry, got {:?}", log.entries[0]);
+        };
+        assert_eq!(evolutions.len(), 1);
+        let (parent, child, line) = &evolutions[0];
+        assert_eq!(*parent, SpeciesId(0));
+        assert_eq!(*child, SpeciesId(3));
+        assert!(line.contains("Marrow"), "got: {line}");
+        assert!(line.contains("Thistledown"), "got: {line}");
+    }
 
     /// Bugfix regression (reported live 2026-08-12): a pair with both a
     /// confirmed positive and a confirmed negative direction must bow the
