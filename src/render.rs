@@ -37,22 +37,34 @@ pub fn species_label(world: &SimWorld, id: SpeciesId) -> String {
     format!("{} (species {})", world.species[id.0 as usize].name, id.0)
 }
 
-/// Hue for a species' identity color, shared by `cell_color`'s grid
-/// rendering and `species_color`'s egui swatch, so the two always agree.
+/// Hue for a species' identity color, used by `species_color`'s egui
+/// swatch. **No longer shared with `cell_color`'s grid rendering** (task
+/// 180: the map's organism ink went neutral amber, `ORGANISM_INK_HUE`
+/// below, per `VISUAL_STYLE_GUIDE.md` §1 rule 3 — color encodes state, not
+/// identity) — `species_color` itself is kept for the Seed Palette's
+/// species-list swatch, a use the 180/181 pass didn't touch.
 fn species_hue(id: SpeciesId) -> f32 {
     (id.0 as f32 * SPECIES_HUE_STEP) % 360.0
 }
 
 /// A species' identity color as an egui swatch (playtest finding, task 041
 /// session: the HUD's Seed Palette/Population panels listed species by name
-/// only, with no way to connect a name to its on-grid dot color). Same hue
-/// as `cell_color`'s organism base color; fixed saturation/value rather
-/// than energy-scaled, so it reads as a stable identity marker, not an
-/// energy readout.
+/// only, with no way to connect a name to its on-grid dot color). Fixed
+/// saturation/value rather than energy-scaled, so it reads as a stable
+/// identity marker, not an energy readout.
 pub fn species_color(id: SpeciesId) -> egui::Color32 {
     let hue = species_hue(id) / 360.0;
     egui::ecolor::Hsva::new(hue, 0.75, 0.9, 1.0).into()
 }
+
+/// Organism ink hue/saturation on the map (task 180) — a single neutral
+/// amber for every organism regardless of species or metabolism, matching
+/// `VISUAL_STYLE_GUIDE.md` §3.2's `#e0c99a` token (HSL-decomposed: hue
+/// ≈40°, saturation ≈0.53). `cell_color`'s existing energy/density-driven
+/// lightness ramp (unchanged by this task) supplies the "full amber above
+/// threshold, dimmed below" reading.
+const ORGANISM_INK_HUE: f32 = 40.0;
+const ORGANISM_INK_SATURATION: f32 = 0.53;
 
 /// A single glyph for a species' metabolism (task 065 — the sidebar's
 /// Species list needs a species identifiable without opening the notebook,
@@ -1475,7 +1487,21 @@ const SHAPE_TEXTURE_SIZE: u32 = 24;
 /// `SHAPE_TEXTURE_SIZE` evenly so every block covers exactly
 /// `SHAPE_TEXTURE_SIZE / SHAPE_BLOCK_GRID` texels; "a handful of blocks per
 /// shape," not a curve, per the design source's own framing.
-const SHAPE_BLOCK_GRID: u32 = 6;
+///
+/// Raised `6 -> 8` (2026-08-30 playtest finding, live-verified this time):
+/// at 6 blocks, `hexagon_mask` and `diamond_mask` produced the same
+/// silhouette (both taper to the same 2-4-4-2 / 2-4-6-4-2 profile at that
+/// resolution — not visually distinct), and the previous `circle_mask`
+/// rendered as a plain square (see `asterisk_mask`'s own doc comment). 8
+/// blocks (`24 / 8 = 3` texels/block, still a clean division) is enough for
+/// all four current shapes to read as distinct silhouettes while staying
+/// visibly block-snapped, not a smooth curve.
+///
+/// **Not reused by the HUD's Biosphere icon** (task 180): at the icon's
+/// much smaller on-screen size even 8 blocks reads as a blur — `ui.rs`'s
+/// `paint_metabolism_icon` samples the same `metabolism_mask` functions at
+/// its own, finer grid instead.
+const SHAPE_BLOCK_GRID: u32 = 8;
 
 /// One procedurally generated shape texture per `Metabolism` variant (task
 /// 032 — a second visual dimension beyond species hue/energy lightness, so a
@@ -1551,14 +1577,44 @@ fn shape_mask_image(inside: impl Fn(f32, f32) -> bool) -> Image {
     )
 }
 
-/// A filled circle — `Photolithic` (GDD §5.4's primary producer, the
-/// "default" metabolism players see most).
-fn circle_mask(nx: f32, ny: f32) -> bool {
-    nx * nx + ny * ny <= 0.8 * 0.8
+/// An asterisk/flower — `Photolithic` (GDD §5.4's primary producer, the
+/// "default" metabolism players see most; `VISUAL_STYLE_GUIDE.md` §4).
+/// **Fix, 2026-08-30 playtest finding**: this replaces a plain filled
+/// circle, which at `SHAPE_BLOCK_GRID` coarseness degenerated into an
+/// indistinguishable solid square (a real regression, not a design choice —
+/// `circle_mask(nx,ny) = nx²+ny² <= 0.64` happens to pass every sampled
+/// block center inside its bounding square at 6-8 block resolution, so the
+/// "circle" rendered identically to a square with no visible rounding).
+/// A 9-point cluster — center, 4 diagonal neighbors forming a small inner
+/// diamond, and 4 further-out points along the axes — transcribed from
+/// `redesign/processed/pixel-full-scene.svg`'s own organism-icon block
+/// pattern (e.g. line 6756: a center dot, 4 diagonal dots at half the
+/// radius, 4 axis-tip dots at full radius — the *only* organism icon shape
+/// that mockup actually draws), expressed as a union of small dot masks
+/// rather than a single filled region so it stays a flower/asterisk shape
+/// instead of collapsing into a solid blob at coarse block resolution.
+pub(crate) fn asterisk_mask(nx: f32, ny: f32) -> bool {
+    const DOT_RADIUS_SQ: f32 = 0.3 * 0.3;
+    const POINTS: [(f32, f32); 9] = [
+        (0.0, 0.0),
+        (0.5, 0.5),
+        (-0.5, 0.5),
+        (0.5, -0.5),
+        (-0.5, -0.5),
+        (0.0, 1.0),
+        (0.0, -1.0),
+        (1.0, 0.0),
+        (-1.0, 0.0),
+    ];
+    POINTS.iter().any(|&(px, py)| {
+        let dx = nx - px;
+        let dy = ny - py;
+        dx * dx + dy * dy <= DOT_RADIUS_SQ
+    })
 }
 
 /// An upward-pointing triangle — `Predator`, evoking a fang/claw shape.
-fn triangle_mask(nx: f32, ny: f32) -> bool {
+pub(crate) fn triangle_mask(nx: f32, ny: f32) -> bool {
     let apex_y = -0.9;
     let base_y = 0.8;
     let half_width = 0.85;
@@ -1571,16 +1627,40 @@ fn triangle_mask(nx: f32, ny: f32) -> bool {
 }
 
 /// A diamond (rotated square, Manhattan-norm disc) — `Decomposer`.
-fn diamond_mask(nx: f32, ny: f32) -> bool {
+pub(crate) fn diamond_mask(nx: f32, ny: f32) -> bool {
     nx.abs() + ny.abs() <= 0.9
 }
 
-/// A plus/cross — `Chemolithotroph` (task 108), visually distinct from the
-/// existing circle/triangle/diamond trio.
-fn cross_mask(nx: f32, ny: f32) -> bool {
-    let half_arm = 0.32;
-    let extent = 0.85;
-    (nx.abs() <= half_arm && ny.abs() <= extent) || (ny.abs() <= half_arm && nx.abs() <= extent)
+/// A hexagon — `Chemolithotroph` (`VISUAL_STYLE_GUIDE.md` §4). **Fix,
+/// 2026-08-30**: replaces the previous plus/cross (task 108), which read
+/// as fine on its own but — combined with the `circle_mask` bug above —
+/// meant only 2 of 4 metabolisms (triangle, diamond) were ever visually
+/// distinct at `SHAPE_BLOCK_GRID` coarseness; a hexagon reads as flat-sided
+/// and parallel-edged, distinct from diamond's continuous taper to a point.
+/// Three-slab intersection (flat-top hexagon = the region within
+/// `apothem` of all three axis-normal projections at 0°/60°/120°).
+pub(crate) fn hexagon_mask(nx: f32, ny: f32) -> bool {
+    const APOTHEM: f32 = 0.62;
+    const NORMAL_ANGLES_DEG: [f32; 3] = [0.0, 60.0, 120.0];
+    NORMAL_ANGLES_DEG.iter().all(|&deg| {
+        let theta = deg.to_radians();
+        let d = nx * theta.cos() + ny * theta.sin();
+        d.abs() <= APOTHEM
+    })
+}
+
+/// The block-mask function for a given metabolism (task 180) — the same
+/// four functions `MetabolismShapes` bakes into map sprite textures, shared
+/// verbatim with the HUD's egui-painted Biosphere icon rather than a second
+/// hand-authored geometry definition (`VISUAL_STYLE_GUIDE.md` §4: "un solo
+/// set riusato ovunque, non uno per contesto").
+pub(crate) fn metabolism_mask(metabolism: Metabolism) -> fn(f32, f32) -> bool {
+    match metabolism {
+        Metabolism::Photolithic => asterisk_mask,
+        Metabolism::Predator => triangle_mask,
+        Metabolism::Decomposer => diamond_mask,
+        Metabolism::Chemolithotroph => hexagon_mask,
+    }
 }
 
 /// A small filled square in the texture's top-right corner (task 141) — the
@@ -1599,14 +1679,14 @@ fn with_blocked_marker(base: impl Fn(f32, f32) -> bool) -> impl Fn(f32, f32) -> 
 
 fn spawn_metabolism_shapes(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     commands.insert_resource(MetabolismShapes {
-        photolithic: images.add(shape_mask_image(circle_mask)),
+        photolithic: images.add(shape_mask_image(asterisk_mask)),
         predator: images.add(shape_mask_image(triangle_mask)),
         decomposer: images.add(shape_mask_image(diamond_mask)),
-        chemolithotroph: images.add(shape_mask_image(cross_mask)),
-        photolithic_blocked: images.add(shape_mask_image(with_blocked_marker(circle_mask))),
+        chemolithotroph: images.add(shape_mask_image(hexagon_mask)),
+        photolithic_blocked: images.add(shape_mask_image(with_blocked_marker(asterisk_mask))),
         predator_blocked: images.add(shape_mask_image(with_blocked_marker(triangle_mask))),
         decomposer_blocked: images.add(shape_mask_image(with_blocked_marker(diamond_mask))),
-        chemolithotroph_blocked: images.add(shape_mask_image(with_blocked_marker(cross_mask))),
+        chemolithotroph_blocked: images.add(shape_mask_image(with_blocked_marker(hexagon_mask))),
     });
 }
 
@@ -1751,7 +1831,7 @@ fn cell_color(
             // `repro_threshold` right before a growth event; clamp.
             let per_capita_energy = population.energy / population.count as f32;
             let fill = (per_capita_energy / config.energy.repro_threshold).clamp(0.0, 1.0);
-            (population.species, 0.15 + fill * 0.35)
+            0.15 + fill * 0.35
         }),
         // Same lightness range Detail's density-adjacent reading uses
         // (`0.15`-`0.50`), shifted up (`0.20` floor) so a one-individual
@@ -1763,12 +1843,18 @@ fn cell_color(
         MapViewMode::Overview => cell.population.map(|population| {
             let fill = (population.count as f32 / config.energy.cell_carrying_capacity as f32)
                 .clamp(0.0, 1.0);
-            (population.species, 0.20 + fill * 0.30)
+            0.20 + fill * 0.30
         }),
     };
 
-    let base = if let Some((species, lightness)) = occupant {
-        Color::hsl(species_hue(species), 0.75, lightness)
+    let base = if let Some(lightness) = occupant {
+        // Task 180: a single neutral amber ink for every organism,
+        // regardless of species — color in this register encodes state
+        // (here, energy/density via `lightness`), never identity
+        // (`VISUAL_STYLE_GUIDE.md` §1 rule 3, §3.2). Same fill/lightness
+        // math as before this task, only the hue/saturation it drives
+        // changed from a per-species hue to the fixed amber.
+        Color::hsl(ORGANISM_INK_HUE, ORGANISM_INK_SATURATION, lightness)
     } else if cell.residue > config.energy.residue_ambient_trickle {
         // `sim::step` settles every cell's residue at exactly
         // `residue_ambient_trickle` once no death has happened nearby (task

@@ -56,9 +56,9 @@ terrain overlay (task 112) stays untouched.**
 
 ## 📋 Acceptance Criteria
 
-- [ ] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
+- [x] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
 
-- [ ] **Action-mode buttons (Seed/Stress/Cull/Splice) stop using emoji.**
+- [x] **Action-mode buttons (Seed/Stress/Cull/Splice) stop using emoji.**
       `ACTION_GLYPHS` (`ui.rs:1615-1620`) uses `🌱⚡💀🔬`; the surrounding
       doc comment (`ui.rs:332-334`) already documents that **egui has no
       COLR/bitmap glyph path, so these never actually render as intended**
@@ -72,7 +72,7 @@ terrain overlay (task 112) stays untouched.**
       `RichText::new(glyph).size(20.0)` (`1649-1652`) becomes a custom
       painted button (allocate a fixed square rect, paint background +
       border + block icon, no font glyph anywhere in the path).
-- [ ] **Action buttons get the mockup's box chrome**: `52×52` fixed square,
+- [x] **Action buttons get the mockup's box chrome**: `52×52` fixed square,
       no corner rounding (already global per 151), unselected = no fill +
       `#3a4048`-equivalent gray stroke, selected = filled dark-green
       (`#16241a`-equivalent) with a green (`#7fae6a`-equivalent) stroke —
@@ -82,7 +82,7 @@ terrain overlay (task 112) stays untouched.**
       only by a lighter fill when selected) — replace with an explicit
       painted rect + stroke pair per button, same custom-paint path as the
       icon above.
-- [ ] **Time-control buttons (pulse/era/auto-advance/Notebook) get outline
+- [x] **Time-control buttons (pulse/era/auto-advance/Notebook) get outline
       chrome, not filled egui buttons.** `time_control_row`
       (`ui.rs:1534-1609`) uses `ui.button`/`ui.selectable_label` for
       Tick/Era/Continuous/Notebook — egui's default filled-background
@@ -92,7 +92,7 @@ terrain overlay (task 112) stays untouched.**
       unread-observation badge, `6831`, already partially mirrored by this
       codebase's own `NotebookHasUnseenConfirmation` badge — keep that
       badge, only the button's own chrome needs the outline treatment).
-- [ ] **Species identity goes text+shape, not hue, in the Biosphere list.**
+- [x] **Species identity goes text+shape, not hue, in the Biosphere list.**
       `ui.rs:740`: `ui.colored_label(species_color(*species), SPECIES_GLYPH)`
       colors a bullet per species. Per the governing rule above and
       `pixel-full-scene.svg:6815-6826` (Biosphere rows use a neutral amber
@@ -106,7 +106,7 @@ terrain overlay (task 112) stays untouched.**
       *does* legitimately stay state-colored (trend arrows, positive/
       negative edges) — just stop using it as a per-species identity tint
       in this row.
-- [ ] **Section labels get the mockup's label treatment.** The mockup's
+- [x] **Section labels get the mockup's label treatment.** The mockup's
       section headers (`TIME`, `INTERVIENI`/moves, `BIOSPHERE`) render
       small, uppercase, letter-spaced, and muted-gray
       (`pixel-full-scene.svg:6787,6796,6814`, `font-size="8"
@@ -116,7 +116,7 @@ terrain overlay (task 112) stays untouched.**
       consistent style (uppercase transform of the existing label text,
       wider letter spacing, the muted-gray tone already used for
       `ui.weak`) — a style constant/helper, not per-call-site duplication.
-- [ ] **Organism ink on the map goes neutral amber, not species hue** —
+- [x] **Organism ink on the map goes neutral amber, not species hue** —
       carried over from this task's first draft, still in scope here since
       it's the same governing rule applied to the grid itself.
       `render.rs::cell_color`'s `occupant` branch (`~1744-1767`) currently
@@ -132,13 +132,26 @@ terrain overlay (task 112) stays untouched.**
       (`render.rs:42-56`) stay untouched as *functions* — they're still
       legitimately read elsewhere (state colors, whatever 181 keeps) — this
       AC only stops `cell_color` from calling them.
-- [ ] Live visual check (`cargo run`, screenshot or interactive): action
-      buttons show real block icons (no tofu boxes), selected action has
-      the green fill+stroke, time-control buttons read as outline boxes,
-      Biosphere rows show a neutral icon per metabolism (not a colored
-      dot), section headers are visually distinct from body rows, map
-      organisms read as neutral amber regardless of species at both zoom
-      levels.
+- [x] Live visual check (`cargo run`, screenshot, 2026-08-30). Found and
+      fixed a real bug this surfaced, beyond this task's original ACs:
+      `circle_mask` (Photolithic) block-snapped to a plain solid square at
+      `SHAPE_BLOCK_GRID` coarseness (confirmed via a temporary alpha-dump
+      test — zero corner rounding, not just visually subtle), and
+      `cross_mask` (Chemolithotroph) matched `diamond_mask`'s silhouette at
+      the same coarseness — 2 of 4 metabolisms were never actually visually
+      distinct. Replaced with `asterisk_mask` (Photolithic, transcribed from
+      `pixel-full-scene.svg`'s own organism block pattern) and `hexagon_mask`
+      (Chemolithotroph), matching `VISUAL_STYLE_GUIDE.md` §4's shape table;
+      raised `SHAPE_BLOCK_GRID` 6→8 (still divides `SHAPE_TEXTURE_SIZE=24`
+      evenly) so hexagon and diamond stay distinct. Screenshot-confirmed:
+      Biosphere icon and map organism (both Photolithic, both zoom levels)
+      now show the asterisk/flower pattern, not a square. Triangle and
+      diamond were already correct and untouched; hexagon was validated by
+      the same block-simulation method used to design it, not by a direct
+      screenshot of a placed Chemolithotroph organism (species-list click
+      coordinates didn't land in the session available) — worth a quick
+      glance if a future session is in this file anyway, not worth a
+      dedicated re-open on its own.
 
 ---
 

@@ -9,7 +9,9 @@ use bevy_egui::{
 use crate::notebook::{
     tag_glyph, EverSeeded, NotebookEverOpened, NotebookHasUnseenConfirmation, NotebookWindowOpen,
 };
-use crate::render::{metabolism_glyph, species_color, species_label, GridCamera, MapViewMode};
+use crate::render::{
+    metabolism_glyph, metabolism_mask, species_color, species_label, GridCamera, MapViewMode,
+};
 use crate::text;
 use abiogenesis::config::SimConfig;
 use abiogenesis::knowledge::MatrixKnowledge;
@@ -23,7 +25,7 @@ use abiogenesis::sim::{
 };
 use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::{
-    Cell, Population, SimWorld, SpeciesId, SpeciesOrigin, StressAxis, TagSlot,
+    Cell, Metabolism, Population, SimWorld, SpeciesId, SpeciesOrigin, StressAxis, TagSlot,
 };
 use abiogenesis::worldgen::season_pulses_for;
 
@@ -266,12 +268,6 @@ pub(crate) const HUD_WIDTH: f32 = 340.0;
 /// egui overlay (TECH_DESIGN.md §6 "HUD camera").
 const HUD_CAMERA_LAYER: usize = 1;
 
-/// Color-swatch glyph preceding a species' name in Population/Seed Palette
-/// (playtest finding, task 041 session), matching `species_color`'s hue to
-/// the same organism's on-grid dot — same technique `notebook.rs::TAG_GLYPH`
-/// uses for tags.
-const SPECIES_GLYPH: &str = "●";
-
 /// Color of the notebook's unseen-confirmation badge (task 054) — matches
 /// no existing semantic (it's neither a species nor a tag color), so it
 /// gets its own constant rather than reusing one of those.
@@ -292,6 +288,13 @@ const NOTEBOOK_BADGE_COLOR: egui::Color32 = egui::Color32::from_rgb(230, 190, 60
 /// safely above the floor) so the cap and the `SCROLL_FOR_MORE` threshold
 /// stay consistent with each other if the font or spacing ever changes.
 const BIOSPHERE_VISIBLE_ROWS: usize = 5;
+
+/// Side length of the Biosphere row's metabolism icon (task 180) — small
+/// enough to sit inline with the row's text at normal line height;
+/// `paint_metabolism_icon`'s own `BIOSPHERE_ICON_SAMPLE_GRID` (not the
+/// map's coarser `SHAPE_BLOCK_GRID`) is what keeps the shape legible at
+/// this size.
+const BIOSPHERE_ICON_SIZE: f32 = 12.0;
 
 /// How many Species rows (task 065) stay visible before the list scrolls
 /// internally — same fixed-height/internal-scroll pattern as
@@ -326,15 +329,14 @@ const OBJECTIVE_NARRATIVE_COLOR: egui::Color32 = egui::Color32::from_rgb(180, 17
 pub struct UiPlugin;
 
 /// DejaVu Sans (Bitstream Vera License, see `assets/fonts/DejaVu-LICENSE.txt`)
-/// covers the `●` bullet that egui's built-in default font lacks — those
-/// glyphs were rendering as tofu boxes (playtest finding, task 041
-/// session): `notebook.rs::TAG_GLYPH` and this module's `SPECIES_GLYPH`
-/// (task 155 replaced `TAG_LETTERS`'s Greek script with ASCII 3-letter
-/// codes, which no longer need this font's coverage). It does not add
-/// color-emoji support: egui has
-/// no COLR/bitmap glyph rendering path at all, so `ACTION_GLYPHS`' 🌱💀🔬
-/// stay unresolved regardless of font (⚡ happens to have a monochrome
-/// dingbat glyph and already renders).
+/// covers the `●` bullet that egui's built-in default font lacks — that
+/// glyph was rendering as a tofu box (playtest finding, task 041 session):
+/// `notebook.rs::TAG_GLYPH` still relies on this font's coverage. This
+/// module's own `SPECIES_GLYPH` bullet (task 041) and `ACTION_GLYPHS`'
+/// unrendered emoji (`🌱⚡💀🔬` — egui has no COLR/bitmap glyph path at all,
+/// so no font choice ever fixed these) are both gone as of task 180: the
+/// Biosphere row and the action buttons now paint block-pattern icons
+/// directly via `egui::Painter`, not font glyphs.
 const DEJAVU_SANS: &[u8] = include_bytes!("../assets/fonts/DejaVuSans.ttf");
 
 impl Plugin for UiPlugin {
@@ -698,7 +700,7 @@ pub(crate) fn hud_panel(
             );
 
             hairline(ui);
-            ui.strong(text::HEADING_ACTION);
+            section_header(ui, text::HEADING_ACTION);
             let splice_confirmed_tags = world
                 .active_tags
                 .iter()
@@ -729,7 +731,7 @@ pub(crate) fn hud_panel(
             }
 
             hairline(ui);
-            ui.strong(text::HEADING_POPULATION);
+            section_header(ui, text::HEADING_POPULATION);
             if stats.is_empty() {
                 ui.weak(text::NO_POPULATION);
             }
@@ -739,7 +741,23 @@ pub(crate) fn hud_panel(
                 .show(ui, |ui| {
                     for (species, population, avg_energy) in &stats {
                         ui.horizontal(|ui| {
-                            ui.colored_label(species_color(*species), SPECIES_GLYPH);
+                            // Task 180: species identity is text-only here
+                            // (the name, below) — the icon carries
+                            // metabolism, neutral amber ink, never a
+                            // per-species hue (`VISUAL_STYLE_GUIDE.md` §1
+                            // rule 3, §3.2), matching
+                            // `pixel-full-scene.svg:6815-6826`.
+                            let (icon_rect, _) = ui.allocate_exact_size(
+                                egui::vec2(BIOSPHERE_ICON_SIZE, BIOSPHERE_ICON_SIZE),
+                                egui::Sense::hover(),
+                            );
+                            let metabolism = world.species[species.0 as usize].metabolism;
+                            paint_metabolism_icon(
+                                ui.painter(),
+                                icon_rect,
+                                metabolism,
+                                ICON_INK_SELECTED,
+                            );
                             // Bare species name, not `species_label`'s "Name
                             // (species N)" (task 105 follow-up): the row
                             // already carries population, energy, a trend
@@ -773,8 +791,7 @@ pub(crate) fn hud_panel(
             }
 
             hairline(ui);
-            ui.strong(text::HEADING_SEED_PALETTE)
-                .on_hover_text(text::SEED_PALETTE_HOVER);
+            section_header(ui, text::HEADING_SEED_PALETTE).on_hover_text(text::SEED_PALETTE_HOVER);
             egui::ScrollArea::vertical()
                 .id_salt("species_list")
                 .max_height(SPECIES_VISIBLE_ROWS as f32 * console_row_height(ui))
@@ -794,7 +811,7 @@ pub(crate) fn hud_panel(
             }
 
             hairline(ui);
-            ui.strong(text::HEADING_OBJECTIVE);
+            section_header(ui, text::HEADING_OBJECTIVE);
             objective_panel(
                 ui,
                 &world,
@@ -1423,6 +1440,166 @@ const DOT_EMPTY_COLOR: egui::Color32 = egui::Color32::from_gray(60);
 const DOT_SIZE: f32 = 8.0;
 const DOT_GAP: f32 = 5.0;
 
+/// HUD chrome tokens transcribed from `VISUAL_STYLE_GUIDE.md` §3 (task 180)
+/// — shared by the action-mode buttons and the time-control outline
+/// buttons below, the two "button registers" §6 describes.
+const CHROME_OUTLINE_COLOR: egui::Color32 = egui::Color32::from_rgb(0x3a, 0x40, 0x48);
+const CHROME_SELECTED_FILL: egui::Color32 = egui::Color32::from_rgb(0x16, 0x24, 0x1a);
+const CHROME_SELECTED_STROKE: egui::Color32 = egui::Color32::from_rgb(0x7f, 0xae, 0x6a);
+/// Icon ink, unselected/selected (`pixel-full-scene.svg:6798` vs.
+/// `6801/6804/6807`) — gray until a mode-select button is armed, then the
+/// same amber the map's organism ink uses (§3.2), never a per-action hue.
+const ICON_INK_UNSELECTED: egui::Color32 = egui::Color32::from_rgb(0x9a, 0xa0, 0xa6);
+const ICON_INK_SELECTED: egui::Color32 = egui::Color32::from_rgb(0xe0, 0xc9, 0x9a);
+/// Muted-gray section-label ink (§2, §3.1) — uppercase headers distinct
+/// from plain body/heading text.
+const SECTION_LABEL_COLOR: egui::Color32 = egui::Color32::from_rgb(0x7d, 0x84, 0x8a);
+
+/// Small, uppercase, muted-gray section header (task 180), replacing plain
+/// `ui.strong(...)` at the HUD's section boundaries (`TIME`/`INTERVIENI`/
+/// `BIOSPHERE` etc. in `pixel-full-scene.svg:6787,6796,6814`). The mockup
+/// also letter-spaces these labels; egui has no direct letter-spacing knob
+/// and the source itself is a design reference, not a pixel spec (same
+/// latitude every other pixel-grain task in this queue has taken), so this
+/// only reproduces the uppercase transform, small size, and muted color.
+fn section_header(ui: &mut egui::Ui, label: &str) -> egui::Response {
+    ui.label(
+        egui::RichText::new(label.to_uppercase())
+            .small()
+            .color(SECTION_LABEL_COLOR),
+    )
+}
+
+/// Paints one 4×4-point block at `origin + offset` — the mockup's action-
+/// icon unit (`pixel-full-scene.svg`'s `<rect width="4" height="4">`
+/// blocks). `action_icon_row` calls this per icon; the offsets themselves
+/// (`SEED_ICON_BLOCKS` etc. below) are transcribed verbatim from the
+/// mockup's four button patterns (`pixel-full-scene.svg:6798,6801,6804,
+/// 6807`) rather than procedurally generated, since — unlike the
+/// metabolism shapes below — no mask function for these four exists
+/// anywhere else to reuse.
+const ACTION_ICON_BLOCK: f32 = 4.0;
+
+fn paint_action_blocks(
+    painter: &egui::Painter,
+    origin: egui::Pos2,
+    offsets: &[(f32, f32)],
+    color: egui::Color32,
+) {
+    for &(dx, dy) in offsets {
+        let block = egui::Rect::from_min_size(
+            origin + egui::vec2(dx, dy),
+            egui::vec2(ACTION_ICON_BLOCK, ACTION_ICON_BLOCK),
+        );
+        painter.rect_filled(block, 0.0, color);
+    }
+}
+
+/// A plus-cluster, `ActionMode::Seed` — `pixel-full-scene.svg:6798`
+/// (offsets relative to the button rect's own top-left corner, which is
+/// identical across all four buttons since they share `ACTION_BUTTON_SIZE`).
+const SEED_ICON_BLOCKS: [(f32, f32); 8] = [
+    (26.0, 16.0),
+    (26.0, 20.0),
+    (22.0, 24.0),
+    (30.0, 24.0),
+    (26.0, 24.0),
+    (26.0, 28.0),
+    (22.0, 32.0),
+    (30.0, 32.0),
+];
+
+/// A jagged bolt, `ActionMode::Stress` — `pixel-full-scene.svg:6801`.
+const STRESS_ICON_BLOCKS: [(f32, f32); 9] = [
+    (30.0, 16.0),
+    (26.0, 20.0),
+    (30.0, 20.0),
+    (22.0, 24.0),
+    (26.0, 24.0),
+    (30.0, 24.0),
+    (26.0, 28.0),
+    (22.0, 32.0),
+    (26.0, 32.0),
+];
+
+/// An X/skull cluster, `ActionMode::Cull` — `pixel-full-scene.svg:6804`.
+const CULL_ICON_BLOCKS: [(f32, f32); 12] = [
+    (22.0, 16.0),
+    (26.0, 16.0),
+    (30.0, 16.0),
+    (18.0, 20.0),
+    (34.0, 20.0),
+    (18.0, 24.0),
+    (26.0, 24.0),
+    (34.0, 24.0),
+    (22.0, 28.0),
+    (30.0, 28.0),
+    (22.0, 32.0),
+    (30.0, 32.0),
+];
+
+/// A flask cluster, `ActionMode::Splice` — `pixel-full-scene.svg:6807`.
+const SPLICE_ICON_BLOCKS: [(f32, f32); 11] = [
+    (26.0, 16.0),
+    (26.0, 20.0),
+    (22.0, 24.0),
+    (30.0, 24.0),
+    (18.0, 28.0),
+    (22.0, 28.0),
+    (26.0, 28.0),
+    (30.0, 28.0),
+    (34.0, 28.0),
+    (18.0, 32.0),
+    (34.0, 32.0),
+];
+
+fn action_icon_blocks(action: ActionMode) -> &'static [(f32, f32)] {
+    match action {
+        ActionMode::Seed => &SEED_ICON_BLOCKS,
+        ActionMode::Stress => &STRESS_ICON_BLOCKS,
+        ActionMode::Cull => &CULL_ICON_BLOCKS,
+        ActionMode::Splice => &SPLICE_ICON_BLOCKS,
+    }
+}
+
+/// Paints a metabolism's shared block-pattern shape (`render::metabolism_mask`,
+/// the same geometry the map's sprite masks use) inside `rect` (task 180's
+/// Biosphere row — species identity goes text-only, the icon carries
+/// metabolism, never a per-species hue). Sampled at `BIOSPHERE_ICON_SAMPLE_GRID`,
+/// not the map's own coarser `SHAPE_BLOCK_GRID` — see that constant's doc
+/// comment for why.
+/// Sampling density for `paint_metabolism_icon`, deliberately **higher**
+/// than the map's `SHAPE_BLOCK_GRID` (task 180 fix, 2026-08-30 playtest
+/// finding): at `BIOSPHERE_ICON_SIZE` (`12.0`), the map's own block
+/// coarseness reads as a blur/plain blob at this much smaller size — a
+/// regression from the round `●` bullet this icon replaced. This samples
+/// the *same* mask functions (`metabolism_mask`) more finely, not a second
+/// geometry definition — the map's own coarseness stays untouched, driven
+/// by its own texture/cell size, not this constant.
+const BIOSPHERE_ICON_SAMPLE_GRID: u32 = 16;
+
+fn paint_metabolism_icon(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    metabolism: Metabolism,
+    color: egui::Color32,
+) {
+    let mask = metabolism_mask(metabolism);
+    let blocks = BIOSPHERE_ICON_SAMPLE_GRID;
+    let block_size = rect.size() / blocks as f32;
+    for row in 0..blocks {
+        for col in 0..blocks {
+            let nx = (col as f32 + 0.5) / blocks as f32 * 2.0 - 1.0;
+            let ny = (row as f32 + 0.5) / blocks as f32 * 2.0 - 1.0;
+            if mask(nx, ny) {
+                let min =
+                    rect.min + egui::vec2(col as f32 * block_size.x, row as f32 * block_size.y);
+                painter.rect_filled(egui::Rect::from_min_size(min, block_size), 0.0, color);
+            }
+        }
+    }
+}
+
 /// Renders `total` discrete slots, the first `filled` of them filled — the
 /// task 064 replacement for continuous `egui::ProgressBar`s on small,
 /// countable resources (action budget, era progress) that a percentage bar
@@ -1523,6 +1700,54 @@ fn species_row(
     ui.weak(text::species_row_subtext(metabolism, temp_label));
 }
 
+/// Fixed size for the time-control outline buttons (task 180) —
+/// `pixel-full-scene.svg:6789/6791/6793`'s `76×20` boxes.
+const TIME_BUTTON_SIZE: egui::Vec2 = egui::vec2(76.0, 20.0);
+
+/// An outline-chrome button (task 180, §6's "plain action" register): no
+/// fill, `#3a4048` stroke, text-only — filled with the mode-select
+/// green pair only while `active` (continuous-advance armed, the notebook
+/// open), matching the mockup's own framing that these buttons stay
+/// outline "until an active state applies a distinct fill" (the Notebook
+/// button's separate unseen-observation badge, painted by the caller, is
+/// unaffected by this). A disabled button dims rather than disappears,
+/// consistent with `add_enabled_ui`'s convention elsewhere in this file.
+fn outline_button(ui: &mut egui::Ui, label: &str, active: bool, enabled: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(TIME_BUTTON_SIZE, egui::Sense::click());
+    let dim = |color: egui::Color32| {
+        if enabled {
+            color
+        } else {
+            color.gamma_multiply(0.4)
+        }
+    };
+    let painter = ui.painter();
+    if active {
+        painter.rect_filled(rect, 0.0, dim(CHROME_SELECTED_FILL));
+        painter.rect_stroke(
+            rect,
+            0.0,
+            egui::Stroke::new(1.0, dim(CHROME_SELECTED_STROKE)),
+            egui::StrokeKind::Outside,
+        );
+    } else {
+        painter.rect_stroke(
+            rect,
+            0.0,
+            egui::Stroke::new(1.0, dim(CHROME_OUTLINE_COLOR)),
+            egui::StrokeKind::Outside,
+        );
+    }
+    painter.text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        label,
+        egui::FontId::monospace(11.0),
+        dim(egui::Color32::from_rgb(0xc3, 0xc9, 0xcf)),
+    );
+    response
+}
+
 /// On-screen equivalents of the tick/era/notebook keyboard shortcuts (task
 /// 094), coexisting with them — clicking a button here only sets a
 /// `HudControlIntents` flag, the same `input.rs::start_era`/`single_tick`/
@@ -1546,10 +1771,8 @@ fn time_control_row(
     // own.
     let blocked = advancing || continuous.0;
     ui.horizontal(|ui| {
-        let tick_response = ui
-            .add_enabled_ui(!blocked, |ui| ui.button(text::TICK_BUTTON_LABEL))
-            .inner;
-        if tick_response.clicked() {
+        let tick_response = outline_button(ui, text::TICK_BUTTON_LABEL, false, !blocked);
+        if tick_response.clicked() && !blocked {
             intents.advance_tick = true;
         }
         tick_response.on_hover_text(if advancing {
@@ -1568,10 +1791,8 @@ fn time_control_row(
             text::TICK_BUTTON_TOOLTIP.to_string()
         });
 
-        let era_response = ui
-            .add_enabled_ui(!blocked, |ui| ui.button(text::ERA_BUTTON_LABEL))
-            .inner;
-        if era_response.clicked() {
+        let era_response = outline_button(ui, text::ERA_BUTTON_LABEL, false, !blocked);
+        if era_response.clicked() && !blocked {
             intents.advance_era = true;
         }
         era_response.on_hover_text(if advancing {
@@ -1590,20 +1811,19 @@ fn time_control_row(
             text::ERA_BUTTON_TOOLTIP.to_string()
         });
 
-        // `selectable_label`, not a plain button (task 152's own explicit
-        // requirement): a distinct fill while active, not just a glyph
-        // swap — same idiom the notebook button already uses below.
-        let continuous_response = ui
-            .add_enabled_ui(!advancing, |ui| {
-                ui.selectable_label(continuous.0, text::CONTINUOUS_ADVANCE_BUTTON_LABEL)
-            })
-            .inner;
-        if continuous_response.clicked() {
+        let continuous_response = outline_button(
+            ui,
+            text::CONTINUOUS_ADVANCE_BUTTON_LABEL,
+            continuous.0,
+            !advancing,
+        );
+        if continuous_response.clicked() && !advancing {
             continuous.0 = !continuous.0;
         }
         continuous_response.on_hover_text(text::CONTINUOUS_ADVANCE_BUTTON_TOOLTIP);
 
-        let notebook_response = ui.selectable_label(notebook_open, text::NOTEBOOK_BUTTON_LABEL);
+        let notebook_response =
+            outline_button(ui, text::NOTEBOOK_BUTTON_LABEL, notebook_open, true);
         if notebook_response.clicked() {
             intents.toggle_notebook = true;
         }
@@ -1611,22 +1831,18 @@ fn time_control_row(
     });
 }
 
-/// One glyph per `ActionMode`, in selector order. Names/descriptions/costs
-/// live in `text::action_name`/`action_description`/`action_cost` — only
-/// the glyph (not player-facing copy, task 034) stays here.
-const ACTION_GLYPHS: [(ActionMode, &str); 4] = [
-    (ActionMode::Seed, "🌱"),
-    (ActionMode::Stress, "⚡"),
-    (ActionMode::Cull, "💀"),
-    (ActionMode::Splice, "🔬"),
-];
+/// Fixed square size for the action-mode buttons (task 180) —
+/// `pixel-full-scene.svg:6797`'s `52×52` boxes.
+const ACTION_BUTTON_SIZE: f32 = 52.0;
 
-/// The four `ActionMode` options as a row of icon buttons (task 030),
-/// replacing the vertical `ui.radio_value(..., "Seed")`-style text list.
-/// Still single-selection, immediate-mode — `selectable_label` plays the
-/// same role `ui.radio_value` did, just rendered as a compact glyph with a
-/// hover tooltip carrying the name, cost, and a one-line description
-/// instead of inline text.
+/// The four `ActionMode` options as a row of square icon buttons (task
+/// 030, box chrome/block icons task 180). Still single-selection,
+/// immediate-mode — a custom-painted rect plays the role `selectable_label`
+/// used to, since neither of egui's default button visuals matches the
+/// mockup's box chrome (§6): unselected is an outline-only box with gray
+/// ink, selected is a filled dark-green box with amber ink
+/// (`pixel-full-scene.svg:6797-6807`). A hover tooltip still carries the
+/// name, cost, and a one-line description.
 fn action_icon_row(
     ui: &mut egui::Ui,
     selected_action: &mut SelectedAction,
@@ -1636,7 +1852,12 @@ fn action_icon_row(
     splice_confirmed_tags: usize,
 ) {
     ui.horizontal(|ui| {
-        for (action_mode, glyph) in ACTION_GLYPHS {
+        for action_mode in [
+            ActionMode::Seed,
+            ActionMode::Stress,
+            ActionMode::Cull,
+            ActionMode::Splice,
+        ] {
             let cost = action_cost(action_mode, config, run_progress);
             // Stress/Cull need per-organism precision Overview's real-density
             // coloring (task 076/139) doesn't preserve, so
@@ -1646,16 +1867,60 @@ fn action_icon_row(
             // silently does nothing.
             let detail_only = matches!(action_mode, ActionMode::Stress | ActionMode::Cull);
             let enabled = !detail_only || view_mode == MapViewMode::Detail;
+            let selected = selected_action.0 == Some(action_mode);
+
             let response = ui
                 .add_enabled_ui(enabled, |ui| {
-                    ui.selectable_label(
-                        selected_action.0 == Some(action_mode),
-                        egui::RichText::new(glyph).size(20.0),
-                    )
+                    let (rect, response) = ui.allocate_exact_size(
+                        egui::vec2(ACTION_BUTTON_SIZE, ACTION_BUTTON_SIZE),
+                        egui::Sense::click(),
+                    );
+                    // `add_enabled_ui` blocks the click but paints nothing
+                    // itself since this button is custom-painted, not a
+                    // standard widget reading `ui.visuals()` — dim
+                    // explicitly so a disabled (Stress/Cull outside
+                    // Detail) button still reads as disabled, matching the
+                    // grayed-out convention `outline_button` uses below.
+                    let dim = |color: egui::Color32| {
+                        if enabled {
+                            color
+                        } else {
+                            color.gamma_multiply(0.4)
+                        }
+                    };
+                    let painter = ui.painter();
+                    if selected {
+                        painter.rect_filled(rect, 0.0, dim(CHROME_SELECTED_FILL));
+                        painter.rect_stroke(
+                            rect,
+                            0.0,
+                            egui::Stroke::new(1.0, dim(CHROME_SELECTED_STROKE)),
+                            egui::StrokeKind::Outside,
+                        );
+                    } else {
+                        painter.rect_stroke(
+                            rect,
+                            0.0,
+                            egui::Stroke::new(1.0, dim(CHROME_OUTLINE_COLOR)),
+                            egui::StrokeKind::Outside,
+                        );
+                    }
+                    let icon_color = dim(if selected {
+                        ICON_INK_SELECTED
+                    } else {
+                        ICON_INK_UNSELECTED
+                    });
+                    paint_action_blocks(
+                        painter,
+                        rect.min,
+                        action_icon_blocks(action_mode),
+                        icon_color,
+                    );
+                    response
                 })
                 .inner;
             if response.clicked() {
-                selected_action.0 = if selected_action.0 == Some(action_mode) {
+                selected_action.0 = if selected {
                     // Task 149's minimal deselect seam: clicking the
                     // already-armed action again disarms it, the only way
                     // today to reach "no action armed" (task 150 owns the
