@@ -128,6 +128,13 @@ criteria, 171 stays open (`[/]`, not `[x]`) until a real run happens or is
 explicitly handed off — same as Phase 1's own skipped checkpoint
 (`tasks/QUEUE.md`'s Phase 1 note).
 
+Handoff copy for the playtester (Italian, self-contained — setup, task,
+observation checklist, the two closing questions with autosaving answer
+boxes): **["Diario del primo contatto"](https://claude.ai/code/artifact/ed23a641-17bd-4deb-8f82-581a9bac2188)**
+(private Claude artifact; share it from the page's own share menu when
+handing it to someone). Source below is the same content in prose, kept as
+the durable spec this page was built from.
+
 ### What to hand the playtester
 
 - A fresh `cargo run` build, no prior explanation beyond the game's own
