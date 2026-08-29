@@ -11,7 +11,6 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
 use abiogenesis::config::SimConfig;
-use abiogenesis::objectives::WorldVictory;
 use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::{EraReveal, RevealTier, SeasonProgress};
 use abiogenesis::state::{EraState, GameState};
@@ -91,7 +90,6 @@ fn intro_screen_ui(
 #[allow(clippy::too_many_arguments)]
 fn victory_banner_ui(
     mut contexts: EguiContexts,
-    victory: Res<WorldVictory>,
     mut world: ResMut<SimWorld>,
     config: Res<SimConfig>,
     mut run_progress: ResMut<RunProgress>,
@@ -99,7 +97,7 @@ fn victory_banner_ui(
     mut era_next_state: ResMut<NextState<EraState>>,
     mut reset: WorldResetParams,
 ) -> Result {
-    if !victory.0 {
+    if !reset.victory.0 {
         return Ok(());
     }
     let ctx = contexts.ctx_mut()?;
