@@ -267,8 +267,8 @@ playtest gate (bot-vs-bot necessity check + human playtest protocol,
 informally gates the start of Phase 3).
 
 **Phase 2 — playtest fixes** (opened 2026-08-29, from the first human
-playtest, `playtest_outcome.md`): `[x]` 172 inspection tool UX fixes, 173 sidebar
-list width, 174 toxicity label/tint + population tooltip clarity, `[x]` 175
+playtest, `playtest_outcome.md`): `[x]` 172 inspection tool UX fixes, `[x]` 173
+sidebar list width, 174 toxicity label/tint + population tooltip clarity, `[x]` 175
 speciation placement near accrued pressure, `[x]` 176 continuous-advance
 dedicated cadence, `[x]` 177 no armed action at world start + wheel-drag pan,
 `[x]` 178 objectives tuning (Coexistence population floor + durations in

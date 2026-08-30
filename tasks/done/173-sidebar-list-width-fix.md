@@ -33,13 +33,13 @@ Design source: `playtest_outcome.md` issue I.3.
 
 ## 📋 Acceptance Criteria
 
-- [ ] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
-- [ ] Both `ScrollArea`s (species list `src/ui.rs:765-768`, biosphere list
-      `src/ui.rs:723-726`) call `.auto_shrink([false, true])` so they fill
-      the sidebar's horizontal width while keeping vertical auto-shrink
-      (height still governed by `max_height`/`SPECIES_VISIBLE_ROWS`).
-- [ ] Manual check: selectable-label highlight and hover area now span the
-      full sidebar width for both lists.
+- [x] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
+- [x] Both `ScrollArea`s (species list, biosphere list) now call
+      `.auto_shrink([false, true])` so they fill the sidebar's horizontal
+      width while keeping vertical auto-shrink (height still governed by
+      `max_height`/`SPECIES_VISIBLE_ROWS`).
+- [-] Manual check — skipped per explicit user instruction for this task;
+      `cargo build`/`clippy`/`fmt`/`test` all clean.
 
 ---
 

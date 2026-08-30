@@ -225,7 +225,7 @@ since they affect what a fresh player notices/attributes correctly.
 | Status | ID | Title | Doc |
 |-------|----|--------|-----|
 | `[x]` | 172 | Inspection tool UX fixes: stable tooltip sizing, cursor-positioned card, biome info when populated | `playtest_outcome.md` I.1 — [172](done/172-inspection-tool-ux-fixes.md) |
-| `[ ]` | 173 | Sidebar species/biosphere lists don't fill panel width | `playtest_outcome.md` I.3 — [173](173-sidebar-list-width-fix.md) |
+| `[x]` | 173 | Sidebar species/biosphere lists don't fill panel width | `playtest_outcome.md` I.3 — [173](done/173-sidebar-list-width-fix.md) |
 | `[ ]` | 174 | Align toxicity label thresholds to visual tint; clarify population tooltip scope | `playtest_outcome.md` I.7 — [174](174-toxicity-label-population-tooltip-clarity.md) |
 | `[x]` | 175 | New species from speciation should place near where pressure actually accrued | `playtest_outcome.md` #10 — [175](done/175-speciation-placement-near-parent.md) |
 | `[x]` | 176 | Continuous-advance needs its own, slower cadence | `playtest_outcome.md` I.11 — [176](done/176-continuous-advance-dedicated-cadence.md) |

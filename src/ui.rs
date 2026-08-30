@@ -761,6 +761,7 @@ pub(crate) fn hud_panel(
             egui::ScrollArea::vertical()
                 .id_salt("biosphere_list")
                 .max_height(BIOSPHERE_VISIBLE_ROWS as f32 * console_row_height(ui))
+                .auto_shrink([false, true])
                 .show(ui, |ui| {
                     for (species, population, avg_energy) in &stats {
                         ui.horizontal(|ui| {
@@ -818,6 +819,7 @@ pub(crate) fn hud_panel(
             egui::ScrollArea::vertical()
                 .id_salt("species_list")
                 .max_height(SPECIES_VISIBLE_ROWS as f32 * console_row_height(ui))
+                .auto_shrink([false, true])
                 .show(ui, |ui| {
                     for i in 0..world.species.len() as u8 {
                         // Wild populations (task 098) aren't a player
