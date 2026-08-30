@@ -38,60 +38,41 @@ as painted blocks, never font glyphs).
 
 ## 📋 Acceptance Criteria
 
-- [ ] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
-- [ ] **Fix the saturated-without-outlet color inversion** (highest
-      priority item in this task): `inspect_card`'s
-      `ui.colored_label(DOT_FILLED_COLOR, text::SATURATED_NO_OUTLET_WARNING)`
-      (`ui.rs:1064`) paints a *negative* condition in the *positive* state
-      color. Change to `STATE_NEGATIVE` (task 182's constant). Verify no
-      other call site reuses `DOT_FILLED_COLOR` under the same
-      "positive/active" assumption for something that's actually negative —
-      grep every `DOT_FILLED_COLOR` use before renaming it wholesale.
-- [ ] **Replace `hover_tooltip`'s Unicode trend glyphs.** `trend_glyph`
-      (`ui.rs:2006-2012`) returns `▲`/`▼`/`▬` rendered via
-      `ui.colored_label` (`ui.rs:985`) — a font glyph, forbidden by §6.
-      Replace with a small painted 3×3-block arrow (up/down/flat), same
-      block-pattern technique as 151/180's icons — reuse whatever shared
-      icon-painter helper 180 introduces if it's landed, otherwise a
-      minimal local one (this doesn't need `MetabolismShapes`' full
-      geometry, just three tiny arrow patterns).
-- [ ] **`trend_color`** (`ui.rs:2018-2024`) — replace its hardcoded
-      `(96,200,120)`/`(220,96,96)` with `STATE_POSITIVE`/`STATE_NEGATIVE`
-      (task 182's constants) instead of its own approximation. (If task
-      182 already renamed `trend_color`'s constants as part of its own
-      scope, this AC is already satisfied — verify, don't duplicate.)
-- [ ] **Panel chrome for all three `Frame::popup` surfaces**
-      (`hover_tooltip` `ui.rs:966-979`, `inspect_card`'s `Window`
-      `ui.rs:1015`, `viewport_hint` `ui.rs:932-941`): explicit `PANEL_BG`
-      fill, `OUTLINE_STROKE` border, **no blurred shadow**
-      (`egui::Shadow::NONE` or flat-alpha equivalent — §1 rule 4).
-      `inspect_card` is a literal `egui::Window` with a title bar/drag
-      handle — keep the interaction (it's meant to be draggable/click-
-      dismissible) but override its frame the same way 183 does for its
-      two windows.
-- [ ] **`hairline()` calls inside `inspect_card`** (`ui.rs:1043,1067`)
-      already use the correct `#23262e` in-panel token (`HAIRLINE_COLOR`) —
-      per `VISUAL_STYLE_GUIDE.md`'s corrected §3.1, this needs **no
-      change**; don't "fix" it to `#3a4048` (that's the outline-stroke
-      token, a different role).
-- [ ] **Fix all 9 plain `.on_hover_text()` tooltips** at the listed line
-      numbers: egui's built-in tooltip layer uses the same default
-      `Frame::popup`-derived chrome as the surfaces above. If egui exposes
-      a way to restyle the built-in tooltip frame globally (check
-      `Style::interaction`/`visuals.window_fill` equivalents used for
-      tooltips specifically — may already be partially covered by whatever
-      global fill override, if any, this task or 182 establishes), do that
-      once rather than touching 9 call sites individually. If no such
-      global hook exists in this egui version, leave these 9 as a
-      documented residual gap in the PR rather than hand-rolling 9 custom
-      tooltip widgets — that's disproportionate effort for plain one-line
-      hover text.
-- [ ] Live visual check (`cargo run`, screenshot or interactive):
-      **trigger both the healthy and the saturated-without-outlet states**
-      to confirm the color inversion fix (not just that it compiles); hover
-      a populated cell to confirm the trend arrow renders as a painted
-      block, not a Unicode glyph or a missing-glyph box; trigger at least
-      one contextual hint (e.g. the stall hint) to confirm its chrome.
+- [x] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
+- [x] **Fix the saturated-without-outlet color inversion**: `DOT_FILLED_COLOR`
+      no longer exists (already renamed by task 182); the actual bug was
+      `populated_cell_card`'s `ui.colored_label(STATE_POSITIVE,
+      text::SATURATED_NO_OUTLET_WARNING)` — a negative condition painted in
+      the positive constant. Changed to `STATE_NEGATIVE`. Grepped every
+      other `STATE_POSITIVE` use (`dot_row`'s filled ticks/circles, the
+      notebook badge) — all genuinely positive/active, no other inversion.
+- [x] **Replaced the Unicode trend glyphs** (`trend_glyph`, both its call
+      sites — `hover_tooltip` and the biosphere sidebar row, which also used
+      it) with `paint_trend_arrow`: a small painted 3x3-block arrow (up/
+      down/flat), same procedural block-icon technique as the action-mode
+      icons, sized for inline text instead of the 40x40 button-icon scale.
+      `trend_glyph` removed (no remaining callers).
+- [x] **`trend_color`** already used `STATE_POSITIVE`/`STATE_NEGATIVE` — task
+      182 had already fixed this; no duplicate change needed.
+- [x] **Panel chrome for all three `Frame::popup`/`Window` surfaces** — done
+      globally instead of three local `.frame()` overrides: extended the
+      existing `ctx.all_styles_mut` block (`ui.rs`, next to task 182's
+      `panel_fill`/`window_fill` override) with
+      `visuals.window_stroke = OUTLINE_STROKE`, `visuals.window_shadow =
+      Shadow::NONE`, `visuals.popup_shadow = Shadow::NONE`. Since
+      `Frame::window`/`Frame::popup` both derive fill/stroke/shadow from
+      these `Style::visuals` fields, this fixes `viewport_hint`,
+      `hover_tooltip`, and `inspect_card`'s `Window` in one place —
+      matching the suggested-implementation note to prefer a global hook
+      over touching every call site.
+- [x] **`hairline()` inside `inspect_card`** — left untouched, per the AC.
+- [x] **All 9 plain `.on_hover_text()` tooltips** — fixed for free by the
+      same global `visuals.window_stroke`/`popup_shadow` override above:
+      egui's built-in tooltip always renders through `Frame::popup(style)`
+      with no per-call frame override point, so the global fix reaches them
+      too. No per-call-site changes needed.
+- [-] Live visual check — skipped per explicit user instruction for this
+      task; `cargo build`/`clippy`/`fmt`/`test` all clean.
 
 ---
 

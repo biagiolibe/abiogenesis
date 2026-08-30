@@ -27,36 +27,26 @@ exist before adding a second copy.
 
 ## 📋 Acceptance Criteria
 
-- [ ] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
-- [ ] **Window chrome**: `pause_menu`'s `egui::Window` (`ui.rs:1161`) and
-      `confirmation_dialog`'s `egui::Window` (`ui.rs:1207`) both get an
-      explicit `Frame` with `PANEL_BG` fill (task 182's constant) and
-      `OUTLINE_STROKE` border instead of egui's default window
-      fill/stroke, plus monospace font applied to their `Ui` (same
-      technique as `hud_panel`, `ui.rs:666-668`).
-- [ ] **Pause menu buttons** (`PAUSE_RESUME_BUTTON` `1167`,
-      `PAUSE_SETTINGS_BUTTON` `1170`, `PAUSE_SAVE_AND_EXIT_BUTTON` `1173`)
-      become outline-chrome buttons (task 182's/180's shared helper — reuse,
-      don't reinvent). The "Abandon" action (`1177-1183`) already uses
-      `ALERT_COLOR` for its text; once task 182 lands, this becomes
-      `STATE_NEGATIVE` automatically (constant rename, verify the call
-      site still reads correctly) — additionally give it an
-      `STATE_NEGATIVE`-stroked outline box, not just colored text, so the
-      destructive action reads as such from its chrome, not only its
-      label color.
-- [ ] **Confirmation dialog's Confirm/Cancel get state-colored chrome**:
-      today (`ui.rs:1214,1217`) both are plain `ui.button(...)` with no
-      color distinction regardless of `ConfirmationKind`
-      (`ReseedWorld`/`AbandonRun`, both currently identical). Give Confirm
-      an outline box in `STATE_NEGATIVE` (both existing kinds are
-      destructive/irreversible — reseeding discards world state, abandon
-      discards a run) and Cancel a plain `OUTLINE_STROKE` box — establishes
-      the pattern for any future `ConfirmationKind` too, not just today's
-      two.
-- [ ] Live visual check (`cargo run`, screenshot or interactive): open the
-      pause menu (Esc) and a confirmation dialog (reseed or abandon),
-      confirm dark chrome, outline buttons, and the Confirm action reading
-      visually distinct (red-toned) from Cancel.
+- [x] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
+- [x] **Window chrome**: `pause_menu`'s and `confirmation_dialog`'s
+      `egui::Window`s both get an explicit `Frame` (`egui::Frame::window`)
+      with `PANEL_BG` fill and `OUTLINE_STROKE` border instead of egui's
+      default window fill/stroke, plus `apply_monospace` on their `Ui`.
+- [x] **Pause menu buttons** (Resume/Settings/Save-and-exit) become
+      outline-chrome buttons via `outline_button_auto`. Settings keeps its
+      disabled/hint behavior (`on_hover_text`, since it's a custom-painted
+      control, not `on_disabled_hover_text`). "Abandon" uses the new
+      `outline_button_auto_colored` helper with `STATE_NEGATIVE` for both
+      box stroke and label — chrome, not just text color, reads as
+      destructive.
+- [x] **Confirmation dialog's Confirm/Cancel get state-colored chrome**:
+      Confirm uses `outline_button_auto_colored(..., STATE_NEGATIVE, ...)`
+      (both existing `ConfirmationKind`s are destructive/irreversible),
+      Cancel uses plain `outline_button_auto` (`OUTLINE_STROKE`). A comment
+      at the call site flags that a future non-destructive kind should
+      switch Confirm's color per-kind rather than hardcoding red.
+- [-] Live visual check — skipped per explicit user instruction for this
+      task; `cargo build`/`clippy`/`fmt`/`test` all clean.
 
 ---
 

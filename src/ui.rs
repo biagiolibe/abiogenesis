@@ -452,6 +452,18 @@ fn configure_fonts(mut contexts: EguiContexts, mut done: Local<bool>) -> Result 
         // call site across `ui.rs`/`notebook.rs`.
         visuals.panel_fill = PANEL_BG;
         visuals.window_fill = PANEL_BG;
+        // Task 184: same reasoning as the fill override above — every
+        // `Frame::window`/`Frame::popup`/tooltip (including the built-in
+        // `.on_hover_text()` tooltip, which always uses `Frame::popup`
+        // internally with no per-call override point) draws its border
+        // from `window_stroke` and its drop shadow from `window_shadow`/
+        // `popup_shadow`. Set once here instead of hand-rolling a `.frame()`
+        // override on every popup/tooltip call site — `VISUAL_STYLE_GUIDE.md`
+        // §1 rule 4 forbids the default's blurred shadow everywhere, not
+        // just on the three surfaces this task named explicitly.
+        visuals.window_stroke = egui::Stroke::new(1.0, OUTLINE_STROKE);
+        visuals.window_shadow = egui::Shadow::NONE;
+        visuals.popup_shadow = egui::Shadow::NONE;
         for widgets in [
             &mut visuals.widgets.noninteractive,
             &mut visuals.widgets.inactive,
@@ -784,7 +796,7 @@ pub(crate) fn hud_panel(
                                 *avg_energy,
                             ));
                             let trend = biosphere.trends.trend_for(*species);
-                            ui.colored_label(trend_color(trend), trend_glyph(trend));
+                            paint_trend_arrow(ui, trend, trend_color(trend));
                             let delta = biosphere.trends.population_delta_for(*species);
                             let delta_label = text::population_delta_label(delta);
                             if !delta_label.is_empty() {
@@ -1012,7 +1024,7 @@ fn hover_tooltip(
                     let trend = trends.trend_for(population.species);
                     ui.horizontal(|ui| {
                         ui.label(species_label(&world, population.species));
-                        ui.colored_label(trend_color(trend), trend_glyph(trend));
+                        paint_trend_arrow(ui, trend, trend_color(trend));
                     });
                     let delta = trends.population_delta_for(population.species);
                     ui.label(format!(
@@ -1091,7 +1103,7 @@ fn populated_cell_card(
     });
 
     if population.blocked {
-        ui.colored_label(STATE_POSITIVE, text::SATURATED_NO_OUTLET_WARNING);
+        ui.colored_label(STATE_NEGATIVE, text::SATURATED_NO_OUTLET_WARNING);
     }
 
     hairline(ui);
@@ -1182,26 +1194,29 @@ fn pause_menu(
         return Ok(());
     }
     let ctx = contexts.ctx_mut()?;
+    let frame = egui::Frame::window(&ctx.style_of(ctx.theme()))
+        .fill(PANEL_BG)
+        .stroke(egui::Stroke::new(1.0, OUTLINE_STROKE));
     egui::Window::new(text::PAUSE_MENU_TITLE)
         .resizable(false)
         .collapsible(false)
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .frame(frame)
         .show(ctx, |ui| {
+            apply_monospace(ui);
             ui.vertical_centered(|ui| {
-                if ui.button(text::PAUSE_RESUME_BUTTON).clicked() {
+                if outline_button_auto(ui, text::PAUSE_RESUME_BUTTON, true).clicked() {
                     open.0 = false;
                 }
-                ui.add_enabled_ui(false, |ui| ui.button(text::PAUSE_SETTINGS_BUTTON))
-                    .inner
-                    .on_disabled_hover_text(text::PAUSE_SETTINGS_UNAVAILABLE_HINT);
-                if ui.button(text::PAUSE_SAVE_AND_EXIT_BUTTON).clicked() {
+                outline_button_auto(ui, text::PAUSE_SETTINGS_BUTTON, false)
+                    .on_hover_text(text::PAUSE_SETTINGS_UNAVAILABLE_HINT);
+                if outline_button_auto(ui, text::PAUSE_SAVE_AND_EXIT_BUTTON, true).clicked() {
                     pending.kind = Some(ConfirmationKind::AbandonRun);
                     pending.confirmed = false;
                 }
-                let abandon = egui::Button::new(
-                    egui::RichText::new(text::PAUSE_ABANDON_BUTTON).color(STATE_NEGATIVE),
-                );
-                if ui.add(abandon).clicked() {
+                if outline_button_auto_colored(ui, text::PAUSE_ABANDON_BUTTON, STATE_NEGATIVE, true)
+                    .clicked()
+                {
                     pending.kind = Some(ConfirmationKind::AbandonRun);
                     pending.confirmed = false;
                 }
@@ -1228,17 +1243,29 @@ fn confirmation_dialog(
         ConfirmationKind::AbandonRun => (text::CONFIRM_ABANDON_TITLE, text::CONFIRM_ABANDON_BODY),
     };
     let ctx = contexts.ctx_mut()?;
+    let frame = egui::Frame::window(&ctx.style_of(ctx.theme()))
+        .fill(PANEL_BG)
+        .stroke(egui::Stroke::new(1.0, OUTLINE_STROKE));
     egui::Window::new(title)
         .resizable(false)
         .collapsible(false)
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 40.0))
+        .frame(frame)
         .show(ctx, |ui| {
+            apply_monospace(ui);
             ui.label(body);
             ui.horizontal(|ui| {
-                if ui.button(text::CONFIRM_BUTTON).clicked() {
+                // Both current `ConfirmationKind` variants are destructive
+                // (reseed discards world state, abandon discards a run), so
+                // Confirm gets the negative/destructive register — a future
+                // non-destructive kind should switch this to `STATE_POSITIVE`
+                // per-kind rather than hardcoding red for every Confirm.
+                if outline_button_auto_colored(ui, text::CONFIRM_BUTTON, STATE_NEGATIVE, true)
+                    .clicked()
+                {
                     pending.confirmed = true;
                 }
-                if ui.button(text::CANCEL_BUTTON).clicked() {
+                if outline_button_auto(ui, text::CANCEL_BUTTON, true).clicked() {
                     *pending = PendingConfirmation::default();
                 }
             });
@@ -1809,6 +1836,49 @@ pub(crate) fn outline_button_auto(ui: &mut egui::Ui, label: &str, enabled: bool)
     outline_button_sized(ui, label, size, false, enabled)
 }
 
+/// [`outline_button_auto`], but with an explicit stroke/label color instead
+/// of the neutral `OUTLINE_STROKE` register (task 183) — used where a
+/// button's chrome itself must carry state (destructive vs. safe), not just
+/// its label color, e.g. the pause menu's "Abandon" and the confirmation
+/// dialog's Confirm action.
+pub(crate) fn outline_button_auto_colored(
+    ui: &mut egui::Ui,
+    label: &str,
+    color: egui::Color32,
+    enabled: bool,
+) -> egui::Response {
+    let font = egui::FontId::monospace(11.0);
+    let galley = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        font,
+        egui::Color32::WHITE, // discarded — repainted below
+    );
+    let size = galley.size() + AUTO_BUTTON_PADDING * 2.0;
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    let dim = |c: egui::Color32| {
+        if enabled {
+            c
+        } else {
+            c.gamma_multiply(0.4)
+        }
+    };
+    let painter = ui.painter();
+    painter.rect_stroke(
+        rect,
+        0.0,
+        egui::Stroke::new(1.0, dim(color)),
+        egui::StrokeKind::Outside,
+    );
+    painter.text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        label,
+        egui::FontId::monospace(11.0),
+        dim(color),
+    );
+    response
+}
+
 /// On-screen equivalents of the tick/era/notebook keyboard shortcuts (task
 /// 094), coexisting with them — clicking a button here only sets a
 /// `HudControlIntents` flag, the same `input.rs::start_era`/`single_tick`/
@@ -2329,13 +2399,39 @@ fn update_population_trends(
     }
 }
 
-/// Glyph for a `PopulationTrend`, matching the sidebar-redesign mockup's
-/// convention (▲ rising, ▼ falling, ▬ stable).
-fn trend_glyph(trend: PopulationTrend) -> &'static str {
+/// Cell offsets for [`paint_trend_arrow`]'s painted 3x3 block glyph (task
+/// 184) — replaces the raw Unicode `▲`/`▼`/`▬` `VISUAL_STYLE_GUIDE.md` §6
+/// forbids (icons are painted blocks, never font glyphs) with the same
+/// procedural technique the action-mode icons use, just at inline-text
+/// scale instead of the 40x40 button icon scale.
+const TREND_ARROW_BLOCK: f32 = 3.0;
+
+fn trend_arrow_cells(trend: PopulationTrend) -> &'static [(f32, f32)] {
+    const RISING: [(f32, f32); 4] = [(3.0, 0.0), (0.0, 3.0), (3.0, 3.0), (6.0, 3.0)];
+    const FALLING: [(f32, f32); 4] = [(0.0, 0.0), (3.0, 0.0), (6.0, 0.0), (3.0, 3.0)];
+    const STABLE: [(f32, f32); 3] = [(0.0, 1.5), (3.0, 1.5), (6.0, 1.5)];
     match trend {
-        PopulationTrend::Rising => "▲",
-        PopulationTrend::Falling => "▼",
-        PopulationTrend::Stable => "▬",
+        PopulationTrend::Rising => &RISING,
+        PopulationTrend::Falling => &FALLING,
+        PopulationTrend::Stable => &STABLE,
+    }
+}
+
+/// Paints a `PopulationTrend` as a small block-pattern arrow instead of a
+/// Unicode glyph — the sidebar's biosphere rows and the hover tooltip both
+/// call this at their one trend indicator each.
+fn paint_trend_arrow(ui: &mut egui::Ui, trend: PopulationTrend, color: egui::Color32) {
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(TREND_ARROW_BLOCK * 3.0, TREND_ARROW_BLOCK * 2.0),
+        egui::Sense::hover(),
+    );
+    let painter = ui.painter();
+    for &(dx, dy) in trend_arrow_cells(trend) {
+        let block = egui::Rect::from_min_size(
+            rect.min + egui::vec2(dx, dy),
+            egui::vec2(TREND_ARROW_BLOCK, TREND_ARROW_BLOCK),
+        );
+        painter.rect_filled(block, 0.0, color);
     }
 }
 
