@@ -44,26 +44,23 @@ Design source: `playtest_outcome.md` issue I.7 and gameplay note #11.
 
 ## 📋 Acceptance Criteria
 
-- [ ] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
-- [ ] `band_label`'s toxicity thresholds (or `toxicity_tint`'s visible
-      floor) are reconciled so "low" no longer covers a range that's
-      already visibly tinted on the map — pick one direction (lower the
-      "low" ceiling to match tint's visible floor, or gate the tint so it
-      only starts fading in past the same threshold `band_label` uses) and
-      apply consistently; no magic numbers, thresholds stay in
-      `SimConfig`/existing constants.
-- [ ] Inspector text or a legend clarifies that the dashed purple border is
-      the active objective's target zone, not a general toxicity
-      indicator — smallest change that removes the ambiguity (e.g. a short
-      label near the border, or wording in the objective HUD panel).
-- [ ] Population line in the hover tooltip / click card is re-scoped or
-      re-labeled: either compute a per-cell delta (this cell's count vs.
-      its own value last era, if tracked at that granularity) or relabel
-      the existing world-wide delta clearly (e.g. "here: N · world Δ: +M")
-      so the two numbers are never presented as describing the same scope.
-- [ ] Manual check: hover a drifted-but-still-"low" swamp cell before/after,
-      confirm label/tint agreement; hover a populated cell and confirm the
-      tooltip's two numbers are unambiguous.
+- [x] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
+- [x] **Gated `toxicity_tint`'s visible floor** to `band_label`'s own "low"
+      ceiling (`swamp_toxicity_value / 3`, re-derived from the existing
+      config value, no new magic number): `toxicity_tint` now takes an
+      explicit `visible_floor` and re-normalizes onto `[floor, 1.0] ->
+      [0.0, 1.0]` instead of blending from zero, so nothing still labeled
+      "low" tints at all.
+- [x] **Objective panel clarifies the dashed border**: added
+      `text::SURVIVE_IN_TOXIC_BORDER_HINT`, shown under the narrative line
+      only for `Objective::SurviveIn { zone: ZoneKind::Toxic, .. }` — the
+      one case `draw_survive_in_target` actually draws for.
+- [x] **Population tooltip re-labeled** rather than computing a per-cell
+      delta (not tracked at that granularity): `text::hover_population_line`
+      renders "Here: N" or "Here: N · World Δ: ±M", replacing the old
+      unlabeled "Population N ±M" line.
+- [-] Manual check — skipped per explicit user instruction for this task;
+      `cargo build`/`clippy`/`fmt`/`test` all clean.
 
 ---
 

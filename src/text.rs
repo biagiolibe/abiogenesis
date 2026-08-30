@@ -435,6 +435,23 @@ pub const CONFIRM_ABANDON_TITLE: &str = "Abandon this run?";
 pub const CONFIRM_ABANDON_BODY: &str =
     "There is no save system yet — leaving now discards this run's progress.";
 
+/// The hover tooltip's population line (task 174, playtest issue I.7): the
+/// cell count and the species' world-wide delta since the last era boundary
+/// (`PopulationTrends::population_delta_for`) are two different scopes —
+/// previously printed side by side with no label, reading as one number
+/// describing the cell. Explicit "Here"/"World Δ" labels disambiguate
+/// without needing a per-cell delta the sim doesn't track at that
+/// granularity.
+pub fn hover_population_line(cell_count: u32, world_delta: Option<i64>) -> String {
+    match world_delta {
+        None => format!("Here: {cell_count}"),
+        Some(_) => format!(
+            "Here: {cell_count} · World \u{394}: {}",
+            population_delta_label(world_delta)
+        ),
+    }
+}
+
 pub fn population_delta_label(delta: Option<i64>) -> String {
     match delta {
         None => String::new(),
@@ -551,6 +568,14 @@ pub fn coexistence_objective_line(min_species: u32, min_population: u32) -> Stri
 pub fn survive_in_objective_line(species_label: &str, zone_label: &str) -> String {
     format!("{species_label} survives in the {zone_label}")
 }
+
+/// Clarifies the dashed border `render.rs::draw_survive_in_target` paints
+/// around this objective's target biome (task 174, playtest issue I.7) —
+/// players read it as a general high-toxicity indicator, but it's this
+/// objective's target zone specifically and has nothing to do with a cell's
+/// own toxicity value.
+pub const SURVIVE_IN_TOXIC_BORDER_HINT: &str =
+    "The dashed border on the map marks this zone — it isn't a toxicity reading.";
 
 pub fn trigger_bloom_objective_line(species_label: &str, population_threshold: u32) -> String {
     format!("{species_label} population reaches {population_threshold}")

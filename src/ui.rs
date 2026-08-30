@@ -16,7 +16,7 @@ use crate::text;
 use abiogenesis::config::SimConfig;
 use abiogenesis::knowledge::MatrixKnowledge;
 use abiogenesis::objectives::{
-    is_grace_active, CurrentObjective, GraceProgress, Objective, ObjectiveProgress,
+    is_grace_active, CurrentObjective, GraceProgress, Objective, ObjectiveProgress, ZoneKind,
 };
 use abiogenesis::run::{MetaProgress, RunProgress};
 use abiogenesis::sim::{
@@ -1029,11 +1029,7 @@ fn hover_tooltip(
                         paint_trend_arrow(ui, trend, trend_color(trend));
                     });
                     let delta = trends.population_delta_for(population.species);
-                    ui.label(format!(
-                        "Population {} {}",
-                        population.count,
-                        text::population_delta_label(delta)
-                    ));
+                    ui.label(text::hover_population_line(population.count, delta));
                 }
             });
         });
@@ -1357,6 +1353,14 @@ fn objective_panel(
             .family(egui::FontFamily::Proportional)
             .color(OBJECTIVE_NARRATIVE_COLOR),
     );
+
+    if let Objective::SurviveIn {
+        zone: ZoneKind::Toxic,
+        ..
+    } = *objective
+    {
+        ui.weak(text::SURVIVE_IN_TOXIC_BORDER_HINT);
+    }
 
     if progress.satisfied {
         ui.weak(text::OBJECTIVE_CLEARED);

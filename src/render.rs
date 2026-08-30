@@ -1870,7 +1870,13 @@ fn cell_color(
         dithered_biome_color(cell.biome, world.seed, x, y)
     };
 
-    let base = toxicity_tint(base, cell.toxicity, elapsed);
+    // Task 174: gate the tint's visible floor to the same threshold
+    // `text::band_label`'s "low"/"moderate" boundary uses (the low band
+    // spans `[0, swamp_toxicity_value / 3]`) — before this, a cell already
+    // read as visibly tinted while its inspector label still said "low"
+    // (playtest issue I.7).
+    let toxicity_tint_floor = config.environment.swamp_toxicity_value / 3.0;
+    let base = toxicity_tint(base, cell.toxicity, toxicity_tint_floor, elapsed);
     blocked_tint(base, blocked, blocked_first_occurrence, elapsed)
 }
 
@@ -2019,11 +2025,15 @@ fn dithered_biome_color(biome: Biome, seed: u64, x: usize, y: usize) -> Color {
 /// piano". `elapsed` is real time in seconds (`Time::elapsed_secs`), so the
 /// pulse period doesn't drift with tick rate or pause state the way
 /// tick-count-driven timing would.
-fn toxicity_tint(base: Color, toxicity: f32, elapsed: f32) -> Color {
+fn toxicity_tint(base: Color, toxicity: f32, visible_floor: f32, elapsed: f32) -> Color {
     const PULSE_FREQUENCY: f32 = 0.4; // rad/s — a ~16s period, calm enough to read as breathing, not flicker.
     let warning = Color::hsl(320.0, 0.9, 0.35);
-    let strength =
-        toxicity.clamp(0.0, 1.0) * 0.45 * (0.85 + 0.15 * (elapsed * PULSE_FREQUENCY).sin());
+    // Re-normalizes `toxicity` onto `[visible_floor, 1.0] -> [0.0, 1.0]`
+    // instead of blending from zero, so nothing below `visible_floor` tints
+    // at all (task 174).
+    let above_floor =
+        ((toxicity - visible_floor) / (1.0 - visible_floor).max(f32::EPSILON)).clamp(0.0, 1.0);
+    let strength = above_floor * 0.45 * (0.85 + 0.15 * (elapsed * PULSE_FREQUENCY).sin());
     base.mix(&warning, strength)
 }
 
