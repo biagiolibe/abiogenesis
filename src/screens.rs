@@ -20,6 +20,7 @@ use crate::notebook::{archive_reveal, translated_tag_label, ChronicleLog};
 use crate::render::species_color;
 use crate::run_flow::{advance_to_next_world, retry_world, WorldResetParams};
 use crate::text;
+use crate::ui::{apply_monospace, outline_button_auto, PANEL_BG};
 
 pub struct ScreensPlugin;
 
@@ -72,7 +73,7 @@ fn intro_screen_ui(
                 }
             });
         ui.add_space(12.0);
-        if ui.button(text::INTRO_CONTINUE_BUTTON).clicked() {
+        if outline_button_auto(ui, text::INTRO_CONTINUE_BUTTON, true).clicked() {
             meta.seen_intro = true;
             next_state.set(GameState::Playing);
         }
@@ -105,21 +106,25 @@ fn victory_banner_ui(
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 8.0))
         .show(ctx, |ui| {
-            egui::Frame::popup(ui.style()).show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(text::WORLD_CLEARED_TITLE);
-                    if ui.button(text::CONTINUE_BUTTON).clicked() {
-                        advance_to_next_world(
-                            &mut world,
-                            &mut run_progress,
-                            &config,
-                            &mut season_progress,
-                            &mut era_next_state,
-                            &mut reset,
-                        );
-                    }
+            egui::Frame::popup(ui.style())
+                .fill(PANEL_BG)
+                .shadow(egui::Shadow::NONE)
+                .show(ui, |ui| {
+                    apply_monospace(ui);
+                    ui.horizontal(|ui| {
+                        ui.label(text::WORLD_CLEARED_TITLE);
+                        if outline_button_auto(ui, text::CONTINUE_BUTTON, true).clicked() {
+                            advance_to_next_world(
+                                &mut world,
+                                &mut run_progress,
+                                &config,
+                                &mut season_progress,
+                                &mut era_next_state,
+                                &mut reset,
+                            );
+                        }
+                    });
                 });
-            });
         });
     Ok(())
 }
@@ -143,7 +148,7 @@ fn world_cleared_screen_ui(
     interstitial(ctx, "world-cleared-viewport", |ui| {
         ui.heading(text::WORLD_CLEARED_TITLE);
         ui.label(text::world_cleared_body(run_progress.world_index));
-        if ui.button(text::CONTINUE_BUTTON).clicked() {
+        if outline_button_auto(ui, text::CONTINUE_BUTTON, true).clicked() {
             advance_to_next_world(
                 &mut world,
                 &mut run_progress,
@@ -177,7 +182,7 @@ fn world_failed_screen_ui(
     interstitial(ctx, "world-failed-viewport", |ui| {
         ui.heading(text::WORLD_FAILED_TITLE);
         ui.label(text::WORLD_FAILED_BODY);
-        if ui.button(text::RETRY_BUTTON).clicked() {
+        if outline_button_auto(ui, text::RETRY_BUTTON, true).clicked() {
             retry_world(
                 &mut world,
                 &run_progress,
@@ -208,7 +213,7 @@ fn defeat_screen_ui(
         // result by the time this screen shows — the totals here already
         // include whatever this run just earned.
         ui.label(text::unlocks_summary(meta.bonus_available_species));
-        if ui.button(text::RETURN_TO_MENU_BUTTON).clicked() {
+        if outline_button_auto(ui, text::RETURN_TO_MENU_BUTTON, true).clicked() {
             next_state.set(GameState::MainMenu);
         }
     });
@@ -361,7 +366,12 @@ fn era_reveal_screen_ui(
 /// construction `menu.rs::main_menu_ui` uses, since both draw straight onto
 /// the egui viewport rather than a HUD-anchored panel.
 fn interstitial(ctx: &egui::Context, id: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
-    interstitial_framed(ctx, id, egui::CentralPanel::default(), add_contents);
+    let panel = egui::CentralPanel::default()
+        .frame(egui::Frame::central_panel(&ctx.style_of(ctx.theme())).fill(PANEL_BG));
+    interstitial_framed(ctx, id, panel, |ui| {
+        apply_monospace(ui);
+        add_contents(ui);
+    });
 }
 
 /// Like [`interstitial`], but with the `CentralPanel`'s own frame overridden

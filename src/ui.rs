@@ -1080,7 +1080,7 @@ fn populated_cell_card(
     });
 
     if population.blocked {
-        ui.colored_label(DOT_FILLED_COLOR, text::SATURATED_NO_OUTLET_WARNING);
+        ui.colored_label(STATE_POSITIVE, text::SATURATED_NO_OUTLET_WARNING);
     }
 
     hairline(ui);
@@ -1152,12 +1152,6 @@ fn biome_env_lines(ui: &mut egui::Ui, config: &SimConfig, cell: &Cell) {
     ));
 }
 
-/// Alert color for the pause menu's "Abandon without saving" item (task
-/// 150's own "visually distinct" requirement) — a new, standalone accent:
-/// none of this module's existing colors (`DOT_FILLED_COLOR`'s green,
-/// `HAIRLINE_COLOR`'s neutral gray) read as a warning.
-const ALERT_COLOR: egui::Color32 = egui::Color32::from_rgb(210, 90, 90);
-
 /// Task 150's pause menu: reachable via the Esc cascade's last tier
 /// (`input.rs::escape_cascade`) when nothing else is open/armed, or the
 /// notebook/inspect-card/action-armed layers being closed one at a time.
@@ -1194,7 +1188,7 @@ fn pause_menu(
                     pending.confirmed = false;
                 }
                 let abandon = egui::Button::new(
-                    egui::RichText::new(text::PAUSE_ABANDON_BUTTON).color(ALERT_COLOR),
+                    egui::RichText::new(text::PAUSE_ABANDON_BUTTON).color(STATE_NEGATIVE),
                 );
                 if ui.add(abandon).clicked() {
                     pending.kind = Some(ConfirmationKind::AbandonRun);
@@ -1409,6 +1403,17 @@ fn seasons_progress(consecutive_ticks: u32, required_ticks: u32, season_pulses: 
 /// picking up whatever contrast egui's default separator uses elsewhere.
 const HAIRLINE_COLOR: egui::Color32 = egui::Color32::from_rgb(35, 38, 46);
 
+/// Switches every `TextStyle`'s font family to monospace, scoped to `ui`
+/// and its children only (same technique the HUD panel uses inline, above)
+/// — §2's "monospace panel-wide" applies to every surface, not just the
+/// HUD, so `screens.rs`/`menu.rs` call this on their own top-level `Ui`
+/// (task 182) since neither inherits the HUD panel's own override.
+pub(crate) fn apply_monospace(ui: &mut egui::Ui) {
+    for font_id in ui.style_mut().text_styles.values_mut() {
+        font_id.family = egui::FontFamily::Monospace;
+    }
+}
+
 fn hairline(ui: &mut egui::Ui) {
     ui.add_space(6.0);
     let rect = ui.available_rect_before_wrap();
@@ -1432,26 +1437,34 @@ enum DotShape {
     Circle,
 }
 
-/// Color for a filled slot in `dot_row` — the same green `trend_color` uses
-/// for `Rising`, reused here as this panel's one "available/progressing"
-/// accent rather than inventing a second green.
-const DOT_FILLED_COLOR: egui::Color32 = egui::Color32::from_rgb(96, 200, 120);
 const DOT_EMPTY_COLOR: egui::Color32 = egui::Color32::from_gray(60);
 const DOT_SIZE: f32 = 8.0;
 const DOT_GAP: f32 = 5.0;
 
 /// HUD chrome tokens transcribed from `VISUAL_STYLE_GUIDE.md` §3 (task 180)
 /// — shared by the action-mode buttons and the time-control outline
-/// buttons below, the two "button registers" §6 describes.
-const CHROME_OUTLINE_COLOR: egui::Color32 = egui::Color32::from_rgb(0x3a, 0x40, 0x48);
+/// buttons below, the two "button registers" §6 describes. `OUTLINE_STROKE`
+/// is `pub(crate)` (task 182): `screens.rs`/`menu.rs` reuse it for their
+/// own outline buttons, having no HUD `Ui` of their own to inherit it from.
+pub(crate) const OUTLINE_STROKE: egui::Color32 = egui::Color32::from_rgb(0x3a, 0x40, 0x48);
 const CHROME_SELECTED_FILL: egui::Color32 = egui::Color32::from_rgb(0x16, 0x24, 0x1a);
 const CHROME_SELECTED_STROKE: egui::Color32 = egui::Color32::from_rgb(0x7f, 0xae, 0x6a);
+
+/// Shared exact-hex tokens from `VISUAL_STYLE_GUIDE.md` §3.1/3.2 (task 182),
+/// exposed at crate visibility for `screens.rs`/`menu.rs`.
+pub(crate) const PANEL_BG: egui::Color32 = egui::Color32::from_rgb(0x1c, 0x22, 0x29);
+/// Same token as `CHROME_SELECTED_STROKE` above, under the guide's own §3.2
+/// name.
+pub(crate) const STATE_POSITIVE: egui::Color32 = CHROME_SELECTED_STROKE;
+pub(crate) const STATE_NEGATIVE: egui::Color32 = egui::Color32::from_rgb(0xc9, 0x6a, 0x5c);
 /// Icon ink, unselected/selected (`pixel-full-scene.svg:6798` vs.
 /// `6801/6804/6807`) — gray until a mode-select button is armed, then the
 /// same amber the map's organism ink uses (§3.2), never a per-action hue.
 const ICON_INK_UNSELECTED: egui::Color32 = egui::Color32::from_rgb(0x9a, 0xa0, 0xa6);
-/// Also the notebook's Catalog icon ink (task 181) — one amber token for
-/// every metabolism icon regardless of surface, not a HUD-local color.
+/// Also the notebook's Catalog icon ink (task 181) and, per §3.2, the exact
+/// token for organism ink anywhere it's needed (`ORGANISM_INK` in the
+/// guide's own naming) — one amber value for every use, not a separate
+/// alias per surface.
 pub(crate) const ICON_INK_SELECTED: egui::Color32 = egui::Color32::from_rgb(0xe0, 0xc9, 0x9a);
 /// Muted-gray section-label ink (§2, §3.1) — uppercase headers distinct
 /// from plain body/heading text.
@@ -1630,7 +1643,7 @@ fn dot_row(ui: &mut egui::Ui, filled: u32, total: u32, shape: DotShape) -> egui:
                     egui::vec2(DOT_SIZE, 3.0),
                 );
                 let color = if is_filled {
-                    DOT_FILLED_COLOR
+                    STATE_POSITIVE
                 } else {
                     DOT_EMPTY_COLOR
                 };
@@ -1640,7 +1653,7 @@ fn dot_row(ui: &mut egui::Ui, filled: u32, total: u32, shape: DotShape) -> egui:
                 let center = egui::pos2(x + DOT_SIZE / 2.0, rect.center().y);
                 let radius = DOT_SIZE / 2.0;
                 if is_filled {
-                    painter.circle_filled(center, radius, DOT_FILLED_COLOR);
+                    painter.circle_filled(center, radius, STATE_POSITIVE);
                 } else {
                     painter.circle_stroke(center, radius, egui::Stroke::new(1.0, DOT_EMPTY_COLOR));
                 }
@@ -1717,7 +1730,21 @@ const TIME_BUTTON_SIZE: egui::Vec2 = egui::vec2(76.0, 20.0);
 /// unaffected by this). A disabled button dims rather than disappears,
 /// consistent with `add_enabled_ui`'s convention elsewhere in this file.
 fn outline_button(ui: &mut egui::Ui, label: &str, active: bool, enabled: bool) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(TIME_BUTTON_SIZE, egui::Sense::click());
+    outline_button_sized(ui, label, TIME_BUTTON_SIZE, active, enabled)
+}
+
+/// [`outline_button`]'s painting, factored out to take an explicit `size`
+/// instead of assuming the HUD's fixed `TIME_BUTTON_SIZE` (task 182) — the
+/// interstitial/menu screens' buttons carry longer labels ("Return to
+/// menu") that don't fit that box.
+fn outline_button_sized(
+    ui: &mut egui::Ui,
+    label: &str,
+    size: egui::Vec2,
+    active: bool,
+    enabled: bool,
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     let dim = |color: egui::Color32| {
         if enabled {
             color
@@ -1738,7 +1765,7 @@ fn outline_button(ui: &mut egui::Ui, label: &str, active: bool, enabled: bool) -
         painter.rect_stroke(
             rect,
             0.0,
-            egui::Stroke::new(1.0, dim(CHROME_OUTLINE_COLOR)),
+            egui::Stroke::new(1.0, dim(OUTLINE_STROKE)),
             egui::StrokeKind::Outside,
         );
     }
@@ -1750,6 +1777,25 @@ fn outline_button(ui: &mut egui::Ui, label: &str, active: bool, enabled: bool) -
         dim(egui::Color32::from_rgb(0xc3, 0xc9, 0xcf)),
     );
     response
+}
+
+/// Padding around the label for [`outline_button_auto`]'s self-sized box.
+const AUTO_BUTTON_PADDING: egui::Vec2 = egui::vec2(16.0, 10.0);
+
+/// An outline-chrome button sized to its own label (task 182) — the
+/// interstitial screens' and main menu's buttons ("Continue", "Retry",
+/// "Return to menu", ...) vary too much in length to share `outline_button`'s
+/// fixed HUD box. Always the plain "no active state" register: none of
+/// these surfaces have a mode-select concept.
+pub(crate) fn outline_button_auto(ui: &mut egui::Ui, label: &str, enabled: bool) -> egui::Response {
+    let font = egui::FontId::monospace(11.0);
+    let galley = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        font,
+        egui::Color32::WHITE, // discarded — outline_button_sized repaints the text itself
+    );
+    let size = galley.size() + AUTO_BUTTON_PADDING * 2.0;
+    outline_button_sized(ui, label, size, false, enabled)
 }
 
 /// On-screen equivalents of the tick/era/notebook keyboard shortcuts (task
@@ -1905,7 +1951,7 @@ fn action_icon_row(
                         painter.rect_stroke(
                             rect,
                             0.0,
-                            egui::Stroke::new(1.0, dim(CHROME_OUTLINE_COLOR)),
+                            egui::Stroke::new(1.0, dim(OUTLINE_STROKE)),
                             egui::StrokeKind::Outside,
                         );
                     }
@@ -1953,7 +1999,7 @@ fn action_icon_row(
             if action_mode == ActionMode::Splice {
                 let unlocked = splice_confirmed_tags > 0;
                 let badge_color = if unlocked {
-                    DOT_FILLED_COLOR
+                    STATE_POSITIVE
                 } else {
                     DOT_EMPTY_COLOR
                 };
@@ -2288,8 +2334,8 @@ fn trend_glyph(trend: PopulationTrend) -> &'static str {
 /// neutral information, not the absence of one.
 fn trend_color(trend: PopulationTrend) -> egui::Color32 {
     match trend {
-        PopulationTrend::Rising => egui::Color32::from_rgb(96, 200, 120),
-        PopulationTrend::Falling => egui::Color32::from_rgb(220, 96, 96),
+        PopulationTrend::Rising => STATE_POSITIVE,
+        PopulationTrend::Falling => STATE_NEGATIVE,
         PopulationTrend::Stable => egui::Color32::from_gray(130),
     }
 }

@@ -293,12 +293,13 @@ written 2026-08-29 as the canonical palette/chrome/icon spec (transcribes the
 the "color=state never identity" rule explicitly). A full audit against it (2
 Explore agents) found every remaining UI surface outside the HUD/notebook was
 never restyled, opening 182 (interstitial screens + main menu chrome, shared
-exact-hex state-color constants), 183 (pause menu + confirmation dialog
+exact-hex state-color constants) `[x]`, 183 (pause menu + confirmation dialog
 chrome, state-colored Confirm/Cancel), 184 (floating overlays — inspect card,
 hover tooltip, contextual hints; fixes a real state-color-inversion bug on
 the saturation warning, not just cosmetic drift), 185 (era-reveal card's
-untracked `species_color` swatch violation). 182 is the dependency root for
-183/184's shared color constants.
+untracked `species_color` swatch violation). 182 shipped the shared
+`PANEL_BG`/`STATE_POSITIVE`/`STATE_NEGATIVE`/`OUTLINE_STROKE` constants (`ui.
+rs`) that 183/184 build on; not live-verified (skipped per user instruction).
 Independent of the redesign corpus and of the 171 Phase-3 gate.
 
 **Phase 3 — content**: 155 trait archetypes `[x]`, 156 dominant family bias

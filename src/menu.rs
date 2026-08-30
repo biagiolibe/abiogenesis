@@ -17,8 +17,8 @@ use crate::notebook::{
 use crate::render::SeenRelations;
 use crate::text;
 use crate::ui::{
-    IsolationHint, PauseMenuOpen, PendingConfirmation, SelectedSpecies, SpliceDraft, StallHint,
-    WorldTouched,
+    apply_monospace, outline_button_auto, IsolationHint, PauseMenuOpen, PendingConfirmation,
+    SelectedSpecies, SpliceDraft, StallHint, WorldTouched, PANEL_BG,
 };
 use abiogenesis::config::SimConfig;
 use abiogenesis::knowledge::MatrixKnowledge;
@@ -72,7 +72,10 @@ fn main_menu_ui(
             .layer_id(egui::LayerId::background())
             .max_rect(ctx.viewport_rect()),
     );
-    egui::CentralPanel::default().show(&mut viewport_ui, |ui| {
+    let panel = egui::CentralPanel::default()
+        .frame(egui::Frame::central_panel(viewport_ui.style()).fill(PANEL_BG));
+    panel.show(&mut viewport_ui, |ui| {
+        apply_monospace(ui);
         ui.add_space(40.0);
         ui.vertical_centered(|ui| {
             ui.heading(text::MENU_TITLE);
@@ -84,7 +87,7 @@ fn main_menu_ui(
                     .desired_width(160.0),
             );
             ui.add_space(12.0);
-            if ui.button(text::MENU_NEW_RUN_BUTTON).clicked() {
+            if outline_button_auto(ui, text::MENU_NEW_RUN_BUTTON, true).clicked() {
                 let run_seed = parse_or_generate_seed(&seed_input.0);
                 start_run(&mut commands, &config, &meta, run_seed);
                 if meta.seen_intro {
@@ -102,7 +105,7 @@ fn main_menu_ui(
             } else {
                 text::HOW_TO_PLAY_SHOW_BUTTON
             };
-            if ui.button(toggle_label).clicked() {
+            if outline_button_auto(ui, toggle_label, true).clicked() {
                 *show_guide = !*show_guide;
             }
         });
