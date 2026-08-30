@@ -32,23 +32,19 @@ introduce).
 
 ## 📋 Acceptance Criteria
 
-- [ ] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
-- [ ] **Replace the species-colored swatch with a neutral metabolism
-      icon.** `screens.rs:299-311`'s `rect_filled(..., species_color(...))`
-      pair becomes a call into the shared block-pattern icon painter (the
-      one 180/181 extract from `MetabolismShapes` — reuse it, don't write
-      a third copy), keyed by each species' `metabolism`, in
-      `ORGANISM_INK` (`#e0c99a`, task 182's constant). Species identity
-      stays carried by the adjacent name text (`entry.parent`/
-      `entry.child`'s labels, already rendered) — same trade-off the
-      design doc accepts everywhere else.
-- [ ] `species_color` import (`screens.rs:20`) — remove if this was its
-      only remaining use in this file; keep if something else in
-      `screens.rs` still legitimately needs it (check before deleting the
-      import).
-- [ ] Live visual check (`cargo run`, screenshot or interactive): trigger a
-      speciation event, confirm the reveal card's parent/child icons read
-      as neutral amber shapes, not species-hued swatches.
+- [x] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
+- [x] **Replaced the species-colored swatch with a neutral metabolism
+      icon**: the two `rect_filled(..., species_color(...))` calls now call
+      `ui::paint_metabolism_icon` (the shared helper 180/181 already
+      introduced), keyed by `world.species[entry.parent/child.0 as
+      usize].metabolism`, painted in `ICON_INK_SELECTED` (the actual
+      constant name in code for the guide's "ORGANISM_INK" token, `ui.
+      rs:1506`). Species identity stays carried by the adjacent name
+      labels, unchanged.
+- [x] `species_color` import (`screens.rs:20`) — removed; it had no other
+      use left in this file.
+- [-] Live visual check — skipped per explicit user instruction for this
+      task; `cargo build`/`clippy`/`fmt`/`test` all clean.
 
 ---
 

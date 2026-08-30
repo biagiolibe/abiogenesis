@@ -297,7 +297,7 @@ exact-hex state-color constants) `[x]`, 183 (pause menu + confirmation dialog
 chrome, state-colored Confirm/Cancel) `[x]`, 184 (floating overlays — inspect card,
 hover tooltip, contextual hints; fixes a real state-color-inversion bug on
 the saturation warning, not just cosmetic drift) `[x]`, 185 (era-reveal card's
-untracked `species_color` swatch violation). 182 shipped the shared
+untracked `species_color` swatch violation) `[x]`. 182 shipped the shared
 `PANEL_BG`/`STATE_POSITIVE`/`STATE_NEGATIVE`/`OUTLINE_STROKE` constants (`ui.
 rs`) that 183/184 build on; not live-verified (skipped per user instruction).
 Independent of the redesign corpus and of the 171 Phase-3 gate.

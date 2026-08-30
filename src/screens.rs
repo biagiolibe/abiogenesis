@@ -17,10 +17,11 @@ use abiogenesis::state::{EraState, GameState};
 use abiogenesis::world::SimWorld;
 
 use crate::notebook::{archive_reveal, translated_tag_label, ChronicleLog};
-use crate::render::species_color;
 use crate::run_flow::{advance_to_next_world, retry_world, WorldResetParams};
 use crate::text;
-use crate::ui::{apply_monospace, outline_button_auto, PANEL_BG};
+use crate::ui::{
+    apply_monospace, outline_button_auto, paint_metabolism_icon, ICON_INK_SELECTED, PANEL_BG,
+};
 
 pub struct ScreensPlugin;
 
@@ -295,24 +296,32 @@ fn era_reveal_screen_ui(
                     ui.weak(text::ERA_REVEAL_QUIET_LINE);
                 }
 
-                // Before/after comparison (§3): a colored swatch per side,
-                // matching the exact hue `species_color`/`cell_color`
-                // already use for this species everywhere else in the game,
-                // so the reveal's "icon that changes" reads as the same
-                // identity the player already recognizes from the grid and
-                // the notebook.
+                // Before/after comparison (§3): a neutral amber metabolism
+                // icon per side (task 185) — species identity is text-only
+                // (the adjacent name), same "color = state, never identity"
+                // trade-off tasks 180/181 already applied to the Biosphere
+                // rows and Catalog icons; a species-hued swatch here would
+                // repeat the exact violation those tasks corrected.
                 for entry in &reveal.evolutions {
                     ui.horizontal(|ui| {
                         let (rect, _) =
                             ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
-                        ui.painter()
-                            .rect_filled(rect, 2.0, species_color(entry.parent));
+                        paint_metabolism_icon(
+                            ui.painter(),
+                            rect,
+                            world.species[entry.parent.0 as usize].metabolism,
+                            ICON_INK_SELECTED,
+                        );
                         ui.label(&entry.parent_name);
                         ui.label("→");
                         let (rect, _) =
                             ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
-                        ui.painter()
-                            .rect_filled(rect, 2.0, species_color(entry.child));
+                        paint_metabolism_icon(
+                            ui.painter(),
+                            rect,
+                            world.species[entry.child.0 as usize].metabolism,
+                            ICON_INK_SELECTED,
+                        );
                         ui.label(&entry.child_name);
                     });
                     ui.label(text::era_reveal_evolution_line(

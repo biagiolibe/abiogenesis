@@ -235,7 +235,7 @@ since they affect what a fresh player notices/attributes correctly.
 | `[x]` | 182 | Interstitial screens + main menu chrome, plus shared exact-hex state-color constants (`ALERT_COLOR`/`DOT_FILLED_COLOR`/`trend_color` are 3 independent approximations today). Build/clippy/test clean; not live-verified (skipped per user instruction) | `VISUAL_STYLE_GUIDE.md` — [182](done/182-interstitial-screens-menu-chrome.md) |
 | `[x]` | 183 | Pause menu + confirmation dialog: chrome, and Confirm/Cancel state-colored | `VISUAL_STYLE_GUIDE.md` — [183](done/183-pause-menu-confirmation-chrome.md) |
 | `[x]` | 184 | Floating overlays (inspect card, hover tooltip, contextual hints): chrome + fixes a state-color inversion bug (saturation warning painted positive-green) + Unicode trend glyph | `VISUAL_STYLE_GUIDE.md` — [184](done/184-floating-overlays-chrome.md) |
-| `[ ]` | 185 | Era-reveal card: remove `species_color` identity swatch from genome-diff rows (found by code audit, not in original 180/181 scope) | `VISUAL_STYLE_GUIDE.md` — [185](185-era-reveal-species-color.md) |
+| `[x]` | 185 | Era-reveal card: remove `species_color` identity swatch from genome-diff rows (found by code audit, not in original 180/181 scope) | `VISUAL_STYLE_GUIDE.md` — [185](done/185-era-reveal-species-color.md) |
 
 Not filed as a task — a GDD/balance discussion, not a code task yet: whether
 an isolated species with no matrix stimulus should trend flat/negative
