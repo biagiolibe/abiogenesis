@@ -129,11 +129,26 @@ explicitly handed off — same as Phase 1's own skipped checkpoint
 (`tasks/QUEUE.md`'s Phase 1 note).
 
 Handoff copy for the playtester (Italian, self-contained — setup, task,
-observation checklist, the two closing questions with autosaving answer
-boxes): **["Diario del primo contatto"](https://claude.ai/code/artifact/ed23a641-17bd-4deb-8f82-581a9bac2188)**
+four open-ended autosaving answer boxes written only after the session
+ends): **["Diario del primo contatto"](https://claude.ai/code/artifact/ed23a641-17bd-4deb-8f82-581a9bac2188)**
 (private Claude artifact; share it from the page's own share menu when
 handing it to someone). Source below is the same content in prose, kept as
 the durable spec this page was built from.
+
+**Revision (2026-08-30)**: the first version of this page carried a
+5-item checklist ("did you open the notebook", "did you use Cull", etc.)
+to tick off *while playing*. Dropped after review: besides reading as
+tedious busywork, showing the playtester mid-session exactly which
+behaviors are being watched for risks priming them to perform the
+checklist rather than behave naturally — undermining the very thing this
+protocol measures (unprompted discovery). Replaced with a single open
+"diary" prompt asked only *after* the session, which absorbs the same
+signal (notebook/Cull/Splice/Chronicle use) through free recall instead of
+a live tracking list, plus a fourth question ("il vuoto") that directly
+asks about moments the game left unexplained — covering the "still
+missing" case the old checklist didn't capture at all. The two original
+closing questions (speciation cause, one confident matrix relation) are
+unchanged, since they're this task's actual pass/fail criteria.
 
 ### What to hand the playtester
 
