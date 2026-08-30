@@ -22,7 +22,10 @@ use abiogenesis::world::{
 
 use crate::render::{metabolism_glyph, species_color, species_label, terrain_glyph};
 use crate::text;
-use crate::ui::{hud_panel, paint_metabolism_icon, HudControlIntents, ICON_INK_SELECTED};
+use crate::ui::{
+    apply_monospace, hairline, hud_panel, paint_metabolism_icon, section_header, HudControlIntents,
+    ICON_INK_SELECTED,
+};
 
 /// One curated log line, tagged with the era it happened in. `text`
 /// describes the event only; the window prepends the era. `species` is the
@@ -801,8 +804,9 @@ fn notebook_window(
             // exception (left-docked, task 116), so its first heading needs
             // real clearance instead of sitting under the buttons (bug
             // caught live, 2026-08-13).
+            apply_monospace(ui);
             ui.add_space(TITLEBAR_CLEARANCE);
-            ui.heading(text::HEADING_OBSERVATION_LOG);
+            section_header(ui, text::HEADING_OBSERVATION_LOG);
             egui::ScrollArea::vertical()
                 .id_salt("observation_log")
                 .max_height(220.0)
@@ -836,17 +840,17 @@ fn notebook_window(
                     }
                 });
 
-            ui.separator();
-            ui.heading(text::HEADING_HYPOTHESIS_GRID);
+            hairline(ui);
+            section_header(ui, text::HEADING_HYPOTHESIS_GRID);
             hypothesis_grid(ui, &world, &knowledge, &config);
 
-            ui.separator();
-            ui.heading(text::HEADING_CATALOG);
+            hairline(ui);
+            section_header(ui, text::HEADING_CATALOG);
             catalog_panel(ui, &world, &config, &terrain_knowledge);
 
-            ui.separator();
-            ui.heading(text::HEADING_CHRONICLE);
-            chronicle_panel(ui, &chronicle);
+            hairline(ui);
+            section_header(ui, text::HEADING_CHRONICLE);
+            chronicle_panel(ui, &chronicle, &world);
         });
     Ok(())
 }
@@ -855,7 +859,7 @@ fn notebook_window(
 /// most-recent-first, each `Event`'s title sized by `RevealTier` the same
 /// way `screens::era_reveal_screen_ui` sizes the reveal card's own heading
 /// — reusing that weight convention rather than inventing a second one.
-fn chronicle_panel(ui: &mut egui::Ui, chronicle: &ChronicleLog) {
+fn chronicle_panel(ui: &mut egui::Ui, chronicle: &ChronicleLog, world: &SimWorld) {
     if chronicle.entries.is_empty() {
         ui.weak(text::NO_CHRONICLE_YET);
         return;
@@ -889,13 +893,27 @@ fn chronicle_panel(ui: &mut egui::Ui, chronicle: &ChronicleLog) {
                 }
                 for (parent, child, line) in evolutions {
                     ui.horizontal(|ui| {
+                        // Task 186: neutral amber metabolism icon, not a
+                        // species-hued swatch — the same "color = state,
+                        // never identity" fix task 185 applied to the
+                        // era-reveal card this entry was archived from.
                         let (rect, _) =
                             ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
-                        ui.painter().rect_filled(rect, 2.0, species_color(*parent));
+                        paint_metabolism_icon(
+                            ui.painter(),
+                            rect,
+                            world.species[parent.0 as usize].metabolism,
+                            ICON_INK_SELECTED,
+                        );
                         ui.label("→");
                         let (rect, _) =
                             ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
-                        ui.painter().rect_filled(rect, 2.0, species_color(*child));
+                        paint_metabolism_icon(
+                            ui.painter(),
+                            rect,
+                            world.species[child.0 as usize].metabolism,
+                            ICON_INK_SELECTED,
+                        );
                         ui.label(line);
                     });
                 }

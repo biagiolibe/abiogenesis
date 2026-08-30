@@ -9,9 +9,7 @@ use bevy_egui::{
 use crate::notebook::{
     tag_glyph, EverSeeded, NotebookEverOpened, NotebookHasUnseenConfirmation, NotebookWindowOpen,
 };
-use crate::render::{
-    metabolism_glyph, metabolism_mask, species_color, species_label, GridCamera, MapViewMode,
-};
+use crate::render::{metabolism_glyph, metabolism_mask, species_label, GridCamera, MapViewMode};
 use crate::text;
 use abiogenesis::config::SimConfig;
 use abiogenesis::knowledge::MatrixKnowledge;
@@ -980,6 +978,7 @@ fn viewport_hint(
         .pivot(egui::Align2::CENTER_TOP)
         .show(ctx, |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
+                apply_monospace(ui);
                 ui.label(hint);
             });
         });
@@ -1021,6 +1020,7 @@ fn hover_tooltip(
             // egui id per grid cell every frame.
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
             egui::Frame::popup(ui.style()).show(ui, |ui| {
+                apply_monospace(ui);
                 ui.label(cell.biome.label());
                 if let Some(population) = cell.population {
                     let trend = trends.trend_for(population.species);
@@ -1056,9 +1056,12 @@ fn inspect_card(
         .resizable(false)
         .collapsible(false)
         .default_pos(egui::pos2(HUD_WIDTH + 24.0, 80.0))
-        .show(ctx, |ui| match cell.population {
-            Some(population) => populated_cell_card(ui, &world, &config, idx, population),
-            None => empty_cell_card(ui, &config, &cell),
+        .show(ctx, |ui| {
+            apply_monospace(ui);
+            match cell.population {
+                Some(population) => populated_cell_card(ui, &world, &config, idx, population),
+                None => empty_cell_card(ui, &config, &cell),
+            }
         });
     Ok(())
 }
@@ -1458,7 +1461,7 @@ pub(crate) fn apply_monospace(ui: &mut egui::Ui) {
     }
 }
 
-fn hairline(ui: &mut egui::Ui) {
+pub(crate) fn hairline(ui: &mut egui::Ui) {
     ui.add_space(6.0);
     let rect = ui.available_rect_before_wrap();
     let y = ui.cursor().top();
@@ -1521,7 +1524,7 @@ const SECTION_LABEL_COLOR: egui::Color32 = egui::Color32::from_rgb(0x7d, 0x84, 0
 /// and the source itself is a design reference, not a pixel spec (same
 /// latitude every other pixel-grain task in this queue has taken), so this
 /// only reproduces the uppercase transform, small size, and muted color.
-fn section_header(ui: &mut egui::Ui, label: &str) -> egui::Response {
+pub(crate) fn section_header(ui: &mut egui::Ui, label: &str) -> egui::Response {
     ui.label(
         egui::RichText::new(label.to_uppercase())
             .small()
@@ -1739,12 +1742,11 @@ fn species_row(
     } else {
         String::new()
     };
-    let text = egui::RichText::new(format!(
+    let text = format!(
         "{marker}{} {}",
         metabolism_glyph(metabolism),
         species_label(world, species)
-    ))
-    .color(species_color(species));
+    );
     if ui.selectable_label(is_selected, text).clicked() {
         *selected = species;
     }

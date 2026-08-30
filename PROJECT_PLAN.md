@@ -297,9 +297,14 @@ exact-hex state-color constants) `[x]`, 183 (pause menu + confirmation dialog
 chrome, state-colored Confirm/Cancel) `[x]`, 184 (floating overlays — inspect card,
 hover tooltip, contextual hints; fixes a real state-color-inversion bug on
 the saturation warning, not just cosmetic drift) `[x]`, 185 (era-reveal card's
-untracked `species_color` swatch violation) `[x]`. 182 shipped the shared
+untracked `species_color` swatch violation) `[x]`, 186 (user screenshot audit
+found 180-185 still missed the Seed Palette's species-colored row text, the
+Chronicle's own copy of 185's swatch bug, and a monospace gap on the
+notebook panel + floating overlays) `[x]`. 182 shipped the shared
 `PANEL_BG`/`STATE_POSITIVE`/`STATE_NEGATIVE`/`OUTLINE_STROKE` constants (`ui.
-rs`) that 183/184 build on; not live-verified (skipped per user instruction).
+rs`) that 183/184/186 build on; none of 182-186 live-verified this session
+(skipped per user instruction) — user asked to rebuild and re-screenshot to
+confirm 186 actually closes the gap.
 Independent of the redesign corpus and of the 171 Phase-3 gate.
 
 **Phase 3 — content**: 155 trait archetypes `[x]`, 156 dominant family bias
