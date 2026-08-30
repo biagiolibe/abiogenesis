@@ -441,6 +441,17 @@ fn configure_fonts(mut contexts: EguiContexts, mut done: Local<bool>) -> Result 
         let visuals = &mut style.visuals;
         visuals.window_corner_radius = egui::CornerRadius::ZERO;
         visuals.menu_corner_radius = egui::CornerRadius::ZERO;
+        // Task 182 follow-up: the HUD sidebar, notebook window, and every
+        // popup/tooltip/inspect-window draw through egui's own
+        // `panel_fill`/`window_fill` defaults, which are close but not the
+        // guide's exact `#1c2229` — the same kind of hex-drift task 182
+        // already fixed for the interstitial/menu screens' `CentralPanel`s
+        // (those set an explicit per-frame `.fill(PANEL_BG)` instead of
+        // relying on this default, since they predate it). Set once here
+        // rather than hunting down every `Panel`/`Window`/`Frame::popup`
+        // call site across `ui.rs`/`notebook.rs`.
+        visuals.panel_fill = PANEL_BG;
+        visuals.window_fill = PANEL_BG;
         for widgets in [
             &mut visuals.widgets.noninteractive,
             &mut visuals.widgets.inactive,
