@@ -43,9 +43,9 @@ doesn't touch the map at all.**
 
 ## 📋 Acceptance Criteria
 
-- [ ] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
+- [x] `cargo build` / `cargo clippy -- -D warnings` clean, `cargo fmt`.
 
-- [ ] **Relationship-graph nodes become neutral squared boxes, not colored
+- [x] **Relationship-graph nodes become neutral squared boxes, not colored
       circles.** `notebook.rs::hypothesis_grid` (`942-1056`) draws each
       node via `painter.circle_filled(pos, NODE_RADIUS, tag_color(tag))`
       (`1042`) — colored per-tag. Replace with a filled rect using a
@@ -55,8 +55,11 @@ doesn't touch the map at all.**
       confirm it isn't now dead code (it's also used at `notebook.rs:1328`
       for a tag swatch — check whether that call site is itself in scope
       per the governing rule, and if so fix it too rather than leaving one
-      inconsistent survivor).
-- [ ] **Node border encodes observed-vs-hypothesis, per the mockup.**
+      inconsistent survivor). Done: also dropped from the Active Tags
+      legend, per-species tag chips, and the conditional-tag terrain badge
+      (all tag identity, all in scope) — `tag_color` deleted, now fully
+      unused.
+- [x] **Node border encodes observed-vs-hypothesis, per the mockup.**
       `pixel-notebook.svg` gives three nodes (CHT/PRN/QRM) a solid border
       and one (LIP) a dashed border (`stroke-dasharray="3 3"`) —
       distinguishing a tag with any confirmed evidence from one that's only
@@ -66,7 +69,7 @@ doesn't touch the map at all.**
       the tag-level aggregate task 151's own `has_no_evidence`,
       `~955-961`, already computes) to choose solid vs. dashed stroke per
       node.
-- [ ] **Node label becomes the 3-letter tag code, not the glyph.**
+- [x] **Node label becomes the 3-letter tag code, not the glyph.**
       `painter.text(..., tag_glyph(tag), ...)` (`1043-1049`) draws a single
       glyph centered on the (previously colored) circle. The mockup labels
       nodes with 3-letter codes (`CHT`, `PRN`, `QRM`, `LIP`). **This
@@ -76,8 +79,10 @@ doesn't touch the map at all.**
       picked up before 155, keep the current single-glyph label here (it's
       still readable, just narrower than the mockup) and note in the PR
       that this one line is deferred to whenever 155 ships, rather than
-      blocking 181 on 155's own unrelated scope.
-- [ ] **Species Catalog icons reuse the same block-pattern shape library as
+      blocking 181 on 155's own unrelated scope. (155 landed first —
+      `tag_glyph` already returns the 3-letter code, so this AC applied
+      unconditionally, no deferral needed.)
+- [x] **Species Catalog icons reuse the same block-pattern shape library as
       the map/HUD.** `notebook.rs`'s Catalog section (`~1328-1400`,
       `TAG_GLYPH = "●"` at `606`) renders a flat colored bullet per
       species/tag entry. Per the design doc's "un solo set riusato ovunque,
@@ -101,10 +106,25 @@ doesn't touch the map at all.**
       valence signal currently reaches this rendering call, flag it as an
       open gap in the PR rather than inventing one — don't add new
       `SimWorld` state from a UI-styling task.
+      **Flagged, not fixed**: `LogEntry` (`notebook.rs`) carries only
+      `era`/`species`/`text` — no positive/negative/confounded field reaches
+      this call site (task 061's green/amber distinction lives on the
+      *confirmation* log line, the `entry.species == None` branch a few
+      lines below, which already uses a neutral `CONFIRMATION_GLYPH` with
+      no color at all — nothing to fix there either). Left
+      `species_color(species)` in place with an inline comment explaining
+      why, per this AC's own instruction. Adding a real valence field to
+      `LogEntry`/whatever populates it is a `sim`/`notebook`-state change,
+      out of scope for a presentation-only task.
 - [ ] Live visual check (`cargo run`, screenshot or interactive): graph
       nodes are neutral boxes with amber stroke, solid/dashed by evidence
       state; Catalog icons show block patterns, not dots; Observation log
       markers (if fixed) read as outcome-colored, not species-colored.
+      **Deliberately skipped (2026-08-30, user instruction)**: code lands
+      and `cargo build`/`clippy`/`test` are clean; this session skipped the
+      interactive/screenshot pass on explicit request ("non fare live
+      verification"). Don't re-run automatically — ask first if a follow-up
+      session reopens this file.
 
 ---
 

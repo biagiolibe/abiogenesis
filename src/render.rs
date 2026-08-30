@@ -1577,40 +1577,39 @@ fn shape_mask_image(inside: impl Fn(f32, f32) -> bool) -> Image {
     )
 }
 
-/// An asterisk/flower — `Photolithic` (GDD §5.4's primary producer, the
-/// "default" metabolism players see most; `VISUAL_STYLE_GUIDE.md` §4).
+/// A rounded/chamfered square — `Photolithic` (GDD §5.4's primary
+/// producer, the "default" metabolism players see most;
+/// `VISUAL_STYLE_GUIDE.md` §4 names this shape "Asterisk").
 /// **Fix, 2026-08-30 playtest finding**: this replaces a plain filled
 /// circle, which at `SHAPE_BLOCK_GRID` coarseness degenerated into an
-/// indistinguishable solid square (a real regression, not a design choice —
-/// `circle_mask(nx,ny) = nx²+ny² <= 0.64` happens to pass every sampled
-/// block center inside its bounding square at 6-8 block resolution, so the
-/// "circle" rendered identically to a square with no visible rounding).
-/// A 9-point cluster — center, 4 diagonal neighbors forming a small inner
-/// diamond, and 4 further-out points along the axes — transcribed from
-/// `redesign/processed/pixel-full-scene.svg`'s own organism-icon block
-/// pattern (e.g. line 6756: a center dot, 4 diagonal dots at half the
-/// radius, 4 axis-tip dots at full radius — the *only* organism icon shape
-/// that mockup actually draws), expressed as a union of small dot masks
-/// rather than a single filled region so it stays a flower/asterisk shape
-/// instead of collapsing into a solid blob at coarse block resolution.
+/// indistinguishable solid square (`circle_mask(nx,ny) = nx²+ny² <= 0.64`
+/// happens to pass every sampled block center inside its bounding square at
+/// 6-8 block resolution, so the "circle" rendered identically to a square
+/// with no visible rounding).
+///
+/// **A first attempt at a literal 9-point asterisk/flower cluster (a dense
+/// center diamond plus 4 further dots along the axes, transcribed from
+/// `pixel-full-scene.svg`'s own organism-icon pattern) shipped, then was
+/// reverted the same day**: a live screenshot of a large population (many
+/// adjacent occupied cells, same tint) showed the sparse dot pattern tiling
+/// into a jarring large-scale checkerboard/moiré across the whole colony —
+/// individual-organism identity was never visible at that zoom, only the
+/// repeating gap pattern, which read as a rendering glitch rather than
+/// texture. This chamfered-corner square keeps the "not a plain square"
+/// distinction (visible corner cut, unlike `circle_mask`'s degenerate case)
+/// while staying dense enough that adjacent same-species cells tile as a
+/// solid mass, matching how `triangle_mask`/`diamond_mask` already tile
+/// acceptably. Trade-off, accepted deliberately: less literally
+/// "asterisk-shaped" than the guide's illustrative name, in exchange for
+/// not visually breaking at population scale — worth revisiting if a
+/// denser asterisk formula is found that doesn't reintroduce the moiré.
 pub(crate) fn asterisk_mask(nx: f32, ny: f32) -> bool {
-    const DOT_RADIUS_SQ: f32 = 0.3 * 0.3;
-    const POINTS: [(f32, f32); 9] = [
-        (0.0, 0.0),
-        (0.5, 0.5),
-        (-0.5, 0.5),
-        (0.5, -0.5),
-        (-0.5, -0.5),
-        (0.0, 1.0),
-        (0.0, -1.0),
-        (1.0, 0.0),
-        (-1.0, 0.0),
-    ];
-    POINTS.iter().any(|&(px, py)| {
-        let dx = nx - px;
-        let dy = ny - py;
-        dx * dx + dy * dy <= DOT_RADIUS_SQ
-    })
+    const EXTENT: f32 = 0.85;
+    const CORNER_CUT: f32 = 0.35;
+    if nx.abs() > EXTENT || ny.abs() > EXTENT {
+        return false;
+    }
+    nx.abs() + ny.abs() <= EXTENT + CORNER_CUT
 }
 
 /// An upward-pointing triangle — `Predator`, evoking a fang/claw shape.

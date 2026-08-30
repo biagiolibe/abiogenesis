@@ -22,7 +22,7 @@ use abiogenesis::world::{
 
 use crate::render::{metabolism_glyph, species_color, species_label, terrain_glyph};
 use crate::text;
-use crate::ui::{hud_panel, HudControlIntents};
+use crate::ui::{hud_panel, paint_metabolism_icon, HudControlIntents, ICON_INK_SELECTED};
 
 /// One curated log line, tagged with the era it happened in. `text`
 /// describes the event only; the window prepends the era. `species` is the
@@ -590,19 +590,6 @@ fn tally_births(
     tally.0.fill(0);
 }
 
-/// Golden-angle hue step for tags, same technique `render.rs` uses for
-/// `SpeciesId` (`SPECIES_HUE_STEP`) — successive `TagId`s get visually
-/// distinct colors with no per-tag configuration.
-const TAG_HUE_STEP: f32 = 137.5;
-
-/// A tag's color, deterministic from its id. Tags stay "nameless
-/// glyphs/colors, learned empirically" (GDD §11) — never rendered as a raw
-/// number.
-fn tag_color(tag: TagId) -> egui::Color32 {
-    let hue = (tag.0 as f32 * TAG_HUE_STEP % 360.0) / 360.0;
-    egui::ecolor::Hsva::new(hue, 0.75, 0.9, 1.0).into()
-}
-
 const TAG_GLYPH: &str = "●";
 
 /// Marks a matrix-confirmation log line (task 054) in place of the
@@ -828,6 +815,16 @@ fn notebook_window(
                         ui.horizontal(|ui| {
                             match entry.species {
                                 Some(species) => {
+                                    // Task 181 gap, not fixed here: the
+                                    // mockup colors log markers by outcome/
+                                    // valence (green/red-rust), but `LogEntry`
+                                    // carries no such signal today — only
+                                    // `era`/`species`/`text`. Recoloring
+                                    // this would mean inventing new state
+                                    // from a UI-styling task, which the
+                                    // task file explicitly says not to do;
+                                    // left species-colored until a real
+                                    // valence signal reaches here.
                                     ui.colored_label(species_color(species), TAG_GLYPH);
                                 }
                                 None => {
@@ -914,6 +911,15 @@ fn chronicle_panel(ui: &mut egui::Ui, chronicle: &ChronicleLog) {
 
 /// Node radius for the hypothesis graph (task 031), in points.
 const NODE_RADIUS: f32 = 14.0;
+
+/// Node chrome (task 181, `VISUAL_STYLE_GUIDE.md` §5's relationship-graph
+/// grammar): a neutral dark-slate box — the panel's own material, not a new
+/// color — with an amber stroke, replacing the previous `tag_color(tag)`
+/// filled circle. Color encodes state, never tag identity (§1 rule 3); the
+/// tag's 3-letter code (task 155) is the identity carrier.
+const NODE_FILL_COLOR: egui::Color32 = egui::Color32::from_rgb(0x1c, 0x22, 0x29);
+const NODE_STROKE_COLOR: egui::Color32 = ICON_INK_SELECTED;
+const NODE_LABEL_COLOR: egui::Color32 = egui::Color32::from_rgb(0xc3, 0xc9, 0xcf);
 
 const ARROW_LENGTH: f32 = 8.0;
 const ARROW_WIDTH: f32 = 6.0;
@@ -1069,16 +1075,38 @@ fn hypothesis_grid(
         let tag = tags[i];
         let slot = TagSlot(i as u8);
         let pos = positions[i];
-        painter.circle_filled(pos, NODE_RADIUS, tag_color(tag));
+        let node_rect = egui::Rect::from_center_size(pos, egui::Vec2::splat(NODE_RADIUS * 2.0));
+
+        // Solid border once this tag has any confirmed relation (either
+        // direction, with any other visible tag); dashed while it's only
+        // ever appeared as an unconfirmed hypothesis — `has_something`
+        // above already distinguishes confirmed from partial-evidence per
+        // pair, this just asks "does *any* pair involving this tag clear
+        // that bar."
+        let confirmed = visible.iter().any(|&oi| {
+            oi != i
+                && (knowledge
+                    .revealed_value(slot, TagSlot(oi as u8), world)
+                    .is_some()
+                    || knowledge
+                        .revealed_value(TagSlot(oi as u8), slot, world)
+                        .is_some())
+        });
+        let stroke = egui::Stroke::new(1.5, NODE_STROKE_COLOR);
+        painter.rect_filled(node_rect, 0.0, NODE_FILL_COLOR);
+        if confirmed {
+            painter.rect_stroke(node_rect, 0.0, stroke, egui::StrokeKind::Outside);
+        } else {
+            draw_dashed_rect(&painter, node_rect, stroke);
+        }
         painter.text(
             pos,
             egui::Align2::CENTER_CENTER,
             tag_glyph(tag),
-            egui::FontId::proportional(13.0),
-            egui::Color32::BLACK,
+            egui::FontId::monospace(9.0),
+            NODE_LABEL_COLOR,
         );
 
-        let node_rect = egui::Rect::from_center_size(pos, egui::Vec2::splat(NODE_RADIUS * 2.0));
         let node_id = response.id.with(("hypothesis_node", tag.0));
         let node_response = ui.interact(node_rect, node_id, egui::Sense::hover());
         node_response.on_hover_text(node_tooltip_text(slot, tag, tags, world, knowledge));
@@ -1258,6 +1286,21 @@ fn draw_dashed_polyline(painter: &egui::Painter, points: &[egui::Pos2], stroke: 
     }
 }
 
+/// A dashed rectangle outline (task 181) — a node whose tag has no
+/// confirmed relation yet, only unconfirmed hypothesis participation.
+/// Reuses `draw_dashed_polyline` over the rect's four corners rather than a
+/// second dash-stepping implementation.
+fn draw_dashed_rect(painter: &egui::Painter, rect: egui::Rect, stroke: egui::Stroke) {
+    let points = [
+        rect.left_top(),
+        rect.right_top(),
+        rect.right_bottom(),
+        rect.left_bottom(),
+        rect.left_top(),
+    ];
+    draw_dashed_polyline(painter, &points, stroke);
+}
+
 /// `evidence / threshold` as a rounded percentage (task 102) — how close an
 /// unconfirmed pair is to crossing `MatrixKnowledge`'s confirmation
 /// threshold. Exposes numbers `MatrixKnowledge` already tracks; doesn't
@@ -1346,6 +1389,10 @@ fn temperature_label(
     )
 }
 
+/// Side length of the Catalog row's metabolism icon (task 181) — same size
+/// as the HUD's `BIOSPHERE_ICON_SIZE`, for the same reason.
+const CATALOG_ICON_SIZE: f32 = 12.0;
+
 fn catalog_panel(
     ui: &mut egui::Ui,
     world: &SimWorld,
@@ -1355,7 +1402,9 @@ fn catalog_panel(
     ui.label(text::ACTIVE_TAGS_LABEL);
     ui.horizontal(|ui| {
         for &tag in &world.active_tags {
-            ui.colored_label(tag_color(tag), format!("{TAG_GLYPH} {}", tag_glyph(tag)));
+            // Task 181: a tag's identity is its 3-letter code (text alone,
+            // `VISUAL_STYLE_GUIDE.md` §5) — no per-tag color.
+            ui.label(format!("{TAG_GLYPH} {}", tag_glyph(tag)));
         }
     });
 
@@ -1387,7 +1436,19 @@ fn catalog_panel(
             .sum();
         let seeded_era = world.species_seeded_era.get(id).copied().flatten();
         ui.horizontal(|ui| {
-            ui.colored_label(species_color(species_id), TAG_GLYPH);
+            // Task 181: species identity is text-only (the name, below) —
+            // the icon carries metabolism via the shared block-pattern
+            // painter, amber ink, never a per-species hue.
+            let (icon_rect, _) = ui.allocate_exact_size(
+                egui::vec2(CATALOG_ICON_SIZE, CATALOG_ICON_SIZE),
+                egui::Sense::hover(),
+            );
+            paint_metabolism_icon(
+                ui.painter(),
+                icon_rect,
+                species.metabolism,
+                ICON_INK_SELECTED,
+            );
             ui.label(metabolism_glyph(species.metabolism));
             ui.vertical(|ui| {
                 // `.wrap()` (task 116, bug caught live 2026-08-13): this
@@ -1423,10 +1484,7 @@ fn catalog_panel(
                     ui.horizontal_wrapped(|ui| {
                         for &slot in &species.tags {
                             let tag = world.active_tags[slot.0 as usize];
-                            ui.colored_label(
-                                tag_color(tag),
-                                format!("{TAG_GLYPH} {}", tag_glyph(tag)),
-                            );
+                            ui.label(format!("{TAG_GLYPH} {}", tag_glyph(tag)));
                             conditional_tag_badge(ui, world, terrain_knowledge, slot, tag);
                         }
                     });
@@ -1462,10 +1520,8 @@ fn conditional_tag_badge(
         Mode::Inducible => "↑",
         Mode::Repressible => "↓",
     };
-    ui.colored_label(
-        tag_color(tag),
-        format!("{}{marker}", terrain_glyph(conditional.terrain)),
-    );
+    // Task 181: no per-tag color — same rule as the tag code label above.
+    ui.label(format!("{}{marker}", terrain_glyph(conditional.terrain)));
 }
 
 #[cfg(test)]

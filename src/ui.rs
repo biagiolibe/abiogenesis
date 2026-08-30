@@ -1450,7 +1450,9 @@ const CHROME_SELECTED_STROKE: egui::Color32 = egui::Color32::from_rgb(0x7f, 0xae
 /// `6801/6804/6807`) — gray until a mode-select button is armed, then the
 /// same amber the map's organism ink uses (§3.2), never a per-action hue.
 const ICON_INK_UNSELECTED: egui::Color32 = egui::Color32::from_rgb(0x9a, 0xa0, 0xa6);
-const ICON_INK_SELECTED: egui::Color32 = egui::Color32::from_rgb(0xe0, 0xc9, 0x9a);
+/// Also the notebook's Catalog icon ink (task 181) — one amber token for
+/// every metabolism icon regardless of surface, not a HUD-local color.
+pub(crate) const ICON_INK_SELECTED: egui::Color32 = egui::Color32::from_rgb(0xe0, 0xc9, 0x9a);
 /// Muted-gray section-label ink (§2, §3.1) — uppercase headers distinct
 /// from plain body/heading text.
 const SECTION_LABEL_COLOR: egui::Color32 = egui::Color32::from_rgb(0x7d, 0x84, 0x8a);
@@ -1578,7 +1580,9 @@ fn action_icon_blocks(action: ActionMode) -> &'static [(f32, f32)] {
 /// by its own texture/cell size, not this constant.
 const BIOSPHERE_ICON_SAMPLE_GRID: u32 = 16;
 
-fn paint_metabolism_icon(
+/// `pub(crate)`: task 181 reuses this for the notebook's Species Catalog
+/// icon — same shared-icon-painter requirement, one implementation.
+pub(crate) fn paint_metabolism_icon(
     painter: &egui::Painter,
     rect: egui::Rect,
     metabolism: Metabolism,

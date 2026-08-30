@@ -153,6 +153,14 @@ terrain overlay (task 112) stays untouched.**
       glance if a future session is in this file anyway, not worth a
       dedicated re-open on its own.
 
+      **Follow-up correction, same day**: the 9-point dot-cluster
+      `asterisk_mask` above tiled into a large-scale checkerboard/moiré
+      across big same-species populations (user-reported screenshot,
+      task 181 session) — replaced with a denser chamfered-corner-square
+      variant, same function name/role, still visibly non-square but no
+      longer moiré-prone. See `asterisk_mask`'s own doc comment in
+      `render.rs` for the full before/after.
+
 ---
 
 ## 📁 Relevant Files
