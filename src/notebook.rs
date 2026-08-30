@@ -835,7 +835,17 @@ fn notebook_window(
                                     ui.label(CONFIRMATION_GLYPH);
                                 }
                             }
-                            ui.label(text::log_entry_line(entry.era, &entry.text));
+                            // `.wrap()` (task 187, same fix as `catalog_panel`'s
+                            // task-116 note): a plain label inside this
+                            // `ui.horizontal` row doesn't wrap by default,
+                            // and an observation line routinely runs past
+                            // `NOTEBOOK_WIDTH` once the glyph column's width
+                            // is subtracted — worse since task 186 switched
+                            // the panel to monospace (wider glyphs).
+                            ui.add(
+                                egui::Label::new(text::log_entry_line(entry.era, &entry.text))
+                                    .wrap(),
+                            );
                         });
                     }
                 });
@@ -914,7 +924,10 @@ fn chronicle_panel(ui: &mut egui::Ui, chronicle: &ChronicleLog, world: &SimWorld
                             world.species[child.0 as usize].metabolism,
                             ICON_INK_SELECTED,
                         );
-                        ui.label(line);
+                        // `.wrap()` (task 187): same "plain label inside
+                        // `ui.horizontal` doesn't wrap" fix as the
+                        // observation log's own entry line above.
+                        ui.add(egui::Label::new(line).wrap());
                     });
                 }
                 if let Some(lost_line) = lost_line {
@@ -1437,7 +1450,17 @@ fn catalog_panel(
     for metabolism in seen_metabolisms {
         ui.horizontal(|ui| {
             ui.label(metabolism_glyph(metabolism));
-            ui.weak(text::metabolism_legend_line(metabolism));
+            // `.wrap()` (task 187): same "plain label inside `ui.horizontal`
+            // doesn't wrap" fix as the observation log/Chronicle lines above
+            // — the legend's full sentence routinely ran past
+            // `NOTEBOOK_WIDTH` and was silently clipped, worse since task
+            // 186 switched the panel to monospace.
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(text::metabolism_legend_line(metabolism)).weak(),
+                )
+                .wrap(),
+            );
         });
     }
 

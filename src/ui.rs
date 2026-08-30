@@ -816,7 +816,12 @@ pub(crate) fn hud_panel(
             section_header(ui, text::HEADING_SEED_PALETTE).on_hover_text(text::SEED_PALETTE_HOVER);
             egui::ScrollArea::vertical()
                 .id_salt("species_list")
-                .max_height(SPECIES_VISIBLE_ROWS as f32 * console_row_height(ui))
+                // Task 187: unlike a Biosphere row (one line), `species_row`
+                // is two lines — the selectable name label plus `ui.weak`'s
+                // metabolism/temperature-fit subtext — so the budget needs
+                // twice `console_row_height`, or the list scrolled after
+                // ~2-3 species instead of `SPECIES_VISIBLE_ROWS` (5).
+                .max_height(SPECIES_VISIBLE_ROWS as f32 * console_row_height(ui) * 2.0)
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     for i in 0..world.species.len() as u8 {

@@ -237,6 +237,7 @@ since they affect what a fresh player notices/attributes correctly.
 | `[x]` | 184 | Floating overlays (inspect card, hover tooltip, contextual hints): chrome + fixes a state-color inversion bug (saturation warning painted positive-green) + Unicode trend glyph | `VISUAL_STYLE_GUIDE.md` — [184](done/184-floating-overlays-chrome.md) |
 | `[x]` | 185 | Era-reveal card: remove `species_color` identity swatch from genome-diff rows (found by code audit, not in original 180/181 scope) | `VISUAL_STYLE_GUIDE.md` — [185](done/185-era-reveal-species-color.md) |
 | `[x]` | 186 | Notebook/inspect-card monospace gap + Seed Palette and Chronicle species-color leaks (found via user screenshot audit, missed by 180-185); not live-verified, user asked to rebuild and re-check | `VISUAL_STYLE_GUIDE.md` — [186](done/186-notebook-inspect-seedlist-chrome-gaps.md) |
+| `[x]` | 187 | Seed Palette scroll height (2-line row budgeted as 1) + notebook text clipping (missing `.wrap()` in 3 more spots), both surfaced by user screenshots of 186's own result; not live-verified | `VISUAL_STYLE_GUIDE.md` — [187](done/187-species-list-height-notebook-text-wrap.md) |
 
 Not filed as a task — a GDD/balance discussion, not a code task yet: whether
 an isolated species with no matrix stimulus should trend flat/negative
