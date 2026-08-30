@@ -806,61 +806,78 @@ fn notebook_window(
             // caught live, 2026-08-13).
             apply_monospace(ui);
             ui.add_space(TITLEBAR_CLEARANCE);
-            section_header(ui, text::HEADING_OBSERVATION_LOG);
+            // Task 187: the panel's total content height (Hypothesis grid's
+            // fixed-size canvas, an unbounded Catalog species list, an
+            // unbounded Chronicle) routinely exceeds the viewport, and
+            // nothing below the Observation log's own internal `ScrollArea`
+            // had any way to reach content past the bottom edge — it was
+            // just clipped. One outer vertical scroll over everything below
+            // the title clearance fixes that; the Observation log keeps its
+            // own nested `ScrollArea` (a fixed-height, stick-to-bottom log
+            // reads better capped than growing to fill the whole panel).
             egui::ScrollArea::vertical()
-                .id_salt("observation_log")
-                .max_height(220.0)
-                .stick_to_bottom(true)
+                .id_salt("notebook_body")
+                .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    if log.entries.is_empty() {
-                        ui.weak(text::NO_OBSERVATIONS_YET);
-                    }
-                    for entry in &log.entries {
-                        ui.horizontal(|ui| {
-                            match entry.species {
-                                Some(species) => {
-                                    // Task 181 gap, not fixed here: the
-                                    // mockup colors log markers by outcome/
-                                    // valence (green/red-rust), but `LogEntry`
-                                    // carries no such signal today — only
-                                    // `era`/`species`/`text`. Recoloring
-                                    // this would mean inventing new state
-                                    // from a UI-styling task, which the
-                                    // task file explicitly says not to do;
-                                    // left species-colored until a real
-                                    // valence signal reaches here.
-                                    ui.colored_label(species_color(species), TAG_GLYPH);
-                                }
-                                None => {
-                                    ui.label(CONFIRMATION_GLYPH);
-                                }
+                    section_header(ui, text::HEADING_OBSERVATION_LOG);
+                    egui::ScrollArea::vertical()
+                        .id_salt("observation_log")
+                        .max_height(220.0)
+                        .stick_to_bottom(true)
+                        .show(ui, |ui| {
+                            if log.entries.is_empty() {
+                                ui.weak(text::NO_OBSERVATIONS_YET);
                             }
-                            // `.wrap()` (task 187, same fix as `catalog_panel`'s
-                            // task-116 note): a plain label inside this
-                            // `ui.horizontal` row doesn't wrap by default,
-                            // and an observation line routinely runs past
-                            // `NOTEBOOK_WIDTH` once the glyph column's width
-                            // is subtracted — worse since task 186 switched
-                            // the panel to monospace (wider glyphs).
-                            ui.add(
-                                egui::Label::new(text::log_entry_line(entry.era, &entry.text))
-                                    .wrap(),
-                            );
+                            for entry in &log.entries {
+                                ui.horizontal(|ui| {
+                                    match entry.species {
+                                        Some(species) => {
+                                            // Task 181 gap, not fixed here: the
+                                            // mockup colors log markers by outcome/
+                                            // valence (green/red-rust), but `LogEntry`
+                                            // carries no such signal today — only
+                                            // `era`/`species`/`text`. Recoloring
+                                            // this would mean inventing new state
+                                            // from a UI-styling task, which the
+                                            // task file explicitly says not to do;
+                                            // left species-colored until a real
+                                            // valence signal reaches here.
+                                            ui.colored_label(species_color(species), TAG_GLYPH);
+                                        }
+                                        None => {
+                                            ui.label(CONFIRMATION_GLYPH);
+                                        }
+                                    }
+                                    // `.wrap()` (task 187, same fix as `catalog_panel`'s
+                                    // task-116 note): a plain label inside this
+                                    // `ui.horizontal` row doesn't wrap by default,
+                                    // and an observation line routinely runs past
+                                    // `NOTEBOOK_WIDTH` once the glyph column's width
+                                    // is subtracted — worse since task 186 switched
+                                    // the panel to monospace (wider glyphs).
+                                    ui.add(
+                                        egui::Label::new(text::log_entry_line(
+                                            entry.era,
+                                            &entry.text,
+                                        ))
+                                        .wrap(),
+                                    );
+                                });
+                            }
                         });
-                    }
+
+                    hairline(ui);
+                    section_header(ui, text::HEADING_HYPOTHESIS_GRID);
+                    hypothesis_grid(ui, &world, &knowledge, &config);
+
+                    hairline(ui);
+                    section_header(ui, text::HEADING_CATALOG);
+                    catalog_panel(ui, &world, &config, &terrain_knowledge);
+
+                    hairline(ui);
+                    section_header(ui, text::HEADING_CHRONICLE);
+                    chronicle_panel(ui, &chronicle, &world);
                 });
-
-            hairline(ui);
-            section_header(ui, text::HEADING_HYPOTHESIS_GRID);
-            hypothesis_grid(ui, &world, &knowledge, &config);
-
-            hairline(ui);
-            section_header(ui, text::HEADING_CATALOG);
-            catalog_panel(ui, &world, &config, &terrain_knowledge);
-
-            hairline(ui);
-            section_header(ui, text::HEADING_CHRONICLE);
-            chronicle_panel(ui, &chronicle, &world);
         });
     Ok(())
 }

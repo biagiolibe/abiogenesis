@@ -1196,7 +1196,11 @@ fn pause_menu(
     mut open: ResMut<PauseMenuOpen>,
     mut pending: ResMut<PendingConfirmation>,
 ) -> Result {
-    if !open.0 {
+    // Task 187: a pending confirmation (from "Save and exit"/"Abandon")
+    // replaces the pause menu modally — both are `egui::Window`s anchored
+    // near screen-center, and rendering both at once let the confirmation
+    // dialog visually overlap the pause menu's own buttons underneath it.
+    if !open.0 || pending.kind.is_some() {
         return Ok(());
     }
     let ctx = contexts.ctx_mut()?;

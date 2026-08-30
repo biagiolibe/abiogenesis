@@ -29,8 +29,9 @@ use crate::notebook::{
 };
 use crate::render::{BlockedIndicatorSeen, SeenRelations};
 use crate::ui::{
-    DeathCauseTally, IsolationHint, PauseMenuOpen, PendingConfirmation, PopulationTrends,
-    SelectedAction, SelectedSpecies, SpliceDraft, StallHint, WorldTouched,
+    ContinuousAdvance, ContinuousAdvancePulseCounter, DeathCauseTally, IsolationHint,
+    PauseMenuOpen, PendingConfirmation, PopulationTrends, SelectedAction, SelectedSpecies,
+    SpliceDraft, StallHint, WorldTouched,
 };
 use abiogenesis::knowledge::MatrixKnowledge;
 
@@ -80,6 +81,18 @@ pub struct WorldResetParams<'w> {
     pub pending_confirmation: ResMut<'w, PendingConfirmation>,
     /// Task 153: same lifecycle as `log` (`ObservationLog`) above.
     pub chronicle: ResMut<'w, ChronicleLog>,
+    /// Task 187 fix: continuous/auto-advance is app-global state (`input.
+    /// rs::toggle_continuous_advance`/`continuous_advance`) that was never
+    /// part of this reset bundle — leaving it on and starting a new world
+    /// (menu "New run", "Continue", or "Retry") silently kept auto-playing
+    /// the fresh world in the background, starving the player's own
+    /// `space`/`shift+space` presses (both gate on `!continuous.0`) and
+    /// reading as "space now advances whole eras" once the player noticed
+    /// eras flying by with no input. A new/reset world always starts with
+    /// auto-advance off, same reasoning `pause_menu_open`/`world_touched`
+    /// already follow.
+    pub continuous: ResMut<'w, ContinuousAdvance>,
+    pub continuous_pulse_counter: ResMut<'w, ContinuousAdvancePulseCounter>,
 }
 
 /// Rebuilds `world` in place as world `world_index` seeded with `seed`
@@ -163,6 +176,8 @@ pub fn start_world(
     reset.pause_menu_open.0 = false;
     *reset.pending_confirmation = PendingConfirmation::default();
     reset.chronicle.entries.clear();
+    *reset.continuous = ContinuousAdvance::default();
+    reset.continuous_pulse_counter.0 = 0;
 }
 
 /// The concrete effect of "World cleared → Continue" (task 045): advances
@@ -271,6 +286,8 @@ mod tests {
         ecs_world.insert_resource(PauseMenuOpen::default());
         ecs_world.insert_resource(PendingConfirmation::default());
         ecs_world.insert_resource(ChronicleLog::default());
+        ecs_world.insert_resource(ContinuousAdvance::default());
+        ecs_world.insert_resource(ContinuousAdvancePulseCounter::default());
         ecs_world
     }
 
@@ -475,6 +492,49 @@ mod tests {
         );
 
         assert!(reset.isolation_hint.text.is_none());
+    }
+
+    /// Task 187 regression: continuous/auto-advance left on in the world
+    /// just left must not silently keep auto-playing the fresh world —
+    /// found live when a player toggled it on, then returned to the menu
+    /// and started a new world, and `space`/`shift+space` appeared to stop
+    /// working (both gate on `!continuous.0`) while eras advanced on their
+    /// own in the background.
+    #[test]
+    fn advancing_to_the_next_world_turns_off_a_stale_continuous_advance() {
+        let config = SimConfig::default();
+        let (mut world, objectives) = build_world(13, 0, &config, 0);
+        let mut run_progress = RunProgress {
+            run_seed: 13,
+            world_index: 0,
+            world_seed: 13,
+            worlds_cleared: 0,
+            unlocks: Default::default(),
+            energy: 0.0,
+        };
+        let mut season_progress = SeasonProgress::default();
+        let mut era_next_state = NextState::default();
+        let mut ecs_world = resource_world(
+            objectives,
+            ObjectiveProgress::default(),
+            CurrentWorldOutcome::default(),
+        );
+        ecs_world.resource_mut::<ContinuousAdvance>().0 = true;
+        ecs_world.resource_mut::<ContinuousAdvancePulseCounter>().0 = 7;
+        let mut state = SystemState::<WorldResetParams>::new(&mut ecs_world);
+        let mut reset = state.get_mut(&mut ecs_world).unwrap();
+
+        advance_to_next_world(
+            &mut world,
+            &mut run_progress,
+            &config,
+            &mut season_progress,
+            &mut era_next_state,
+            &mut reset,
+        );
+
+        assert!(!reset.continuous.0);
+        assert_eq!(reset.continuous_pulse_counter.0, 0);
     }
 
     /// `MatrixKnowledge` must be resized to the *new* world's active-tag

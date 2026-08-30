@@ -1526,6 +1526,8 @@ mod tests {
         app.insert_resource(PauseMenuOpen::default());
         app.insert_resource(PendingConfirmation::default());
         app.insert_resource(crate::notebook::ChronicleLog::default());
+        app.insert_resource(crate::ui::ContinuousAdvance::default());
+        app.insert_resource(crate::ui::ContinuousAdvancePulseCounter::default());
         app.add_systems(Update, reseed_world);
         app.update();
 
@@ -1597,6 +1599,8 @@ mod tests {
         app.insert_resource(PauseMenuOpen::default());
         app.insert_resource(PendingConfirmation::default());
         app.insert_resource(crate::notebook::ChronicleLog::default());
+        app.insert_resource(crate::ui::ContinuousAdvance::default());
+        app.insert_resource(crate::ui::ContinuousAdvancePulseCounter::default());
         app.add_systems(Update, reseed_world);
         app.update();
 

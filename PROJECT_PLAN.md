@@ -303,11 +303,17 @@ Chronicle's own copy of 185's swatch bug, and a monospace gap on the
 notebook panel + floating overlays) `[x]`, 187 (186's own follow-up: Seed
 Palette scroll height budgeted for a 1-line row when `species_row` is
 2 lines, plus 3 more `ui.horizontal` labels missing `.wrap()` that 186's
-monospace switch exposed) `[x]`. 182 shipped the shared
-`PANEL_BG`/`STATE_POSITIVE`/`STATE_NEGATIVE`/`OUTLINE_STROKE` constants (`ui.
-rs`) that 183/184/186 build on; none of 182-187 live-verified this session
-(skipped per user instruction) — user asked to rebuild and re-screenshot to
-confirm.
+monospace switch exposed) `[x]`, 188 (a second round of live feedback found
+a **real gameplay bug**, not cosmetic: `ContinuousAdvance` was never reset
+by `run_flow::start_world`, so leaving auto-advance on and starting a new
+world left it silently auto-playing in the background — read as "`space`
+now advances whole eras" since `space`'s own systems gate on
+`!continuous.0`; also fixed the notebook's missing outer scroll and the
+pause-menu/confirmation-dialog visual overlap) `[x]`. 182 shipped the
+shared `PANEL_BG`/`STATE_POSITIVE`/`STATE_NEGATIVE`/`OUTLINE_STROKE`
+constants (`ui.rs`) that 183/184/186 build on; none of 182-188 live-verified
+this session (skipped per user instruction) — user asked to rebuild and
+re-screenshot to confirm.
 Independent of the redesign corpus and of the 171 Phase-3 gate.
 
 **Phase 3 — content**: 155 trait archetypes `[x]`, 156 dominant family bias
