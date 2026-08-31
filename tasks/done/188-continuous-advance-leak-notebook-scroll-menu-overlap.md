@@ -67,11 +67,9 @@ Root causes, all confirmed by reading the code (not guessed):
 - [x] `pause_menu` returns early (renders nothing) while
       `PendingConfirmation::kind` is `Some(..)`, so the confirmation dialog
       never has to share the screen with the pause menu underneath it.
-- [-] Manual check — skipped per this session's standing "no live
-      verification" instruction; ask the user to rebuild and re-verify all
-      three, especially the continuous-advance fix (toggle Auto on, return
-      to menu, start a new world, confirm `space` advances one season as
-      normal).
+- [x] Manual check — user rebuilt and confirmed fixed (2026-08-31): the
+      continuous-advance leak, notebook scroll, and pause/confirmation
+      overlap all resolved.
 
 ---
 

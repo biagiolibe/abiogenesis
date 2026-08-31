@@ -311,9 +311,10 @@ now advances whole eras" since `space`'s own systems gate on
 `!continuous.0`; also fixed the notebook's missing outer scroll and the
 pause-menu/confirmation-dialog visual overlap) `[x]`. 182 shipped the
 shared `PANEL_BG`/`STATE_POSITIVE`/`STATE_NEGATIVE`/`OUTLINE_STROKE`
-constants (`ui.rs`) that 183/184/186 build on; none of 182-188 live-verified
-this session (skipped per user instruction) — user asked to rebuild and
-re-screenshot to confirm.
+constants (`ui.rs`) that 183/184/186 build on. 182-185 skipped live
+verification per user instruction and stand unconfirmed; 186-188 were
+live-verified by the user after rebuilding (2026-08-31), confirming both
+the chrome fixes and the 188 gameplay-bug fix (continuous-advance leak).
 Independent of the redesign corpus and of the 171 Phase-3 gate.
 
 **Phase 3 — content**: 155 trait archetypes `[x]`, 156 dominant family bias

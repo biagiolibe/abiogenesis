@@ -68,11 +68,9 @@ Read `VISUAL_STYLE_GUIDE.md` §1 rule 3, §2 (monospace panel-wide), §6
       parameter to look up each species' `metabolism`.
 - [x] `inspect_card`, `viewport_hint`, `hover_tooltip`: each now calls
       `apply_monospace(ui)` on its own top-level `Ui`.
-- [-] Manual check — skipped per this session's standing "no live
-      verification" instruction; `cargo build`/`clippy`/`fmt`/`test` all
-      clean. **Ask the user to rebuild (`cargo run`) and re-screenshot**
-      before treating this as fully confirmed — the source-level diagnosis
-      is solid but wasn't checked against a running binary this session.
+- [x] Manual check — user rebuilt and confirmed fixed (2026-08-31, after
+      two more follow-up rounds: 187 for text wrapping/scroll height, 188
+      for the notebook's outer scroll and two unrelated bugs it surfaced).
 
 ---
 

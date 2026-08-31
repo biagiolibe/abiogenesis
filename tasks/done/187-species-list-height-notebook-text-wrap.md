@@ -52,9 +52,8 @@ scrolling, is this codebase's established fix for this exact failure mode.
       (`egui::Label::new(...).wrap()`), the same fix already applied to the
       Species catalog's own per-species line — no more silent clipping
       inside a `ui.horizontal` row.
-- [-] Manual check — skipped per this session's standing "no live
-      verification" instruction; ask the user to rebuild and re-screenshot
-      to confirm.
+- [x] Manual check — user rebuilt and confirmed fixed (2026-08-31,
+      together with task 188's follow-up fixes).
 
 ---
 
