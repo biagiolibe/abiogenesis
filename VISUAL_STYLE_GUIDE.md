@@ -298,7 +298,9 @@ criteria, only points at them:
 - **Catalog icons are a flat colored bullet, not the shared block-pattern
   icon** → task 181.
 - **Observation-log markers are species-colored, not outcome-colored** →
-  task 181 (flagged as possibly needing new data, not just a style fix).
+  task 181 flagged this as possibly needing new data; GDD §7 now records the
+  resolution (a presentation-layer classification per event kind, no new
+  sim signal needed) → task 189.
 - **Greek-letter tag glyphs, not yet 3-letter codes** → task 155.
 - **No dominant-family matrix-intensity bias yet** → task 156.
 - **Biome palette: code vs. design-doc mismatch** (§3.3's "known mismatch")
