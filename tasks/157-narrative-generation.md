@@ -10,6 +10,13 @@
 
 ---
 
+> **Status (governed-sdd)**: QUEUED &nbsp;·&nbsp; **Review**: REQUIRED &nbsp;·&nbsp; **Reasoning**: high
+> **Reasoning justification**: the blocking pre-decision (structured fragment data vs. plain strings, cross-cutting §5) is a cross-layer architecture fork with a real cost on the wrong branch — see the section immediately below.
+> **Authority**: `redesign/processed/abiogenesis-narrative-generation.md` and `redesign/processed/abiogenesis-cross-cutting.md` §5 (both Design source) + `abiogenesis-gdd.md` §7
+> **Expected code surface / Out of scope / Validation**: see 📁 Relevant Files, 🧩 Technical Context ("Explicitly not required by this task"), and Acceptance Criteria below.
+
+---
+
 ## ⚠️ BLOCKING PRE-DECISION — read before writing any code
 
 `tasks/QUEUE.md`'s Phase 3 row for this task carries an explicit warning:

@@ -9,6 +9,12 @@
 
 ---
 
+> **Status (governed-sdd)**: QUEUED (blocked) &nbsp;·&nbsp; **Review**: REQUIRED &nbsp;·&nbsp; **Reasoning**: medium
+> **Authority**: `redesign/processed/abiogenesis-biomes.md` (Design source) + `TECH_DESIGN.md` §5
+> **Expected code surface / Out of scope / Validation**: see 📁 Relevant Files, 🔗 Dependencies (this task must not start before its prerequisite lands), and Acceptance Criteria below.
+
+---
+
 ## 🎯 Objective
 
 > **This task is scoped for reference but blocked from starting.** Geyser is

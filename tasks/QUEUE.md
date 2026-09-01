@@ -16,6 +16,15 @@ not by default.
   entire phase/section below is fully `[x]`, move its rows to
   `QUEUE_ARCHIVE.md`.
 
+**Status convention (2026-09-02):** rows already `[x]` (accepted) keep this
+legacy marker permanently — they are not retrofitted. Rows not yet `[x]`
+(114, 156, 157, 171 as of this migration) use the `governed-sdd` lifecycle
+from `PROJECT_WORKFLOW.md` instead: `QUEUED` → `IN_PROGRESS` →
+`READY_FOR_REVIEW` → `ACCEPTED` (the last written as `[x]` once it happens,
+for continuity with the rest of this file). Each such task file's own header
+now carries `Review`/`Reasoning`/`Authority` fields per
+`tasks/TASK_BLUEPRINT.md`.
+
 ## Priority
 
 | Code | Meaning |
@@ -153,7 +162,7 @@ ideally with a real playtester — not yet done.
 | `[x]` | 178 | Objectives tuning: Coexistence population floor + durations in seasons | `objectives`, `playtest_outcome.md` I.6 — [178](done/178-objectives-tuning-new-types-durations.md) |
 | `[x]` | 179 | Objectives: 4 new types (Homeostasis/Tolerance/WildCoexistence/Rootedness), Speciation target-species narrowing (FirstConfirmation deferred, needs `MatrixKnowledge`) | `objectives` — [179](done/179-objectives-new-types-target-species.md) |
 | `[x]` | 170 | Speciation cause readability: surface dominant pressure stimulus + genome before/after diff | GDD §5.11 — [170](done/170-speciation-cause-readability.md) |
-| `[/]` | 171 | Causal-legibility playtest gate: bot-vs-bot necessity check (done, pass) + human playtest protocol (written, **not yet run**), gates Phase 3 | GDD §5.8/§5.9 — [171](171-causal-legibility-playtest-gate.md), [results](171-results.md) |
+| `IN_PROGRESS` | 171 | Causal-legibility playtest gate: bot-vs-bot necessity check (done, pass) + human playtest protocol (written, **not yet run**), gates Phase 3 | GDD §5.8/§5.9 — [171](171-causal-legibility-playtest-gate.md), [results](171-results.md) |
 
 **All 10 Phase 2 task files now exist (2026-08-29).** Suggested execution
 order, from cross-task dependencies each file's own scoping surfaced (not a
@@ -254,8 +263,8 @@ still stands after Phase 2 lands.
 | Status | ID | Title | Doc |
 |-------|----|--------|-----|
 | `[x]` | 155 | Trait archetypes: 3-letter codes replacing the Greek glyphs, 5 families, 15-trait active pool | `tag-archetypes` — [155](done/155-trait-archetypes.md) |
-| `[ ]` | 156 | Dominant family bias per world (on matrix intensity, not on trait selection) — depends on 155 (needs its `TraitFamily` grouping) | `tag-archetypes` — [156](156-dominant-family-bias.md) |
-| `[ ]` | 157 | Narrative generation: event ranking, fragment grammar, clinical register — blocking pre-decision inside the file (cross-cutting §5: structured fragments vs. strings) | `narrative-generation` — [157](157-narrative-generation.md) |
+| `QUEUED` | 156 | Dominant family bias per world (on matrix intensity, not on trait selection) — depends on 155 (needs its `TraitFamily` grouping) | `tag-archetypes` — [156](156-dominant-family-bias.md) |
+| `QUEUED` | 157 | Narrative generation: event ranking, fragment grammar, clinical register — blocking pre-decision inside the file (cross-cutting §5: structured fragments vs. strings) | `narrative-generation` — [157](157-narrative-generation.md) |
 
 ⚠️ **Before 157**, decide whether text fragments are structured data rather than
 concatenated strings (`cross-cutting` §5). Deciding later means rewriting the pool.
@@ -330,7 +339,7 @@ only 114 remains blocked in this section.
 | `[x]` | 111 | Explicit placement for feature biomes (Cratere, Distesa di cristalli, Lago, Bocca vulcanica) | 110 | [111](done/111-biome-feature-placement.md) |
 | `[x]` | 112 | Biome rendering (flat color, dithering, borders, tree overlay) | 110, 111 | [112](done/112-biome-rendering.md) |
 | `[x]` | 113 | Palude replaces `toxic_zone` | 110, 125 | [113](done/113-swamp-replaces-toxic-zone.md) |
-| `[ ]` ⏸ | 114 | BLOCKED — Geyser biome (needs a small/pulsing heat-source category, not yet scoped) | 110, 111, unscoped source-model extension | [114](114-geyser-pulsing-source-blocked.md) |
+| `QUEUED` ⏸ | 114 | BLOCKED — Geyser biome (needs a small/pulsing heat-source category, not yet scoped) | 110, 111, unscoped source-model extension | [114](114-geyser-pulsing-source-blocked.md) |
 
 The "UI bugfixes" phase (115, 121) closed 2026-08-25 once 121 landed and is
 archived in `tasks/QUEUE_ARCHIVE.md`.

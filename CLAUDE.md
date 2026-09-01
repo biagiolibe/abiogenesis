@@ -49,17 +49,12 @@ original plan. It is short; read it when you need the corpus's shape.
 
 The rationale for these rules is in `TECH_DESIGN.md` §5. Do not work around them: if a task seems to require it, the task is wrong.
 
-## Workflow (Meridian)
+## Workflow
 
-One task at a time. On task completion:
+Read `PROJECT_WORKFLOW.md` before acting — it defines the task lifecycle, review policy, roles, and document precedence. Follow `docs/CONTEXT_BUDGET_POLICY.md` for context loading and reasoning selection.
 
-1. verify the acceptance criteria in the task file;
-2. move the file from `tasks/` to `tasks/done/`;
-3. update the status to `[x]` in `tasks/QUEUE.md` and in `PROJECT_PLAN.md`.
+Legacy tasks (this project's original single-operator flow, still governing everything already `ACCEPTED`/`[x]`): verify the acceptance criteria in the task file, move it from `tasks/` to `tasks/done/`, update the status to `[x]` in `tasks/QUEUE.md` and `PROJECT_PLAN.md`. New or materially revised tasks use `tasks/TASK_BLUEPRINT.md`'s `QUEUED`/`IN_PROGRESS`/`READY_FOR_REVIEW`/`ACCEPTED` lifecycle instead.
 
 ## Approach
-- Read existing files before writing. Don't re-read unless changed.
-- Thorough in reasoning, concise in output.
-- Skip files over 100KB unless required.
+See `docs/CONTEXT_BUDGET_POLICY.md` for context loading, reasoning profile, and planning/communication rules.
 - No sycophantic openers or closing fluff.
-- Tool calls (Read/Edit) consume context/tokens like any other message. Don't re-read a file just edited to "confirm" it — the tool already errors if the edit failed. Read narrow ranges, not whole files, when only a section is needed. Keep prose between tool calls minimal: state results and decisions, not a running commentary.

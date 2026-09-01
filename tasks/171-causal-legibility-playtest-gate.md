@@ -9,6 +9,12 @@
 
 ---
 
+> **Status (governed-sdd)**: IN_PROGRESS &nbsp;·&nbsp; **Review**: REQUIRED &nbsp;·&nbsp; **Reasoning**: medium
+> **Authority**: `abiogenesis-gdd.md` §5.8/§5.9 + `tasks/QUEUE.md` Phase 2/3 gate notes
+> **Expected code surface / Out of scope / Validation**: see 📁 Relevant Files, ⚠️ Constraints and Caveats ("No balance changes in this task" is the out-of-scope boundary), and Acceptance Criteria below.
+
+---
+
 ## 🎯 Objective
 
 Phase 2 exists to make the hidden matrix's causal chain *learnable* — Cull

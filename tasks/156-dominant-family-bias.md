@@ -9,6 +9,12 @@
 
 ---
 
+> **Status (governed-sdd)**: QUEUED &nbsp;·&nbsp; **Review**: REQUIRED &nbsp;·&nbsp; **Reasoning**: medium
+> **Authority**: `redesign/processed/abiogenesis-tag-archetypes.md` (Design source, "Bias di famiglia dominante per mondo") + `abiogenesis-gdd.md:143` (`[PROPOSED]`) + `TECH_DESIGN.md` §5 (determinism invariant)
+> **Expected code surface / Out of scope / Validation**: see 📁 Relevant Files, ⚠️ Constraints and Caveats (out-of-scope items and open design questions), and Acceptance Criteria below.
+
+---
+
 ## 🎯 Objective
 
 Give each world a chemical "identity" by biasing the **intensity

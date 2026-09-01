@@ -1,75 +1,47 @@
-# Task [ID] — [Task Title]
+# Task [NNN] — [Title]
 
-> **ID**: `[NNN]`
-> **Category**: [Architecture / Feature / Bugfix / Refactor / etc.]
-> **Priority**: [🔴 P1 / 🟡 P2 / 🟢 P3]
-> **Estimate**: [~1h / ~2h / etc.]
-> **Assigned to**: [Claude CLI / unassigned]
-> **Session**: [Conversation ID or time reference]
+Priority: [🔴 P1 / 🟡 P2 / 🟢 P3]
+Status: QUEUED
+Review: REQUIRED | NOT_REQUIRED
+Dependencies: [none / task ID, ...]
+Reasoning: medium
+Reasoning justification: [required for high/xhigh; omit for medium]
 
----
+## Authority
 
-## 🎯 Objective
+- [Path to the GDD section (`[DECIDED]`) / `TECH_DESIGN.md` §/ `redesign/processed/` document named as this task's Design source, per `CLAUDE.md`'s exception.]
 
-[What needs to be done?]
-[Why is it necessary?]
+## Goal
 
----
+[Concrete outcome and why it's needed.]
 
-## 📋 Acceptance Criteria
+## Expected code surface
 
-[A task is considered complete when:]
-- [ ] The code compiles without errors.
-- [ ] Feature X works as described.
-- [ ] [Add specific criteria...]
+- Add or change: [exact module, file, or bounded component.]
+- Preserve: [interfaces, invariants, and adjacent areas that must not change.]
+- Evidence needed: [tests, checks, manual inspection, or handoff evidence.]
 
----
+## Out of scope
 
-## 📁 Relevant Files
+[Adjacent work that must not be implemented as part of this task.]
 
-| File | Role |
-|------|------|
-| `src/module/file.ts` | Description of the role. |
+## Acceptance criteria
 
----
+- [Measurable observable outcome.]
+- [Measurable invariant or test condition.]
 
-## 🧩 Technical Context
+## Validation
 
-[Paste type/interface definitions here, or describe the current state of the code.]
+- `cargo test`
+- `cargo clippy -- -D warnings`
+- `cargo fmt`
 
-- **Current behavior**: [What happens now?]
-- **Desired behavior**: [What should happen after?]
+## Completion
 
----
+- For `Review: REQUIRED`, set this task's and `tasks/QUEUE.md`'s status to `READY_FOR_REVIEW` only after validation passes; a reviewer-integrator (a different identity) then applies `docs/CODE_REVIEW_PROMPT.md` and records `ACCEPTED`.
+- For `Review: NOT_REQUIRED`, set this task's and `tasks/QUEUE.md`'s status to `ACCEPTED` only after validation passes.
 
-## 🔨 Suggested Implementation
-
-[Recommended steps for the AI agent]
-
-1. [Step 1]
-2. [Step 2]
-
-```
-// Optional example snippet
-```
-
----
-
-## ⚠️ Constraints and Caveats
-
-- **Style**: Follow the conventions defined in `TECH_DESIGN.md`.
-- **Performance**: [Any specific constraints]
-
----
-
-## 🔗 Dependencies
-
-- **Depends on**: [previous task ID or none]
-- **Blocks**: [next task ID or none]
-
----
-
-## 🤖 How to delegate this task to Claude CLI
+## Delegating this task
 
 ```bash
 claude "$(cat tasks/[NNN]-name.md)"$'\n\nExecute this task in the current project.'
