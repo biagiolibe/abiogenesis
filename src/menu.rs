@@ -17,8 +17,8 @@ use crate::notebook::{
 use crate::render::SeenRelations;
 use crate::text;
 use crate::ui::{
-    apply_monospace, outline_button_auto, IsolationHint, PauseMenuOpen, PendingConfirmation,
-    SelectedSpecies, SpliceDraft, StallHint, WorldTouched, PANEL_BG,
+    apply_monospace, hairline, outline_button_auto, section_header, IsolationHint, PauseMenuOpen,
+    PendingConfirmation, SelectedSpecies, SpliceDraft, StallHint, WorldTouched, PANEL_BG,
 };
 use abiogenesis::config::SimConfig;
 use abiogenesis::knowledge::MatrixKnowledge;
@@ -35,10 +35,11 @@ use abiogenesis::worldgen::build_world;
 #[derive(Resource, Default)]
 struct SeedInput(String);
 
-/// Max height of the "How to play" panel's scroll area (task 056) —
-/// presentation-only, not a simulation coefficient, same rationale
-/// `ui.rs::HUD_WIDTH` gives for its own layout constant.
-const HOW_TO_PLAY_PANEL_HEIGHT: f32 = 260.0;
+/// Bottom margin left below the "How to play" scroll area (task 191) so its
+/// content doesn't touch the panel's edge — the toggle button that opens it
+/// sits above, not below, so unlike the intro screen's guide there's no
+/// button height to reserve, just this small margin.
+const HOW_TO_PLAY_BOTTOM_MARGIN: f32 = 8.0;
 
 pub struct MenuPlugin;
 
@@ -112,14 +113,20 @@ fn main_menu_ui(
 
         if *show_guide {
             ui.add_space(16.0);
+            let height = (ui.available_height() - HOW_TO_PLAY_BOTTOM_MARGIN).max(0.0);
             egui::ScrollArea::vertical()
                 .id_salt("how_to_play")
-                .max_height(HOW_TO_PLAY_PANEL_HEIGHT)
+                .max_height(height)
                 .show(ui, |ui| {
-                    for (heading, body) in text::HOW_TO_PLAY_SECTIONS {
-                        ui.strong(*heading);
-                        ui.label(*body);
-                        ui.add_space(8.0);
+                    let sections = text::HOW_TO_PLAY_SECTIONS;
+                    for (i, (heading, lines)) in sections.iter().enumerate() {
+                        section_header(ui, heading);
+                        for line in *lines {
+                            ui.label(format!("{} {line}", text::HOW_TO_PLAY_BULLET));
+                        }
+                        if i + 1 < sections.len() {
+                            hairline(ui);
+                        }
                     }
                 });
         }

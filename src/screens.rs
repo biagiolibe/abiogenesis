@@ -20,7 +20,8 @@ use crate::notebook::{archive_reveal, translated_tag_label, ChronicleLog};
 use crate::run_flow::{advance_to_next_world, retry_world, WorldResetParams};
 use crate::text;
 use crate::ui::{
-    apply_monospace, outline_button_auto, paint_metabolism_icon, ICON_INK_SELECTED, PANEL_BG,
+    apply_monospace, hairline, outline_button_auto, paint_metabolism_icon, section_header,
+    ICON_INK_SELECTED, PANEL_BG,
 };
 
 pub struct ScreensPlugin;
@@ -41,19 +42,26 @@ impl Plugin for ScreensPlugin {
     }
 }
 
-/// Max height of the intro screen's how-to-play scroll area (task 056) —
-/// presentation-only, not a simulation coefficient, same rationale
-/// `ui.rs::HUD_WIDTH` gives for its own layout constant.
-const INTRO_GUIDE_HEIGHT: f32 = 340.0;
+/// Space reserved below the intro screen's how-to-play scroll area (task
+/// 191) for the pointer line to the full guide, the "Begin" button, and the
+/// `add_space`s around both — the button height is derived from
+/// `outline_button_auto`'s own sizing (`ui.rs::AUTO_BUTTON_PADDING`, a
+/// monospace(11.0) label plus 10pt vertical padding on each side, ~33pt
+/// tall) rather than guessed, plus one text line (~14pt) and spacing for
+/// `INTRO_FULL_GUIDE_POINTER`, so the scroll area's computed height doesn't
+/// crowd or clip either.
+const INTRO_GUIDE_BOTTOM_RESERVED: f32 = 45.0 + 12.0 + 14.0;
 
 /// One-time framing interstitial (task 052) between `MainMenu`'s "New run"
 /// and `Playing`: the world is already built by the time this shows (`menu.
 /// rs::start_run` runs first), so unlike the other screens here there's
 /// nothing to rebuild on continue — just flip `seen_intro` and move on.
-/// Shows the full how-to-play guide (task 056, `text::HOW_TO_PLAY_SECTIONS`)
-/// before "Begin" rather than a separate short blurb, since this is exactly
-/// the moment a first-time player needs it — the old one-paragraph
-/// `INTRO_BODY` duplicated what the guide already says at more length.
+/// Shows a short primer (task 191, `text::INTRO_HOW_TO_PLAY_SECTIONS`)
+/// before "Begin" rather than the full 7-section guide task 056 originally
+/// put here — the GDD's "No guided tutorial" principle names that shape
+/// (a mandatory wall of instruction before the player has touched anything)
+/// as working against the game's own teaching method. The full guide stays
+/// one button away from the main menu (`text::INTRO_FULL_GUIDE_POINTER`).
 fn intro_screen_ui(
     mut contexts: EguiContexts,
     mut meta: ResMut<MetaProgress>,
@@ -63,16 +71,36 @@ fn intro_screen_ui(
     interstitial(ctx, "intro-viewport", |ui| {
         ui.heading(text::INTRO_TITLE);
         ui.add_space(12.0);
+        let height = (ui.available_height() - INTRO_GUIDE_BOTTOM_RESERVED).max(0.0);
         egui::ScrollArea::vertical()
             .id_salt("intro_how_to_play")
-            .max_height(INTRO_GUIDE_HEIGHT)
+            .max_height(height)
             .show(ui, |ui| {
-                for (heading, body) in text::HOW_TO_PLAY_SECTIONS {
-                    ui.strong(*heading);
-                    ui.label(*body);
-                    ui.add_space(8.0);
-                }
+                // The enclosing `interstitial` wraps this whole closure in a
+                // `vertical_centered` layout (`Layout::top_down(Align::
+                // Center)`), which `ScrollArea::show` otherwise passes
+                // straight through to its content `Ui` — every bullet line
+                // would render individually centered instead of left-
+                // aligned. `menu.rs`'s guide isn't affected: its call site
+                // sits outside any `vertical_centered` wrapper.
+                ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
+                    let sections = text::INTRO_HOW_TO_PLAY_SECTIONS;
+                    for (i, (heading, lines)) in sections.iter().enumerate() {
+                        section_header(ui, heading);
+                        for line in *lines {
+                            ui.label(format!("{} {line}", text::HOW_TO_PLAY_BULLET));
+                        }
+                        if i + 1 < sections.len() {
+                            hairline(ui);
+                        }
+                    }
+                });
             });
+        // Outside the scroll area, not the last line inside it — on a small
+        // window this pointer to the full guide must not be the one thing
+        // that scrolls out of sight.
+        ui.add_space(8.0);
+        ui.label(text::INTRO_FULL_GUIDE_POINTER);
         ui.add_space(12.0);
         if outline_button_auto(ui, text::INTRO_CONTINUE_BUTTON, true).clicked() {
             meta.seen_intro = true;

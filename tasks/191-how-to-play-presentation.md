@@ -1,7 +1,7 @@
 # Task 191 — "How to play" presentation: chrome, scannability, and height
 
 Priority: 🟡 P2
-Status: QUEUED
+Status: READY_FOR_REVIEW
 Review: REQUIRED
 Dependencies: none (190 already landed the content this task reformats)
 Reasoning: medium
@@ -93,6 +93,12 @@ loop; fix both call sites, not one.
   read as scannable bullets with hairline-divided headers, and the intro
   screen's shortened primer still leads to the main menu's full guide
   correctly.
+  - Implementer validation performed: `cargo build`, `cargo clippy --all-targets -- -D warnings`,
+    `cargo fmt --check`, and `cargo test` (full suite, including
+    `determinism`/`balance`) all clean. No GUI live check was performed —
+    the sandbox has no Screen Recording permission (same constraint task
+    190 recorded). Live verification on real window sizes is still owed to
+    the user before `ACCEPTED`.
 
 ## Out of scope
 

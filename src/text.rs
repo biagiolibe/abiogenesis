@@ -21,80 +21,157 @@ pub const MENU_SEED_LABEL: &str = "Run seed (leave blank to generate one)";
 pub const MENU_SEED_HINT: &str = "e.g. 42";
 pub const MENU_NEW_RUN_BUTTON: &str = "New run";
 
-// --- How-to-play guide (task 056) ---
+// --- How-to-play guide (task 056, reformatted/re-scoped by task 191) ---
 //
 // A condensed companion to `player_guide.md` (the repo's full manual) — not
 // a runtime render of that file: the engine has no markdown renderer, and
 // task 034's "every player-facing string lives in text.rs" convention means
 // this panel gets its own copy rather than reaching outside the crate for
-// content. Rendered in two places, same `HOW_TO_PLAY_SECTIONS` array both
-// times (one heading+body pair per entry, in an `egui::ScrollArea`):
-// `screens.rs::intro_screen_ui` shows it automatically, once, before the
-// player's very first "Begin"; `menu.rs::main_menu_ui`'s toggle button makes
-// it available again on every later visit to the main menu, since the intro
-// screen itself never shows a second time (`MetaProgress::seen_intro`).
+// content. Rendered in two places, each with its own section list (one
+// heading + several bullet lines per entry, in an `egui::ScrollArea`):
+// `screens.rs::intro_screen_ui` shows the short `INTRO_HOW_TO_PLAY_SECTIONS`
+// primer automatically, once, before the player's very first "Begin";
+// `menu.rs::main_menu_ui`'s toggle button shows the complete
+// `HOW_TO_PLAY_SECTIONS` on every later visit to the main menu, since the
+// intro screen itself never shows a second time (`MetaProgress::seen_intro`).
 
 pub const HOW_TO_PLAY_SHOW_BUTTON: &str = "How to play";
 pub const HOW_TO_PLAY_HIDE_BUTTON: &str = "Hide guide";
 
-pub const HOW_TO_PLAY_SECTIONS: &[(&str, &str)] = &[
+/// Leading glyph for each bulleted line below (task 191). No plain-list
+/// marker exists elsewhere in the game to reuse (`notebook.rs`/`catalog`
+/// glyphs are all per-entity: tag glyphs, metabolism icons, `→` for
+/// relations) — this is a small square, the closest monospace-safe analog
+/// to the mockup's 4×4-point "block-icon language" (`ui.rs::
+/// paint_action_blocks`) without inventing a new icon system for one panel.
+pub const HOW_TO_PLAY_BULLET: &str = "▪";
+
+/// Full guide (task 056 content, task 191 reformat): one heading plus
+/// several short bullet lines per section, replacing the original
+/// paragraph-per-section shape so the panel reads as scannable reference
+/// rather than a wall of prose. Shown in full from the main menu's opt-in
+/// toggle (`menu.rs`); the intro interstitial shows only
+/// `INTRO_HOW_TO_PLAY_SECTIONS` below, a short primer subset of the same
+/// facts.
+pub const HOW_TO_PLAY_SECTIONS: &[(&str, &[&str])] = &[
     (
         "The premise",
-        "You're a xenobiologist seeding an alien ecosystem whose biochemistry is hidden. \
-         Species interact through tags you can't see directly, only infer from what happens \
-         when they meet — that hidden tag × tag matrix is different every run.",
+        &[
+            "You're a xenobiologist seeding an alien ecosystem whose biochemistry is hidden.",
+            "Species interact through tags you can't see directly, only infer from what \
+             happens when they meet.",
+            "That hidden tag × tag matrix is different every run.",
+        ],
     ),
     (
         "Controls",
-        "Left click: perform the selected action on a cell, or inspect it if no action is \
-         armed. Right click: disarm the current action. Space: advance one season, Shift+Space: \
-         a full era at once. N: advance a single pulse. P: toggle continuous advancement, ticking \
-         on its own until you pause it or the era needs your attention. Arrow keys or WASD: pan \
-         the camera. Tab: open your notebook. R: reseed the current world. Esc: close whatever's \
-         on top, or open the pause menu if nothing is.",
+        &[
+            "Left click: perform the selected action on a cell, or inspect it if none is armed.",
+            "Right click: disarm the current action.",
+            "Space: advance one season. Shift+Space: a full era at once.",
+            "N: advance a single pulse.",
+            "P: toggle continuous advancement, ticking on its own until you pause it or the \
+             era needs your attention.",
+            "Arrow keys or WASD: pan the camera.",
+            "Tab: open your notebook.",
+            "R: reseed the current world.",
+            "Esc: close whatever's on top, or open the pause menu if nothing is.",
+        ],
     ),
     (
         "The loop",
-        "Seed organisms, advance an era, observe what happened, form a hypothesis and spend \
-         your budget testing it, repeat until the world's objective is met.",
+        &[
+            "Seed organisms, advance an era, observe what happened.",
+            "Form a hypothesis and spend your budget testing it.",
+            "Repeat until the world's objective is met.",
+        ],
     ),
     (
         "Metabolism and temperature",
-        "Photolithic draws energy from light, Predator from neighboring organisms, \
-         Decomposer from residue in its own or a neighboring cell, Chemolithotroph from local \
-         toxicity. Every one of these gains is then multiplied by how close that cell's \
-         temperature is to the species' comfort zone — not added as a separate cost. An organism \
-         can die right next to its fuel (residue, light, prey, toxicity) if the temperature fit \
-         is poor; check the death log's stated cause before suspecting a hidden matrix effect.",
+        &[
+            "Photolithic draws energy from light, Predator from neighboring organisms.",
+            "Decomposer draws from residue in its own or a neighboring cell, Chemolithotroph \
+             from local toxicity.",
+            "Every gain is then multiplied by how close that cell's temperature is to the \
+             species' comfort zone — not added as a separate cost.",
+            "An organism can die right next to its fuel if the temperature fit is poor; check \
+             the death log's stated cause before suspecting a hidden matrix effect.",
+        ],
     ),
     (
         "Actions and budget",
-        "Each era gives a small budget of points: Seed and Stress and Cull cost 1, Splice \
-         (synthesising a new species from a confirmed tag) costs 2. Splice only draws from \
-         tags you've already confirmed — it grows more useful as your notebook fills in. You \
-         can't do everything — bet on your best hypothesis.",
+        &[
+            "Each era gives a small budget of points: Seed, Stress, and Cull cost 1; Splice \
+             costs 2.",
+            "Splice synthesises a new species from a confirmed tag — it only draws from tags \
+             you've already confirmed, so it grows more useful as your notebook fills in.",
+            "You can't do everything — bet on your best hypothesis.",
+        ],
     ),
     (
         "The notebook",
-        "Every adjacency between tagged organisms is a data point, weighted by how isolated \
-         it was — a clean, uncrowded pairing counts far more than one buried in a crowd. Once \
-         evidence for a tag pair adds up enough, it's confirmed and lights up in your \
-         hypothesis grid. A fourth section, the Chronicle, archives each era's reveal as \
-         narrated history you can scroll back through.",
+        &[
+            "Every adjacency between tagged organisms is a data point, weighted by how \
+             isolated it was.",
+            "A clean, uncrowded pairing counts far more than one buried in a crowd.",
+            "Once evidence for a tag pair adds up enough, it's confirmed and lights up in your \
+             hypothesis grid.",
+            "A fourth section, the Chronicle, archives each era's reveal as narrated history \
+             you can scroll back through.",
+        ],
     ),
     (
         "Objectives and failure",
-        "Each world sets a sequence of 2-3 goals, drawn from coexistence, surviving a hostile \
-         zone, triggering a bloom, holding a species' energy in a stable band (Homeostasis), \
-         tolerating a toxic zone (Tolerance), keeping a wild population alive alongside a \
-         seeded one (Wild coexistence), staying rooted on the terrain a trait depends on \
-         (Rootedness), and always ending in a forced Speciation event — cleared one after \
-         another. Total extinction retries the same world; running out of eras ends the run. \
-         You only need to decode the part of the matrix relevant to your objectives. Every \
-         world also grants a grace period: it can't end from extinction until you've kept a \
-         population alive for a full era at least once.",
+        &[
+            "Each world sets a sequence of 2-3 goals, cleared one after another, always ending \
+             in a forced Speciation event.",
+            "Coexistence, surviving a hostile zone, triggering a bloom.",
+            "Homeostasis: hold a species' energy in a stable band.",
+            "Tolerance: survive a toxic zone.",
+            "Wild coexistence: keep a wild population alive alongside a seeded one.",
+            "Rootedness: stay on the terrain a trait depends on.",
+            "Total extinction retries the same world; running out of eras ends the run.",
+            "You only need to decode the part of the matrix relevant to your objectives.",
+            "Every world also grants a grace period: it can't end from extinction until \
+             you've kept a population alive for a full era at least once.",
+        ],
     ),
 ];
+
+/// Short primer shown once, automatically, before a first-time player's
+/// first "Begin" (`screens.rs::intro_screen_ui`) — 3 sections, not the full
+/// 7, per the GDD's "No guided tutorial" principle: a mandatory wall of
+/// instruction before the player has touched anything works against the
+/// game's own teaching method. Same facts as the matching sections above,
+/// trimmed further; the full guide stays one opt-in button away
+/// (`INTRO_FULL_GUIDE_POINTER` below).
+pub const INTRO_HOW_TO_PLAY_SECTIONS: &[(&str, &[&str])] = &[
+    (
+        "The premise",
+        &[
+            "You're a xenobiologist seeding an alien ecosystem whose biochemistry is hidden.",
+            "Species interact through tags you can't see directly, only infer from what \
+             happens when they meet — that hidden matrix is different every run.",
+        ],
+    ),
+    (
+        "The loop",
+        &[
+            "Seed organisms, advance an era, observe what happened.",
+            "Form a hypothesis and spend your budget testing it.",
+            "Repeat until the world's objective is met.",
+        ],
+    ),
+    (
+        "Key control",
+        &["Tab opens your notebook — where hypotheses, evidence, and the Chronicle live."],
+    ),
+];
+
+/// Points a first-time player at the complete guide after the short primer
+/// above — the intro trims content, it doesn't hide it.
+pub const INTRO_FULL_GUIDE_POINTER: &str =
+    "Full guide any time from the main menu's \"How to play\" button.";
 
 // --- Intro screen (`screens.rs::intro_screen_ui`, task 052) ---
 
