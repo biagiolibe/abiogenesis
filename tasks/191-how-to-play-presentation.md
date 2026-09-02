@@ -1,7 +1,7 @@
 # Task 191 — "How to play" presentation: chrome, scannability, and height
 
 Priority: 🟡 P2
-Status: READY_FOR_REVIEW
+Status: ACCEPTED
 Review: REQUIRED
 Dependencies: none (190 already landed the content this task reformats)
 Reasoning: medium
