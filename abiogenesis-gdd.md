@@ -441,6 +441,8 @@ Progression *between* runs, deliberately **light**:
 
 **Persistence [DECIDED: deferred]:** the MVP is built **without persistence** (everything within a single run). Whether to save unlocks (profile/save) is decided **only after** verifying the loop is fun. It's trivial to add later and doesn't constrain the architecture.
 
+**Implementation gap, found by live UI review [DECIDED, 2026-09-02]:** `MetaProgress::absorb` (`src/run.rs:119-126`) currently grants the starting-species bonus at **one per two worlds cleared** — exactly the "objectives cleared" proxy this section's own design note rules out, predating that note's "key off cumulative understanding instead" language. Fix is to key the trigger off relationships confirmed across the run instead, sourced from the same cumulative aggregates task 158 (§ "Leaving a world, entering the next, ending a run") computes for the end-of-run summary — not a second, divergent tally built ad hoc in `run.rs`. Speciations induced and biomes/wild species met stay named future extensions to the same trigger, not required for this first fix. See task 192 (depends on 158).
+
 ---
 
 ## 11. Presentation and UX **[DECIDED direction]**

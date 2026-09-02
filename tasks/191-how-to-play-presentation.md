@@ -1,10 +1,70 @@
 # Task 191 — "How to play" presentation: chrome, scannability, and height
 
 Priority: 🟡 P2
-Status: READY_FOR_REVIEW
+Status: IN_PROGRESS
 Review: REQUIRED
 Dependencies: none (190 already landed the content this task reformats)
 Reasoning: medium
+
+## Amendment — review feedback from live check (2026-09-02)
+
+The implementer's changes (bullets, `section_header`/`hairline`, responsive
+height) landed and validated clean, but the user's own live check (the AC
+this task was still owed) found the result "still a bit too full and mixed
+together." Root cause, confirmed by reading the current code:
+
+- `menu.rs::main_menu_ui` wraps the title/seed field/New Run button/unlocks
+  line/guide-toggle button in one `ui.vertical_centered(...)` — a narrow,
+  centered column. The "How to play" `ScrollArea` (lines ~114-131) sits
+  *outside* that closure, in the panel's default left-aligned, full-width
+  layout. Two different alignments/widths stacked in the same screen — a
+  narrow centered block giving way to a full-window-wide left-aligned
+  bullet list — reads as visually inconsistent, which is almost certainly
+  what "pieno e mischiato" is naming, not the bullets/hairlines themselves.
+- `screens.rs::intro_screen_ui` has the same shape: heading/pointer-line/
+  Begin button sit in the interstitial's outer `vertical_centered`, while
+  the bullet loop is deliberately re-wrapped in
+  `Layout::top_down(Align::LEFT)` (already commented as intentional, to
+  avoid each bullet line centering individually) — correct on its own
+  terms, but produces the same centered-frame/full-width-content mismatch
+  as the main menu.
+
+**Fix**: give the guide content on both surfaces a single, consistent
+contained width instead of letting it sprawl full-window — e.g. a new
+presentation constant (`HOW_TO_PLAY_CONTENT_WIDTH`, same rationale
+`ui.rs::HUD_WIDTH`/notebook's own width constant already establish) applied
+via `ui.allocate_ui_with_layout` (or an equivalent max-width child `Ui`) so
+the bulleted block reads as one contained column — text left-aligned
+*within* that fixed width for readability, but the block itself sitting
+under the narrower menu controls rather than stretching past them. Pick a
+width that comfortably fits the longest existing bullet line without
+excessive wrapping; don't undersize it just to match the seed field's own
+(much narrower) width.
+
+Additionally, add a touch more separation between the "start a run"
+cluster (title/seed/New Run) and the "meta/reference" cluster (unlocks
+line, guide toggle) — e.g. a `hairline()` or extra spacing before the
+unlocks line — so the two read as distinct groups rather than one
+undifferentiated stack. Minimal change: grouping, not new chrome.
+
+**Additional acceptance criteria** (append to the section below, don't
+replace it):
+
+- Guide content on both surfaces renders at one consistent contained width
+  — no full-window-wide text sitting directly under a narrow centered menu
+  column.
+- A visible separation exists between the run-starting controls and the
+  meta/reference cluster below them on the main menu.
+- User live-check (not the sandboxed build/clippy/test pass) confirms the
+  "crowded and mixed" impression is resolved.
+
+Out of scope for this amendment: the unlocks line's *wording*/*mechanic*
+("clear worlds to earn more starting species") is a separate, real finding
+from the same review — tracked as task 192 (depends on task 158), not
+fixed here. Don't change `text::NO_UNLOCKS_YET`'s content in this task,
+only whatever container it renders inside.
+
+---
 
 ## Authority
 
