@@ -38,8 +38,10 @@ Reasoning justification: [required for high/xhigh; omit for medium]
 
 ## Completion
 
-- For `Review: REQUIRED`, set this task's and `tasks/QUEUE.md`'s status to `READY_FOR_REVIEW` only after validation passes; a reviewer-integrator (a different identity) then applies `docs/CODE_REVIEW_PROMPT.md` and records `ACCEPTED`.
-- For `Review: NOT_REQUIRED`, set this task's and `tasks/QUEUE.md`'s status to `ACCEPTED` only after validation passes.
+Implement on a dedicated task branch and integrate per `docs/BRANCHING_POLICY.md`.
+
+- For `Review: REQUIRED`, set this task's and `tasks/QUEUE.md`'s status to `READY_FOR_REVIEW` only after validation passes; a reviewer-integrator (a different identity) then applies `docs/CODE_REVIEW_PROMPT.md`, records `ACCEPTED`, and integrates the branch into `main`.
+- For `Review: NOT_REQUIRED`, set this task's and `tasks/QUEUE.md`'s status to `ACCEPTED` only after validation passes, then integrate the branch into `main` per `docs/BRANCHING_POLICY.md`.
 
 ## Delegating this task
 

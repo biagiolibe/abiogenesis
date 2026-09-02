@@ -8,6 +8,6 @@ Run the task's `Validation` plus the project baseline checks recorded in `CLAUDE
 
 ## Execution policies
 
-Apply `docs/CONTEXT_BUDGET_POLICY.md` for task-first context loading, progressive expansion, and reasoning selection. Use `tasks/TASK_BLUEPRINT.md` for new or materially revised tasks and `docs/COMPLETION_REPORT_TEMPLATE.md` for the completion handoff. For `Review: REQUIRED` tasks, use `docs/CODE_REVIEW_PROMPT.md`.
+Apply `docs/CONTEXT_BUDGET_POLICY.md` for task-first context loading, progressive expansion, and reasoning selection. Use `tasks/TASK_BLUEPRINT.md` for new or materially revised tasks and `docs/COMPLETION_REPORT_TEMPLATE.md` for the completion handoff. For `Review: REQUIRED` tasks, use `docs/CODE_REVIEW_PROMPT.md`. For task-branch, commit, push, and merge mechanics, use `docs/BRANCHING_POLICY.md`.
 
 These documents define operating detail; `CLAUDE.md` remains the source for stable agent-wide rules and project invariants.

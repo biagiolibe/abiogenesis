@@ -29,20 +29,21 @@ Only `ACCEPTED` tasks satisfy dependencies. This lifecycle applies to task files
 - `tasks/TASK_BLUEPRINT.md` defines the canonical atomic-task shape for new tasks.
 - `docs/COMPLETION_REPORT_TEMPLATE.md` defines the implementation and review handoff.
 - `docs/CODE_REVIEW_PROMPT.md` defines how a `Review: REQUIRED` task is reviewed.
+- `docs/BRANCHING_POLICY.md` defines task-branch, commit, push, and merge mechanics — the canonical source for all git integration steps below.
 
 For a task or review, start with `CLAUDE.md`, then read only the assigned task and the sources it cites. These assets are operational guidance and do not supersede the precedence order above.
 
 ## Roles
 
 - Tech designer: defines GDD/`TECH_DESIGN.md` decisions, task scope, dependencies, and review policy. Does not implement feature code unless explicitly assigned.
-- Implementer: works on exactly one task, validates it, commits it, and updates the task's and `tasks/QUEUE.md`'s status according to its review policy.
-- Reviewer-integrator: independently reviews `READY_FOR_REVIEW` tasks per `docs/CODE_REVIEW_PROMPT.md`. After `APPROVE`, records `ACCEPTED` in the task file and `tasks/QUEUE.md` in a separate commit from the implementation.
+- Implementer: works on exactly one task, on a dedicated task branch (`docs/BRANCHING_POLICY.md`), validates it, commits it, and updates the task's and `tasks/QUEUE.md`'s status according to its review policy.
+- Reviewer-integrator: independently reviews `READY_FOR_REVIEW` tasks per `docs/CODE_REVIEW_PROMPT.md`. After `APPROVE`, records `ACCEPTED` in the task file and `tasks/QUEUE.md` in a separate commit from the implementation, then integrates the task branch into `main` per `docs/BRANCHING_POLICY.md`.
 
 ## Review policy
 
 Every task written under this workflow declares `Review: REQUIRED` or `Review: NOT_REQUIRED`. `NOT_REQUIRED` is restricted to low-risk documentation, mechanical configuration, simple scaffolding, or focused tests that add no production behavior. It is prohibited for anything touching the simulation's determinism, tick formulas, `SimConfig` balance values, state transitions, persistence, or an unresolved design question.
 
-This project has no branch-per-task or forge/PR mechanism today — commits land directly on `main`, unchanged by this workflow. A `Review: REQUIRED` task's `READY_FOR_REVIEW` → `ACCEPTED` transition is a distinct commit by a reviewer-integrator identity different from the implementer, not a merge.
+Every task is implemented on a dedicated task branch and integrated into `main` by fast-forward merge — see `docs/BRANCHING_POLICY.md` for the exact branch, commit, push, and merge sequence. This project still has no forge/PR mechanism: integration is a local merge the operator's own tooling performs, not a hosted pull request. A `Review: REQUIRED` task's `READY_FOR_REVIEW` → `ACCEPTED` transition is a distinct commit by a reviewer-integrator identity different from the implementer, not a merge; the merge into `main` is a separate, later step.
 
 ### Reviewer-integrator identity on a single-operator project
 
