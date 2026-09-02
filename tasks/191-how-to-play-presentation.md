@@ -1,10 +1,28 @@
 # Task 191 — "How to play" presentation: chrome, scannability, and height
 
 Priority: 🟡 P2
-Status: IN_PROGRESS
+Status: READY_FOR_REVIEW
 Review: REQUIRED
 Dependencies: none (190 already landed the content this task reformats)
 Reasoning: medium
+
+**2026-09-02, live-check confirmed**: user confirmed (screenshot + "confermo")
+that Amendment 3's bold lead-terms/wider column/split bullets resolved the
+readability review — all three amendments' acceptance criteria are now met.
+Moving to `READY_FOR_REVIEW`.
+
+**Process note for the reviewer-integrator**: this task's entire
+implementation history (original pass + all three amendments, commits
+29b5733, 952a0f9, ce19e85, 0cbf1a7) was committed directly to `main`, not on
+a dedicated `task/191-...` branch. `docs/BRANCHING_POLICY.md` (added
+2026-09-02, commit 7887a61) landed *during* this task's amendment cycle —
+after the original implementation and the first amendment's delegation had
+already started — so neither the implementer passes nor this file's own
+governance edits were following it. There is no task branch to review on;
+everything is already on `main`. Flagged here rather than silently
+reconciled — see the handoff message in this session for how to proceed
+(grandfather this task under the pre-branch model like task 190, since its
+commits are already irreversibly on `main`, vs. some other remediation).
 
 ## Amendment 3 — emphasis, contrast, width (2026-09-02, post-indent-fix screenshot)
 
