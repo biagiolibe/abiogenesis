@@ -6,7 +6,64 @@ Review: REQUIRED
 Dependencies: none (190 already landed the content this task reformats)
 Reasoning: medium
 
-## Amendment — review feedback from live check (2026-09-02)
+## Amendment 2 — readability review (2026-09-02, post-containment screenshot)
+
+The width-containment fix (Amendment 1 below) worked — the guide now reads
+as one centered, consistently-widthed block, not a full-window sprawl next
+to a narrow menu column. User's follow-up: "ancora migliorabile come
+leggibilità" (still improvable for readability), with a live screenshot of
+the main menu. Two concrete defects visible in that screenshot, both
+independent of Amendment 1's fix:
+
+1. **Wrapped bullet lines have no hanging indent.** Every `ui.label(format!
+   ("{bullet} {line}"))` call (`menu.rs`, `screens.rs`) wraps a long line at
+   the label's own width, but the continuation lands flush at the panel's
+   left edge — the same column the bullet glyph itself sits in — not
+   indented under where the text started. Visible repeatedly in the
+   screenshot: "...biochemistry is / hidden." and "...wild species /
+   met." both read as if "hidden."/"met." were their own new bullet item,
+   because nothing distinguishes a wrapped continuation from a fresh line.
+   This is the dominant readability problem — worse than density or
+   spacing. Fix: give each bullet a real hanging indent so continuation
+   lines align under the first word of text, not under the bullet glyph.
+   `egui::Grid` with two columns (a narrow fixed-width bullet column, a
+   wrapped-text column) is the standard egui pattern for this — each row's
+   second-column label wraps within that column's own width, keeping every
+   line of a multi-line bullet aligned under the text start. Verify with an
+   actual long line (e.g. the Controls section's `P:` entry) that the
+   wrapped line lands under "toggle", not under "▪".
+2. **One bullet, two unrelated facts.** `text::HOW_TO_PLAY_SECTIONS`'s
+   "Metabolism and temperature" section has two lines each stating two
+   different metabolisms' fuel source in one sentence ("Photolithic draws
+   energy from light, Predator from neighboring organisms." and
+   "Decomposer draws from residue in its own or a neighboring cell,
+   Chemolithotroph from local toxicity.") — every other section keeps one
+   fact per bullet; these two don't, which is part of why they read
+   denser/harder to scan than the rest. Split each into two separate
+   bullets (four metabolism lines total, one per metabolism), matching the
+   one-fact-per-line rule the rest of the content already follows. Content
+   only, not new facts — same information, one clause per line.
+3. **Modest breathing room between bullets.** Once the indent fix (item 1)
+   lands, add a small `add_space` (roughly 2-4px, don't overdo it — this is
+   a density fix, not a redesign) between consecutive bullet lines within a
+   section, so individual facts read as distinct items rather than a
+   run-on block. Keep `hairline()`'s existing spacing between *sections* as
+   is — that part reads fine in the screenshot.
+
+**Additional acceptance criteria** (append, don't replace):
+
+- A wrapped bullet line's continuation visibly aligns under the bullet's
+  text, not under the bullet glyph — check against at least one bullet
+  known to wrap at the current content width (the Controls `P:` line, or
+  similar).
+- No bullet line states two unrelated facts joined by a comma where the
+  rest of the section uses one fact per line.
+- User live-check confirms the wrapped-line/orphan-line impression from the
+  2026-09-02 screenshot is resolved.
+
+---
+
+## Amendment 1 — review feedback from live check (2026-09-02)
 
 The implementer's changes (bullets, `section_header`/`hairline`, responsive
 height) landed and validated clean, but the user's own live check (the AC
