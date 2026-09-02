@@ -1,7 +1,7 @@
 # Task 190 — Sync onboarding content (in-game panel + player guide) to current mechanics
 
 Priority: 🔴 P1
-Status: IN_PROGRESS
+Status: READY_FOR_REVIEW
 Review: REQUIRED
 Dependencies: none
 Reasoning: medium
@@ -60,6 +60,9 @@ live-check must pass, before 171's human-playtest half is run.
   check (`cargo run`) confirming the intro screen and main menu's "How to
   play" panel render the updated sections without truncation/overflow at
   the panel's existing scroll height (`src/menu.rs:38`).
+  Done: build/clippy/fmt/test clean (2026-09-02); live check performed by
+  the user (sandbox has no Screen Recording permission) — confirmed both
+  surfaces render correctly, no overflow.
 
 ## Out of scope
 
