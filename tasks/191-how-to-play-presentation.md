@@ -420,10 +420,19 @@ loop; fix both call sites, not one.
     established for the whole line. Not expected to matter in practice —
     scanned every "Term: description" line in `HOW_TO_PLAY_SECTIONS`/
     `INTRO_HOW_TO_PLAY_SECTIONS` and only the Controls `P:` line and the
-    Objectives intro sentence are long enough to wrap at 760px, and neither
-    has the "Term:" shape (no colon), so they fall through the unstyled
-    branch unaffected — flagging for review in case a future bullet does
-    hit both conditions at once. Validation (`cargo build`, `cargo clippy
+    Objectives intro sentence are long enough to wrap at 760px.
+    **Correction (reviewer-integrator pass, commit b4dc6f1)**: this
+    self-audit was wrong about the `P:` line — `"P: toggle continuous
+    advancement..."` does have a colon and does route through the bold/dim
+    split, so it *does* hit both conditions the audit claimed nothing did.
+    The actual effect is benign, not the defect this note worried about:
+    the description-half wrap lands under "toggle" (an over-indent relative
+    to the bullet's own left edge), not flush-left like the pre-Amendment-2
+    orphan-line defect — visually different from, and less bad than, what
+    Amendment 2 fixed. Already covered by the user's post-Amendment-3
+    live-check screenshot, which shows this exact line. The Objectives
+    intro sentence has no colon and is correctly unaffected. Validation
+    (`cargo build`, `cargo clippy
     --all-targets -- -D warnings`, `cargo fmt --check`, `cargo test` full
     suite) all clean after these changes. No GUI live check performed —
     same sandbox constraint as every prior pass; the width/wrap math is
