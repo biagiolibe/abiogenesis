@@ -20,8 +20,9 @@ use crate::notebook::{archive_reveal, translated_tag_label, ChronicleLog};
 use crate::run_flow::{advance_to_next_world, retry_world, WorldResetParams};
 use crate::text;
 use crate::ui::{
-    apply_monospace, hairline, outline_button_auto, paint_metabolism_icon, section_header,
-    HOW_TO_PLAY_BULLET_SPACING, HOW_TO_PLAY_CONTENT_WIDTH, ICON_INK_SELECTED, PANEL_BG,
+    apply_monospace, hairline, how_to_play_bullet_text, outline_button_auto, paint_metabolism_icon,
+    section_header, HOW_TO_PLAY_BULLET_SPACING, HOW_TO_PLAY_CONTENT_WIDTH, ICON_INK_SELECTED,
+    PANEL_BG,
 };
 
 pub struct ScreensPlugin;
@@ -98,8 +99,12 @@ fn intro_screen_ui(
                 // viewport even when the primer's 3 sections are shorter.
                 // `allocate_ui_with_layout` still grows past 0.0 to fit
                 // whatever the closure actually draws.
+                // Clamped to `ui.available_width()` (task 191 amendment 3):
+                // guards a narrow window against an overflowing fixed-width
+                // child `Ui`, same as `menu.rs`'s guide panel.
+                let content_width = HOW_TO_PLAY_CONTENT_WIDTH.min(ui.available_width());
                 ui.allocate_ui_with_layout(
-                    egui::vec2(HOW_TO_PLAY_CONTENT_WIDTH, 0.0),
+                    egui::vec2(content_width, 0.0),
                     egui::Layout::top_down(egui::Align::LEFT),
                     |ui| {
                         let sections = text::INTRO_HOW_TO_PLAY_SECTIONS;
@@ -116,7 +121,7 @@ fn intro_screen_ui(
                                 // `horizontal`) matters once a line wraps.
                                 ui.horizontal_top(|ui| {
                                     ui.label(text::HOW_TO_PLAY_BULLET);
-                                    ui.add(egui::Label::new(*line).wrap());
+                                    how_to_play_bullet_text(ui, line);
                                 });
                                 // Only between bullets, not after the last
                                 // one in a section — see `menu.rs`.

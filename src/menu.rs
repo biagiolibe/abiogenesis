@@ -17,9 +17,9 @@ use crate::notebook::{
 use crate::render::SeenRelations;
 use crate::text;
 use crate::ui::{
-    apply_monospace, hairline, outline_button_auto, section_header, IsolationHint, PauseMenuOpen,
-    PendingConfirmation, SelectedSpecies, SpliceDraft, StallHint, WorldTouched,
-    HOW_TO_PLAY_BULLET_SPACING, HOW_TO_PLAY_CONTENT_WIDTH, PANEL_BG,
+    apply_monospace, hairline, how_to_play_bullet_text, outline_button_auto, section_header,
+    IsolationHint, PauseMenuOpen, PendingConfirmation, SelectedSpecies, SpliceDraft, StallHint,
+    WorldTouched, HOW_TO_PLAY_BULLET_SPACING, HOW_TO_PLAY_CONTENT_WIDTH, PANEL_BG,
 };
 use abiogenesis::config::SimConfig;
 use abiogenesis::knowledge::MatrixKnowledge;
@@ -134,8 +134,13 @@ fn main_menu_ui(
             // one wrapping title/seed/buttons) centers the fixed-width
             // block as a whole; text inside it stays left-aligned.
             ui.vertical_centered(|ui| {
+                // Clamped to `ui.available_width()` (task 191 amendment 3):
+                // guards a narrow window against an overflowing fixed-width
+                // child `Ui` now that the constant itself (760.0) is wide
+                // enough to matter on small windows.
+                let content_width = HOW_TO_PLAY_CONTENT_WIDTH.min(ui.available_width());
                 ui.allocate_ui_with_layout(
-                    egui::vec2(HOW_TO_PLAY_CONTENT_WIDTH, height),
+                    egui::vec2(content_width, height),
                     egui::Layout::top_down(egui::Align::LEFT),
                     |ui| {
                         egui::ScrollArea::vertical()
@@ -173,7 +178,7 @@ fn main_menu_ui(
                                         // of pinning it to the first line.
                                         ui.horizontal_top(|ui| {
                                             ui.label(text::HOW_TO_PLAY_BULLET);
-                                            ui.add(egui::Label::new(*line).wrap());
+                                            how_to_play_bullet_text(ui, line);
                                         });
                                         // Only between bullets, not after the
                                         // last one in a section — that gap is

@@ -357,6 +357,64 @@ loop; fix both call sites, not one.
     live-check ("confirms the wrapped-line/orphan-line impression... is
     resolved"), which this sandbox cannot satisfy — status stays
     `IN_PROGRESS` pending that check.
+  - **Amendment 3 pass (2026-09-02)**: bumped `ui::HOW_TO_PLAY_CONTENT_WIDTH`
+    600.0 → 760.0 (doc comment recomputes the justification against the
+    Controls `P:` line — 104 characters — and the Objectives intro sentence
+    — 111 characters — both of which wrapped twice at 600.0); both call
+    sites (`menu.rs`, `screens.rs`) now clamp it with
+    `HOW_TO_PLAY_CONTENT_WIDTH.min(ui.available_width())` before building
+    the fixed-width child `Ui`, guarding a narrow window against overflow
+    (neither call site clamped before this pass — checked, per the task's
+    own instruction, rather than assumed). Added a shared
+    `ui::how_to_play_bullet_text` helper (next to `section_header`, same
+    module) instead of duplicating the colon-split logic at both call
+    sites: it splits a bullet line at its first colon, rendering the term
+    with `RichText::new(term).strong()` (the same idiom `notebook.rs`'s
+    `ui.strong(title)` already uses) and the remainder in a new
+    `ui::DIM_INK_COLOR` constant (`#5a5c64`, the style guide's existing
+    "dim ink"/"least prominent text" token, §3.1 — not a new color); a line
+    with no colon falls through to the unstyled `egui::Label` it rendered
+    as before this pass. Both call sites now call this helper in place of
+    the plain `egui::Label::new(*line).wrap()` inside their existing
+    `ui.horizontal_top` bullet row. Split the two remaining multi-item
+    bullets in `text.rs`: Controls' `"Space: advance one season.
+    Shift+Space: a full era at once."` into two lines; Objectives'
+    `"Coexistence, surviving a hostile zone, triggering a bloom."` into
+    three "Term: description" lines (`"Coexistence: sustain multiple
+    species at once."`, `"Hostile zone: survive on the world's toxic
+    biome."`, `"Bloom: grow a species past a population threshold."`),
+    matching wording against `player_guide.md:104-106`'s "Coexistence"/
+    "Survive in a hostile zone"/"Trigger a bloom" bullets — same facts,
+    reformatted to the shape its four sibling objective-kind lines already
+    use. `INTRO_HOW_TO_PLAY_SECTIONS` (the intro's short primer) has
+    neither a Controls nor an Objectives section — checked, unaffected by
+    either split; it flows through the same shared helper at its call
+    site, so any "Term: description"-shaped line it has now or gains later
+    gets the same bold-term treatment automatically.
+    Judgment call: the helper renders the term and the (optionally dimmed)
+    remainder as two separate wrapped `egui::Label` widgets inside the same
+    `horizontal_top` row (matching the task's literal
+    `RichText::new(term).strong()` instruction) rather than one
+    `LayoutJob`-based label with mixed runs; this means that on the rare
+    line long enough for the *description* half itself to wrap, its
+    continuation aligns under the description's own start (right of the
+    bold term) rather than under the bullet-text start amendment 2
+    established for the whole line. Not expected to matter in practice —
+    scanned every "Term: description" line in `HOW_TO_PLAY_SECTIONS`/
+    `INTRO_HOW_TO_PLAY_SECTIONS` and only the Controls `P:` line and the
+    Objectives intro sentence are long enough to wrap at 760px, and neither
+    has the "Term:" shape (no colon), so they fall through the unstyled
+    branch unaffected — flagging for review in case a future bullet does
+    hit both conditions at once. Validation (`cargo build`, `cargo clippy
+    --all-targets -- -D warnings`, `cargo fmt --check`, `cargo test` full
+    suite) all clean after these changes. No GUI live check performed —
+    same sandbox constraint as every prior pass; the width/wrap math is
+    reasoned through character counts against the existing HUD_WIDTH-style
+    comment precedent, not visually confirmed. Amendment 3's own
+    acceptance criteria require a user live-check ("User live-check
+    confirms the Controls section... reads as scannable key/action pairs"),
+    which this sandbox cannot satisfy — status stays `IN_PROGRESS` pending
+    that check.
 
 ## Out of scope
 

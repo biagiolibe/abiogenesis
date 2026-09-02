@@ -270,13 +270,18 @@ pub(crate) const HUD_WIDTH: f32 = 340.0;
 /// reading as two mismatched layouts stacked on one screen. Wrapping the
 /// bullet list in a fixed-width child `Ui` (`allocate_ui_with_layout`) makes
 /// it read as one contained block under the controls above it instead.
-/// 600.0 comfortably fits `text::HOW_TO_PLAY_SECTIONS`'s typical bullet
-/// (most lines are 60-90 monospace characters) on one line at the guide's
-/// text size, while the handful of outlier lines above ~100 characters
-/// (e.g. the Splice bullet, 156 characters) wrap into two lines rather than
-/// one — an acceptable trade-off over sizing for the single longest line,
-/// which would make the block wider than the menu controls it sits under.
-pub(crate) const HOW_TO_PLAY_CONTENT_WIDTH: f32 = 600.0;
+/// 760.0 (amendment 3, up from the original 600.0): at 600.0 the Controls
+/// `P:` line (104 characters) and the Objectives intro sentence (111
+/// characters) both wrapped twice, which read as cramped once amendment 3
+/// also widened those lines' effective content (bold lead term + colon).
+/// 760.0 fits both in at most one wrap while staying short of full-window
+/// sprawl (the thing amendment 1 fixed) — outlier lines past ~130
+/// characters (e.g. the Splice bullet, 156 characters) still wrap once,
+/// same trade-off the original comment made over sizing for the single
+/// longest line. Both call sites clamp this against `ui.available_width()`
+/// so a narrower-than-760px window can't get an overflowing fixed-width
+/// child `Ui`.
+pub(crate) const HOW_TO_PLAY_CONTENT_WIDTH: f32 = 760.0;
 
 /// Vertical gap after each bullet line in the "How to play" guide (task 191
 /// amendment 2), so consecutive facts within a section read as distinct
@@ -1550,6 +1555,14 @@ pub(crate) const ICON_INK_SELECTED: egui::Color32 = egui::Color32::from_rgb(0xe0
 /// from plain body/heading text.
 const SECTION_LABEL_COLOR: egui::Color32 = egui::Color32::from_rgb(0x7d, 0x84, 0x8a);
 
+/// "Dim ink" (§3.1, "least prominent text", e.g. the era/season footer
+/// line) — reused as-is here (task 191 amendment 3) for the description
+/// half of a "How to play" bullet once its lead term is bolded, so the
+/// term reads as the scannable anchor and the description recedes
+/// slightly. Not a new color token: same value the style guide already
+/// names for this purpose elsewhere.
+pub(crate) const DIM_INK_COLOR: egui::Color32 = egui::Color32::from_rgb(0x5a, 0x5c, 0x64);
+
 /// Small, uppercase, muted-gray section header (task 180), replacing plain
 /// `ui.strong(...)` at the HUD's section boundaries (`TIME`/`INTERVIENI`/
 /// `BIOSPHERE` etc. in `pixel-full-scene.svg:6787,6796,6814`). The mockup
@@ -1563,6 +1576,26 @@ pub(crate) fn section_header(ui: &mut egui::Ui, label: &str) -> egui::Response {
             .small()
             .color(SECTION_LABEL_COLOR),
     )
+}
+
+/// Renders one "How to play" bullet's text, to the right of the bullet
+/// glyph (task 191 amendment 3). Most Controls bullets and all seven
+/// Objectives kinds are shaped "Term: description" — this splits at the
+/// line's *first* colon and renders the term bold (`RichText::strong()`,
+/// the same idiom `notebook.rs`'s `ui.strong(title)` already uses for
+/// emphasis, not a new color) so the panel reads as scannable key/action
+/// pairs, with the description in `DIM_INK_COLOR` so the bold term stays
+/// the visual anchor. A line with no colon (e.g. "The premise"/"The loop"
+/// sections' plain sentences) renders exactly as it did before this
+/// amendment, unstyled — this only touches lines that already have the
+/// "Term: description" shape.
+pub(crate) fn how_to_play_bullet_text(ui: &mut egui::Ui, line: &str) {
+    if let Some((term, rest)) = line.split_once(':') {
+        ui.add(egui::Label::new(egui::RichText::new(format!("{term}:")).strong()).wrap());
+        ui.add(egui::Label::new(egui::RichText::new(rest).color(DIM_INK_COLOR)).wrap());
+    } else {
+        ui.add(egui::Label::new(line).wrap());
+    }
 }
 
 /// Paints one 4×4-point block at `origin + offset` — the mockup's action-

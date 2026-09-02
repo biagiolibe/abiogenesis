@@ -68,7 +68,8 @@ pub const HOW_TO_PLAY_SECTIONS: &[(&str, &[&str])] = &[
         &[
             "Left click: perform the selected action on a cell, or inspect it if none is armed.",
             "Right click: disarm the current action.",
-            "Space: advance one season. Shift+Space: a full era at once.",
+            "Space: advance one season.",
+            "Shift+Space: a full era at once.",
             "N: advance a single pulse.",
             "P: toggle continuous advancement, ticking on its own until you pause it or the \
              era needs your attention.",
@@ -126,7 +127,9 @@ pub const HOW_TO_PLAY_SECTIONS: &[(&str, &[&str])] = &[
         &[
             "Each world sets a sequence of 2-3 goals, cleared one after another, always ending \
              in a forced Speciation event.",
-            "Coexistence, surviving a hostile zone, triggering a bloom.",
+            "Coexistence: sustain multiple species at once.",
+            "Hostile zone: survive on the world's toxic biome.",
+            "Bloom: grow a species past a population threshold.",
             "Homeostasis: hold a species' energy in a stable band.",
             "Tolerance: survive a toxic zone.",
             "Wild coexistence: keep a wild population alive alongside a seeded one.",
