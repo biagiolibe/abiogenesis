@@ -6,6 +6,83 @@ Review: REQUIRED
 Dependencies: none (190 already landed the content this task reformats)
 Reasoning: medium
 
+## Amendment 3 — emphasis, contrast, width (2026-09-02, post-indent-fix screenshot)
+
+Hanging indent (Amendment 2) works — the follow-up screenshot shows wrapped
+lines correctly landing under the text, not the bullet. User's next
+request: the guide is readable now but still visually flat — no color, no
+isolation for the individual commands that deserve to stand out (Controls
+section, mainly) — plus the content column should be wider. This amendment
+proposes a concrete design for that, staying inside `VISUAL_STYLE_GUIDE.md`
+§1 rule 3 ("color = state, never identity") — so the fix is **typographic
+weight/tone, not a new color**, reusing tokens the palette already defines
+rather than inventing one for this single panel.
+
+**1. Wider content column.** Bump `HOW_TO_PLAY_CONTENT_WIDTH` (`ui.rs`,
+currently `600.0`) up — target roughly 720-800px, enough that the longer
+sentences (the Controls `P:` line, the Objectives intro sentence) wrap at
+most once instead of twice, without approaching full-window sprawl (the
+thing Amendment 1 fixed). Guard it against small windows: clamp to
+`ui.available_width()` (or whatever the surrounding layout already
+provides) so a narrow window can't get an overflowing fixed-width child —
+check this didn't already need guarding for the current `600.0` value
+before assuming it's new work.
+
+**2. Bold the lead term on "Term: description"-shaped bullets.** Most
+Controls bullets and four of the Objectives bullets already have this
+shape ("`Left click`: perform the selected action...", "`Homeostasis`:
+hold a species' energy..."). Split each such line at its *first* colon at
+render time (`src/menu.rs`, `src/screens.rs`, wherever the bullet loop
+lives after Amendment 2's `horizontal_top` change) and render the part
+before the colon with `egui::RichText::new(term).strong()` in the same
+body-ink color, the part after in the existing weight — reusing the
+already-established `.strong()` idiom (`section_header` already leans on
+bold-like emphasis for headers) rather than adding a new color token. A
+line with no colon renders exactly as it does today, unstyled — this only
+touches lines that already have the shape. Optionally render the
+description half in the palette's existing **dim ink** token (`#5a5c64`,
+already defined as "least prominent text" in `VISUAL_STYLE_GUIDE.md` §3.1)
+instead of full body ink, so the bold term reads as the scannable anchor
+and the explanation recedes slightly — try it, keep it only if it doesn't
+hurt legibility of the longer descriptions.
+
+**3. Split remaining multi-item bullets for the same one-fact-per-line
+consistency Amendment 2 already established for the metabolism lines:**
+
+- Controls' `"Space: advance one season. Shift+Space: a full era at
+  once."` is one bullet carrying two key bindings — split into two lines
+  ("Space: advance one season." / "Shift+Space: a full era at once.") so
+  both get the same bold-lead-term treatment as every other control.
+- Objectives' `"Coexistence, surviving a hostile zone, triggering a
+  bloom."` is the odd one out in that section — the four newer objective
+  kinds below it (Homeostasis/Tolerance/Wild coexistence/Rootedness) each
+  get their own named "Term: description" line, but these original three
+  are crammed into one unnamed list. Reformat into three "Term:
+  description" lines matching the others' shape and depth, e.g.
+  `"Coexistence: sustain multiple species at once."`, `"Hostile zone:
+  survive on the world's toxic biome."`, `"Bloom: grow a species past a
+  population threshold."` — same facts `player_guide.md`'s "Objectives,
+  victory, and failure" section already states, just reformatted to match
+  its siblings and become eligible for the same emphasis. Content
+  reformatting only, not new facts — cross-check wording against
+  `player_guide.md:102-105` and `HOW_TO_PLAY_SECTIONS`'s own existing
+  four-kind lines for register consistency.
+
+**Additional acceptance criteria** (append, don't replace):
+
+- `HOW_TO_PLAY_CONTENT_WIDTH` (or equivalent) is wider than `600.0`,
+  clamped so it can't overflow a narrow window.
+- Every "Term: description"-shaped bullet (Controls, all seven Objectives
+  kinds) renders its lead term visually distinct (bold, optionally dimmed
+  description) from the rest of the line; lines without that shape are
+  unaffected.
+- No bullet states two unrelated commands/objective-kinds in one line
+  where the rest of its section keeps one per line.
+- User live-check confirms the Controls section in particular now reads as
+  scannable key/action pairs rather than a flat block of sentences.
+
+---
+
 ## Amendment 2 — readability review (2026-09-02, post-containment screenshot)
 
 The width-containment fix (Amendment 1 below) worked — the guide now reads
