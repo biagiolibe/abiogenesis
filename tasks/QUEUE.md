@@ -163,7 +163,7 @@ ideally with a real playtester — not yet done.
 | `[x]` | 179 | Objectives: 4 new types (Homeostasis/Tolerance/WildCoexistence/Rootedness), Speciation target-species narrowing (FirstConfirmation deferred, needs `MatrixKnowledge`) | `objectives` — [179](done/179-objectives-new-types-target-species.md) |
 | `[x]` | 170 | Speciation cause readability: surface dominant pressure stimulus + genome before/after diff | GDD §5.11 — [170](done/170-speciation-cause-readability.md) |
 | `IN_PROGRESS` | 171 | Causal-legibility playtest gate: bot-vs-bot necessity check (done, pass) + human playtest protocol (written, **not yet run**), gates Phase 3. **Blocked on 190** — the onboarding the playtester relies on is stale | GDD §5.8/§5.9 — [171](171-causal-legibility-playtest-gate.md), [results](171-results.md) |
-| `QUEUED` | 190 | Sync onboarding content (in-game "How to play" panel + `player_guide.md`) to current mechanics — missing 4th metabolism, 4 objective kinds, Chronicle, Splice's confirmed-trait restriction, continuous-advance key. Gates 171's human playtest | `player_guide.md`, `src/text.rs` — [190](190-onboarding-content-sync.md) |
+| `IN_PROGRESS` | 190 | Sync onboarding content (in-game "How to play" panel + `player_guide.md`) to current mechanics — missing 4th metabolism, 4 objective kinds, Chronicle, Splice's confirmed-trait restriction, continuous-advance key. Content landed, build/clippy/fmt/test clean; live check pending (needs a screen the sandbox can't capture — see task file). Gates 171's human playtest | `player_guide.md`, `src/text.rs` — [190](190-onboarding-content-sync.md) |
 
 **All 10 Phase 2 task files now exist (2026-08-29).** Suggested execution
 order, from cross-task dependencies each file's own scoping surfaced (not a

@@ -1,7 +1,7 @@
 # Task 190 — Sync onboarding content (in-game panel + player guide) to current mechanics
 
 Priority: 🔴 P1
-Status: QUEUED
+Status: IN_PROGRESS
 Review: REQUIRED
 Dependencies: none
 Reasoning: medium

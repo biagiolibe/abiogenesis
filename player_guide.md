@@ -15,6 +15,7 @@ There are two mysteries running at once: **what will happen** — the ecosystem 
 | `space` | Advance one season (animated) |
 | `shift + space` | Advance a full era at once (instant, not animated) |
 | `n` | Advance a single pulse (fine-grained observation) |
+| `p` | Toggle continuous advancement — ticks on its own, pulse by pulse, until you press it again or the era needs your attention |
 | `wasd` / arrow keys | Pan the camera |
 | `tab` | Open / close your notebook |
 | `r` | Reseed the current world (same difficulty, fresh random state) — asks for confirmation once you've acted on this world |
@@ -71,9 +72,9 @@ Each era gives you a small budget of action points (3 by default) to spend befor
 | **Seed** | 1 | Place an organism of the selected species on an empty cell |
 | **Stress** | 1 | Shift an environmental scalar (e.g. temperature) at a cell |
 | **Cull** | 1 | Remove the organism on a cell |
-| **Splice** | 2 | Edit a species' genome — swap or add a tag, or shift its thermal optimum |
+| **Splice** | 2 | Synthesise a new species by swapping in a **confirmed** tag, or shifting a thermal optimum |
 
-`Splice` is the most powerful and most expensive tool: it lets you test a hypothesis directly by changing what a species *is*, not just where it sits.
+`Splice` is the most powerful and most expensive tool: it lets you test a hypothesis directly by growing a species that *is* something new, not just repositioning what's already on the grid. It only draws from tags your notebook has already confirmed — you can't splice in a tag you haven't earned evidence for yet, so its options grow as your understanding does.
 
 ---
 
@@ -84,6 +85,7 @@ This is where deduction actually happens. Open it any time — it doesn't pause 
 - **Observation log** — a curated feed of what mattered: extinctions, deaths of organisms you personally placed, and every matrix relationship the moment it's confirmed (marked with a `★`).
 - **Hypothesis grid** — a graph of every active tag, with confirmed relationships drawn as colored directed edges (green = helps, red = harms). Unconfirmed pairs stay blank until you've gathered enough evidence.
 - **Catalog** — every tag and species you've encountered, with what's known about each so far.
+- **Chronicle** — the world's narrated history: each era's end-of-era reveal, archived once it closes, at the tier it fired at. Where the observation log holds raw data for inference, the Chronicle is for revisiting what happened rather than only catching it live — consecutive quiet eras collapse into a single line rather than repeating, and speciation entries name the parent species so you can trace a lineage by scrolling back.
 
 ### How confirmation works
 
@@ -102,6 +104,10 @@ Every world sets a **sequence of goals** — 2 in the early worlds, 3 once the d
 - **Coexistence** — sustain N species at once for a number of eras.
 - **Survive in a hostile zone** — get a species to survive on a Swamp cell, the world's toxic biome (not every world has one — this objective only comes up when it does).
 - **Trigger a bloom** — grow a specific species past a population threshold.
+- **Homeostasis** — hold a species' average energy inside a stable band for a number of eras. The only objective that touches energy, and the only one that rewards active correction rather than diversity, endurance, or growth.
+- **Tolerance** — keep a species alive in a high-toxicity zone. Mechanically the same check as "survive in a hostile zone" above, offered as a distinct, harder-tier requirement.
+- **Wild coexistence** — keep a wild population alive alongside at least one living player-seeded species. Gives wild species (ones you never placed yourself) a role past first contact.
+- **Rootedness** — keep a species alive specifically on the terrain a conditional trait it carries is tied to, rather than anywhere convenient.
 - **Force a speciation event** (always the sequence's last objective, on every world) — push a species under enough sustained pressure (harmful adjacency, a bad temperature fit, or toxicity exposure) that the simulation itself spins off a new species from it. This one isn't something you build directly like a splice — it's a consequence of how hard you push a species, and it can happen without you asking for it.
 
 Clearing one objective moves you straight to the next in the same world — the world itself only clears once every objective in the sequence has. Meet the last one, and you move to the next world: more active tags, a meaner matrix, a harsher environment.

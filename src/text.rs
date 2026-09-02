@@ -48,9 +48,10 @@ pub const HOW_TO_PLAY_SECTIONS: &[(&str, &str)] = &[
         "Controls",
         "Left click: perform the selected action on a cell, or inspect it if no action is \
          armed. Right click: disarm the current action. Space: advance one season, Shift+Space: \
-         a full era at once. N: advance a single pulse. Arrow keys or WASD: pan the camera. \
-         Tab: open your notebook. R: reseed the current world. Esc: close whatever's on top, or \
-         open the pause menu if nothing is.",
+         a full era at once. N: advance a single pulse. P: toggle continuous advancement, ticking \
+         on its own until you pause it or the era needs your attention. Arrow keys or WASD: pan \
+         the camera. Tab: open your notebook. R: reseed the current world. Esc: close whatever's \
+         on top, or open the pause menu if nothing is.",
     ),
     (
         "The loop",
@@ -60,32 +61,38 @@ pub const HOW_TO_PLAY_SECTIONS: &[(&str, &str)] = &[
     (
         "Metabolism and temperature",
         "Photolithic draws energy from light, Predator from neighboring organisms, \
-         Decomposer from residue in its own or a neighboring cell. Every one of these gains \
-         is then multiplied by how close that cell's temperature is to the species' comfort \
-         zone — not added as a separate cost. An organism can die right next to its fuel \
-         (residue, light, prey) if the temperature fit is poor; check the death log's stated \
-         cause before suspecting a hidden matrix effect.",
+         Decomposer from residue in its own or a neighboring cell, Chemolithotroph from local \
+         toxicity. Every one of these gains is then multiplied by how close that cell's \
+         temperature is to the species' comfort zone — not added as a separate cost. An organism \
+         can die right next to its fuel (residue, light, prey, toxicity) if the temperature fit \
+         is poor; check the death log's stated cause before suspecting a hidden matrix effect.",
     ),
     (
         "Actions and budget",
         "Each era gives a small budget of points: Seed and Stress and Cull cost 1, Splice \
-         (editing a species' genome) costs 2. You can't do everything — bet on your best \
-         hypothesis.",
+         (synthesising a new species from a confirmed tag) costs 2. Splice only draws from \
+         tags you've already confirmed — it grows more useful as your notebook fills in. You \
+         can't do everything — bet on your best hypothesis.",
     ),
     (
         "The notebook",
         "Every adjacency between tagged organisms is a data point, weighted by how isolated \
-         it was — a clean, uncrowded pairing counts far more than one buried in a crowd. \
-         Once evidence for a tag pair adds up enough, it's confirmed and lights up in your \
-         hypothesis grid.",
+         it was — a clean, uncrowded pairing counts far more than one buried in a crowd. Once \
+         evidence for a tag pair adds up enough, it's confirmed and lights up in your \
+         hypothesis grid. A fourth section, the Chronicle, archives each era's reveal as \
+         narrated history you can scroll back through.",
     ),
     (
         "Objectives and failure",
-        "Each world sets a sequence of 2-3 goals (coexistence, surviving a hostile zone, or \
-         triggering a bloom), cleared one after another. Total extinction retries the same \
-         world; running out of eras ends the run. You only need to decode the part of the \
-         matrix relevant to your objectives. Every world also grants a grace period: it can't \
-         end from extinction until you've kept a population alive for a full era at least once.",
+        "Each world sets a sequence of 2-3 goals, drawn from coexistence, surviving a hostile \
+         zone, triggering a bloom, holding a species' energy in a stable band (Homeostasis), \
+         tolerating a toxic zone (Tolerance), keeping a wild population alive alongside a \
+         seeded one (Wild coexistence), staying rooted on the terrain a trait depends on \
+         (Rootedness), and always ending in a forced Speciation event — cleared one after \
+         another. Total extinction retries the same world; running out of eras ends the run. \
+         You only need to decode the part of the matrix relevant to your objectives. Every \
+         world also grants a grace period: it can't end from extinction until you've kept a \
+         population alive for a full era at least once.",
     ),
 ];
 
