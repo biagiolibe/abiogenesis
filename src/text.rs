@@ -89,9 +89,10 @@ pub const HOW_TO_PLAY_SECTIONS: &[(&str, &[&str])] = &[
     (
         "Metabolism and temperature",
         &[
-            "Photolithic draws energy from light, Predator from neighboring organisms.",
-            "Decomposer draws from residue in its own or a neighboring cell, Chemolithotroph \
-             from local toxicity.",
+            "Photolithic draws energy from light.",
+            "Predator draws energy from neighboring organisms.",
+            "Decomposer draws energy from residue in its own or a neighboring cell.",
+            "Chemolithotroph draws energy from local toxicity.",
             "Every gain is then multiplied by how close that cell's temperature is to the \
              species' comfort zone — not added as a separate cost.",
             "An organism can die right next to its fuel if the temperature fit is poor; check \

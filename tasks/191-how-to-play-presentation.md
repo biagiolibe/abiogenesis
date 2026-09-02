@@ -236,6 +236,50 @@ loop; fix both call sites, not one.
     GUI live check possible in this sandbox — `HOW_TO_PLAY_CONTENT_WIDTH`
     (600.0) and the divider spacing (32.0) are both unverified numeric
     guesses; status stays `IN_PROGRESS` pending the user's own live check.
+  - **Amendment 2 pass (2026-09-02)**: fixed the hanging-indent defect by
+    rendering each bullet as `ui.horizontal_top(|ui| { ui.label(BULLET);
+    ui.add(egui::Label::new(line).wrap()); })` instead of a single
+    `ui.label(format!("{bullet} {line}"))`, at both call sites (`menu.rs`,
+    `screens.rs`). `egui::Grid` was investigated per the task's suggestion
+    (egui 0.35 per `Cargo.lock`; no existing `egui::Grid` usage anywhere in
+    `src/` to match) but wasn't needed: `notebook.rs` already has a working
+    precedent for this exact defect (task 187's comment on line ~944,
+    "plain label inside `ui.horizontal` doesn't wrap") — a two-widget row
+    where the text widget carries `.wrap()` gets a real hanging indent for
+    free, because egui lays out a wrapped label's continuation lines from
+    that widget's own x-origin (right of the bullet glyph), not the row's.
+    Used `ui.horizontal_top` (`Layout::left_to_right(Align::TOP)`), not
+    plain `ui.horizontal` (`Align::Center`): a `horizontal` row grows tall
+    once the text wraps to multiple lines, and center-alignment would float
+    the bullet glyph beside the wrapped block's middle line instead of
+    pinning it to the first line — this only shows up once a line actually
+    wraps, so it's easy to miss testing against short lines alone. Reasoned
+    through the wrap width without a GUI: both call sites nest this inside
+    the existing `HOW_TO_PLAY_CONTENT_WIDTH` (600.0)-bounded child `Ui`
+    (`allocate_ui_with_layout`/`ScrollArea`), so `ui.available_width()` at
+    the text label correctly reflects 600 minus the bullet glyph's width
+    minus one `item_spacing.x` — the Controls "P: toggle continuous
+    advancement..." line (`src/text.rs`, ~123 chars) is well past that
+    budget and should wrap, with its continuation aligned under "toggle",
+    not under "▪"; not visually confirmed. Added `ui::
+    HOW_TO_PLAY_BULLET_SPACING` (3.0, doc-commented) as `ui.add_space(...)`
+    between consecutive bullet lines within a section only — gated so it
+    never fires after a section's last bullet, leaving `hairline()`'s
+    section-to-section spacing untouched as instructed. Split the
+    "Metabolism and temperature" section's two combined-fact lines into
+    four single-fact lines in `src/text.rs`; note for review: the split
+    restores the elided verb for the second half of each original sentence
+    ("Predator draws energy from neighboring organisms.", "Chemolithotroph
+    draws energy from local toxicity.") so each line reads as a complete
+    sentence — same facts, not a byte-for-byte clause split. Validation
+    (`cargo build`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt
+    --check`, `cargo test` full suite) all clean after these changes. No
+    GUI live check performed — same sandbox constraint as every prior pass;
+    the indent fix is verified by code mechanism and the task-187 precedent,
+    not visually. Amendment 2's own acceptance criteria require a user
+    live-check ("confirms the wrapped-line/orphan-line impression... is
+    resolved"), which this sandbox cannot satisfy — status stays
+    `IN_PROGRESS` pending that check.
 
 ## Out of scope
 

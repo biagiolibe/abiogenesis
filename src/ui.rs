@@ -278,6 +278,13 @@ pub(crate) const HUD_WIDTH: f32 = 340.0;
 /// which would make the block wider than the menu controls it sits under.
 pub(crate) const HOW_TO_PLAY_CONTENT_WIDTH: f32 = 600.0;
 
+/// Vertical gap after each bullet line in the "How to play" guide (task 191
+/// amendment 2), so consecutive facts within a section read as distinct
+/// items rather than a run-on block. Deliberately small — a density tweak,
+/// not new chrome — and separate from `hairline()`'s existing gap *between*
+/// sections, which the amendment explicitly leaves untouched.
+pub(crate) const HOW_TO_PLAY_BULLET_SPACING: f32 = 3.0;
+
 /// `RenderLayers` for the dedicated egui camera: no grid entity is ever
 /// assigned to it, so this camera draws nothing of the scene, only the
 /// egui overlay (TECH_DESIGN.md §6 "HUD camera").

@@ -21,7 +21,7 @@ use crate::run_flow::{advance_to_next_world, retry_world, WorldResetParams};
 use crate::text;
 use crate::ui::{
     apply_monospace, hairline, outline_button_auto, paint_metabolism_icon, section_header,
-    HOW_TO_PLAY_CONTENT_WIDTH, ICON_INK_SELECTED, PANEL_BG,
+    HOW_TO_PLAY_BULLET_SPACING, HOW_TO_PLAY_CONTENT_WIDTH, ICON_INK_SELECTED, PANEL_BG,
 };
 
 pub struct ScreensPlugin;
@@ -105,8 +105,24 @@ fn intro_screen_ui(
                         let sections = text::INTRO_HOW_TO_PLAY_SECTIONS;
                         for (i, (heading, lines)) in sections.iter().enumerate() {
                             section_header(ui, heading);
-                            for line in *lines {
-                                ui.label(format!("{} {line}", text::HOW_TO_PLAY_BULLET));
+                            let line_count = lines.len();
+                            for (j, line) in lines.iter().enumerate() {
+                                // `ui.horizontal_top` + `.wrap()` (task 191
+                                // amendment 2): same hanging-indent fix as
+                                // `menu.rs`'s guide render loop — see the
+                                // comment there for why a plain concatenated
+                                // "{bullet} {line}" label doesn't wrap
+                                // correctly, and why `_top` (not plain
+                                // `horizontal`) matters once a line wraps.
+                                ui.horizontal_top(|ui| {
+                                    ui.label(text::HOW_TO_PLAY_BULLET);
+                                    ui.add(egui::Label::new(*line).wrap());
+                                });
+                                // Only between bullets, not after the last
+                                // one in a section — see `menu.rs`.
+                                if j + 1 < line_count {
+                                    ui.add_space(HOW_TO_PLAY_BULLET_SPACING);
+                                }
                             }
                             if i + 1 < sections.len() {
                                 hairline(ui);

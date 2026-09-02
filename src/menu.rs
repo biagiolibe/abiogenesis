@@ -19,7 +19,7 @@ use crate::text;
 use crate::ui::{
     apply_monospace, hairline, outline_button_auto, section_header, IsolationHint, PauseMenuOpen,
     PendingConfirmation, SelectedSpecies, SpliceDraft, StallHint, WorldTouched,
-    HOW_TO_PLAY_CONTENT_WIDTH, PANEL_BG,
+    HOW_TO_PLAY_BULLET_SPACING, HOW_TO_PLAY_CONTENT_WIDTH, PANEL_BG,
 };
 use abiogenesis::config::SimConfig;
 use abiogenesis::knowledge::MatrixKnowledge;
@@ -145,8 +145,43 @@ fn main_menu_ui(
                                 let sections = text::HOW_TO_PLAY_SECTIONS;
                                 for (i, (heading, lines)) in sections.iter().enumerate() {
                                     section_header(ui, heading);
-                                    for line in *lines {
-                                        ui.label(format!("{} {line}", text::HOW_TO_PLAY_BULLET));
+                                    let line_count = lines.len();
+                                    for (j, line) in lines.iter().enumerate() {
+                                        // `ui.horizontal_top` + `.wrap()`
+                                        // (task 191 amendment 2, same fix as
+                                        // `notebook.rs`'s task 187 comment,
+                                        // but `_top` not plain `horizontal`):
+                                        // a plain `ui.label` inside a
+                                        // horizontal layout doesn't wrap, and
+                                        // a wrapped continuation of a
+                                        // concatenated "{bullet} {line}"
+                                        // string lands flush under the
+                                        // bullet glyph, not under the text.
+                                        // Rendering the bullet and the text
+                                        // as two widgets in one row gives the
+                                        // text label its own x-origin (right
+                                        // of the fixed-width bullet glyph),
+                                        // so `.wrap()`'s continuation lines
+                                        // align under the text start instead.
+                                        // `_top`, not plain `horizontal`
+                                        // (which centers row content
+                                        // vertically): a `horizontal` row
+                                        // grows tall when the text wraps to
+                                        // multiple lines, and centering would
+                                        // float the bullet glyph beside the
+                                        // wrapped block's middle line instead
+                                        // of pinning it to the first line.
+                                        ui.horizontal_top(|ui| {
+                                            ui.label(text::HOW_TO_PLAY_BULLET);
+                                            ui.add(egui::Label::new(*line).wrap());
+                                        });
+                                        // Only between bullets, not after the
+                                        // last one in a section — that gap is
+                                        // `hairline()`'s job, left untouched
+                                        // per the amendment.
+                                        if j + 1 < line_count {
+                                            ui.add_space(HOW_TO_PLAY_BULLET_SPACING);
+                                        }
                                     }
                                     if i + 1 < sections.len() {
                                         hairline(ui);
