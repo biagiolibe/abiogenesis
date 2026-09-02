@@ -4,10 +4,11 @@
 
 When documents conflict, the first applicable document wins:
 
-1. `CLAUDE.md` — operating rules for the active agent.
+1. `AGENTS.md` / `CLAUDE.md` — operating rules for the active agent.
 2. `abiogenesis-gdd.md` (marked `[DECIDED]` sections) and `TECH_DESIGN.md` §5 — accepted design and architecture decisions. This project records decisions inline in the GDD instead of a separate ADR log; do not create one.
 3. `tasks/QUEUE.md` and atomic task files — execution scope, dependencies, review policy, and validation.
-4. `VISION.md`, `VISUAL_STYLE_GUIDE.md`, `player_guide.md`, and `abiogenesis-gdd.md` `[PROPOSED]` sections — background and aspirational material.
+4. `docs/CODE_ORGANIZATION.md` — normative source-organization policy; it cannot change task scope, behavior, or public contracts.
+5. `VISION.md`, `VISUAL_STYLE_GUIDE.md`, `player_guide.md`, and `abiogenesis-gdd.md` `[PROPOSED]` sections — background and aspirational material.
 
 Implementation never resolves a conflict silently: update the lower-precedence document, or flip a GDD paragraph from `[PROPOSED]` to `[DECIDED]` once the decision is made.
 
@@ -30,14 +31,18 @@ Only `ACCEPTED` tasks satisfy dependencies. This lifecycle applies to task files
 - `docs/COMPLETION_REPORT_TEMPLATE.md` defines the implementation and review handoff.
 - `docs/CODE_REVIEW_PROMPT.md` defines how a `Review: REQUIRED` task is reviewed.
 - `docs/BRANCHING_POLICY.md` defines task-branch, commit, push, and merge mechanics — the canonical source for all git integration steps below.
+- `docs/CODE_ORGANIZATION.md` defines module ownership, dependency direction, and visibility rules for production code.
+- `docs/AUDIT_PROMPT_READ_ONLY.md` defines a read-only conformance audit for this workflow.
 
-For a task or review, start with `CLAUDE.md`, then read only the assigned task and the sources it cites. These assets are operational guidance and do not supersede the precedence order above.
+For a task or review, start with `AGENTS.md`/`CLAUDE.md`, then read only the assigned task and the sources it cites. These assets are operational guidance and do not supersede the precedence order above.
 
 ## Roles
 
 - Tech designer: defines GDD/`TECH_DESIGN.md` decisions, task scope, dependencies, and review policy. Does not implement feature code unless explicitly assigned.
 - Implementer: works on exactly one task, on a dedicated task branch (`docs/BRANCHING_POLICY.md`), validates it, commits it, and updates the task's and `tasks/QUEUE.md`'s status according to its review policy.
 - Reviewer-integrator: independently reviews `READY_FOR_REVIEW` tasks per `docs/CODE_REVIEW_PROMPT.md`. After `APPROVE`, records `ACCEPTED` in the task file and `tasks/QUEUE.md` in a separate commit from the implementation, then integrates the task branch into `main` per `docs/BRANCHING_POLICY.md`.
+
+The developer drives these roles with three command triggers, defined in `AGENTS.md`/`CLAUDE.md`: `Proceed with <TASK-ID>` starts implementation, `Review <TASK-ID>` starts independent review, and `Accept <TASK-ID>` performs the owner-acceptance status handoff after the developer's own review, skipping the agent review without skipping the status/queue update.
 
 ## Review policy
 
