@@ -18,7 +18,8 @@ use crate::render::SeenRelations;
 use crate::text;
 use crate::ui::{
     apply_monospace, hairline, outline_button_auto, section_header, IsolationHint, PauseMenuOpen,
-    PendingConfirmation, SelectedSpecies, SpliceDraft, StallHint, WorldTouched, PANEL_BG,
+    PendingConfirmation, SelectedSpecies, SpliceDraft, StallHint, WorldTouched,
+    HOW_TO_PLAY_CONTENT_WIDTH, PANEL_BG,
 };
 use abiogenesis::config::SimConfig;
 use abiogenesis::knowledge::MatrixKnowledge;
@@ -97,7 +98,18 @@ fn main_menu_ui(
                     next_state.set(GameState::Intro);
                 }
             }
-            ui.add_space(16.0);
+            // Separates the "start a run" cluster above (title/seed/New Run)
+            // from the meta/reference cluster below (unlocks line, guide
+            // toggle) — task 191's amendment: without this the whole menu
+            // read as one undifferentiated stack. Plain extra spacing, not
+            // `hairline()`: that helper paints edge-to-edge across
+            // `ui.available_rect_before_wrap()`, which inside this
+            // `vertical_centered` block is the full panel width, not the
+            // ~160px centered column above it — the same narrow-column-vs-
+            // full-width mismatch this amendment exists to remove. The
+            // amendment allows either; wider spacing is the one that can't
+            // introduce a new instance of that defect.
+            ui.add_space(32.0);
             ui.label(text::unlocks_summary(meta.bonus_available_species));
             ui.add_space(16.0);
 
@@ -114,21 +126,36 @@ fn main_menu_ui(
         if *show_guide {
             ui.add_space(16.0);
             let height = (ui.available_height() - HOW_TO_PLAY_BOTTOM_MARGIN).max(0.0);
-            egui::ScrollArea::vertical()
-                .id_salt("how_to_play")
-                .max_height(height)
-                .show(ui, |ui| {
-                    let sections = text::HOW_TO_PLAY_SECTIONS;
-                    for (i, (heading, lines)) in sections.iter().enumerate() {
-                        section_header(ui, heading);
-                        for line in *lines {
-                            ui.label(format!("{} {line}", text::HOW_TO_PLAY_BULLET));
-                        }
-                        if i + 1 < sections.len() {
-                            hairline(ui);
-                        }
-                    }
-                });
+            // Fixed-width child `Ui` (task 191's amendment) so the guide
+            // reads as one contained column under the narrower centered
+            // menu controls above, instead of stretching left-aligned text
+            // across the full panel width — see `HOW_TO_PLAY_CONTENT_WIDTH`.
+            // `vertical_centered` (this call site sits outside the outer
+            // one wrapping title/seed/buttons) centers the fixed-width
+            // block as a whole; text inside it stays left-aligned.
+            ui.vertical_centered(|ui| {
+                ui.allocate_ui_with_layout(
+                    egui::vec2(HOW_TO_PLAY_CONTENT_WIDTH, height),
+                    egui::Layout::top_down(egui::Align::LEFT),
+                    |ui| {
+                        egui::ScrollArea::vertical()
+                            .id_salt("how_to_play")
+                            .max_height(height)
+                            .show(ui, |ui| {
+                                let sections = text::HOW_TO_PLAY_SECTIONS;
+                                for (i, (heading, lines)) in sections.iter().enumerate() {
+                                    section_header(ui, heading);
+                                    for line in *lines {
+                                        ui.label(format!("{} {line}", text::HOW_TO_PLAY_BULLET));
+                                    }
+                                    if i + 1 < sections.len() {
+                                        hairline(ui);
+                                    }
+                                }
+                            });
+                    },
+                );
+            });
         }
     });
     Ok(())

@@ -21,7 +21,7 @@ use crate::run_flow::{advance_to_next_world, retry_world, WorldResetParams};
 use crate::text;
 use crate::ui::{
     apply_monospace, hairline, outline_button_auto, paint_metabolism_icon, section_header,
-    ICON_INK_SELECTED, PANEL_BG,
+    HOW_TO_PLAY_CONTENT_WIDTH, ICON_INK_SELECTED, PANEL_BG,
 };
 
 pub struct ScreensPlugin;
@@ -81,20 +81,39 @@ fn intro_screen_ui(
                 // Center)`), which `ScrollArea::show` otherwise passes
                 // straight through to its content `Ui` — every bullet line
                 // would render individually centered instead of left-
-                // aligned. `menu.rs`'s guide isn't affected: its call site
-                // sits outside any `vertical_centered` wrapper.
-                ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
-                    let sections = text::INTRO_HOW_TO_PLAY_SECTIONS;
-                    for (i, (heading, lines)) in sections.iter().enumerate() {
-                        section_header(ui, heading);
-                        for line in *lines {
-                            ui.label(format!("{} {line}", text::HOW_TO_PLAY_BULLET));
+                // aligned. A plain `with_layout(LEFT)` fixed the alignment
+                // but still stretched left-aligned text across the whole
+                // panel width, under the narrower centered heading/button
+                // above it (task 191's amendment); constraining it to
+                // `HOW_TO_PLAY_CONTENT_WIDTH` via `allocate_ui_with_layout`
+                // (same fixed-width-child approach `menu.rs`'s guide now
+                // also uses, wrapped in its own `vertical_centered` there
+                // since that call site sits outside the menu's title/seed/
+                // button cluster) makes it read as one contained block
+                // instead.
+                // Height 0.0, not `ui.available_height()`: this closure runs
+                // inside `ScrollArea::show`, where `available_height()` is
+                // the scroll viewport's height, not the content's — passing
+                // it as a minimum would pad the content out to one full
+                // viewport even when the primer's 3 sections are shorter.
+                // `allocate_ui_with_layout` still grows past 0.0 to fit
+                // whatever the closure actually draws.
+                ui.allocate_ui_with_layout(
+                    egui::vec2(HOW_TO_PLAY_CONTENT_WIDTH, 0.0),
+                    egui::Layout::top_down(egui::Align::LEFT),
+                    |ui| {
+                        let sections = text::INTRO_HOW_TO_PLAY_SECTIONS;
+                        for (i, (heading, lines)) in sections.iter().enumerate() {
+                            section_header(ui, heading);
+                            for line in *lines {
+                                ui.label(format!("{} {line}", text::HOW_TO_PLAY_BULLET));
+                            }
+                            if i + 1 < sections.len() {
+                                hairline(ui);
+                            }
                         }
-                        if i + 1 < sections.len() {
-                            hairline(ui);
-                        }
-                    }
-                });
+                    },
+                );
             });
         // Outside the scroll area, not the last line inside it — on a small
         // window this pointer to the full guide must not be the one thing

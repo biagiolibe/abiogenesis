@@ -261,6 +261,23 @@ pub struct SpliceDraft {
 /// `ScrollArea`, which also reserves its own scrollbar width.
 pub(crate) const HUD_WIDTH: f32 = 340.0;
 
+/// Contained width for the "How to play" guide content on both the main
+/// menu's opt-in panel (`menu.rs`) and the intro interstitial's short primer
+/// (`screens.rs`) — task 191's amendment. Both surfaces render their guide
+/// bullets inside an outer `vertical_centered` block (title/seed/button on
+/// the menu; heading/pointer/button on the intro), so left-aligned text at
+/// the panel's full width sat under a much narrower centered column,
+/// reading as two mismatched layouts stacked on one screen. Wrapping the
+/// bullet list in a fixed-width child `Ui` (`allocate_ui_with_layout`) makes
+/// it read as one contained block under the controls above it instead.
+/// 600.0 comfortably fits `text::HOW_TO_PLAY_SECTIONS`'s typical bullet
+/// (most lines are 60-90 monospace characters) on one line at the guide's
+/// text size, while the handful of outlier lines above ~100 characters
+/// (e.g. the Splice bullet, 156 characters) wrap into two lines rather than
+/// one — an acceptable trade-off over sizing for the single longest line,
+/// which would make the block wider than the menu controls it sits under.
+pub(crate) const HOW_TO_PLAY_CONTENT_WIDTH: f32 = 600.0;
+
 /// `RenderLayers` for the dedicated egui camera: no grid entity is ever
 /// assigned to it, so this camera draws nothing of the scene, only the
 /// egui overlay (TECH_DESIGN.md §6 "HUD camera").

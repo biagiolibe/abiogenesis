@@ -159,6 +159,26 @@ loop; fix both call sites, not one.
     the sandbox has no Screen Recording permission (same constraint task
     190 recorded). Live verification on real window sizes is still owed to
     the user before `ACCEPTED`.
+  - **Amendment pass (2026-09-02)**: added `ui::HOW_TO_PLAY_CONTENT_WIDTH`
+    (600.0, doc comment justifies it against `HOW_TO_PLAY_SECTIONS`'s
+    longest bullet lines) and wrapped both surfaces' guide content in
+    `ui.allocate_ui_with_layout(egui::vec2(HOW_TO_PLAY_CONTENT_WIDTH, ..),
+    Layout::top_down(Align::LEFT), ..)` so it reads as one contained,
+    left-aligned block instead of full-panel-width text. `menu.rs` also
+    wraps this in its own `vertical_centered` (its call site sits outside
+    the menu's title/seed/button cluster); `screens.rs`'s call site was
+    already inside `interstitial`'s outer `vertical_centered`, so only the
+    width constraint needed adding there. Main-menu grouping: replaced the
+    `add_space(16.0)` before the unlocks line with `add_space(32.0)` —
+    deliberately plain spacing, not `hairline()`, since that helper paints
+    edge-to-edge across the enclosing `vertical_centered` block's full
+    panel width (the same narrow-column/full-width mismatch this amendment
+    removes elsewhere), and the amendment names extra spacing as an
+    acceptable alternative. Same `cargo build`/`clippy -D warnings`/`fmt
+    --check`/`test` validation re-run clean after these changes. Still no
+    GUI live check possible in this sandbox — `HOW_TO_PLAY_CONTENT_WIDTH`
+    (600.0) and the divider spacing (32.0) are both unverified numeric
+    guesses; status stays `IN_PROGRESS` pending the user's own live check.
 
 ## Out of scope
 
