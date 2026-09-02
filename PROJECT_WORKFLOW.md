@@ -44,6 +44,15 @@ Every task written under this workflow declares `Review: REQUIRED` or `Review: N
 
 This project has no branch-per-task or forge/PR mechanism today — commits land directly on `main`, unchanged by this workflow. A `Review: REQUIRED` task's `READY_FOR_REVIEW` → `ACCEPTED` transition is a distinct commit by a reviewer-integrator identity different from the implementer, not a merge.
 
+### Reviewer-integrator identity on a single-operator project
+
+This project has one human operator, so "distinct identity" cannot mean a distinct human. It is satisfied procedurally, by both of the following together:
+
+- **Procedural independence**: the review runs in a fresh agent session that did not write the implementation being reviewed, re-derives the acceptance evidence from the diff and cited sources rather than trusting the implementer's completion report, and never self-approves within the same session that authored the code. The `ACCEPTED` commit message names itself a "Reviewer-integrator pass" and states what was independently re-verified (not just restates the task's claims).
+- **A distinct git author on the acceptance commit**: the `READY_FOR_REVIEW` → `ACCEPTED` commit is authored as `Abiogenesis Reviewer-Integrator <reviewer-integrator@abiogenesis.local>` via `git commit --author`, leaving the committer (the operator's own git identity) unchanged. This is a per-commit metadata override, not a change to git config — implementation commits keep the operator's normal author identity. It makes the two roles distinguishable in `git log --format='%an <%ae>'` even though both trace back to the same operator, and it is the mechanical trace that a distinct-identity step actually happened.
+
+Neither substitutes for the other: the git author alone would be a rubber stamp without procedural independence; procedural independence alone leaves no verifiable trace in history.
+
 ## Execution discipline
 
 Apply `docs/CONTEXT_BUDGET_POLICY.md`. The review-policy restrictions above remain authoritative; use parallel agents only when their scopes are independent.
